@@ -1,4 +1,4 @@
-# app.py — Scouting HQ (stacked, clickable tiles, styled text)
+# app.py — Scouting HQ (all tiles, stacked, Attackers/Strikers clickable)
 import streamlit as st
 
 st.set_page_config(page_title="Scouting HQ", layout="wide")
@@ -17,27 +17,29 @@ st.markdown("""
 /* hero */
 .hq-title{
   font-weight:900; margin:0; letter-spacing:.2px;
-  font-size:clamp(36px,4.8vw,54px); color:var(--text) !important;
+  font-size:clamp(36px,4.8vw,54px);
+  color:var(--text) !important;
 }
 .hq-sub{ color:var(--muted); margin:6px 0 40px 0; }
 
 /* stacked tiles */
 .tile-list{ display:grid; grid-template-columns:1fr; gap:36px; }
 
-/* base tile */
+/* tile style */
 .tile{
   display:flex; align-items:center; justify-content:center; text-align:center;
   height:200px; border-radius:22px; font-weight:800;
   font-size:clamp(22px,2.2vw,28px);
-  color:#fff; text-decoration:none;   /* text white + no underline */
   box-shadow:0 18px 36px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.05);
   transition:transform .18s ease, box-shadow .18s ease;
+  color:#fff; text-decoration:none;
 }
 .tile:hover{ transform:translateY(-6px); box-shadow:0 34px 66px rgba(0,0,0,.48); }
 
-/* ensure links look like text (not blue/underline) */
+/* force links to be white + no underline */
 .tile:link, .tile:visited, .tile:hover, .tile:active {
-  color:#fff; text-decoration:none;
+  color:#fff !important;
+  text-decoration:none !important;
 }
 
 /* gradients */
@@ -54,7 +56,6 @@ st.markdown('<h1 class="hq-title">Scouting HQ</h1>', unsafe_allow_html=True)
 st.markdown('<div class="hq-sub">Central scouting dashboard</div>', unsafe_allow_html=True)
 
 # ---------------------- TILES ----------------------
-# Use <div> for placeholders and <a> for clickable ones
 st.markdown("""
 <div class="tile-list">
 
@@ -67,3 +68,4 @@ st.markdown("""
 
 </div>
 """, unsafe_allow_html=True)
+
