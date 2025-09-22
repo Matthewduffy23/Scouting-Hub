@@ -1,4 +1,4 @@
-# app.py — Scouting HQ (premium 2×2×2 tile hub)
+# app.py — Scouting HQ (minimal, premium 2×2×2 tiles)
 import streamlit as st
 
 st.set_page_config(page_title="Scouting HQ", layout="wide")
@@ -7,37 +7,24 @@ st.set_page_config(page_title="Scouting HQ", layout="wide")
 st.markdown("""
 <style>
 :root{
-  --bg:#0b1222;           /* deep navy */
-  --panel:#0e182e;        /* card base */
-  --glass:rgba(255,255,255,.08);
+  --bg:#0b1222;           /* deep navy backdrop */
+  --panel:#0d162b;        /* tile base */
+  --glass:rgba(255,255,255,.06);
   --border:rgba(255,255,255,.14);
   --text:#eef2f7;         /* primary text */
-  --muted:#9aa4b2;        /* secondary text */
 }
 
 /* Page */
 .stApp { background: var(--bg); }
-.block-container { padding-top: 2.4rem; padding-bottom: 2rem; max-width: 1150px; }
+.block-container { padding-top: 2.8rem; padding-bottom: 2rem; max-width: 1140px; }
 
 /* Hero */
 .hq-hero h1{
-  font-size: clamp(36px, 4.2vw, 52px);
-  font-weight: 800;
-  letter-spacing: .2px;
-  margin: 0 0 .35rem 0;
+  margin: 0 0 10px 0;
   color: var(--text);
-}
-.hq-hero p{
-  margin: 0;
-  color: var(--muted);
-  font-size: 15.5px;
-}
-
-/* Decorative underline */
-.underline{
-  width: 84px; height: 4px; border-radius: 4px; margin-top: 16px;
-  background: linear-gradient(90deg,#60a5fa,#34d399,#facc15,#f87171,#a78bfa);
-  filter: saturate(120%);
+  font-weight: 900;
+  letter-spacing:.3px;
+  font-size: clamp(38px, 4.4vw, 56px);
 }
 
 /* Grid */
@@ -45,86 +32,64 @@ st.markdown("""
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 28px;
-  margin-top: 34px;
+  margin-top: 22px;
 }
 
 /* Tile base */
 .tile{
   position: relative;
   border-radius: 18px;
-  padding: 52px 40px;
+  padding: 64px 40px;
   overflow: hidden;
   isolation: isolate;
   background: var(--panel);
   border: 1px solid var(--border);
-  box-shadow: 0 18px 50px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.04);
-  cursor: default;
-  transform: translateZ(0);  /* enable GPU */
+  box-shadow: 0 20px 50px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.05);
 }
 
 /* Gradient film (per-role) */
 .tile::before{
-  content:""; position:absolute; inset:0; z-index:-1;
-  background: var(--grad);
-  opacity:.82;
+  content:""; position:absolute; inset:0; z-index:-1; opacity:.9; background: var(--grad);
 }
 .tile::after{
-  /* top sheen */
   content:""; position:absolute; inset:0; z-index:0;
-  background: linear-gradient(to bottom, rgba(255,255,255,.12), transparent 25%);
+  background: radial-gradient(1200px 500px at 10% -20%, rgba(255,255,255,.18), transparent 55%);
   mix-blend-mode: soft-light;
 }
 
-/* Content */
-.tile h2{
-  margin: 0 0 6px 0;
-  color:#0d1021;
-  font-weight: 800;
-  letter-spacing:.2px;
-  font-size: clamp(22px, 2.2vw, 28px);
-  text-shadow: 0 1px 0 rgba(255,255,255,.35);
-}
-.tile p{
-  margin: 0;
-  color: #122; 
-  opacity: .9;
-  font-weight: 600;
-}
-
-/* Glass frame so colours look premium */
+/* Content (only the title, centered) */
 .inner{
   background: var(--glass);
-  border: 1px solid rgba(255,255,255,.22);
+  border: 1px solid rgba(255,255,255,.18);
   border-radius: 14px;
-  padding: 34px 26px;
+  padding: 42px 26px;
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.12);
+  display:flex; align-items:center; justify-content:center;
+}
+.tile h2{
+  margin: 0;
+  color: #0f1427;
+  text-shadow: 0 1px 0 rgba(255,255,255,.35);
+  font-weight: 900;
+  letter-spacing:.3px;
+  font-size: clamp(24px, 2.6vw, 32px);
 }
 
-/* Hover motion for interactive tiles */
+/* Hover motion only for interactive tiles */
 .clickable { cursor: pointer; transition: transform .18s ease, box-shadow .18s ease; }
 .clickable:hover{
   transform: translateY(-6px);
   box-shadow: 0 26px 60px rgba(0,0,0,.45);
 }
 
-/* Badge for placeholders */
-.badge{
-  position: absolute; top: 14px; right: 14px;
-  background: rgba(15,22,38,.55);
-  color: #dbe3ee; border: 1px solid rgba(255,255,255,.18);
-  font-size: 12px; padding: 6px 10px; border-radius: 999px;
-  letter-spacing:.2px;
-}
-
-/* Role palettes (bold but tasteful) */
-.gk   { --grad: linear-gradient(135deg,#4f86f9 0%,#6cb8ff 100%); }
-.cb   { --grad: linear-gradient(135deg,#22c68a 0%,#76e2b7 100%); }
-.fb   { --grad: linear-gradient(135deg,#f06faf 0%,#f6a9cd 100%); }
-.cm   { --grad: linear-gradient(135deg,#f3c63b 0%,#ffe17a 100%); }
-.att  { --grad: linear-gradient(135deg,#7d67f6 0%,#b19cff 100%); }
-.str  { --grad: linear-gradient(135deg,#ef5858 0%,#ff9b9b 100%); }
+/* Role palettes (bright, refined) */
+.gk   { --grad: linear-gradient(135deg,#5386ff 0%,#77b4ff 100%); }
+.cb   { --grad: linear-gradient(135deg,#1fc48a 0%,#75e1b6 100%); }
+.fb   { --grad: linear-gradient(135deg,#ef6dac 0%,#f3a7cd 100%); }
+.cm   { --grad: linear-gradient(135deg,#f1c234 0%,#ffe078 100%); }
+.att  { --grad: linear-gradient(135deg,#7c64ff 0%,#b59dff 100%); }
+.str  { --grad: linear-gradient(135deg,#f15454 0%,#ff9a9a 100%); }
 
 /* Responsive */
 @media (max-width: 950px){
@@ -133,8 +98,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- JS nav helper (works in Streamlit Cloud) ----------
-# Navigates to a page in /pages by filename.
+# ---------- JS nav helper (click tiles -> sidebar page) ----------
 st.markdown("""
 <script>
 window.addEventListener("message", (e)=>{
@@ -153,49 +117,40 @@ window.addEventListener("message", (e)=>{
 """, unsafe_allow_html=True)
 
 # ---------- HERO ----------
-st.markdown('<div class="hq-hero"><h1>Scouting HQ</h1><p>Central scouting dashboard</p><div class="underline"></div></div>', unsafe_allow_html=True)
+st.markdown('<div class="hq-hero"><h1>Scouting HQ</h1></div>', unsafe_allow_html=True)
 
 # ---------- GRID ----------
 st.markdown('<div class="tile-grid">', unsafe_allow_html=True)
 
-def tile(role_class, title, subtitle, clickable=False, target=None, badge=None):
-    """Render a single tile. If clickable, it will postMessage to navigate."""
+def tile(role_class, label, clickable=False, target=None):
     onclick = ""
-    extra_cls = ""
+    extra = ""
     if clickable and target:
         onclick = f"onclick=\"window.parent.postMessage({{type:'streamlit_navigation',page:'{target}'}}, '*');\""
-        extra_cls = " clickable"
-    badge_html = f'<div class="badge">{badge}</div>' if badge else ""
+        extra = " clickable"
     st.markdown(
         f"""
-        <div class="tile {role_class}{extra_cls}" {onclick}>
-          {badge_html}
-          <div class="inner">
-            <h2>{title}</h2>
-            <p>{subtitle}</p>
-          </div>
+        <div class="tile {role_class}{extra}" {onclick}>
+          <div class="inner"><h2>{label}</h2></div>
         </div>
         """,
         unsafe_allow_html=True
     )
 
 # Row 1
-tile("gk",  "Goalkeepers",        "Shot-stopping, claims, distribution", badge="Coming soon")
-tile("cb",  "Center Backs",       "Duels, line height, progression",     badge="Coming soon")
+tile("gk",  "Goalkeepers")
+tile("cb",  "Center Backs")
 
 # Row 2
-tile("fb",  "Fullbacks",          "Overlap/underlap, crossing, duels",   badge="Coming soon")
-tile("cm",  "Central Midfielders","Build-up, ball-winning, chance creation", badge="Coming soon")
+tile("fb",  "Fullbacks")
+tile("cm",  "Central Midfielders")
 
-# Row 3 (live)
-tile("att", "Attackers",          "Creative threat, dribbles, xA", clickable=True, target="02_Attacker.py")
-tile("str", "Strikers",           "Finishing, xG, box presence",   clickable=True, target="01_Striker.py")
+# Row 3 (live links)
+tile("att", "Attackers", clickable=True, target="02_Attacker.py")
+tile("str", "Strikers",  clickable=True, target="01_Striker.py")
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# ---------- FOOTER ----------
-st.markdown("---")
-st.caption("Internal scouting platform • © 2025")
 
 
 
