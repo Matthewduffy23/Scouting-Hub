@@ -1,184 +1,231 @@
-# app.py — Scouting Hub (polished landing)
-from __future__ import annotations
-import streamlit as st
+# app.py — Scouting Hub (Head Office)
+# -----------------------------------
+# Professional front page that routes to role apps in /pages.
+# • Big navigation cards for Strikers / Attackers
+# • Clean “FM-style” layout with subtle gradient, shadowed cards
+# • Room for quick KPIs, recent activity, and notes
+# • Works with st.switch_page() (Streamlit ≥ 1.27); falls back to page_link
 
-# ---------- Page meta ----------
+import streamlit as st
+from datetime import datetime
+
+# ---------- Page config ----------
 st.set_page_config(
-    page_title="Scouting Hub",
-    page_icon="🔎",
+    page_title="Scouting Hub — Head Office",
+    page_icon="🏟️",
     layout="wide",
+    menu_items={
+        "About": "Internal Scouting Platform — Head Office",
+    },
 )
 
-# ---------- Minimal CSS polish ----------
-st.markdown("""
-<style>
-:root{
-  --bg:#0b1220;          /* background */
-  --card:#111a2b;        /* cards */
-  --accent:#22c55e;      /* green */
-  --muted:#94a3b8;       /* slate-400 */
-  --text:#e5e7eb;        /* slate-200 */
-}
-.stApp { background:linear-gradient(180deg, var(--bg), #0f172a 60%); }
-.block-container { padding-top:2.4rem; padding-bottom:3rem; }
-h1,h2,h3,h4,p,li,div,span { color:var(--text); }
-small, .helptext, .stCaption, .st-emotion-cache-16idsys p { color:var(--muted) !important; }
-
-.hero{
-  display:flex; gap:24px; align-items:center; padding:22px 22px;
-  border-radius:18px; background:linear-gradient(135deg,#0e1726, #0b1324 60%);
-  border:1px solid #1f2a44; box-shadow:0 10px 30px rgba(0,0,0,.25);
-}
-.badges{ display:flex; gap:10px; flex-wrap:wrap; }
-.badge{
-  font-size:.75rem; padding:4px 10px; border-radius:999px;
-  border:1px solid #2a3551; color:#cbd5e1; background:#0f1a2d;
-}
-.kpis{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin-top:10px; }
-.kpi{
-  background:var(--card); border:1px solid #223155; border-radius:14px; padding:16px;
-}
-.kpi h3{ margin:0; font-size:1.8rem; color:white; }
-.kpi p{ margin:.2rem 0 0; color:var(--muted); }
-
-.grid{ display:grid; gap:18px; grid-template-columns:repeat(2,minmax(0,1fr)); }
-.card{
-  background:var(--card); border:1px solid #223155; border-radius:16px;
-  padding:22px; display:flex; flex-direction:column; gap:12px;
-}
-.card h3{ margin:.2rem 0; }
-.card p{ color:var(--muted); margin:0; }
-.btnrow{ display:flex; gap:10px; flex-wrap:wrap; }
-.btn{
-  text-decoration:none; padding:10px 14px; border-radius:10px; font-weight:600;
-  border:1px solid #2a3a5f; color:white; background:#16223a;
-}
-.btn.primary{ background:var(--accent); color:#052e17; border-color:#16a34a; }
-.btn:hover{ filter:brightness(1.05); }
-.features{ display:grid; gap:16px; grid-template-columns:repeat(3,minmax(0,1fr)); }
-.feature{ background:#0f182a; border:1px solid #223055; border-radius:14px; padding:16px; }
-.footer{ color:var(--muted); text-align:center; margin-top:28px; font-size:.9rem; }
-@media (max-width: 980px){
-  .grid{ grid-template-columns:1fr; }
-  .features{ grid-template-columns:1fr; }
-  .kpis{ grid-template-columns:1fr; }
-}
-</style>
-""", unsafe_allow_html=True)
-
-# ---------- Header / hero ----------
-st.markdown("""
-<div class="hero">
-  <div style="font-size:42px; line-height:1">🔎</div>
-  <div>
-    <h1 style="margin:0">Scouting Hub</h1>
-    <p style="margin:.25rem 0 0; font-size:1.05rem; color:#cbd5e1">
-      A single place to launch your analysis apps and share links with staff.
-    </p>
-    <div class="badges" style="margin-top:8px;">
-      <span class="badge">Multipage</span>
-      <span class="badge">Attacker & Striker tools</span>
-      <span class="badge">Shareable URLs</span>
-      <span class="badge">Streamlit</span>
-    </div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
-
-st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
-
-# ---------- Optional headline KPIs (static text, tweak as you like) ----------
-st.markdown("""
-<div class="kpis">
-  <div class="kpi"><h3>2</h3><p>Apps in this hub</p></div>
-  <div class="kpi"><h3>⚡ Instant</h3><p>Switch via sidebar or buttons</p></div>
-  <div class="kpi"><h3>Link</h3><p>Share this page with staff</p></div>
-</div>
-""", unsafe_allow_html=True)
-
-st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
-
-# ---------- Navigation helpers ----------
-def go(page_filename: str):
+# ---------- Minimal brand CSS ----------
+st.markdown(
     """
-    Try to open a page programmatically (Streamlit 1.31+).
-    Fallback: tell the user to use the sidebar Pages menu.
-    """
+    <style>
+      /* overall */
+      .main {
+        background: radial-gradient(1200px 600px at 20% 0%, #0f172a 0%, #0b1220 40%, #0b1020 100%);
+        color: #e5e7eb;
+      }
+      section[data-testid="stSidebar"] {
+        background: #0b1220;
+        border-right: 1px solid rgba(255,255,255,0.06);
+      }
+      /* headings */
+      h1, h2, h3 { letter-spacing: 0.3px; }
+      /* cards */
+      .card {
+        border-radius: 16px;
+        padding: 20px 22px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+        border: 1px solid rgba(255,255,255,0.08);
+        box-shadow: 0 12px 24px rgba(0,0,0,0.25);
+      }
+      .card:hover { transform: translateY(-1px); transition: transform .12s ease-out; }
+      .navcard {
+        border-radius: 16px;
+        padding: 24px;
+        background: linear-gradient(180deg, rgba(34,197,94,0.08), rgba(34,197,94,0.04));
+        border: 1px solid rgba(34,197,94,0.25);
+        box-shadow: 0 12px 24px rgba(0,0,0,0.25);
+      }
+      .muted { color: #9ca3af; }
+      .pill {
+        display:inline-block; padding:4px 10px; border-radius:999px;
+        background: rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12);
+        font-size: 12px; margin-right:8px; color:#e5e7eb;
+      }
+      .soft { color:#cbd5e1; }
+      .hr { height:1px; background:rgba(255,255,255,0.08); margin:10px 0 14px 0; }
+      .kpi {
+        display:flex; flex-direction:column; gap:4px;
+      }
+      .kpi .label { font-size:12px; color:#9ca3af; }
+      .kpi .value { font-size:24px; font-weight:700; color:#e5e7eb; }
+      /* reduce default block padding a touch */
+      div.block-container { padding-top: 36px; padding-bottom: 40px; }
+      /* links color */
+      a, a:visited { color:#86efac; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# ---------- Header ----------
+col_logo, col_title = st.columns([1,6], vertical_alignment="center")
+with col_logo:
+    st.markdown("### 🏟️")
+with col_title:
+    st.markdown("## **Scouting Hub — Head Office**")
+    st.caption("Internal scouting platform • Department access & quick status")
+
+st.markdown("")
+
+# ---------- Top KPIs (optional placeholders) ----------
+k1, k2, k3, k4 = st.columns(4)
+with k1:
+    st.markdown('<div class="card kpi"><span class="label">Active Leagues</span><span class="value">32</span></div>', unsafe_allow_html=True)
+with k2:
+    st.markdown('<div class="card kpi"><span class="label">Players in Pool</span><span class="value">7,842</span></div>', unsafe_allow_html=True)
+with k3:
+    st.markdown('<div class="card kpi"><span class="label">Shortlist</span><span class="value">18</span></div>', unsafe_allow_html=True)
+with k4:
+    st.markdown(f'<div class="card kpi"><span class="label">Last Sync</span><span class="value">{datetime.utcnow().strftime("%d %b %Y")}</span></div>', unsafe_allow_html=True)
+
+st.markdown("")
+
+# ---------- Navigation row (FM-style "Departments") ----------
+st.markdown("#### Departments")
+
+left, right = st.columns(2, gap="large")
+
+def goto(page_path: str):
+    """Try st.switch_page if available, otherwise show a link."""
     try:
-        st.switch_page(f"pages/{page_filename}")
+        st.switch_page(page_path)
     except Exception:
-        st.warning("Use the left sidebar → **Pages** to open this module.")
+        st.page_link(page_path, label="Open page", icon="↗️")
 
-# ---------- App cards ----------
-st.markdown("### Open a module")
-st.markdown("""
-<div class="grid">
-  <div class="card">
-    <div style="font-size:28px">🎯</div>
-    <h3>Attacker App</h3>
-    <p>Role tables, player profiles, scatter, similar players, radar, and club fit for creators/forwards.</p>
-    <div class="btnrow">
-      <a class="btn primary" href="#" onClick="window.parent.postMessage({type:'streamlit_navigation',page:'01_Attacker.py'},'*'); return false;">Open Attacker</a>
-      <a class="btn" href="https://github.com" target="_blank">Docs</a>
-    </div>
-  </div>
+with left:
+    st.markdown(
+        """
+        <div class="navcard">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <div style="font-size:28px;">⚽</div>
+            <div>
+              <div style="font-weight:700; font-size:20px;">Strikers</div>
+              <div class="muted">Finishing, xG/xGOT, box touches, aerial threat, movement profiles.</div>
+            </div>
+          </div>
+          <div class="hr"></div>
+          <div>
+            <span class="pill">CF</span><span class="pill">Poacher</span><span class="pill">Target</span><span class="pill">Pressing 9</span>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.write("")
+    if st.button("Open Strikers Department", type="primary", use_container_width=True):
+        goto("pages/01_Striker.py")
 
-  <div class="card">
-    <div style="font-size:28px">🧭</div>
-    <h3>Striker App</h3>
-    <p>Goal threat focus: xG, shot quality, box activity, finishing proxies & shortlists.</p>
-    <div class="btnrow">
-      <a class="btn primary" href="#" onClick="window.parent.postMessage({type:'streamlit_navigation',page:'01_Striker.py'},'*'); return false;">Open Striker</a>
-      <a class="btn" href="https://github.com" target="_blank">Docs</a>
-    </div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
+with right:
+    st.markdown(
+        """
+        <div class="navcard">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <div style="font-size:28px;">🎯</div>
+            <div>
+              <div style="font-weight:700; font-size:20px;">Attackers</div>
+              <div class="muted">Chance creation, carries, 1v1s, crossing, xA, progressive actions.</div>
+            </div>
+          </div>
+          <div class="hr"></div>
+          <div>
+            <span class="pill">RW</span><span class="pill">LW</span><span class="pill">Inside Fwd</span><span class="pill">10 / SS</span>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.write("")
+    if st.button("Open Attackers Department", type="primary", use_container_width=True):
+        goto("pages/02_Attacker.py")
 
-# Tiny JS bridge so the “Open …” buttons can call st.switch_page()
-nav_target = st.empty()
-msg = st.session_state.get("_nav_msg", "")
-if msg:
-    st.info(msg)
+st.markdown("")
 
-st.markdown("""
-<script>
-window.addEventListener("message", (e) => {
-  if(!e.data || e.data.type !== "streamlit_navigation") return;
-  const page = e.data.page || "";
-  // Send a query flag Streamlit can read (fallback if st.switch_page not available)
-  const qs = new URLSearchParams(window.location.search);
-  qs.set("go", page);
-  window.location.search = qs.toString();
-});
-</script>
-""", unsafe_allow_html=True)
+# ---------- Tabs: quick notes / activity / documentation ----------
+tabs = st.tabs(["📋 Desk Notes", "🕑 Recent Activity", "📚 Handbook"])
 
-# Fallback: if ?go=… is present, try switch_page on the Python side
-go_param = st.query_params.get("go")
-if go_param:
-    go(go_param)
+with tabs[0]:
+    st.markdown(
+        """
+        <div class="card">
+          <strong>Director’s notes</strong>
+          <ul>
+            <li>Summer shortlist to narrow from 18 → 10 by end of month.</li>
+            <li>Weight league strength in role tables for EFL targets.</li>
+            <li>Sync medical & character flags before final board deck.</li>
+          </ul>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
+with tabs[1]:
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown(
+            """
+            <div class="card">
+              <strong>Pipeline</strong>
+              <ul class="soft">
+                <li>🇵🇹 RW (U23) — video cut-ups requested</li>
+                <li>🇩🇪 CF (Bosman) — agent call Friday</li>
+                <li>🇧🇷 LW — visa feasibility check</li>
+              </ul>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with c2:
+        st.markdown(
+            """
+            <div class="card">
+              <strong>Recently viewed</strong>
+              <ul class="soft">
+                <li>01_Striker → Radar comparison</li>
+                <li>02_Attacker → Similar players pool</li>
+                <li>02_Attacker → Scatter: NPG vs xG</li>
+              </ul>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-# ---------- Feature highlights ----------
-st.markdown("### Why this hub?")
-st.markdown("""
-<div class="features">
-  <div class="feature">
-    <strong>One link for staff</strong>
-    <p>Share a single URL; staff choose the tool from the sidebar.</p>
-  </div>
-  <div class="feature">
-    <strong>Clean separation</strong>
-    <p>Each module lives in <code>pages/</code>, so you can iterate independently.</p>
-  </div>
-  <div class="feature">
-    <strong>Ready for more</strong>
-    <p>Add <code>03_Midfield.py</code>, <code>04_Wingers.py</code>, etc. They appear automatically.</p>
-  </div>
-</div>
-""", unsafe_allow_html=True)
+with tabs[2]:
+    st.markdown(
+        """
+        <div class="card">
+          <strong>Usage</strong>
+          <ol class="soft">
+            <li>Open a department (Strikers / Attackers).</li>
+            <li>Filter leagues, minutes, age and value bands in the sidebar.</li>
+            <li>Use tables for Overalls, U-23, Expiring, Value band.</li>
+            <li>Open a player to view profile radar, strengths/weaknesses, and role fit.</li>
+          </ol>
+          <div class="hr"></div>
+          <strong>Data & Requirements</strong>
+          <div class="soft">Shared files: <code>WORLDJUNE25.csv</code>, <code>requirements.txt</code></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-st.markdown("<div class='footer'>Built with ❤️ for scouting workflows. Customize text, colors, and cards in <code>app.py</code>.</div>", unsafe_allow_html=True)
+# ---------- Footer ----------
+st.markdown("---")
+st.caption("Scouting Department — Internal • © 2025")
+
+
 
