@@ -1,4 +1,4 @@
-# app.py — Scouting HQ (all tiles, stacked, Attackers/Strikers clickable)
+# app.py — Scouting HQ (all tiles, stacked, Attackers/Strikers clickable, spacing fixed)
 import streamlit as st
 
 st.set_page_config(page_title="Scouting HQ", layout="wide")
@@ -23,7 +23,7 @@ st.markdown("""
 .hq-sub{ color:var(--muted); margin:6px 0 40px 0; }
 
 /* stacked tiles */
-.tile-list{ display:grid; grid-template-columns:1fr; gap:36px; }
+.tile-list{ display:grid; grid-template-columns:1fr; }
 
 /* tile style */
 .tile{
@@ -33,7 +33,10 @@ st.markdown("""
   box-shadow:0 18px 36px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.05);
   transition:transform .18s ease, box-shadow .18s ease;
   color:#fff; text-decoration:none;
+  margin-bottom:36px;   /* ✅ ensures space between all tiles */
 }
+.tile:last-child{ margin-bottom:0; }  /* no extra gap at very end */
+
 .tile:hover{ transform:translateY(-6px); box-shadow:0 34px 66px rgba(0,0,0,.48); }
 
 /* force links to be white + no underline */
@@ -68,4 +71,5 @@ st.markdown("""
 
 </div>
 """, unsafe_allow_html=True)
+
 
