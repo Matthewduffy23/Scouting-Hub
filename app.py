@@ -1,4 +1,4 @@
-# app.py — Scouting HQ (all tiles, stacked, Attackers/Strikers clickable, spacing fixed)
+# app.py — Scouting HQ (5 clickable tiles)
 import streamlit as st
 
 st.set_page_config(page_title="Scouting HQ", layout="wide")
@@ -33,10 +33,9 @@ st.markdown("""
   box-shadow:0 18px 36px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.05);
   transition:transform .18s ease, box-shadow .18s ease;
   color:#fff; text-decoration:none;
-  margin-bottom:36px;   /* ✅ ensures space between all tiles */
+  margin-bottom:36px;
 }
-.tile:last-child{ margin-bottom:0; }  /* no extra gap at very end */
-
+.tile:last-child{ margin-bottom:0; }
 .tile:hover{ transform:translateY(-6px); box-shadow:0 34px 66px rgba(0,0,0,.48); }
 
 /* force links to be white + no underline */
@@ -48,7 +47,7 @@ st.markdown("""
 /* gradients */
 .cb  { background:linear-gradient(135deg,#1d976c,#93f9b9); }
 .fb  { background:linear-gradient(135deg,#c94b4b,#4b134f); }
-.cm  { background:linear-gradient(135deg,#f7971e,#ffd200); }
+.cm  { background:linear-gradient(135deg,#f7971e,#ffd200); color:#1a1a1a; }
 .att { background:linear-gradient(135deg,#8e2de2,#4a00e0); }
 .str { background:linear-gradient(135deg,#2980b9,#2c3e50); }
 </style>
@@ -59,17 +58,17 @@ st.markdown('<h1 class="hq-title">Scouting HQ</h1>', unsafe_allow_html=True)
 st.markdown('<div class="hq-sub">Central scouting dashboard</div>', unsafe_allow_html=True)
 
 # ---------------------- TILES ----------------------
+# NOTE: href must match page filenames in /pages/ without the numeric prefix or ".py"
+# Your files: 01_Center_Backs.py, 02_Fullbacks.py, 03_Central_Midfielders.py, 04_Attacker.py, 05_Strikers.py
 st.markdown("""
 <div class="tile-list">
-
-  <div class="tile cb">Center Backs — Coming soon</div>
-  <div class="tile fb">Fullbacks — Coming soon</div>
-  <div class="tile cm">Central Midfielders — Coming soon</div>
-
-  <a class="tile att" href="./Attacker" target="_self">Attackers</a>
-  <a class="tile str" href="./Striker"  target="_self">Strikers</a>
-
+  <a class="tile cb"  href="./Center_Backs"         target="_self">Center Backs</a>
+  <a class="tile fb"  href="./Fullbacks"            target="_self">Fullbacks</a>
+  <a class="tile cm"  href="./Central_Midfielders"  target="_self">Central Midfielders</a>
+  <a class="tile att" href="./Attacker"             target="_self">Attackers</a>
+  <a class="tile str" href="./Strikers"             target="_self">Strikers</a>
 </div>
 """, unsafe_allow_html=True)
+
 
 
