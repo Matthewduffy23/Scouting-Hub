@@ -209,23 +209,6 @@ LEAGUE_STRENGTHS = {
 }
 REQUIRED_BASE = {"Player","Team","League","Age","Position","Minutes played","Market value","Contract expires","Goals"}
 
-import os
-from pathlib import Path
-
-# 🔎 Look for all CSVs starting with WORLD
-csv_files = [f.name for f in Path.cwd().glob("WORLD*.csv")]
-
-# 🧠 Make sure there’s at least one file found
-if not csv_files:
-    st.error("No WORLD*.csv files found in the project folder.")
-    st.stop()
-
-# 📂 Dropdown selector
-selected_file = st.selectbox("Select dataset to load:", csv_files)
-
-# 📊 Load that CSV using your existing loader
-df = load_df(selected_file)
-
 
 
 # ----------------- SIDEBAR FILTERS -----------------
