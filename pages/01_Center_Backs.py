@@ -174,52 +174,47 @@ LEAGUE_STRENGTHS = {
 }
 REQUIRED_BASE = {"Player","Team","League","Age","Position","Minutes played","Market value","Contract expires","Goals"}
 
-# ----------------- DATA LOADER -----------------
 from pathlib import Path
-import io
+import re
 import pandas as pd
-import streamlit as st
-
-# ---------- CACHED READERS (no widgets here) ----------
-@st.cache_data(show_spinner=False)
-def _read_csv_from_path(path_str: str) -> pd.DataFrame:
-    return pd.read_csv(path_str)
 
 @st.cache_data(show_spinner=False)
-def _read_csv_from_bytes(data: bytes) -> pd.DataFrame:
-    return pd.read_csv(io.BytesIO(data))
-
-def load_df(csv_name: str = "WORLDJUNE25.csv") -> pd.DataFrame:
+def load_df(csv_name: str | None = None) -> pd.DataFrame:
     """
-    Tries several locations for the CSV:
-    1) Current working dir (repo root on Streamlit Cloud)
-    2) Parent of this file (..), then this file's folder
-    Falls back to a file uploader (widget OUTSIDE cache).
+    If csv_name is None, auto-pick the newest WORLD*.csv in repo, parent, or page folder.
     """
-    # 1) repo root / working directory
-    candidates = [
-        Path.cwd() / csv_name,
-        Path(__file__).resolve().parent.parent / csv_name,  # ../WORLDJUNE25.csv
-        Path(__file__).resolve().parent / csv_name,         # ./WORLDJUNE25.csv (same folder as the page)
-    ]
+    def _read_csv_from_path(p: Path) -> pd.DataFrame:
+        return pd.read_csv(str(p))
 
-    for p in candidates:
-        if p.exists():
-            return _read_csv_from_path(str(p))
+    # Search candidates across (cwd, ../, ./)
+    roots = [Path.cwd(), Path(__file__).resolve().parent.parent, Path(__file__).resolve().parent]
+    pattern = re.compile(r"^WORLD.*\.csv$", re.IGNORECASE)
 
-    # ---------- Fallback: let the user upload (widget OUTSIDE cache) ----------
-    st.warning(
-        f"Could not find **{csv_name}** in expected locations.\n\n"
-        "Please upload the CSV file below."
-    )
-    up = st.file_uploader("Upload WORLDJUNE25.csv", type=["csv"])
-    if up is None:
-        st.stop()
-    return _read_csv_from_bytes(up.getvalue())
+    matches: list[Path] = []
+    for root in roots:
+        if root.exists():
+            matches.extend(sorted(
+                [p for p in root.glob("*.csv") if pattern.match(p.name)],
+                key=lambda p: p.stat().st_mtime,
+                reverse=True
+            ))
 
+    # Explicit filename beats auto
+    if csv_name:
+        for root in roots:
+            p = root / csv_name
+            if p.exists():
+                return _read_csv_from_path(p)
 
-df = load_df()
+    # Auto-pick newest WORLD*.csv
+    if matches:
+        return _read_csv_from_path(matches[0])
 
+    # Fallback to uploader if nothing found
+    up = st.file_uploader("Upload data CSV", type=["csv"])
+    if up:
+        return pd.read_csv(up)
+    st.stop()
 
 # ----------------- SIDEBAR FILTERS -----------------
 with st.sidebar:
