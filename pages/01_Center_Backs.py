@@ -33,6 +33,41 @@ except Exception:
         def fit_transform(self, X):
             self.fit(X); return self.transform(X)
 
+# ✅ --- PUT THIS DATA LOADER HERE ---
+@st.cache_data(show_spinner=False)
+def _read_csv_from_path(path_str: str) -> pd.DataFrame:
+    return pd.read_csv(path_str)
+
+@st.cache_data(show_spinner=False)
+def _read_csv_from_bytes(data: bytes) -> pd.DataFrame:
+    return pd.read_csv(io.BytesIO(data))
+
+def load_df(csv_name: str) -> pd.DataFrame:
+    candidates = [
+        Path.cwd() / csv_name,
+        Path(__file__).resolve().parent.parent / csv_name,
+        Path(__file__).resolve().parent / csv_name,
+    ]
+    for p in candidates:
+        if p.exists():
+            return _read_csv_from_path(str(p))
+
+    up = st.file_uploader(f"Upload {csv_name}", type=["csv"])
+    if up is None:
+        st.stop()
+    return _read_csv_from_bytes(up.getvalue())
+
+# 🔍 Detect all CSVs starting with WORLD
+csv_files = [f.name for f in Path.cwd().glob("WORLD*.csv")]
+
+if not csv_files:
+    st.error("No WORLD*.csv files found in the project folder.")
+    st.stop()
+
+selected_file = st.selectbox("Select dataset to load:", csv_files)
+df = load_df(selected_file)
+
+
 # ----------------- PAGE -----------------
 st.set_page_config(page_title="Advanced Center Back Scouting System", layout="wide")
 st.title("🔎 Advanced Center Back Scouting System")
