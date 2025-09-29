@@ -1108,23 +1108,38 @@ else:
     name_h_frac = name_bbox.height / fig.bbox.height
     badge_x = NAME_X + name_w_frac + 0.010
 
-    if isinstance(role_scores, dict) and role_scores:
-        _, best_val_raw = max(role_scores.items(), key=lambda kv: kv[1])
-        _ls_map = globals().get("LEAGUE_STRENGTHS", {})
-        league_strength = float(_ls_map.get(league, 50.0))
-        BETA_BADGE = 0.40
-        best_val_adj = (1.0 - BETA_BADGE) * float(best_val_raw) + BETA_BADGE * league_strength
+if isinstance(role_scores, dict) and role_scores:
+    # ---- choose top 3 roles, excluding "Target Man CF" ----
+    EXCLUDE_ROLE = "target man cf"
+    filtered = [
+        (k, v) for k, v in role_scores.items()
+        if isinstance(k, str) and k.strip().lower() != EXCLUDE_ROLE
+    ]
+    top3 = sorted(filtered, key=lambda kv: kv[1], reverse=True)[:3]
 
-        R, G, B = [int(255*c) for c in div_color_tuple(best_val_adj)]
-        bh = name_h_frac; bw = bh; by = 0.962 - bh
-        fig.patches.append(mpatches.FancyBboxPatch(
-            (badge_x, by), bw, bh,
-            boxstyle="round,pad=0.001,rounding_size=0.011",
-            transform=fig.transFigure,
-            facecolor=f"#{R:02x}{G:02x}{B:02x}", edgecolor="none"
-        ))
-        fig.text(badge_x + bw/2, by + bh/2 - 0.0005, f"{int(round(best_val_adj))}",
-                 fontsize=18.6, color="#FFFFFF", va="center", ha="center", fontweight="900")
+    # fall back if nothing left after filtering
+    if top3:
+        best_val_raw = top3[0][1]
+    else:
+        # fallback to overall max (in case every role was filtered or role names missing)
+        best_val_raw = max(role_scores.items(), key=lambda kv: kv[1])[1]
+
+    _ls_map = globals().get("LEAGUE_STRENGTHS", {})
+    league_strength = float(_ls_map.get(league, 50.0))
+    BETA_BADGE = 0.40
+    best_val_adj = (1.0 - BETA_BADGE) * float(best_val_raw) + BETA_BADGE * league_strength
+
+    R, G, B = [int(255*c) for c in div_color_tuple(best_val_adj)]
+    bh = name_h_frac; bw = bh; by = 0.962 - bh
+    fig.patches.append(mpatches.FancyBboxPatch(
+        (badge_x, by), bw, bh,
+        boxstyle="round,pad=0.001,rounding_size=0.011",
+        transform=fig.transFigure,
+        facecolor=f"#{R:02x}{G:02x}{B:02x}", edgecolor="none"
+    ))
+    fig.text(badge_x + bw/2, by + bh/2 - 0.0005, f"{int(round(best_val_adj))}",
+             fontsize=18.6, color="#FFFFFF", va="center", ha="center", fontweight="900")
+
 
     # Meta row (more left padding)
     x_meta = META_X; y_meta = 0.905; gap = 0.004
