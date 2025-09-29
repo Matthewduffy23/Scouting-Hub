@@ -174,63 +174,22 @@ LEAGUE_STRENGTHS = {
 }
 REQUIRED_BASE = {"Player","Team","League","Age","Position","Minutes played","Market value","Contract expires","Goals"}
 
+import os
 from pathlib import Path
-import re
-import io
-import pandas as pd
-import streamlit as st
 
-@st.cache_data(show_spinner=False)
-def _read_csv_from_path(path_str: str) -> pd.DataFrame:
-    return pd.read_csv(path_str)
+# 🔎 Look for all CSVs starting with WORLD
+csv_files = [f.name for f in Path.cwd().glob("WORLD*.csv")]
 
-@st.cache_data(show_spinner=False)
-def _read_csv_from_bytes(data: bytes) -> pd.DataFrame:
-    return pd.read_csv(io.BytesIO(data))
+# 🧠 Make sure there’s at least one file found
+if not csv_files:
+    st.error("No WORLD*.csv files found in the project folder.")
+    st.stop()
 
-def load_df(csv_name: str | None = None) -> pd.DataFrame:
-    """
-    Auto-pick the most recently modified WORLD*.csv file in key locations.
-    If csv_name is provided, it overrides automatic detection.
-    """
-    roots = [
-        Path.cwd(),
-        Path(__file__).resolve().parent.parent,
-        Path(__file__).resolve().parent
-    ]
-    pattern = re.compile(r"^WORLD.*\.csv$", re.IGNORECASE)
+# 📂 Dropdown selector
+selected_file = st.selectbox("Select dataset to load:", csv_files)
 
-    # Find all matching CSVs
-    matches = []
-    for root in roots:
-        if root.exists():
-            matches.extend(
-                [p for p in root.glob("*.csv") if pattern.match(p.name)]
-            )
-
-    # Sort by modified time (newest first)
-    matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-
-    # If csv_name provided, try to load that specific file
-    if csv_name:
-        for root in roots:
-            p = root / csv_name
-            if p.exists():
-                st.info(f"📁 Loaded data: {p.name}")
-                return _read_csv_from_path(str(p))
-
-    # Otherwise, use the most recent WORLD*.csv
-    if matches:
-        latest_file = matches[0]
-        st.info(f"📁 Auto-loaded latest data: {latest_file.name}")
-        return _read_csv_from_path(str(latest_file))
-
-    # Fallback: uploader
-    st.warning("No WORLD*.csv file found. Please upload one below:")
-    up = st.file_uploader("Upload data CSV", type=["csv"])
-    if up is None:
-        st.stop()
-    return _read_csv_from_bytes(up.getvalue())
+# 📊 Load that CSV using your existing loader
+df = load_df(selected_file)
 
 
 
