@@ -229,7 +229,7 @@ with st.sidebar:
     # numeric coercions
     df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
     df["Age"] = pd.to_numeric(df["Age"], errors="coerce")
-    min_minutes, max_minutes = st.slider("Minutes played", 0, 5000, (1000, 5000))
+    min_minutes, max_minutes = st.slider("Minutes played", 0, 5000, (500, 5000))
     age_min_data = int(np.nanmin(df["Age"])) if df["Age"].notna().any() else 14
     age_max_data = int(np.nanmax(df["Age"])) if df["Age"].notna().any() else 45
     min_age, max_age = st.slider("Age", age_min_data, age_max_data, (16, 40))
@@ -532,7 +532,7 @@ st.caption("Percentiles & chart computed against the pool below (defaults to the
 with st.container():
     c1, c2, c3 = st.columns([2,1,1])
     leagues_pool = c1.multiselect("Comparison leagues", sorted(df["League"].dropna().unique()), default=default_league_for_pool)
-    min_minutes_pool, max_minutes_pool = c2.slider("Pool minutes", 0, 5000, (1000, 5000))
+    min_minutes_pool, max_minutes_pool = c2.slider("Pool minutes", 0, 5000, (500, 5000))
     age_min_pool, age_max_pool = c3.slider("Pool age", 14, 45, (16, 40))  # default 16–40
     same_pos = st.checkbox("Limit pool to current position prefix", value=True)
 
@@ -1498,6 +1498,337 @@ else:
                        mime="image/png")
 # ============================ END — Feature F ============================
 
+# ============================ (Z) THREE-PANEL PERCENTILE BOARD — light theme + in-figure header ============================
+from io import BytesIO
+import uuid
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.transforms import ScaledTranslation
+from matplotlib import font_manager as fm
+from matplotlib.font_manager import FontProperties
+import streamlit as st
+
+st.markdown("---")
+st.header("📋 Feature Z — White Percentile Board")
+
+# ---------- helpers ----------
+def _safe_get(df_or_series, key, default="—"):
+    try:
+        if hasattr(df_or_series, "iloc"):
+            v = df_or_series.iloc[0].get(key, default)
+        else:
+            v = df_or_series.get(key, default)
+        s = "" if v is None else str(v)
+        return default if s.strip() == "" else s
+    except Exception:
+        return default
+
+def _font_name_or_fallback(pref_names, fallback="DejaVu Sans"):
+    installed = {f.name for f in fm.fontManager.ttflist}
+    for n in pref_names:
+        if n in installed:
+            return n
+    return fallback
+
+# --- fonts (Tableau-like families + explicit hierarchy) ---
+FONT_TITLE_FAMILY = _font_name_or_fallback(["Tableau Bold", "Tableau Sans Bold", "Tableau"])
+FONT_BOOK_FAMILY  = _font_name_or_fallback(["Tableau Book", "Tableau Sans", "Tableau"])
+
+TITLE_FP     = FontProperties(family=FONT_TITLE_FAMILY, weight='bold',     size=22)  # Player Name | Team
+H2_FP        = FontProperties(family=FONT_TITLE_FAMILY, weight='semibold', size=20)  # Section titles
+LABEL_FP     = FontProperties(family=FONT_BOOK_FAMILY,  weight='medium',   size=10)  # Metric labels (left gutter)
+
+INFO_LABEL_FP = FontProperties(family=FONT_BOOK_FAMILY, weight='bold',     size=10)  # "Age:"
+INFO_VALUE_FP = FontProperties(family=FONT_BOOK_FAMILY, weight='regular',  size=10)  # "31"
+
+BAR_VALUE_FP = FontProperties(family=FONT_BOOK_FAMILY, weight='regular',   size=8)   # numbers inside bars
+TICK_FP      = FontProperties(family=FONT_BOOK_FAMILY, weight='medium',    size=10)  # bottom tick numbers
+FOOTER_FP    = FontProperties(family=FONT_BOOK_FAMILY, weight='semibold',  size=10)  # "Percentile Rank"
+
+if player_row.empty:
+    st.info("Pick a player above.")
+else:
+    # -------- header fields --------
+    pos     = _safe_get(player_row, "Position", "CM/DM/RW")
+    name    = _safe_get(player_row, "Player", _safe_get(player_row, "Name", "Kadeem Harris"))
+    team    = _safe_get(player_row, "Team", "Carlisle United")
+
+    # Age as whole number
+    age_raw = _safe_get(player_row, "Age", "31.0")
+    try:
+        age = f"{float(age_raw):.0f}"
+    except Exception:
+        age = age_raw
+
+    # Use 'Matches played' for games, with robust fallbacks
+    games = _safe_get(player_row, "Matches played",
+             _safe_get(player_row, "Games",
+             _safe_get(player_row, "Apps", "—")))
+    # Minutes (keep your existing fallback)
+    minutes = _safe_get(player_row, "Minutes",
+               _safe_get(player_row, "Minutes played", "—"))
+
+    goals   = _safe_get(player_row, "Goals", "—")
+    assists = _safe_get(player_row, "Assists", "—")
+    foot    = _safe_get(player_row, "Foot", _safe_get(player_row, "Preferred Foot", "—"))
+
+    # ----- assemble sections -----
+    ATTACKING = []
+    for lab, met in [
+        ("Crosses", "Crosses per 90"),
+        ("Crossing Accuracy %", "Accurate crosses, %"),
+        ("Goals: Non-Penalty", "Non-penalty goals per 90"),
+        ("xG", "xG per 90"),
+        ("Expected Assists", "xA per 90"),
+        ("Offensive Duels", "Offensive duels per 90"),
+        ("Offensive Duel Success %", "Offensive duels won, %"),
+        ("Progressive Runs", "Progressive runs per 90"),
+        ("Shots", "Shots per 90"),
+        ("Shooting Accuracy %", "Shots on target, %"),
+        ("Touches in Opposition Box", "Touches in box per 90"),
+    ]:
+        ATTACKING.append((lab, float(np.nan_to_num(pct_of(met), nan=0.0)), val_of(met)[1]))
+
+    DEFENSIVE = []
+    for lab, met in [
+        ("Aerial Duels", "Aerial duels per 90"),
+        ("Aerial Win %", "Aerial duels won, %"),
+        ("Defensive Duels", "Defensive duels per 90"),
+        ("Defensive Duel %", "Defensive duels won, %"),
+        ("PAdj Interceptions", "PAdj Interceptions"),
+        ("Shots blocked", "Shots blocked per 90"),
+        ("Succ. def acts", "Successful defensive actions per 90"),
+    ]:
+        DEFENSIVE.append((lab, float(np.nan_to_num(pct_of(met), nan=0.0)), val_of(met)[1]))
+
+    POSSESSION = []
+    for lab, met in [
+        ("Deep Completions", "Deep completions per 90"),
+        ("Dribbles", "Dribbles per 90"),
+        ("Dribbling Success %", "Successful dribbles, %"),
+        ("Forward Passes", "Forward passes per 90"),
+        ("Forward Passing %", "Accurate forward passes, %"),
+        ("Key passes", "Key passes per 90"),
+        ("Long Passes", "Long passes per 90"),
+        ("Long Passing %", "Accurate long passes, %"),
+        ("Passes", "Passes per 90"),
+        ("Passing %", "Accurate passes, %"),
+        ("Passes to Final 3rd", "Passes to final third per 90"),
+        ("Passes to Final 3rd %", "Accurate passes to final third, %"),
+        ("Passes to Penalty Area", "Passes to penalty area per 90"),
+        ("Pass to Penalty Area %", "Accurate passes to penalty area, %"),
+        ("Progessive Passes", "Progressive passes per 90"),
+        ("Progessive Passing %", "Accurate progressive passes, %"),
+        ("Progressive Runs", "Progressive runs per 90"),
+        ("Smart Passes", "Smart passes per 90"),
+    ]:
+        POSSESSION.append((lab, float(np.nan_to_num(pct_of(met), nan=0.0)), val_of(met)[1]))
+
+    sections = [("Attacking", ATTACKING), ("Defensive", DEFENSIVE), ("Possession", POSSESSION)]
+    sections = [(t, lst) for t, lst in sections if lst]
+
+    # ----- styling -----
+    PAGE_BG = "#ebebeb"
+    AX_BG   = "#f3f3f3"
+    TRACK   = "#d6d6d6"
+    TITLE_C = "#111111"
+    LABEL_C = "#222222"
+    DIVIDER = "#000000"
+
+    TAB_RED   = np.array([199, 54,  60], dtype=float)
+    TAB_GOLD  = np.array([240, 197, 106], dtype=float)
+    TAB_GREEN = np.array([ 61, 166,  91], dtype=float)
+
+    def _blend(c1, c2, t):
+        c = c1 + (c2 - c1) * np.clip(t, 0.0, 1.0)
+        return f"#{int(c[0]):02x}{int(c[1]):02x}{int(c[2]):02x}"
+
+    def pct_to_rgb(v):
+        v = float(np.clip(v, 0, 100))
+        return _blend(TAB_RED, TAB_GOLD, v/50.0) if v <= 50 else _blend(TAB_GOLD, TAB_GREEN, (v-50.0)/50.0)
+
+    # ----- layout (unified left alignment) -----
+    GLOBAL_LEFT_PAD = 0.02         # 2% extra left padding for EVERYTHING
+    BASE_LEFT, RIGHT = 0.035, 0.020
+    LEFT = BASE_LEFT + GLOBAL_LEFT_PAD
+
+    # Optical nudge ONLY for the bold title (compensates font side-bearing)
+    TITLE_LEFT_NUDGE = -0.001      # tweak if needed
+
+    TOP, BOT = 0.035, 0.07
+    header_h, GAP = 0.06, 0.020
+
+    title_row_h     = 0.075
+    header_block_h  = title_row_h + 0.020
+
+    total_rows = sum(len(lst) for _, lst in sections)
+    fig = plt.figure(figsize=(10, 8), dpi=100)
+    fig.patch.set_facecolor(PAGE_BG)
+
+    rows_space_total = 1 - (TOP + BOT) - header_block_h - header_h * len(sections) - GAP * (len(sections) - 1)
+    row_slot = rows_space_total / max(total_rows, 1)
+    BAR_FRAC = 0.85
+
+    # Width reserved for metric labels before bars begin
+    gutter = 0.215
+
+    ticks = np.arange(0, 101, 10)
+    x_center_plot = (LEFT + gutter + (1 - RIGHT)) / 2.0
+
+    # ===== HEADER (title + info share LEFT; title gets optical nudge) =====
+    title_x = LEFT + TITLE_LEFT_NUDGE
+    y_title_top = 1 - TOP - 0.006
+    fig.text(title_x, y_title_top, f"{name}\u2009|\u2009{team}",
+             ha="left", va="top", color=TITLE_C, fontproperties=TITLE_FP)
+
+    def draw_info_pairs():
+        y = 1 - TOP - title_row_h + 0.010
+        x = LEFT  # exact left alignment baseline (no nudge)
+        pairs = [
+            ("Position: ", pos),
+            ("Age: ",      age),
+            ("Games: ",    games),
+            ("Minutes: ",  minutes),
+            ("Goals: ",    goals),
+            ("Assists: ",  assists),
+            ("Foot: ",     foot),
+        ]
+        sep = "  |  "
+        renderer = fig.canvas.get_renderer()
+        for i, (lab, val) in enumerate(pairs):
+            t1 = fig.text(x, y, lab, ha="left", va="top", color=LABEL_C, fontproperties=INFO_LABEL_FP)
+            fig.canvas.draw(); bb1 = t1.get_window_extent(renderer=renderer)
+            x += (bb1.width / fig.bbox.width)
+
+            t2 = fig.text(x, y, str(val), ha="left", va="top", color=LABEL_C, fontproperties=INFO_VALUE_FP)
+            fig.canvas.draw(); bb2 = t2.get_window_extent(renderer=renderer)
+            x += (bb2.width / fig.bbox.width)
+
+            if i != len(pairs) - 1:
+                t3 = fig.text(x, y, sep, ha="left", va="top", color="#555555", fontproperties=INFO_VALUE_FP)
+                fig.canvas.draw(); bb3 = t3.get_window_extent(renderer=renderer)
+                x += (bb3.width / fig.bbox.width)
+    draw_info_pairs()
+
+    # Divider under header
+    fig.lines.append(plt.Line2D([LEFT, 1 - RIGHT],
+                                [1 - TOP - header_block_h + 0.004]*2,
+                                transform=fig.transFigure, color=DIVIDER, lw=0.8, alpha=0.35))
+
+    # ===== PANELS (everything aligned to LEFT) =====
+    def draw_panel(panel_top, title, tuples, *, show_xticks=False, draw_bottom_divider=True):
+        n = len(tuples)
+        panel_h = header_h + n * row_slot
+
+        # Section title aligned to LEFT baseline
+        fig.text(LEFT, panel_top - 0.012, title,
+                 ha="left", va="top", color=TITLE_C, fontproperties=H2_FP)
+
+        # Axes: left aligned at LEFT + gutter (so bars line up consistently)
+        ax = fig.add_axes([LEFT + gutter,
+                           panel_top - header_h - n * row_slot,
+                           1 - LEFT - RIGHT - gutter,
+                           n * row_slot])
+        ax.set_facecolor(AX_BG)
+        ax.set_xlim(0, 100)
+        ax.set_ylim(-0.5, n - 0.5)
+
+        for s in ax.spines.values():
+            s.set_visible(False)
+        ax.tick_params(axis="x", bottom=False, labelbottom=False, length=0)
+        ax.tick_params(axis="y", left=False,  labelleft=False,  length=0)
+        ax.set_yticks([]); ax.get_yaxis().set_visible(False)
+
+        # Track backgrounds
+        for i in range(n):
+            ax.add_patch(plt.Rectangle((0, i - (BAR_FRAC/2)), 100, BAR_FRAC,
+                                       color=TRACK, ec="none", zorder=0.5))
+
+        # Vertical grid
+        for gx in ticks:
+            ax.vlines(gx, -0.5, n - 0.5, colors=(0, 0, 0, 0.16), linewidth=0.8, zorder=0.75)
+
+        # Bars + values
+        for i, (lab, pct, val_str) in enumerate(tuples[::-1]):
+            y = i
+            bar_w = float(np.clip(pct, 0.0, 100.0))
+            ax.add_patch(plt.Rectangle((0, y - (BAR_FRAC / 2)), bar_w, BAR_FRAC,
+                                       color=pct_to_rgb(bar_w), ec="none", zorder=1.0))
+
+            x_text = 1.0 if bar_w >= 3 else min(100.0, bar_w + 0.8)
+            ax.text(x_text, y, val_str,
+                    ha="left", va="center", color="#0B0B0B",
+                    fontproperties=BAR_VALUE_FP, zorder=2.0, clip_on=False)
+
+        # 50% reference
+        ax.axvline(50, color="#000000", ls=(0, (4, 4)), lw=1.5, alpha=0.7, zorder=3.5)
+
+        # Metric labels aligned to LEFT (figure coords)
+        for i, (lab, _, _) in enumerate(tuples[::-1]):
+            y_fig = (panel_top - header_h - n * row_slot) + ((i + 0.5) * row_slot)
+            fig.text(LEFT, y_fig, lab,
+                     ha="left", va="center", color=LABEL_C, fontproperties=LABEL_FP)
+
+        # Bottom tick marks and numbers (only last panel)
+        if show_xticks:
+            trans = ax.get_xaxis_transform()
+            INNER_PCT_OFFSET_PT, EDGE_0, EDGE_100 = 7, 4, 10
+            offset_inner   = ScaledTranslation(INNER_PCT_OFFSET_PT/72, 0, fig.dpi_scale_trans)
+            offset_pct_0   = ScaledTranslation(EDGE_0/72, 0, fig.dpi_scale_trans)
+            offset_pct_100 = ScaledTranslation(EDGE_100/72, 0, fig.dpi_scale_trans)
+            y_label = -0.075
+
+            for gx in ticks:
+                ax.plot([gx, gx], [-0.03, 0.0], transform=trans,
+                        color=(0, 0, 0, 0.6), lw=1.1, clip_on=False, zorder=4)
+                ax.text(gx, y_label, f"{int(gx)}", transform=trans,
+                        ha="center", va="top", color="#000000", fontproperties=TICK_FP,
+                        zorder=4, clip_on=False)
+                if gx == 0:
+                    ax.text(gx, y_label, "%", transform=trans + offset_pct_0,
+                            ha="left", va="top", color="#000000", fontproperties=TICK_FP)
+                elif gx == 100:
+                    ax.text(gx, y_label, "%", transform=trans + offset_pct_100,
+                            ha="left", va="top", color="#000000", fontproperties=TICK_FP)
+                else:
+                    ax.text(gx, y_label, "%", transform=trans + offset_inner,
+                            ha="left", va="top", color="#000000", fontproperties=TICK_FP)
+
+        # Section divider
+        if draw_bottom_divider:
+            y0 = panel_top - panel_h - 0.008
+            fig.lines.append(plt.Line2D([LEFT, 1 - RIGHT], [y0, y0],
+                                        transform=fig.transFigure, color=DIVIDER, lw=1.2, alpha=0.35))
+
+        return panel_top - panel_h - GAP
+
+    # Render
+    y_top = 1 - TOP - header_block_h
+    for idx, (title, data) in enumerate(sections):
+        is_last = (idx == len(sections) - 1)
+        y_top = draw_panel(y_top, title, data, show_xticks=is_last, draw_bottom_divider=not is_last)
+
+    # Footer caption
+    fig.text((LEFT + gutter + (1 - RIGHT))/2.0, BOT * 0.1, "Percentile Rank",
+             ha="center", va="center", color=LABEL_C, fontproperties=FOOTER_FP)
+
+    st.pyplot(fig, use_container_width=True)
+
+    # Download
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=130, bbox_inches="tight", facecolor=fig.get_facecolor())
+    buf.seek(0)
+    st.download_button(
+        "⬇️ Download Feature Z (PNG)",
+        data=buf.getvalue(),
+        file_name=f"{str(name).replace(' ','_')}_featureZ.png",
+        mime="image/png",
+        key=f"download_feature_z_{uuid.uuid4().hex}"
+    )
+    plt.close(fig)
+# ============================ END — Feature Z ============================
+
+
 
 
 # ----------------- (A) SCATTERPLOT — Goals vs xG -----------------
@@ -1555,7 +1886,7 @@ with st.expander("Scatter settings", expanded=False):
     # Filters: minutes, age, league strength (quality)
     df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
     df["Age"] = pd.to_numeric(df["Age"], errors="coerce")
-    min_minutes_s, max_minutes_s = st.slider("Minutes filter", 0, 5000, (1000, 5000), key="sc_min")
+    min_minutes_s, max_minutes_s = st.slider("Minutes filter", 0, 5000, (500, 5000), key="sc_min")
     age_min_bound = int(np.nanmin(df["Age"])) if df["Age"].notna().any() else 14
     age_max_bound = int(np.nanmax(df["Age"])) if df["Age"].notna().any() else 45
     min_age_s, max_age_s = st.slider("Age filter", age_min_bound, age_max_bound, (16, 40), key="sc_age")
@@ -1990,7 +2321,7 @@ with st.expander("Similarity settings", expanded=False):
         st.caption(f"Preset: {sim_preset} — {len(preset_vals)} league(s). You can add/prune below.")
 
     # Base filters
-    sim_min_minutes, sim_max_minutes = st.slider("Minutes played (candidates)", 0, 5000, (1000, 5000), key="sim_min")
+    sim_min_minutes, sim_max_minutes = st.slider("Minutes played (candidates)", 0, 5000, (500, 5000), key="sim_min")
     sim_min_age, sim_max_age = st.slider("Age (candidates)", 14, 45, (16, 40), key="sim_age")
 
     # Optional league quality filter (0–101)
