@@ -33,6 +33,40 @@ except Exception:
         def fit_transform(self, X):
             self.fit(X); return self.transform(X)
 
+# ✅ --- PUT THIS DATA LOADER HERE ---
+@st.cache_data(show_spinner=False)
+def _read_csv_from_path(path_str: str) -> pd.DataFrame:
+    return pd.read_csv(path_str)
+
+@st.cache_data(show_spinner=False)
+def _read_csv_from_bytes(data: bytes) -> pd.DataFrame:
+    return pd.read_csv(io.BytesIO(data))
+
+def load_df(csv_name: str) -> pd.DataFrame:
+    candidates = [
+        Path.cwd() / csv_name,
+        Path(__file__).resolve().parent.parent / csv_name,
+        Path(__file__).resolve().parent / csv_name,
+    ]
+    for p in candidates:
+        if p.exists():
+            return _read_csv_from_path(str(p))
+
+    up = st.file_uploader(f"Upload {csv_name}", type=["csv"])
+    if up is None:
+        st.stop()
+    return _read_csv_from_bytes(up.getvalue())
+
+# 🔍 Detect all CSVs starting with WORLD
+csv_files = [f.name for f in Path.cwd().glob("WORLD*.csv")]
+
+if not csv_files:
+    st.error("No WORLD*.csv files found in the project folder.")
+    st.stop()
+
+selected_file = st.selectbox("Select dataset to load:", csv_files)
+df = load_df(selected_file)
+
 # ----------------- PAGE -----------------
 st.set_page_config(page_title="Advanced Striker Scouting System", layout="wide")
 st.title("🔎 Advanced Striker Scouting System")
@@ -144,51 +178,6 @@ LEAGUE_STRENGTHS = {
 }
 REQUIRED_BASE = {"Player","Team","League","Age","Position","Minutes played","Market value","Contract expires","Goals"}
 
-# ----------------- DATA LOADER -----------------
-from pathlib import Path
-import io
-import pandas as pd
-import streamlit as st
-
-# ---------- CACHED READERS (no widgets here) ----------
-@st.cache_data(show_spinner=False)
-def _read_csv_from_path(path_str: str) -> pd.DataFrame:
-    return pd.read_csv(path_str)
-
-@st.cache_data(show_spinner=False)
-def _read_csv_from_bytes(data: bytes) -> pd.DataFrame:
-    return pd.read_csv(io.BytesIO(data))
-
-def load_df(csv_name: str = "WORLDJUNE25.csv") -> pd.DataFrame:
-    """
-    Tries several locations for the CSV:
-    1) Current working dir (repo root on Streamlit Cloud)
-    2) Parent of this file (..), then this file's folder
-    Falls back to a file uploader (widget OUTSIDE cache).
-    """
-    # 1) repo root / working directory
-    candidates = [
-        Path.cwd() / csv_name,
-        Path(__file__).resolve().parent.parent / csv_name,  # ../WORLDJUNE25.csv
-        Path(__file__).resolve().parent / csv_name,         # ./WORLDJUNE25.csv (same folder as the page)
-    ]
-
-    for p in candidates:
-        if p.exists():
-            return _read_csv_from_path(str(p))
-
-    # ---------- Fallback: let the user upload (widget OUTSIDE cache) ----------
-    st.warning(
-        f"Could not find **{csv_name}** in expected locations.\n\n"
-        "Please upload the CSV file below."
-    )
-    up = st.file_uploader("Upload WORLDJUNE25.csv", type=["csv"])
-    if up is None:
-        st.stop()
-    return _read_csv_from_bytes(up.getvalue())
-
-
-df = load_df()
 
 
 # ----------------- SIDEBAR FILTERS -----------------
