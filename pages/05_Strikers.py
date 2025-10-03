@@ -1,17 +1,14 @@
-# app.py — Advanced Striker Scouting System (dataset-switch safe, CF only)
+# app.py — Advanced Striker Scouting System (dataset-switch safe + working presets)
 
 import os
 import io
 import math
 from pathlib import Path
-import re
 
 import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
-from matplotlib.patches import Circle, Wedge
 
 # ---- Optional sklearn (fallback provided) ----
 try:
@@ -31,6 +28,11 @@ except Exception:
             return (X - self.mean_) / self.scale_
         def fit_transform(self, X):
             self.fit(X); return self.transform(X)
+
+# ----------------- PAGE -----------------
+st.set_page_config(page_title="Advanced Striker Scouting System", layout="wide")
+st.title("🔎 Advanced Striker Scouting System")
+st.caption("Use the sidebar to shape your pool. Each section explains what you’re seeing and why.")
 
 # ----------------- DATA LOADER -----------------
 @st.cache_data(show_spinner=False)
@@ -64,44 +66,16 @@ if not csv_files:
 selected_file = st.selectbox("Select dataset to load:", csv_files, key="cf_dataset_select")
 df = load_df(selected_file)
 
-# ---- Reset per-dataset UI state once on change ----
+# If dataset changes, clear dataset-scoped widget state
 if st.session_state.get("_active_dataset_cf") != selected_file:
     for k in [
         "cf_leagues_sel",
-        # add other striker-page league-based keys here if needed
+        # add more CF-specific keys here if you later create them elsewhere
     ]:
         st.session_state.pop(k, None)
     st.session_state["_active_dataset_cf"] = selected_file
 
-# ----------------- PAGE -----------------
-st.set_page_config(page_title="Advanced Striker Scouting System", layout="wide")
-st.title("🔎 Advanced Striker Scouting System")
-st.caption("Use the sidebar to shape your pool. Each section explains what you’re seeing and why.")
-
 # ----------------- CONFIG -----------------
-INCLUDED_LEAGUES = [
-    'England 1.', 'England 2.', 'England 3.', 'England 4.', 'England 5.',
-    'England 6.', 'England 7.', 'England 8.', 'England 9.', 'England 10.',
-    'Albania 1.', 'Algeria 1.', 'Andorra 1.', 'Argentina 1.', 'Armenia 1.',
-    'Australia 1.', 'Austria 1.', 'Austria 2.', 'Azerbaijan 1.', 'Belgium 1.',
-    'Belgium 2.', 'Bolivia 1.', 'Bosnia 1.', 'Brazil 1.', 'Brazil 2.', 'Brazil 3.',
-    'Bulgaria 1.', 'Canada 1.', 'Chile 1.', 'Colombia 1.', 'Costa Rica 1.',
-    'Croatia 1.', 'Cyprus 1.', 'Czech 1.', 'Czech 2.', 'Denmark 1.', 'Denmark 2.',
-    'Ecuador 1.', 'Egypt 1.', 'Estonia 1.', 'Finland 1.', 'France 1.', 'France 2.',
-    'France 3.', 'Georgia 1.', 'Germany 1.', 'Germany 2.', 'Germany 3.', 'Germany 4.',
-    'Greece 1.', 'Hungary 1.', 'Iceland 1.', 'Israel 1.', 'Israel 2.', 'Italy 1.',
-    'Italy 2.', 'Italy 3.', 'Japan 1.', 'Japan 2.', 'Kazakhstan 1.', 'Korea 1.',
-    'Latvia 1.', 'Lithuania 1.', 'Malta 1.', 'Mexico 1.', 'Moldova 1.', 'Morocco 1.',
-    'Netherlands 1.', 'Netherlands 2.', 'North Macedonia 1.', 'Northern Ireland 1.',
-    'Norway 1.', 'Norway 2.', 'Paraguay 1.', 'Peru 1.', 'Poland 1.', 'Poland 2.',
-    'Portugal 1.', 'Portugal 2.', 'Portugal 3.', 'Qatar 1.', 'Ireland 1.', 'Romania 1.',
-    'Russia 1.', 'Saudi 1.', 'Scotland 1.', 'Scotland 2.', 'Scotland 3.', 'Serbia 1.',
-    'Serbia 2.', 'Slovakia 1.', 'Slovakia 2.', 'Slovenia 1.', 'Slovenia 2.', 'South Africa 1.',
-    'Spain 1.', 'Spain 2.', 'Spain 3.', 'Sweden 1.', 'Sweden 2.', 'Switzerland 1.',
-    'Switzerland 2.', 'Tunisia 1.', 'Turkey 1.', 'Turkey 2.', 'Ukraine 1.', 'UAE 1.',
-    'USA 1.', 'USA 2.', 'Uruguay 1.', 'Uzbekistan 1.', 'Venezuela 1.', 'Wales 1.'
-]
-
 PRESET_LEAGUES = {
     "Top 5 Europe": {'England 1.', 'France 1.', 'Germany 1.', 'Italy 1.', 'Spain 1.'},
     "Top 20 Europe": {
@@ -132,16 +106,15 @@ POLAR_METRICS = [
     "Accurate passes, %","xA per 90","Progressive runs per 90",
 ]
 
-# -------- Position filter (central forwards only) --------
+# -------- Position filter (Striker / CF only) --------
 CF_PREFIXES = ('CF',)
 def position_filter(pos):
     return str(pos).strip().upper().startswith(CF_PREFIXES)
-# --------------------------------------------------------
 
-# Role buckets
+# -------- Roles --------
 ROLES = {
     'Target Man CF': {
-        'desc': "Aerial outlet, duel dominance, occupy CBs, threaten crosses & second balls.",
+        'desc': "Aerial outlet, duel dominance, occupy CBs, attack crosses & second balls.",
         'metrics': {'Aerial duels per 90': 3, 'Aerial duels won, %': 4}
     },
     'Goal Threat CF': {
@@ -157,10 +130,10 @@ ROLES = {
                     'Dribbles per 90': 2, 'Successful dribbles, %': 1,
                     'Progressive runs per 90': 2, 'xA per 90': 3}
     },
-    'All in': {
-        'desc': "Blend of creation + scoring; balanced all-round attacking profile.",
+    'All In': {
+        'desc': "Balanced scorer-creator blend across xG/xA, dribbling, and end product.",
         'metrics': {'xA per 90': 2, 'Dribbles per 90': 2, 'xG per 90': 3, 'Non-penalty goals per 90': 3}
-    }
+    },
 }
 
 LEAGUE_STRENGTHS = {
@@ -188,11 +161,8 @@ LEAGUE_STRENGTHS = {
     'England 9.':20.00,'England 8.':15.00,'Montenegro 1.':14.29,'Wales 1.':12.00,'Portugal 3.':11.43,
     'Northern Ireland 1.':11.43,'England 10.':10.00,'Scotland 3.':10.00,'England 6.':10.00
 }
-REQUIRED_BASE = {"Player","Team","League","Age","Position","Minutes played","Market value","Contract expires","Goals"}
 
-# --------- Fix missing "Contract expires" early so validation doesn't fail ----------
-if "Contract expires" not in df.columns:
-    df["Contract expires"] = ""  # will be parsed to NaT later
+REQUIRED_BASE = {"Player","Team","League","Age","Position","Minutes played","Market value","Contract expires","Goals"}
 
 # ----------------- WIDGET SAFETY -----------------
 def multiselect_safe(label, *, options, default=None, key=None, **kwargs):
@@ -201,7 +171,7 @@ def multiselect_safe(label, *, options, default=None, key=None, **kwargs):
     default = [x for x in (default or []) if x in options]
     return st.multiselect(label, options=options, default=default, key=key, **kwargs)
 
-# ----------------- SIDEBAR FILTERS -----------------
+# ----------------- SIDEBAR FILTERS (PRESETS THAT ACTUALLY DRIVE TABLES) -----------------
 with st.sidebar:
     st.header("Filters")
     c1, c2, c3 = st.columns([1,1,1])
@@ -209,23 +179,23 @@ with st.sidebar:
     use_top20 = c2.checkbox("Top-20 EU", value=False, key=f"cf_top20_{selected_file}")
     use_efl   = c3.checkbox("EFL", value=False, key=f"cf_efl_{selected_file}")
 
+    # Build seed from presets
     seed = set()
     if use_top5:  seed |= PRESET_LEAGUES["Top 5 Europe"]
     if use_top20: seed |= PRESET_LEAGUES["Top 20 Europe"]
     if use_efl:   seed |= PRESET_LEAGUES["EFL (England 2–4)"]
 
-    # Drive leagues from CURRENT dataset only
+    # Options from CURRENT dataset only
     leagues_avail = sorted(pd.Series(df.get("League", pd.Series(dtype=object))).dropna().unique().tolist())
-    seed = {x for x in seed if x in leagues_avail}  # keep only presets present in this dataset
+    seed = {x for x in seed if x in leagues_avail}
     default_leagues = sorted(seed) if seed else leagues_avail
 
+    # ONE source of truth (dataset-scoped)
     ms_key = f"cf_leagues_sel_{selected_file}"
     preset_sig = (use_top5, use_top20, use_efl, selected_file)
 
-    # Initialize on first render for this dataset
     if ms_key not in st.session_state:
         st.session_state[ms_key] = default_leagues
-    # If preset toggles changed, reset defaults to reflect them
     if st.session_state.get("cf_preset_sig") != preset_sig:
         st.session_state["cf_preset_sig"] = preset_sig
         st.session_state[ms_key] = default_leagues
@@ -241,40 +211,22 @@ with st.sidebar:
     # numeric coercions
     df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
     df["Age"] = pd.to_numeric(df["Age"], errors="coerce")
-
-    min_minutes, max_minutes = st.slider(
-        "Minutes played", 0, 5000, (500, 5000), key=f"minmax_minutes_{selected_file}"
-    )
-
+    min_minutes, max_minutes = st.slider("Minutes played", 0, 5000, (500, 5000), key=f"cf_minmax_minutes_{selected_file}")
     age_min_data = int(np.nanmin(df["Age"])) if df["Age"].notna().any() else 14
     age_max_data = int(np.nanmax(df["Age"])) if df["Age"].notna().any() else 45
-    # Keep defaults within dataset bounds
-    def_age_lo = max(16, age_min_data)
-    def_age_hi = min(40, age_max_data)
-    if def_age_lo > def_age_hi:
-        def_age_lo, def_age_hi = age_min_data, age_max_data
+    min_age, max_age = st.slider("Age", age_min_data, age_max_data, (16, 40), key=f"cf_minmax_age_{selected_file}")
 
-    min_age, max_age = st.slider(
-        "Age", age_min_data, age_max_data, (def_age_lo, def_age_hi), key=f"minmax_age_{selected_file}"
-    )
+    # UI label only; the actual filter is fixed to CF
+    st.text_input("Position (info)", "CF", key=f"cf_pos_text_{selected_file}")
 
-    pos_text = st.text_input("Position startswith", "CF", key=f"pos_text_{selected_file}")
+    # Contract filter (optional)
+    apply_contract = st.checkbox("Filter by contract expiry", value=False, key=f"cf_apply_contract_{selected_file}")
+    cutoff_year = st.slider("Max contract year (inclusive)", 2025, 2030, 2026, key=f"cf_cutoff_{selected_file}")
 
-    # Defaults OFF; league beta default shown as 0.40 but toggle unticked
-    apply_contract = st.checkbox("Filter by contract expiry", value=False, key=f"apply_contract_{selected_file}")
-    cutoff_year = st.slider("Max contract year (inclusive)", 2025, 2030, 2026, key=f"cutoff_{selected_file}")
-
-    min_strength, max_strength = st.slider(
-        "League quality (strength)", 0, 101, (0, 101), key=f"minmax_strength_{selected_file}"
-    )
-    use_league_weighting = st.checkbox(
-        "Use league weighting in role score", value=False, key=f"use_lw_{selected_file}"
-    )
-    beta = st.slider(
-        "League weighting beta", 0.0, 1.0, 0.40, 0.05,
-        help="0 = ignore league strength; 1 = only league strength",
-        key=f"beta_{selected_file}"
-    )
+    # League strength weighting
+    min_strength, max_strength = st.slider("League quality (strength)", 0, 101, (0, 101), key=f"cf_minmax_strength_{selected_file}")
+    use_league_weighting = st.checkbox("Use league weighting in role score", value=False, key=f"cf_use_lw_{selected_file}")
+    beta = st.slider("League weighting beta", 0.0, 1.0, 0.40, 0.05, help="0 = ignore league strength; 1 = only league strength", key=f"cf_beta_{selected_file}")
 
     # Market value
     df["Market value"] = pd.to_numeric(df["Market value"], errors="coerce")
@@ -282,34 +234,23 @@ with st.sidebar:
     mv_max_raw = int(np.nanmax(df[mv_col])) if df[mv_col].notna().any() else 50_000_000
     mv_cap = int(math.ceil(mv_max_raw / 5_000_000) * 5_000_000)
     st.markdown("**Market value (€)**")
-    use_m = st.checkbox("Adjust in millions", True, key=f"use_m_{selected_file}")
+    use_m = st.checkbox("Adjust in millions", True, key=f"cf_use_m_{selected_file}")
     if use_m:
         max_m = int(mv_cap // 1_000_000)
-        mv_min_m, mv_max_m = st.slider("Range (M€)", 0, max_m, (0, max_m), key=f"mv_range_m_{selected_file}")
+        mv_min_m, mv_max_m = st.slider("Range (M€)", 0, max_m, (0, max_m), key=f"cf_mv_range_m_{selected_file}")
         min_value = mv_min_m * 1_000_000
         max_value = mv_max_m * 1_000_000
     else:
-        min_value, max_value = st.slider(
-            "Range (€)", 0, mv_cap, (0, mv_cap), step=100_000, key=f"mv_range_{selected_file}"
-        )
-    value_band_max = st.number_input(
-        "Value band (tab 4 max €)", min_value=0,
-        value=min_value if min_value > 0 else 5_000_000, step=250_000, key=f"value_band_{selected_file}"
-    )
+        min_value, max_value = st.slider("Range (€)", 0, mv_cap, (0, mv_cap), step=100_000, key=f"cf_mv_range_{selected_file}")
+    value_band_max = st.number_input("Value band (tab 4 max €)", min_value=0, value=min_value if min_value>0 else 5_000_000, step=250_000, key=f"cf_value_band_{selected_file}")
 
     st.subheader("Minimum performance thresholds")
-    enable_min_perf = st.checkbox(
-        "Require minimum percentile on selected metrics", value=False, key=f"enable_min_perf_{selected_file}"
-    )
-    sel_metrics = st.multiselect(
-        "Metrics to threshold", FEATURES[:],
-        default=(['Non-penalty goals per 90','xG per 90'] if enable_min_perf else []),
-        key=f"sel_metrics_{selected_file}"
-    )
-    min_pct = st.slider("Minimum percentile (0–100)", 0, 100, 60, key=f"min_pct_{selected_file}")
+    enable_min_perf = st.checkbox("Require minimum percentile on selected metrics", value=False, key=f"cf_enable_min_perf_{selected_file}")
+    sel_metrics = st.multiselect("Metrics to threshold", FEATURES[:], default=(['Non-penalty goals per 90','xG per 90'] if enable_min_perf else []), key=f"cf_sel_metrics_{selected_file}")
+    min_pct = st.slider("Minimum percentile (0–100)", 0, 100, 60, key=f"cf_min_pct_{selected_file}")
 
-    top_n = st.number_input("Top N per table", 5, 200, 50, 5, key=f"topn_{selected_file}")
-    round_to = st.selectbox("Round output percentiles to", [0, 1], index=0, key=f"round_to_{selected_file}")
+    top_n = st.number_input("Top N per table", 5, 200, 50, 5, key=f"cf_topn_{selected_file}")
+    round_to = st.selectbox("Round output percentiles to", [0, 1], index=0, key=f"cf_round_to_{selected_file}")
 
 # ----------------- VALIDATION -----------------
 missing = [c for c in REQUIRED_BASE if c not in df.columns]
@@ -321,46 +262,48 @@ if missing_feats:
     st.error(f"Dataset missing required feature columns: {missing_feats}")
     st.stop()
 
-# ----------------- FILTER POOL -----------------
-def _pos_filter_with_prefix(x: str, prefix: str) -> bool:
-    s = str(x).strip().upper()
-    return s.startswith(prefix.strip().upper()) if prefix else True
-
+# ----------------- FILTER POOL (READ THE SAME KEY THE MULTISELECT WRITES) -----------------
 df_f = df.copy()
-if st.session_state.get("leagues_sel"):
-    df_f = df_f[df_f["League"].isin(st.session_state["leagues_sel"])]
 
-# Position filter
-df_f = df_f[df_f["Position"].apply(lambda x: _pos_filter_with_prefix(x, st.session_state.get(f"pos_text_{selected_file}", "CF")))]
+# leagues
+active_leagues = st.session_state.get(f"cf_leagues_sel_{selected_file}", sorted(pd.Series(df.get("League", pd.Series(dtype=object))).dropna().unique().tolist()))
+if not active_leagues:  # safety fallback
+    active_leagues = sorted(pd.Series(df.get("League", pd.Series(dtype=object))).dropna().unique().tolist())
+df_f = df_f[df_f["League"].isin(active_leagues)]
 
-# Core numeric filters
+# positions (CF only)
+df_f = df_f[df_f["Position"].astype(str).apply(position_filter)]
+
+# numerics
 df_f["Minutes played"] = pd.to_numeric(df_f["Minutes played"], errors="coerce")
 df_f["Age"] = pd.to_numeric(df_f["Age"], errors="coerce")
-df_f = df_f[df_f["Minutes played"].between(*st.session_state[f"minmax_minutes_{selected_file}"])]
-df_f = df_f[df_f["Age"].between(*st.session_state[f"minmax_age_{selected_file}"])]
+min_minutes, max_minutes = st.session_state[f"cf_minmax_minutes_{selected_file}"]
+df_f = df_f[df_f["Minutes played"].between(min_minutes, max_minutes)]
+min_age, max_age = st.session_state[f"cf_minmax_age_{selected_file}"]
+df_f = df_f[df_f["Age"].between(min_age, max_age)]
 
-# Contract (optional)
+# contract (optional)
 df_f["Contract expires"] = pd.to_datetime(df_f["Contract expires"], errors="coerce")
-if st.session_state.get(f"apply_contract_{selected_file}", False):
-    cutoff_year = st.session_state[f"cutoff_{selected_file}"]
+if st.session_state.get(f"cf_apply_contract_{selected_file}", False):
+    cutoff_year = st.session_state[f"cf_cutoff_{selected_file}"]
     df_f = df_f[df_f["Contract expires"].dt.year <= cutoff_year]
 
-# League strength — default to 50.0 for anything not found
+# league strength — default 50.0 for unknown leagues (so weighting won't blow up)
 df_f["League Strength"] = df_f["League"].map(LEAGUE_STRENGTHS).fillna(50.0)
-min_strength, max_strength = st.session_state[f"minmax_strength_{selected_file}"]
+min_strength, max_strength = st.session_state[f"cf_minmax_strength_{selected_file}"]
 df_f = df_f[(df_f["League Strength"] >= float(min_strength)) & (df_f["League Strength"] <= float(max_strength))]
 
-# Market value band
+# market value
 df_f["Market value"] = pd.to_numeric(df_f["Market value"], errors="coerce")
-if st.session_state.get(f"use_m_{selected_file}", True):
-    mv_min_m, mv_max_m = st.session_state[f"mv_range_m_{selected_file}"]
+if st.session_state.get(f"cf_use_m_{selected_file}", True):
+    mv_min_m, mv_max_m = st.session_state[f"cf_mv_range_m_{selected_file}"]
     min_value = mv_min_m * 1_000_000
     max_value = mv_max_m * 1_000_000
 else:
-    min_value, max_value = st.session_state[f"mv_range_{selected_file}"]
+    min_value, max_value = st.session_state[f"cf_mv_range_{selected_file}"]
 df_f = df_f[(df_f["Market value"] >= min_value) & (df_f["Market value"] <= max_value)]
 
-# Ensure all FEATURE columns are numeric & present
+# features numeric + dropna
 for c in FEATURES:
     df_f[c] = pd.to_numeric(df_f[c], errors="coerce")
 df_f = df_f.dropna(subset=FEATURES)
@@ -387,8 +330,8 @@ def compute_weighted_role_score(df_in: pd.DataFrame, metrics: dict, beta: float,
         return (1 - beta) * player_score + beta * league_scaled.values
     return player_score
 
-use_league_weighting = st.session_state[f"use_lw_{selected_file}"]
-beta = st.session_state[f"beta_{selected_file}"]
+use_league_weighting = st.session_state[f"cf_use_lw_{selected_file}"]
+beta = st.session_state[f"cf_beta_{selected_file}"]
 
 for role_name, role_def in ROLES.items():
     df_f[f"{role_name} Score"] = compute_weighted_role_score(
@@ -396,9 +339,9 @@ for role_name, role_def in ROLES.items():
     )
 
 # ----------------- THRESHOLDS -----------------
-enable_min_perf = st.session_state[f"enable_min_perf_{selected_file}"]
-sel_metrics = st.session_state[f"sel_metrics_{selected_file}"]
-min_pct = st.session_state[f"min_pct_{selected_file}"]
+enable_min_perf = st.session_state[f"cf_enable_min_perf_{selected_file}"]
+sel_metrics = st.session_state[f"cf_sel_metrics_{selected_file}"]
+min_pct = st.session_state[f"cf_min_pct_{selected_file}"]
 
 if enable_min_perf and sel_metrics:
     keep_mask = np.ones(len(df_f), dtype=bool)
@@ -412,7 +355,7 @@ if enable_min_perf and sel_metrics:
         st.stop()
 
 # ----------------- HELPERS -----------------
-round_to = st.session_state[f"round_to_{selected_file}"]
+round_to = st.session_state[f"cf_round_to_{selected_file}"]
 
 def fmt_cols(df_in: pd.DataFrame, score_col: str) -> pd.DataFrame:
     out = df_in.copy()
@@ -439,8 +382,8 @@ def filtered_view(df_in: pd.DataFrame, *, age_max=None, contract_year=None, valu
     return t
 
 # ----------------- TABS (tables) -----------------
-top_n = int(st.session_state[f"topn_{selected_file}"])
-value_band_max = st.session_state[f"value_band_{selected_file}"]
+top_n = int(st.session_state[f"cf_topn_{selected_file}"])
+value_band_max = st.session_state[f"cf_value_band_{selected_file}"]
 
 tabs = st.tabs(["Overall Top N", "U23 Top N", "Expiring Contracts", "Value Band (≤ max €)"])
 for role, role_def in ROLES.items():
@@ -451,7 +394,7 @@ for role, role_def in ROLES.items():
         st.divider()
     with tabs[1]:
         u23_cutoff = st.number_input(
-            f"{role} — U23 cutoff", min_value=16, max_value=30, value=23, step=1, key=f"u23_{role}_{selected_file}"
+            f"{role} — U23 cutoff", min_value=16, max_value=30, value=23, step=1, key=f"cf_u23_{role}_{selected_file}"
         )
         st.subheader(f"{role} — U{u23_cutoff} Top {top_n}")
         st.caption(role_def.get("desc", ""))
@@ -460,8 +403,8 @@ for role, role_def in ROLES.items():
     with tabs[2]:
         exp_year = st.number_input(
             f"{role} — Expiring by year", min_value=2024, max_value=2030,
-            value=st.session_state[f"cutoff_{selected_file}"], step=1,
-            key=f"exp_{role}_{selected_file}"
+            value=st.session_state[f"cf_cutoff_{selected_file}"], step=1,
+            key=f"cf_exp_{role}_{selected_file}"
         )
         st.subheader(f"{role} — Contracts expiring ≤ {exp_year}")
         st.caption(role_def.get("desc", ""))
@@ -470,14 +413,13 @@ for role, role_def in ROLES.items():
     with tabs[3]:
         v_max = st.number_input(
             f"{role} — Max value (€)", min_value=0, value=value_band_max, step=100_000,
-            key=f"val_{role}_{selected_file}"
+            key=f"cf_val_{role}_{selected_file}"
         )
         st.subheader(f"{role} — Value band ≤ €{v_max:,.0f}")
         st.caption(role_def.get("desc", ""))
         st.dataframe(top_table(filtered_view(df_f, value_max=v_max), role, top_n), use_container_width=True)
         st.divider()
-# ----------------- END OF BLOCK -----------------
-
+# ----------------- END STRIKER (CF) BLOCK -----------------
 
 
 
