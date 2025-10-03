@@ -218,7 +218,7 @@ with st.sidebar:
                      help="0 = ignore league strength; 1 = only league strength")
 
     # ⬇️ Reminder: when mapping strengths later, use .fillna(50.0) so unknown leagues default to 50.
-    # Example (outside this block): df_f["League Strength"] = df_f["League"].map(LEAGUE_STRENGTHS).fillna(50.0)
+    # Example (outside this block): df_f['League Strength'] = df_f['League'].map(LEAGUE_STRENGTHS).fillna(50.0)
 
     # Market value
     df["Market value"] = pd.to_numeric(df["Market value"], errors="coerce")
@@ -246,10 +246,59 @@ with st.sidebar:
     top_n = st.number_input("Top N per table", 5, 200, 50, 5)
     round_to = st.selectbox("Round output percentiles to", [0, 1], index=0)
 
-# ----------------- PERCENTILES FOR TABLES (per league) -----------------
+# ----------------- VALIDATION -----------------
+missing = [c for c in REQUIRED_BASE if c not in df.columns]
+if missing:
+    st.error(f"Dataset missing required base columns: {missing}")
+    st.stop()
+missing_feats = [c for c in FEATURES if c not in df.columns]
+if missing_feats:
+    st.error(f"Dataset missing required feature columns: {missing_feats}")
+    st.stop()
+
+# ----------------- FILTER POOL -----------------
+# Respect sidebar league selection that's tied to the current dataset,
+# plus default league strength fallback = 50 for unknown/absent keys.
+def _pos_filter_with_prefix(x: str, prefix: str) -> bool:
+    s = str(x).strip().upper()
+    return s.startswith(prefix.strip().upper()) if prefix else True
+
+df_f = df.copy()
+if leagues_sel:
+    df_f = df_f[df_f["League"].isin(leagues_sel)]
+
+# Position filter uses the sidebar's text input (still compatible with your CF default)
+df_f = df_f[df_f["Position"].apply(lambda x: _pos_filter_with_prefix(x, pos_text))]
+
+# Core numeric filters
+df_f["Minutes played"] = pd.to_numeric(df_f["Minutes played"], errors="coerce")
+df_f["Age"] = pd.to_numeric(df_f["Age"], errors="coerce")
+df_f = df_f[df_f["Minutes played"].between(min_minutes, max_minutes)]
+df_f = df_f[df_f["Age"].between(min_age, max_age)]
+
+# Contract (optional)
+df_f["Contract expires"] = pd.to_datetime(df_f["Contract expires"], errors="coerce")
+if apply_contract:
+    df_f = df_f[df_f["Contract expires"].dt.year <= cutoff_year]
+
+# League strength — default to 50.0 for anything not found
+df_f["League Strength"] = df_f["League"].map(LEAGUE_STRENGTHS).fillna(50.0)
+df_f = df_f[(df_f["League Strength"] >= float(min_strength)) & (df_f["League Strength"] <= float(max_strength))]
+
+# Market value band
+df_f["Market value"] = pd.to_numeric(df_f["Market value"], errors="coerce")
+df_f = df_f[(df_f["Market value"] >= min_value) & (df_f["Market value"] <= max_value)]
+
+# Ensure all FEATURE columns are numeric & present
 for c in FEATURES:
     df_f[c] = pd.to_numeric(df_f[c], errors="coerce")
 df_f = df_f.dropna(subset=FEATURES)
+
+if df_f.empty:
+    st.warning("No players after filters. Loosen filters.")
+    st.stop()
+
+# ----------------- PERCENTILES FOR TABLES (per league) -----------------
 for feat in FEATURES:
     df_f[f"{feat} Percentile"] = df_f.groupby("League")[feat].transform(lambda x: x.rank(pct=True) * 100.0)
 
@@ -263,12 +312,14 @@ def compute_weighted_role_score(df_in: pd.DataFrame, metrics: dict, beta: float,
             wsum += df_in[col].values * w
     player_score = wsum / total_w  # 0..100
     if league_weighting:
-        league_scaled = (df_in["League Strength"].fillna(50) / 100.0) * 100.0
-        return (1 - beta) * player_score + beta * league_scaled
+        league_scaled = df_in["League Strength"].fillna(50.0)  # already 0..100
+        return (1 - beta) * player_score + beta * league_scaled.values
     return player_score
 
 for role_name, role_def in ROLES.items():
-    df_f[f"{role_name} Score"] = compute_weighted_role_score(df_f, role_def["metrics"], beta=beta, league_weighting=use_league_weighting)
+    df_f[f"{role_name} Score"] = compute_weighted_role_score(
+        df_f, role_def["metrics"], beta=beta, league_weighting=use_league_weighting
+    )
 
 # ----------------- THRESHOLDS -----------------
 if enable_min_perf and sel_metrics:
@@ -286,7 +337,7 @@ if enable_min_perf and sel_metrics:
 def fmt_cols(df_in: pd.DataFrame, score_col: str) -> pd.DataFrame:
     out = df_in.copy()
     out[score_col] = out[score_col].round(round_to).astype(int if round_to == 0 else float)
-    cols = ["Player","Team","League","Position", "Age","Contract expires","League Strength", score_col]
+    cols = ["Player","Team","League","Position","Age","Contract expires","League Strength", score_col]
     return out[cols]
 
 def top_table(df_in: pd.DataFrame, role: str, head_n: int) -> pd.DataFrame:
@@ -301,7 +352,9 @@ def filtered_view(df_in: pd.DataFrame, *, age_max=None, contract_year=None, valu
     if age_max is not None:
         t = t[t["Age"] <= age_max]
     if contract_year is not None:
-        t = t[t["Contract expires"].dt.year <= contract_year]
+        # guard NaT
+        years = pd.to_datetime(t["Contract expires"], errors="coerce").dt.year
+        t = t[years <= contract_year]
     if value_max is not None:
         t = t[t["Market value"] <= value_max]
     return t
@@ -332,6 +385,7 @@ for role, role_def in ROLES.items():
         st.caption(role_def.get("desc", ""))
         st.dataframe(top_table(filtered_view(df_f, value_max=v_max), role, int(top_n)), use_container_width=True)
         st.divider()
+
 
 # ----------------- METRIC LEADERBOARD — themed + palettes + custom title + highlights (UPDATED) -----------------
 import re, numpy as np, matplotlib.pyplot as plt
