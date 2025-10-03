@@ -2409,9 +2409,9 @@ st.header("📊 Player Comparison Radar")
 
 DEFAULT_RADAR_METRICS = [
     "Defensive duels per 90","Defensive duels won, %","PAdj Interceptions",
-    "Passes per 90","Accurate passes, %","Progressive passes per 90",
-    "Non-penalty goals per 90","Progressive runs per 90","Dribbles per 90",
-    "xA per 90","Passes to penalty area per 90"
+    "Passes per 90","Accurate passes, %","Progressive passes per 90", "Passes to penalty area per 90"
+    "Progressive runs per 90","Dribbles per 90", "Non-penalty goals per 90",
+    "xA per 90",
 ]
 
 def _clean_radar_label(s: str) -> str:
