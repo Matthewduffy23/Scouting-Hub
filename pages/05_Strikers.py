@@ -2338,20 +2338,20 @@ st.markdown("---")
 st.header("📊 Player Comparison Radar")
 
 DEFAULT_RADAR_METRICS = [
-    "Non-penalty goals per 90","xG per 90","Shots per 90",
-    "Dribbles per 90","Successful dribbles, %","Touches in box per 90",
-    "Aerial duels per 90","Aerial duels won, %","Passes per 90",
-    "Accurate passes, %","xA per 90"
+    "Non-penalty goals per 90","xG per 90","Shots per 90","Touches in box per 90",
+    "Dribbles per 90","Successful dribbles, %",
+    "Passes per 90",
+    "Accurate passes, %","xA per 90","Aerial duels per 90","Aerial duels won, %",
 ]
 
 def _clean_radar_label(s: str) -> str:
     s = s.replace("Non-penalty goals per 90", "Non-Pen Goals")
+    s = s.replace("Aerial duels won, %", "Aerial Duel %")
     s = s.replace("xG per 90", "xG").replace("xA per 90", "xA")
     s = s.replace("Shots per 90", "Shots").replace("Passes per 90", "Passes")
-    s = s.replace("Touches in box per 90", "Touches in box").replace("Aerial duels per 90", "Aerial duels")
-    s = s.replace("Successful dribbles, %", "Dribble %").replace("Accurate passes, %", "Pass %")
+    s = s.replace("Touches in box per 90", "Touches in Box").replace("Aerial duels per 90", "Aerial Duels")
+    s = s.replace("Successful dribbles, %", "Dribble %").replace("Accurate passes, %", "Passing %")
     return re.sub(r"\s*per\s*90", "", s, flags=re.I)
-
 # Theme selector
 with st.expander("Radar settings", expanded=False):
     radar_theme = st.radio("Theme", ["Light", "Dark"], index=0, horizontal=True, key="radar_theme")
