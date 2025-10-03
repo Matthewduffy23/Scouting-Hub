@@ -214,19 +214,19 @@ with st.sidebar:
     # Options only from the CURRENT dataset
     leagues_avail = sorted(pd.Series(df.get("League", pd.Series(dtype=object))).dropna().unique().tolist())
 
-    # Keep only presets that exist in this dataset
+    # Keep only presets present in this dataset
     seed = {x for x in seed if x in leagues_avail}
     default_leagues = sorted(seed) if seed else leagues_avail
 
-    # Keep the multiselect in sync with presets and dataset changes
+    # Dataset-scoped key + signature to detect changes
     ms_key = f"cf_leagues_sel_{selected_file}"
     preset_sig = (use_top5, use_top20, use_efl, selected_file)
 
-    # First load for this dataset
+    # Initialize once per dataset
     if ms_key not in st.session_state:
         st.session_state[ms_key] = default_leagues
 
-    # If any preset checkbox or dataset changes, push the new defaults
+    # If presets or dataset changed, update defaults (prevents stale selections)
     if st.session_state.get("cf_preset_sig") != preset_sig:
         st.session_state["cf_preset_sig"] = preset_sig
         st.session_state[ms_key] = default_leagues
@@ -238,8 +238,9 @@ with st.sidebar:
         key=ms_key,
     )
 
-    # Mirror to a simple key for your filtering code
+    # Mirror to a stable key your filtering code can read
     st.session_state["cf_leagues_sel"] = leagues_sel
+
 
 
     # numeric coercions
