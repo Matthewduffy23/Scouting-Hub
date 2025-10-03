@@ -1,8 +1,7 @@
-# app.py — Advanced Scouting + Notes + Comparison Radar + Similar Players + Club Fit
-# Single file, drop-in. Requires: streamlit, pandas, numpy, matplotlib.
-# scikit-learn is optional; a tiny StandardScaler fallback is included.
+# app.py — Advanced Attacker Scouting System (dataset-switch safe)
 
 import os
+import io
 import math
 from pathlib import Path
 import re
@@ -32,40 +31,6 @@ except Exception:
             return (X - self.mean_) / self.scale_
         def fit_transform(self, X):
             self.fit(X); return self.transform(X)
-
-# ✅ --- PUT THIS DATA LOADER HERE ---
-@st.cache_data(show_spinner=False)
-def _read_csv_from_path(path_str: str) -> pd.DataFrame:
-    return pd.read_csv(path_str)
-
-@st.cache_data(show_spinner=False)
-def _read_csv_from_bytes(data: bytes) -> pd.DataFrame:
-    return pd.read_csv(io.BytesIO(data))
-
-def load_df(csv_name: str) -> pd.DataFrame:
-    candidates = [
-        Path.cwd() / csv_name,
-        Path(__file__).resolve().parent.parent / csv_name,
-        Path(__file__).resolve().parent / csv_name,
-    ]
-    for p in candidates:
-        if p.exists():
-            return _read_csv_from_path(str(p))
-
-    up = st.file_uploader(f"Upload {csv_name}", type=["csv"])
-    if up is None:
-        st.stop()
-    return _read_csv_from_bytes(up.getvalue())
-
-# 🔍 Detect all CSVs starting with WORLD
-csv_files = [f.name for f in Path.cwd().glob("WORLD*.csv")]
-
-if not csv_files:
-    st.error("No WORLD*.csv files found in the project folder.")
-    st.stop()
-
-selected_file = st.selectbox("Select dataset to load:", csv_files)
-df = load_df(selected_file)
 
 # ----------------- PAGE -----------------
 st.set_page_config(page_title="Advanced Attacker Scouting System", layout="wide")
@@ -113,19 +78,20 @@ FEATURES = [
     'Progressive runs per 90','Accelerations per 90','Passes per 90','Accurate passes, %', 'Forward passes per 90',
     'Long passes per 90','xA per 90','Smart passes per 90','Key passes per 90',
     'Passes to final third per 90','Accurate passes to final third, %',
-    'Passes to penalty area per 90','Accurate passes to penalty area, %', 
-    'Deep completions per 90','Progressive passes per 90','Accurate progressive passes, %' ]
+    'Passes to penalty area per 90','Accurate passes to penalty area, %',
+    'Deep completions per 90','Progressive passes per 90','Accurate progressive passes, %'
+]
 
 POLAR_METRICS = [
-"Non-penalty goals per 90","xG per 90","Shots per 90", "Dribbles per 90","Passes to penalty area per 90",
-"Touches in box per 90", "Smart passes per 90","Progressive passes per 90",
-"Passes per 90", "Accurate passes, %","xA per 90","Progressive runs per 90",
+    "Non-penalty goals per 90","xG per 90","Shots per 90",
+    "Dribbles per 90","Passes to penalty area per 90",
+    "Touches in box per 90","Smart passes per 90","Progressive passes per 90",
+    "Passes per 90","Accurate passes, %","xA per 90","Progressive runs per 90",
 ]
 
 # -------- Position filter (attacker) --------
 # Define the prefixes that truly need startswith
 prefixes = ('RWF', 'LWF', 'LAMF', 'RAMF', 'AMF', 'RW, ', 'LW, ')
-
 def position_filter(pos):
     pos_clean = str(pos).strip().upper()
     if pos_clean in ('RW', 'LW'):      # exact match for RW and LW
@@ -135,7 +101,7 @@ def position_filter(pos):
     return False
 # -------------------------------------------
 
-# Role buckets
+# Role buckets (unchanged)
 ROLES = {
     'Playmaker': {
         'desc': "Primary creator: volume passing, xA, and delivery into dangerous zones.",
@@ -204,43 +170,116 @@ LEAGUE_STRENGTHS = {
 }
 REQUIRED_BASE = {"Player","Team","League","Age","Position","Minutes played","Market value","Contract expires","Goals"}
 
+# ----------------- DATA LOADER -----------------
+@st.cache_data(show_spinner=False)
+def _read_csv_from_path(path_str: str) -> pd.DataFrame:
+    return pd.read_csv(path_str)
 
+@st.cache_data(show_spinner=False)
+def _read_csv_from_bytes(data: bytes) -> pd.DataFrame:
+    return pd.read_csv(io.BytesIO(data))
+
+def load_df(csv_name: str) -> pd.DataFrame:
+    candidates = [
+        Path.cwd() / csv_name,
+        Path(__file__).resolve().parent.parent / csv_name,
+        Path(__file__).resolve().parent / csv_name,
+    ]
+    for p in candidates:
+        if p.exists():
+            return _read_csv_from_path(str(p))
+    up = st.file_uploader(f"Upload {csv_name}", type=["csv"])
+    if up is None:
+        st.stop()
+    return _read_csv_from_bytes(up.getvalue())
+
+# 🔍 Detect all CSVs starting with WORLD*
+csv_files = [f.name for f in Path.cwd().glob("WORLD*.csv")]
+if not csv_files:
+    st.error("No WORLD*.csv files found in the project folder.")
+    st.stop()
+
+selected_file = st.selectbox("Select dataset to load:", csv_files)
+df = load_df(selected_file)
+
+# ---- Reset per-dataset UI state once on change ----
+if st.session_state.get("_active_dataset_att") != selected_file:
+    for k in [
+        "att_leagues_sel",
+        # add other attacker-page league-based keys here if needed
+    ]:
+        st.session_state.pop(k, None)
+    st.session_state["_active_dataset_att"] = selected_file
+
+# ----------------- WIDGET SAFETY -----------------
+def multiselect_safe(label, *, options, default=None, key=None, **kwargs):
+    """Clamp defaults to current options to avoid Streamlit crashes after dataset switches."""
+    options = list(options)
+    default = [x for x in (default or []) if x in options]
+    return st.multiselect(label, options=options, default=default, key=key, **kwargs)
 
 # ----------------- SIDEBAR FILTERS -----------------
 with st.sidebar:
     st.header("Filters")
     c1, c2, c3 = st.columns([1,1,1])
-    use_top5  = c1.checkbox("Top-5 EU", value=False)
-    use_top20 = c2.checkbox("Top-20 EU", value=False)
-    use_efl   = c3.checkbox("EFL", value=False)
+    use_top5  = c1.checkbox("Top-5 EU", value=False, key=f"att_top5_{selected_file}")
+    use_top20 = c2.checkbox("Top-20 EU", value=False, key=f"att_top20_{selected_file}")
+    use_efl   = c3.checkbox("EFL", value=False, key=f"att_efl_{selected_file}")
 
     seed = set()
     if use_top5:  seed |= PRESET_LEAGUES["Top 5 Europe"]
     if use_top20: seed |= PRESET_LEAGUES["Top 20 Europe"]
     if use_efl:   seed |= PRESET_LEAGUES["EFL (England 2–4)"]
 
-    leagues_avail = sorted(set(INCLUDED_LEAGUES) | set(df.get("League", pd.Series([])).dropna().unique()))
-    default_leagues = sorted(seed) if seed else INCLUDED_LEAGUES
-    leagues_sel = st.multiselect("Leagues (add or prune the presets)", leagues_avail, default=default_leagues)
+    # Drive leagues from CURRENT dataset only
+    leagues_avail = sorted(pd.Series(df.get("League", pd.Series(dtype=object))).dropna().unique().tolist())
+    # keep only presets that exist in this dataset
+    seed = {x for x in seed if x in leagues_avail}
+    default_leagues = sorted(seed) if seed else leagues_avail
+
+    leagues_sel = multiselect_safe(
+        "Leagues (add or prune the presets)",
+        options=leagues_avail,
+        default=st.session_state.get("att_leagues_sel", default_leagues),
+        key=f"att_leagues_sel_{selected_file}",
+    )
+    st.session_state["att_leagues_sel"] = leagues_sel
 
     # numeric coercions
     df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
     df["Age"] = pd.to_numeric(df["Age"], errors="coerce")
-    min_minutes, max_minutes = st.slider("Minutes played", 0, 5000, (500, 5000))
+
+    min_minutes, max_minutes = st.slider(
+        "Minutes played", 0, 5000, (500, 5000), key=f"att_minmax_minutes_{selected_file}"
+    )
+
     age_min_data = int(np.nanmin(df["Age"])) if df["Age"].notna().any() else 14
     age_max_data = int(np.nanmax(df["Age"])) if df["Age"].notna().any() else 45
-    min_age, max_age = st.slider("Age", age_min_data, age_max_data, (16, 40))
+    def_age_lo = max(16, age_min_data)
+    def_age_hi = min(40, age_max_data)
+    if def_age_lo > def_age_hi:  # guard tiny datasets
+        def_age_lo, def_age_hi = age_min_data, age_max_data
 
-    pos_text = st.text_input("Position startswith", "CF")
+    min_age, max_age = st.slider(
+        "Age", age_min_data, age_max_data, (def_age_lo, def_age_hi), key=f"att_minmax_age_{selected_file}"
+    )
 
-    # Defaults OFF; league beta default shown as 0.40 but toggle unticked
-    apply_contract = st.checkbox("Filter by contract expiry", value=False)
-    cutoff_year = st.slider("Max contract year (inclusive)", 2025, 2030, 2026)
+    pos_text = st.text_input("Position startswith", "RW", key=f"att_pos_text_{selected_file}")
 
-    min_strength, max_strength = st.slider("League quality (strength)", 0, 101, (0, 101))
-    use_league_weighting = st.checkbox("Use league weighting in role score", value=False)
-    beta = st.slider("League weighting beta", 0.0, 1.0, 0.40, 0.05,
-                     help="0 = ignore league strength; 1 = only league strength")
+    apply_contract = st.checkbox("Filter by contract expiry", value=False, key=f"att_apply_contract_{selected_file}")
+    cutoff_year = st.slider("Max contract year (inclusive)", 2025, 2030, 2026, key=f"att_cutoff_{selected_file}")
+
+    min_strength, max_strength = st.slider(
+        "League quality (strength)", 0, 101, (0, 101), key=f"att_minmax_strength_{selected_file}"
+    )
+    use_league_weighting = st.checkbox(
+        "Use league weighting in role score", value=False, key=f"att_use_lw_{selected_file}"
+    )
+    beta = st.slider(
+        "League weighting beta", 0.0, 1.0, 0.40, 0.05,
+        help="0 = ignore league strength; 1 = only league strength",
+        key=f"att_beta_{selected_file}"
+    )
 
     # Market value
     df["Market value"] = pd.to_numeric(df["Market value"], errors="coerce")
@@ -248,25 +287,34 @@ with st.sidebar:
     mv_max_raw = int(np.nanmax(df[mv_col])) if df[mv_col].notna().any() else 50_000_000
     mv_cap = int(math.ceil(mv_max_raw / 5_000_000) * 5_000_000)
     st.markdown("**Market value (€)**")
-    use_m = st.checkbox("Adjust in millions", True)
+    use_m = st.checkbox("Adjust in millions", True, key=f"att_use_m_{selected_file}")
     if use_m:
         max_m = int(mv_cap // 1_000_000)
-        mv_min_m, mv_max_m = st.slider("Range (M€)", 0, max_m, (0, max_m))
+        mv_min_m, mv_max_m = st.slider("Range (M€)", 0, max_m, (0, max_m), key=f"att_mv_range_m_{selected_file}")
         min_value = mv_min_m * 1_000_000
         max_value = mv_max_m * 1_000_000
     else:
-        min_value, max_value = st.slider("Range (€)", 0, mv_cap, (0, mv_cap), step=100_000)
-    value_band_max = st.number_input("Value band (tab 4 max €)", min_value=0,
-                                     value=min_value if min_value>0 else 5_000_000, step=250_000)
+        min_value, max_value = st.slider(
+            "Range (€)", 0, mv_cap, (0, mv_cap), step=100_000, key=f"att_mv_range_{selected_file}"
+        )
+    value_band_max = st.number_input(
+        "Value band (tab 4 max €)", min_value=0,
+        value=min_value if min_value > 0 else 5_000_000, step=250_000, key=f"att_value_band_{selected_file}"
+    )
 
     st.subheader("Minimum performance thresholds")
-    enable_min_perf = st.checkbox("Require minimum percentile on selected metrics", value=False)
-    sel_metrics = st.multiselect("Metrics to threshold", FEATURES[:],
-                                 default=['Non-penalty goals per 90','xG per 90'] if enable_min_perf else [])
-    min_pct = st.slider("Minimum percentile (0–100)", 0, 100, 60)
+    enable_min_perf = st.checkbox(
+        "Require minimum percentile on selected metrics", value=False, key=f"att_enable_min_perf_{selected_file}"
+    )
+    sel_metrics = st.multiselect(
+        "Metrics to threshold", FEATURES[:],
+        default=(['Non-penalty goals per 90','xG per 90'] if enable_min_perf else []),
+        key=f"att_sel_metrics_{selected_file}"
+    )
+    min_pct = st.slider("Minimum percentile (0–100)", 0, 100, 60, key=f"att_min_pct_{selected_file}")
 
-    top_n = st.number_input("Top N per table", 5, 200, 50, 5)
-    round_to = st.selectbox("Round output percentiles to", [0, 1], index=0)
+    top_n = st.number_input("Top N per table", 5, 200, 50, 5, key=f"att_topn_{selected_file}")
+    round_to = st.selectbox("Round output percentiles to", [0, 1], index=0, key=f"att_round_to_{selected_file}")
 
 # ----------------- VALIDATION -----------------
 missing = [c for c in REQUIRED_BASE if c not in df.columns]
@@ -279,27 +327,56 @@ if missing_feats:
     st.stop()
 
 # ----------------- FILTER POOL -----------------
-df_f = df[df["League"].isin(leagues_sel)].copy()
-df_f = df_f[df_f["Position"].astype(str).apply(position_filter)]
-df_f = df_f[df_f["Minutes played"].between(min_minutes, max_minutes)]
-df_f = df_f[df_f["Age"].between(min_age, max_age)]
-df_f = df_f.dropna(subset=FEATURES)
+df_f = df.copy()
 
+# league select
+if st.session_state.get("att_leagues_sel"):
+    df_f = df_f[df_f["League"].isin(st.session_state["att_leagues_sel"])]
+
+# position
+pos_text_val = st.session_state.get(f"att_pos_text_{selected_file}", "RW")
+if pos_text_val:  # keep your attacker filter; also accept startswith text if you want
+    df_f = df_f[df_f["Position"].astype(str).apply(position_filter)]
+
+# numerics
+df_f["Minutes played"] = pd.to_numeric(df_f["Minutes played"], errors="coerce")
+df_f["Age"] = pd.to_numeric(df_f["Age"], errors="coerce")
+min_minutes, max_minutes = st.session_state[f"att_minmax_minutes_{selected_file}"]
+df_f = df_f[df_f["Minutes played"].between(min_minutes, max_minutes)]
+min_age, max_age = st.session_state[f"att_minmax_age_{selected_file}"]
+df_f = df_f[df_f["Age"].between(min_age, max_age)]
+
+# contract
 df_f["Contract expires"] = pd.to_datetime(df_f["Contract expires"], errors="coerce")
-if apply_contract:
+if st.session_state.get(f"att_apply_contract_{selected_file}", False):
+    cutoff_year = st.session_state[f"att_cutoff_{selected_file}"]
     df_f = df_f[df_f["Contract expires"].dt.year <= cutoff_year]
 
-df_f["League Strength"] = df_f["League"].map(LEAGUE_STRENGTHS).fillna(0.0)
+# league strength — default to 50.0
+df_f["League Strength"] = df_f["League"].map(LEAGUE_STRENGTHS).fillna(50.0)
+min_strength, max_strength = st.session_state[f"att_minmax_strength_{selected_file}"]
 df_f = df_f[(df_f["League Strength"] >= float(min_strength)) & (df_f["League Strength"] <= float(max_strength))]
+
+# market value
+df_f["Market value"] = pd.to_numeric(df_f["Market value"], errors="coerce")
+if st.session_state.get(f"att_use_m_{selected_file}", True):
+    mv_min_m, mv_max_m = st.session_state[f"att_mv_range_m_{selected_file}"]
+    min_value = mv_min_m * 1_000_000
+    max_value = mv_max_m * 1_000_000
+else:
+    min_value, max_value = st.session_state[f"att_mv_range_{selected_file}"]
 df_f = df_f[(df_f["Market value"] >= min_value) & (df_f["Market value"] <= max_value)]
+
+# features numeric + dropna
+for c in FEATURES:
+    df_f[c] = pd.to_numeric(df_f[c], errors="coerce")
+df_f = df_f.dropna(subset=FEATURES)
+
 if df_f.empty:
     st.warning("No players after filters. Loosen filters.")
     st.stop()
 
 # ----------------- PERCENTILES FOR TABLES (per league) -----------------
-for c in FEATURES:
-    df_f[c] = pd.to_numeric(df_f[c], errors="coerce")
-df_f = df_f.dropna(subset=FEATURES)
 for feat in FEATURES:
     df_f[f"{feat} Percentile"] = df_f.groupby("League")[feat].transform(lambda x: x.rank(pct=True) * 100.0)
 
@@ -313,14 +390,23 @@ def compute_weighted_role_score(df_in: pd.DataFrame, metrics: dict, beta: float,
             wsum += df_in[col].values * w
     player_score = wsum / total_w  # 0..100
     if league_weighting:
-        league_scaled = (df_in["League Strength"].fillna(50) / 100.0) * 100.0
-        return (1 - beta) * player_score + beta * league_scaled
+        league_scaled = df_in["League Strength"].fillna(50.0)  # already 0..100 scale
+        return (1 - beta) * player_score + beta * league_scaled.values
     return player_score
 
+use_league_weighting = st.session_state[f"att_use_lw_{selected_file}"]
+beta = st.session_state[f"att_beta_{selected_file}"]
+
 for role_name, role_def in ROLES.items():
-    df_f[f"{role_name} Score"] = compute_weighted_role_score(df_f, role_def["metrics"], beta=beta, league_weighting=use_league_weighting)
+    df_f[f"{role_name} Score"] = compute_weighted_role_score(
+        df_f, role_def["metrics"], beta=beta, league_weighting=use_league_weighting
+    )
 
 # ----------------- THRESHOLDS -----------------
+enable_min_perf = st.session_state[f"att_enable_min_perf_{selected_file}"]
+sel_metrics = st.session_state[f"att_sel_metrics_{selected_file}"]
+min_pct = st.session_state[f"att_min_pct_{selected_file}"]
+
 if enable_min_perf and sel_metrics:
     keep_mask = np.ones(len(df_f), dtype=bool)
     for m in sel_metrics:
@@ -333,10 +419,12 @@ if enable_min_perf and sel_metrics:
         st.stop()
 
 # ----------------- HELPERS -----------------
+round_to = st.session_state[f"att_round_to_{selected_file}"]
+
 def fmt_cols(df_in: pd.DataFrame, score_col: str) -> pd.DataFrame:
     out = df_in.copy()
     out[score_col] = out[score_col].round(round_to).astype(int if round_to == 0 else float)
-    cols = ["Player","Team","League","Position", "Age","Contract expires","League Strength", score_col]
+    cols = ["Player","Team","League","Position","Age","Contract expires","League Strength", score_col]
     return out[cols]
 
 def top_table(df_in: pd.DataFrame, role: str, head_n: int) -> pd.DataFrame:
@@ -351,37 +439,51 @@ def filtered_view(df_in: pd.DataFrame, *, age_max=None, contract_year=None, valu
     if age_max is not None:
         t = t[t["Age"] <= age_max]
     if contract_year is not None:
-        t = t[t["Contract expires"].dt.year <= contract_year]
+        years = pd.to_datetime(t["Contract expires"], errors="coerce").dt.year
+        t = t[years <= contract_year]
     if value_max is not None:
         t = t[t["Market value"] <= value_max]
     return t
 
 # ----------------- TABS (tables) -----------------
+top_n = int(st.session_state[f"att_topn_{selected_file}"])
+value_band_max = st.session_state[f"att_value_band_{selected_file}"]
+
 tabs = st.tabs(["Overall Top N", "U23 Top N", "Expiring Contracts", "Value Band (≤ max €)"])
 for role, role_def in ROLES.items():
     with tabs[0]:
-        st.subheader(f"{role} — Overall Top {int(top_n)}")
+        st.subheader(f"{role} — Overall Top {top_n}")
         st.caption(role_def.get("desc", ""))
-        st.dataframe(top_table(df_f, role, int(top_n)), use_container_width=True)
+        st.dataframe(top_table(df_f, role, top_n), use_container_width=True)
         st.divider()
     with tabs[1]:
-        u23_cutoff = st.number_input(f"{role} — U23 cutoff", min_value=16, max_value=30, value=23, step=1, key=f"u23_{role}")
-        st.subheader(f"{role} — U{u23_cutoff} Top {int(top_n)}")
+        u23_cutoff = st.number_input(
+            f"{role} — U23 cutoff", min_value=16, max_value=30, value=23, step=1, key=f"att_u23_{role}_{selected_file}"
+        )
+        st.subheader(f"{role} — U{u23_cutoff} Top {top_n}")
         st.caption(role_def.get("desc", ""))
-        st.dataframe(top_table(filtered_view(df_f, age_max=u23_cutoff), role, int(top_n)), use_container_width=True)
+        st.dataframe(top_table(filtered_view(df_f, age_max=u23_cutoff), role, top_n), use_container_width=True)
         st.divider()
     with tabs[2]:
-        exp_year = st.number_input(f"{role} — Expiring by year", min_value=2024, max_value=2030, value=cutoff_year, step=1, key=f"exp_{role}")
+        exp_year = st.number_input(
+            f"{role} — Expiring by year", min_value=2024, max_value=2030,
+            value=st.session_state[f"att_cutoff_{selected_file}"], step=1,
+            key=f"att_exp_{role}_{selected_file}"
+        )
         st.subheader(f"{role} — Contracts expiring ≤ {exp_year}")
         st.caption(role_def.get("desc", ""))
-        st.dataframe(top_table(filtered_view(df_f, contract_year=exp_year), role, int(top_n)), use_container_width=True)
+        st.dataframe(top_table(filtered_view(df_f, contract_year=exp_year), role, top_n), use_container_width=True)
         st.divider()
     with tabs[3]:
-        v_max = st.number_input(f"{role} — Max value (€)", min_value=0, value=value_band_max, step=100_000, key=f"val_{role}")
+        v_max = st.number_input(
+            f"{role} — Max value (€)", min_value=0, value=value_band_max, step=100_000,
+            key=f"att_val_{role}_{selected_file}"
+        )
         st.subheader(f"{role} — Value band ≤ €{v_max:,.0f}")
         st.caption(role_def.get("desc", ""))
-        st.dataframe(top_table(filtered_view(df_f, value_max=v_max), role, int(top_n)), use_container_width=True)
+        st.dataframe(top_table(filtered_view(df_f, value_max=v_max), role, top_n), use_container_width=True)
         st.divider()
+# ----------------- END ATTACKER BLOCK -----------------
 
 # ----------------- METRIC LEADERBOARD — themed + palettes + custom title + highlights (UPDATED) -----------------
 import re, numpy as np, matplotlib.pyplot as plt
