@@ -231,19 +231,28 @@ with st.sidebar:
     if use_top20: seed |= PRESET_LEAGUES["Top 20 Europe"]
     if use_efl:   seed |= PRESET_LEAGUES["EFL (England 2–4)"]
 
-    # Drive leagues from CURRENT dataset only
     leagues_avail = sorted(pd.Series(df.get("League", pd.Series(dtype=object))).dropna().unique().tolist())
-    # keep only presets that exist in this dataset
     seed = {x for x in seed if x in leagues_avail}
     default_leagues = sorted(seed) if seed else leagues_avail
 
-    leagues_sel = multiselect_safe(
+    ms_key = f"att_leagues_sel_{selected_file}"
+    preset_sig = (use_top5, use_top20, use_efl, selected_file)
+
+    if ms_key not in st.session_state:
+        st.session_state[ms_key] = default_leagues
+
+    if st.session_state.get("att_preset_sig") != preset_sig:
+        st.session_state["att_preset_sig"] = preset_sig
+        st.session_state[ms_key] = default_leagues
+
+    leagues_sel = st.multiselect(
         "Leagues (add or prune the presets)",
         options=leagues_avail,
-        default=st.session_state.get("att_leagues_sel", default_leagues),
-        key=f"att_leagues_sel_{selected_file}",
+        default=st.session_state[ms_key],
+        key=ms_key,
     )
     st.session_state["att_leagues_sel"] = leagues_sel
+
 
     # numeric coercions
     df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")

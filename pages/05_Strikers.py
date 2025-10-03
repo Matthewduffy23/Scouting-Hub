@@ -200,29 +200,40 @@ def multiselect_safe(label, *, options, default=None, key=None, **kwargs):
 with st.sidebar:
     st.header("Filters")
     c1, c2, c3 = st.columns([1,1,1])
-    use_top5  = c1.checkbox("Top-5 EU", value=False, key=f"use_top5_{selected_file}")
-    use_top20 = c2.checkbox("Top-20 EU", value=False, key=f"use_top20_{selected_file}")
-    use_efl   = c3.checkbox("EFL", value=False, key=f"use_efl_{selected_file}")
+    use_top5  = c1.checkbox("Top-5 EU", value=False, key=f"st_top5_{selected_file}")
+    use_top20 = c2.checkbox("Top-20 EU", value=False, key=f"st_top20_{selected_file}")
+    use_efl   = c3.checkbox("EFL", value=False, key=f"st_efl_{selected_file}")
 
+    # Preset seed
     seed = set()
     if use_top5:  seed |= PRESET_LEAGUES["Top 5 Europe"]
     if use_top20: seed |= PRESET_LEAGUES["Top 20 Europe"]
     if use_efl:   seed |= PRESET_LEAGUES["EFL (England 2–4)"]
 
-    # Drive leagues from the CURRENT dataset only
+    # Options only from CURRENT dataset
     leagues_avail = sorted(pd.Series(df.get("League", pd.Series(dtype=object))).dropna().unique().tolist())
-    # Presets must exist in the dataset
     seed = {x for x in seed if x in leagues_avail}
     default_leagues = sorted(seed) if seed else leagues_avail
 
-    leagues_sel = multiselect_safe(
+    # Preset-sync’d multiselect
+    ms_key = f"st_leagues_sel_{selected_file}"
+    preset_sig = (use_top5, use_top20, use_efl, selected_file)
+
+    if ms_key not in st.session_state:
+        st.session_state[ms_key] = default_leagues
+
+    if st.session_state.get("st_preset_sig") != preset_sig:
+        st.session_state["st_preset_sig"] = preset_sig
+        st.session_state[ms_key] = default_leagues
+
+    leagues_sel = st.multiselect(
         "Leagues (add or prune the presets)",
         options=leagues_avail,
-        default=st.session_state.get("leagues_sel", default_leagues),
-        key=f"leagues_sel_{selected_file}",
+        default=st.session_state[ms_key],
+        key=ms_key,
     )
-    # Mirror to a generic key if downstream code reads it
-    st.session_state["leagues_sel"] = leagues_sel
+    # Mirror to a simpler key if your filtering code reads it:
+    st.session_state["st_leagues_sel"] = leagues_sel
 
     # numeric coercions
     df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
