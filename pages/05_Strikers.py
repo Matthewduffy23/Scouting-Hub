@@ -193,8 +193,9 @@ with st.sidebar:
     if use_top20: seed |= PRESET_LEAGUES["Top 20 Europe"]
     if use_efl:   seed |= PRESET_LEAGUES["EFL (England 2–4)"]
 
-    leagues_avail = sorted(set(INCLUDED_LEAGUES) | set(df.get("League", pd.Series([])).dropna().unique()))
-    default_leagues = sorted(seed) if seed else INCLUDED_LEAGUES
+    # ⬇️ Changed: drive leagues from the current dataset only
+    leagues_avail = sorted(df.get("League", pd.Series([])).dropna().unique())
+    default_leagues = sorted(seed) if seed else leagues_avail
     leagues_sel = st.multiselect("Leagues (add or prune the presets)", leagues_avail, default=default_leagues)
 
     # numeric coercions
@@ -215,6 +216,9 @@ with st.sidebar:
     use_league_weighting = st.checkbox("Use league weighting in role score", value=False)
     beta = st.slider("League weighting beta", 0.0, 1.0, 0.40, 0.05,
                      help="0 = ignore league strength; 1 = only league strength")
+
+    # ⬇️ Reminder: when mapping strengths later, use .fillna(50.0) so unknown leagues default to 50.
+    # Example (outside this block): df_f["League Strength"] = df_f["League"].map(LEAGUE_STRENGTHS).fillna(50.0)
 
     # Market value
     df["Market value"] = pd.to_numeric(df["Market value"], errors="coerce")
@@ -241,34 +245,6 @@ with st.sidebar:
 
     top_n = st.number_input("Top N per table", 5, 200, 50, 5)
     round_to = st.selectbox("Round output percentiles to", [0, 1], index=0)
-
-# ----------------- VALIDATION -----------------
-missing = [c for c in REQUIRED_BASE if c not in df.columns]
-if missing:
-    st.error(f"Dataset missing required base columns: {missing}")
-    st.stop()
-missing_feats = [c for c in FEATURES if c not in df.columns]
-if missing_feats:
-    st.error(f"Dataset missing required feature columns: {missing_feats}")
-    st.stop()
-
-# ----------------- FILTER POOL -----------------
-df_f = df[df["League"].isin(leagues_sel)].copy()
-df_f = df_f[df_f["Position"].astype(str).apply(position_filter)]
-df_f = df_f[df_f["Minutes played"].between(min_minutes, max_minutes)]
-df_f = df_f[df_f["Age"].between(min_age, max_age)]
-df_f = df_f.dropna(subset=FEATURES)
-
-df_f["Contract expires"] = pd.to_datetime(df_f["Contract expires"], errors="coerce")
-if apply_contract:
-    df_f = df_f[df_f["Contract expires"].dt.year <= cutoff_year]
-
-df_f["League Strength"] = df_f["League"].map(LEAGUE_STRENGTHS).fillna(0.0)
-df_f = df_f[(df_f["League Strength"] >= float(min_strength)) & (df_f["League Strength"] <= float(max_strength))]
-df_f = df_f[(df_f["Market value"] >= min_value) & (df_f["Market value"] <= max_value)]
-if df_f.empty:
-    st.warning("No players after filters. Loosen filters.")
-    st.stop()
 
 # ----------------- PERCENTILES FOR TABLES (per league) -----------------
 for c in FEATURES:
