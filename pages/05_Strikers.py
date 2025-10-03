@@ -1,6 +1,4 @@
-# app.py — Advanced Scouting + Notes + Comparison Radar + Similar Players + Club Fit
-# Single file, drop-in. Requires: streamlit, pandas, numpy, matplotlib.
-# scikit-learn is optional; a tiny StandardScaler fallback is included.
+# app.py — Advanced Striker Scouting System (dataset-switch safe, CF only)
 
 import os
 import io
@@ -34,7 +32,7 @@ except Exception:
         def fit_transform(self, X):
             self.fit(X); return self.transform(X)
 
-# ✅ --- DATA LOADER ---
+# ----------------- DATA LOADER -----------------
 @st.cache_data(show_spinner=False)
 def _read_csv_from_path(path_str: str) -> pd.DataFrame:
     return pd.read_csv(path_str)
@@ -52,32 +50,28 @@ def load_df(csv_name: str) -> pd.DataFrame:
     for p in candidates:
         if p.exists():
             return _read_csv_from_path(str(p))
-
     up = st.file_uploader(f"Upload {csv_name}", type=["csv"])
     if up is None:
         st.stop()
     return _read_csv_from_bytes(up.getvalue())
 
-# 🔍 Detect all CSVs starting with WORLD
+# 🔍 Detect all CSVs starting with WORLD*
 csv_files = [f.name for f in Path.cwd().glob("WORLD*.csv")]
-
 if not csv_files:
     st.error("No WORLD*.csv files found in the project folder.")
     st.stop()
 
-selected_file = st.selectbox("Select dataset to load:", csv_files)
+selected_file = st.selectbox("Select dataset to load:", csv_files, key="cf_dataset_select")
 df = load_df(selected_file)
 
 # ---- Reset per-dataset UI state once on change ----
-if st.session_state.get("_active_dataset") != selected_file:
-    # Clear any state keys that depend on league options so they don't crash after a dataset switch
+if st.session_state.get("_active_dataset_cf") != selected_file:
     for k in [
-        "leagues_sel",  # mirror key used below
-        # If you have other league-based widgets elsewhere, add their keys here, e.g.:
-        # "sim_leagues", "cf_target_leagues", "cf_candidate_leagues",
+        "cf_leagues_sel",
+        # add other striker-page league-based keys here if needed
     ]:
         st.session_state.pop(k, None)
-    st.session_state["_active_dataset"] = selected_file
+    st.session_state["_active_dataset_cf"] = selected_file
 
 # ----------------- PAGE -----------------
 st.set_page_config(page_title="Advanced Striker Scouting System", layout="wide")
@@ -138,29 +132,35 @@ POLAR_METRICS = [
     "Accurate passes, %","xA per 90","Progressive runs per 90",
 ]
 
-# -------- Position filter (central forwards) --------
-CM_PREFIXES = ('CF',)
-
+# -------- Position filter (central forwards only) --------
+CF_PREFIXES = ('CF',)
 def position_filter(pos):
-    return str(pos).strip().upper().startswith(CM_PREFIXES)
-
-# -------------------------------------------
+    return str(pos).strip().upper().startswith(CF_PREFIXES)
+# --------------------------------------------------------
 
 # Role buckets
 ROLES = {
-    'Target Man CF': {'desc': "Aerial outlet, duel dominance, occupy CBs, threaten crosses & second balls.",
-                      'metrics': { 'Aerial duels per 90': 3, 'Aerial duels won, %': 4 }},
-    'Goal Threat CF': {'desc': "High shot & xG volume, box presence, consistent SoT and finishing.",
-                       'metrics': {'Non-penalty goals per 90': 3,'Shots per 90': 1.5,'xG per 90': 3,
-                                   'Touches in box per 90': 1,'Shots on target, %': 0.5}},
-    'Link-Up CF': {'desc': "Combine & create; link play; progress & deliver to the penalty area.",
-                   'metrics': {'Passes per 90': 2, 'Passes to penalty area per 90': 1.5,
-                               'Deep completions per 90': 1, 'Smart passes per 90': 1.5,
-                               'Accurate passes, %': 1.5, 'Key passes per 90': 1,
-                               'Dribbles per 90': 2, 'Successful dribbles, %': 1,
-                               'Progressive runs per 90': 2, 'xA per 90': 3}},
-    'All in': {'desc': "Blend of creation + scoring; balanced all-round attacking profile.",
-               'metrics': { 'xA per 90': 2, 'Dribbles per 90': 2, 'xG per 90': 3, 'Non-penalty goals per 90': 3 }}
+    'Target Man CF': {
+        'desc': "Aerial outlet, duel dominance, occupy CBs, threaten crosses & second balls.",
+        'metrics': {'Aerial duels per 90': 3, 'Aerial duels won, %': 4}
+    },
+    'Goal Threat CF': {
+        'desc': "High shot & xG volume, box presence, consistent SoT and finishing.",
+        'metrics': {'Non-penalty goals per 90': 3,'Shots per 90': 1.5,'xG per 90': 3,
+                    'Touches in box per 90': 1,'Shots on target, %': 0.5}
+    },
+    'Link-Up CF': {
+        'desc': "Combine & create; link play; progress & deliver to the penalty area.",
+        'metrics': {'Passes per 90': 2, 'Passes to penalty area per 90': 1.5,
+                    'Deep completions per 90': 1, 'Smart passes per 90': 1.5,
+                    'Accurate passes, %': 1.5, 'Key passes per 90': 1,
+                    'Dribbles per 90': 2, 'Successful dribbles, %': 1,
+                    'Progressive runs per 90': 2, 'xA per 90': 3}
+    },
+    'All in': {
+        'desc': "Blend of creation + scoring; balanced all-round attacking profile.",
+        'metrics': {'xA per 90': 2, 'Dribbles per 90': 2, 'xG per 90': 3, 'Non-penalty goals per 90': 3}
+    }
 }
 
 LEAGUE_STRENGTHS = {
@@ -190,31 +190,44 @@ LEAGUE_STRENGTHS = {
 }
 REQUIRED_BASE = {"Player","Team","League","Age","Position","Minutes played","Market value","Contract expires","Goals"}
 
+# --------- Fix missing "Contract expires" early so validation doesn't fail ----------
+if "Contract expires" not in df.columns:
+    df["Contract expires"] = ""  # will be parsed to NaT later
+
+# ----------------- WIDGET SAFETY -----------------
+def multiselect_safe(label, *, options, default=None, key=None, **kwargs):
+    """Clamp defaults to current options to avoid Streamlit crashes after dataset switches."""
+    options = list(options)
+    default = [x for x in (default or []) if x in options]
+    return st.multiselect(label, options=options, default=default, key=key, **kwargs)
+
 # ----------------- SIDEBAR FILTERS -----------------
 with st.sidebar:
     st.header("Filters")
     c1, c2, c3 = st.columns([1,1,1])
-    use_top5  = c1.checkbox("Top-5 EU", value=False, key=f"att_top5_{selected_file}")
-    use_top20 = c2.checkbox("Top-20 EU", value=False, key=f"att_top20_{selected_file}")
-    use_efl   = c3.checkbox("EFL", value=False, key=f"att_efl_{selected_file}")
+    use_top5  = c1.checkbox("Top-5 EU", value=False, key=f"cf_top5_{selected_file}")
+    use_top20 = c2.checkbox("Top-20 EU", value=False, key=f"cf_top20_{selected_file}")
+    use_efl   = c3.checkbox("EFL", value=False, key=f"cf_efl_{selected_file}")
 
     seed = set()
     if use_top5:  seed |= PRESET_LEAGUES["Top 5 Europe"]
     if use_top20: seed |= PRESET_LEAGUES["Top 20 Europe"]
     if use_efl:   seed |= PRESET_LEAGUES["EFL (England 2–4)"]
 
+    # Drive leagues from CURRENT dataset only
     leagues_avail = sorted(pd.Series(df.get("League", pd.Series(dtype=object))).dropna().unique().tolist())
-    seed = {x for x in seed if x in leagues_avail}
+    seed = {x for x in seed if x in leagues_avail}  # keep only presets present in this dataset
     default_leagues = sorted(seed) if seed else leagues_avail
 
-    ms_key = f"att_leagues_sel_{selected_file}"
+    ms_key = f"cf_leagues_sel_{selected_file}"
     preset_sig = (use_top5, use_top20, use_efl, selected_file)
 
+    # Initialize on first render for this dataset
     if ms_key not in st.session_state:
         st.session_state[ms_key] = default_leagues
-
-    if st.session_state.get("att_preset_sig") != preset_sig:
-        st.session_state["att_preset_sig"] = preset_sig
+    # If preset toggles changed, reset defaults to reflect them
+    if st.session_state.get("cf_preset_sig") != preset_sig:
+        st.session_state["cf_preset_sig"] = preset_sig
         st.session_state[ms_key] = default_leagues
 
     leagues_sel = st.multiselect(
@@ -223,8 +236,7 @@ with st.sidebar:
         default=st.session_state[ms_key],
         key=ms_key,
     )
-    st.session_state["att_leagues_sel"] = leagues_sel
-
+    st.session_state["cf_leagues_sel"] = leagues_sel
 
     # numeric coercions
     df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
