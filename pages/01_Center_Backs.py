@@ -233,15 +233,30 @@ with st.sidebar:
 
     # Drive leagues from CURRENT dataset only
     leagues_avail = sorted(pd.Series(df.get("League", pd.Series(dtype=object))).dropna().unique().tolist())
-    seed = {x for x in seed if x in leagues_avail}  # keep only presets present in this dataset
+    seed = {x for x in seed if x in leagues_avail}  # only presets present in this dataset
     default_leagues = sorted(seed) if seed else leagues_avail
 
-    leagues_sel = multiselect_safe(
+    # --- Make presets actually set the multiselect value ---
+    ms_key = f"cb_leagues_sel_{selected_file}"
+    preset_sig = (use_top5, use_top20, use_efl, selected_file)
+
+    # First-time init for this dataset
+    if ms_key not in st.session_state:
+        st.session_state[ms_key] = default_leagues
+
+    # If any preset checkbox changed, overwrite the multiselect value
+    if st.session_state.get("cb_preset_sig") != preset_sig:
+        st.session_state["cb_preset_sig"] = preset_sig
+        st.session_state[ms_key] = default_leagues
+
+    # Render the multiselect, value comes from session_state[ms_key]
+    leagues_sel = st.multiselect(
         "Leagues (add or prune the presets)",
         options=leagues_avail,
-        default=st.session_state.get("cb_leagues_sel", default_leagues),
-        key=f"cb_leagues_sel_{selected_file}",
+        default=st.session_state[ms_key],   # only used on first render, state wins afterward
+        key=ms_key,
     )
+    # Mirror to a generic key if the rest of your code reads it
     st.session_state["cb_leagues_sel"] = leagues_sel
 
     # numeric coercions
