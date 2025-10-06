@@ -135,42 +135,18 @@ POLAR_METRICS = [
 ]
 
 # -------- Position filter (fullbacks) --------
-# ROLE_CHOICE is set by the sidebar radio below
-ROLE_CHOICE = globals().get("ROLE_CHOICE", "All")
-
-def position_filter(pos):
-    """
-    Keep only Fullbacks/Wingbacks based on the sidebar role toggle.
-    Left Backs:  LB, LWB
-    Right Backs: RB, RWB
-    All: both sides
-    Works with strings like "LB", "RB/LB", "RWB, RB", etc.
-    """
-    if pos is None:
-        return False
-
-    s = str(pos).upper()
-    for sep in ["/", "|", ";"]:
-        s = s.replace(sep, ",")
-    tokens = [t.strip() for t in s.split(",") if t.strip()]
-
-    left_set  = ("LB", "LWB")
-    right_set = ("RB", "RWB")
-
-    if ROLE_CHOICE == "Left Backs":
-        prefixes = left_set
-    elif ROLE_CHOICE == "Right Backs":
-        prefixes = right_set
-    else:  # "All"
-        prefixes = left_set + right_set
-
-    for t in tokens:
-        if t in prefixes:
-            return True
-        if any(t.startswith(pfx) for pfx in prefixes):
-            return True
-    return False
+# Uses the sidebar's ROLE_CHOICE: "All", "Left Backs", "Right Backs"
+def position_filter(pos) -> bool:
+    s = str(pos).strip().upper()
+    if ROLE_CHOICE == "Right Backs":
+        prefixes = ("RB", "RWB")
+    elif ROLE_CHOICE == "Left Backs":
+        prefixes = ("LB", "LWB")
+    else:  # All
+        prefixes = ("RB", "RWB", "LB", "LWB")
+    return any(s.startswith(p) for p in prefixes)
 # ---------------------------------------------
+
 
 
 # Role buckets
