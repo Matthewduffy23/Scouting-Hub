@@ -135,10 +135,43 @@ POLAR_METRICS = [
 ]
 
 # -------- Position filter (fullbacks) --------
-FB_PREFIXES = ('LB', 'LWB', 'RB', 'RWB')
+# ROLE_CHOICE is set by the sidebar radio below
+ROLE_CHOICE = globals().get("ROLE_CHOICE", "All")
+
 def position_filter(pos):
-    return str(pos).strip().upper().startswith(FB_PREFIXES)
-# -------------------------------------------
+    """
+    Keep only Fullbacks/Wingbacks based on the sidebar role toggle.
+    Left Backs:  LB, LWB
+    Right Backs: RB, RWB
+    All: both sides
+    Works with strings like "LB", "RB/LB", "RWB, RB", etc.
+    """
+    if pos is None:
+        return False
+
+    s = str(pos).upper()
+    for sep in ["/", "|", ";"]:
+        s = s.replace(sep, ",")
+    tokens = [t.strip() for t in s.split(",") if t.strip()]
+
+    left_set  = ("LB", "LWB")
+    right_set = ("RB", "RWB")
+
+    if ROLE_CHOICE == "Left Backs":
+        prefixes = left_set
+    elif ROLE_CHOICE == "Right Backs":
+        prefixes = right_set
+    else:  # "All"
+        prefixes = left_set + right_set
+
+    for t in tokens:
+        if t in prefixes:
+            return True
+        if any(t.startswith(pfx) for pfx in prefixes):
+            return True
+    return False
+# ---------------------------------------------
+
 
 # Role buckets
 ROLES = {
@@ -209,15 +242,19 @@ def multiselect_safe(label, *, options, default=None, key=None, **kwargs):
 # ----------------- SIDEBAR FILTERS -----------------
 with st.sidebar:
     st.header("Filters")
-    c1, c2, c3 = st.columns([1,1,1])
+    c1, c2, c3 = st.columns([1, 1, 1])
     use_top5  = c1.checkbox("Top-5 EU", value=False, key=f"fb_top5_{selected_file}")
     use_top20 = c2.checkbox("Top-20 EU", value=False, key=f"fb_top20_{selected_file}")
     use_efl   = c3.checkbox("EFL", value=False, key=f"fb_efl_{selected_file}")
 
+    # Preset → seed leagues
     seed = set()
-    if use_top5:  seed |= PRESET_LEAGUES["Top 5 Europe"]
-    if use_top20: seed |= PRESET_LEAGUES["Top 20 Europe"]
-    if use_efl:   seed |= PRESET_LEAGUES["EFL (England 2–4)"]
+    if use_top5:
+        seed |= PRESET_LEAGUES["Top 5 Europe"]
+    if use_top20:
+        seed |= PRESET_LEAGUES["Top 20 Europe"]
+    if use_efl:
+        seed |= PRESET_LEAGUES["EFL (England 2–4)"]
 
     leagues_avail = sorted(pd.Series(df.get("League", pd.Series(dtype=object))).dropna().unique().tolist())
     seed = {x for x in seed if x in leagues_avail}
@@ -226,9 +263,9 @@ with st.sidebar:
     ms_key = f"fb_leagues_sel_{selected_file}"
     preset_sig = (use_top5, use_top20, use_efl, selected_file)
 
+    # Seed multiselect defaults (dataset-safe)
     if ms_key not in st.session_state:
         st.session_state[ms_key] = default_leagues
-
     if st.session_state.get("fb_preset_sig") != preset_sig:
         st.session_state["fb_preset_sig"] = preset_sig
         st.session_state[ms_key] = default_leagues
@@ -241,7 +278,7 @@ with st.sidebar:
     )
     st.session_state["fb_leagues_sel"] = leagues_sel
 
-    # numeric coercions
+    # Numeric coercions
     df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
     df["Age"] = pd.to_numeric(df["Age"], errors="coerce")
 
@@ -260,11 +297,22 @@ with st.sidebar:
         "Age", age_min_data, age_max_data, (def_age_lo, def_age_hi), key=f"fb_minmax_age_{selected_file}"
     )
 
-    pos_text = st.text_input("Position startswith", "LB/RB", key=f"fb_pos_text_{selected_file}")
+    # Role toggle (drives position_filter)
+    st.subheader("Fullback roles to include")
+    role_choice = st.radio(
+        " ",  # no label
+        ["All", "Left Backs", "Right Backs"],
+        index=0,
+        key=f"fb_role_choice_{selected_file}",
+    )
+    # Keep in session for other blocks if needed
+    st.session_state["fb_role_choice"] = role_choice
 
+    # Contract filter
     apply_contract = st.checkbox("Filter by contract expiry", value=False, key=f"fb_apply_contract_{selected_file}")
     cutoff_year = st.slider("Max contract year (inclusive)", 2025, 2030, 2026, key=f"fb_cutoff_{selected_file}")
 
+    # League strength and weighting
     min_strength, max_strength = st.slider(
         "League quality (strength)", 0, 101, (0, 101), key=f"fb_minmax_strength_{selected_file}"
     )
@@ -298,19 +346,25 @@ with st.sidebar:
         value=min_value if min_value > 0 else 5_000_000, step=250_000, key=f"fb_value_band_{selected_file}"
     )
 
+    # Thresholds
     st.subheader("Minimum performance thresholds")
     enable_min_perf = st.checkbox(
         "Require minimum percentile on selected metrics", value=False, key=f"fb_enable_min_perf_{selected_file}"
     )
     sel_metrics = st.multiselect(
         "Metrics to threshold", FEATURES[:],
-        default=(['Non-penalty goals per 90','xG per 90'] if enable_min_perf else []),
+        default=(['Non-penalty goals per 90', 'xG per 90'] if enable_min_perf else []),
         key=f"fb_sel_metrics_{selected_file}"
     )
     min_pct = st.slider("Minimum percentile (0–100)", 0, 100, 60, key=f"fb_min_pct_{selected_file}")
 
+    # Table display
     top_n = st.number_input("Top N per table", 5, 200, 50, 5, key=f"fb_topn_{selected_file}")
     round_to = st.selectbox("Round output percentiles to", [0, 1], index=0, key=f"fb_round_to_{selected_file}")
+
+# Make ROLE_CHOICE available to position_filter()
+ROLE_CHOICE = st.session_state.get("fb_role_choice", "All")
+
 
 # ----------------- VALIDATION -----------------
 missing = [c for c in REQUIRED_BASE if c not in df.columns]
@@ -895,7 +949,7 @@ STYLE_MAP = {
         'style': None,
         'sw': 'Tackling %',
     },
-    'Long Passes per 90': {
+    'Long passes per 90': {
         'style': 'Long Passer',
         'sw': None,
     },
@@ -2478,7 +2532,7 @@ st.header("📊 Player Comparison Radar")
 
 DEFAULT_RADAR_METRICS = [
     "Defensive duels per 90","Defensive duels won, %","PAdj Interceptions","Aerial duels won, %",
-    "Passes per 90","Accurate passes, %","Progressive passes per 90", "Passes to penalty area per 90"
+    "Passes per 90","Accurate passes, %","Progressive passes per 90", "Passes to penalty area per 90",
     "Progressive runs per 90","Dribbles per 90",
     "xA per 90",
 ]
@@ -2734,7 +2788,7 @@ DEFAULT_SIM_WEIGHTS = {f: 1 for f in SIM_FEATURES}
 DEFAULT_SIM_WEIGHTS.update({
     'Passes per 90': 3, 'Passes to penalty area per 90': 2, 'Dribbles per 90': 2, 'xA per 90': 2,
     'Progressive passes per 90': 3, 'Defensive duels per 90': 2, 'Forward passes per 90': 3,
-    'PAdj Interceptions': 2, 'Aeriel duels won, %': 2, 'Touches in box per 90': 2,
+    'PAdj Interceptions': 2, 'Aerial duels won, %': 2, 'Touches in box per 90': 2,
 })
 
 # --- Build local presets safely (no reliance on _PRESETS_CF existing) ---
@@ -2947,7 +3001,7 @@ else:
 _DEFAULT_W_CF = {
     'Passes per 90': 3,'Passes to penalty area per 90': 2,'Dribbles per 90': 2,'xA per 90': 2,
     'Progressive passes per 90': 3,'Defensive duels per 90': 2,'Forward passes per 90': 3,
-    'PAdj Interceptions': 2,'Aeriel duels won, %': 2,'Touches in box per 90': 2,
+    'PAdj Interceptions': 2,'Aerial duels won, %': 2,'Touches in box per 90': 2,
 }
 
 _LS_CF = dict(LEAGUE_STRENGTHS) if 'LEAGUE_STRENGTHS' in globals() else {lg: 50.0 for lg in _included_leagues_cf}
