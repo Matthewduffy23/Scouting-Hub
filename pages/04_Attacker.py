@@ -89,23 +89,35 @@ POLAR_METRICS = [
     "Passes per 90","Accurate passes, %","xA per 90","Progressive runs per 90",
 ]
 
-# -------- Position filter (attacker) — token based & sidebar-driven --------
-import re
-SEP_RE = re.compile(r"[ ,;/\-\|]+")
+# -------- Position filter (attacker) --------
+# Sidebar will set ROLE_CHOICE to one of: "All", "Left Wingers", "Right Wingers", "Attacking Midfielders"
+ROLE_CHOICE = "All"  # default; sidebar will overwrite this
 
-def _pos_tokens(pos):
-    return [t for t in SEP_RE.split(str(pos).strip().upper()) if t]
+def position_filter(pos: str) -> bool:
+    p = str(pos).upper().strip()
 
-# role token sets
-LEFT_TOKENS  = {"LW", "LWF", "LAMF"}
-RIGHT_TOKENS = {"RW", "RWF", "RAMF"}
-AMF_TOKENS   = {"AMF"}
-ALL_TOKENS   = LEFT_TOKENS | RIGHT_TOKENS | AMF_TOKENS  # “All attacker roles”
+    if ROLE_CHOICE == "All":
+        # Accept classic attacker roles only; avoid RWB/LWB/wing-backs etc.
+        allowed_prefixes = ("RW", "LW", "RWF", "LWF", "RAMF", "LAMF", "AMF")
+        # keep standalone exacts too
+        if p in ("RW", "LW", "AMF"):
+            return True
+        return p.startswith(allowed_prefixes)
 
-def position_filter(pos) -> bool:
-    """Match any role token present in the sidebar-selected ALLOWED set."""
-    allowed = st.session_state.get(f"att_allowed_{selected_file}", ALL_TOKENS)
-    return any(t in allowed for t in _pos_tokens(pos))
+    if ROLE_CHOICE == "Right Wingers":
+        # RW exact + RWF + RAMF
+        return (p == "RW") or p.startswith(("RWF", "RAMF"))
+
+    if ROLE_CHOICE == "Left Wingers":
+        # LW exact + LWF + LAMF   (LAMF covers Left-AMF)
+        return (p == "LW") or p.startswith(("LWF", "LAMF"))
+
+    if ROLE_CHOICE == "Attacking Midfielders":
+        # Central AMF only
+        return (p == "AMF") or p.startswith("AMF")
+
+    return False
+
 # --------------------------------------------------------------------------
 
 # Role buckets (unchanged)
@@ -228,10 +240,12 @@ def multiselect_safe(label, *, options, default=None, key=None, **kwargs):
 # ----------------- SIDEBAR FILTERS -----------------
 with st.sidebar:
     st.header("Filters")
-    c1, c2, c3 = st.columns([1,1,1])
-    use_top5  = c1.checkbox("Top-5 EU", value=False, key=f"att_top5_{selected_file}")
+
+    # --- League presets ---
+    c1, c2, c3 = st.columns([1, 1, 1])
+    use_top5  = c1.checkbox("Top-5 EU",  value=False, key=f"att_top5_{selected_file}")
     use_top20 = c2.checkbox("Top-20 EU", value=False, key=f"att_top20_{selected_file}")
-    use_efl   = c3.checkbox("EFL", value=False, key=f"att_efl_{selected_file}")
+    use_efl   = c3.checkbox("EFL",       value=False, key=f"att_efl_{selected_file}")
 
     seed = set()
     if use_top5:  seed |= PRESET_LEAGUES["Top 5 Europe"]
@@ -247,7 +261,6 @@ with st.sidebar:
 
     if ms_key not in st.session_state:
         st.session_state[ms_key] = default_leagues
-
     if st.session_state.get("att_preset_sig") != preset_sig:
         st.session_state["att_preset_sig"] = preset_sig
         st.session_state[ms_key] = default_leagues
@@ -260,8 +273,7 @@ with st.sidebar:
     )
     st.session_state["att_leagues_sel"] = leagues_sel
 
-
-    # numeric coercions
+    # --- Minutes & Age ---
     df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
     df["Age"] = pd.to_numeric(df["Age"], errors="coerce")
 
@@ -280,30 +292,21 @@ with st.sidebar:
         "Age", age_min_data, age_max_data, (def_age_lo, def_age_hi), key=f"att_minmax_age_{selected_file}"
     )
 
-    # --- Attacker role selector ---
-    attacker_side = st.radio(
-        "Attacker roles to include",
+    # --- NEW: Attacker role toggle (drives position_filter) ---
+    st.subheader("Attacker roles to include")
+    role_choice = st.radio(
+        " ",  # empty label so only options show
         ["All", "Left Wingers", "Right Wingers", "Attacking Midfielders"],
         index=0,
-        key=f"attacker_side_{selected_file}",
+        key=f"att_role_choice_{selected_file}",
     )
+    ROLE_CHOICE = role_choice  # used by position_filter()
 
-    if attacker_side == "Left Wingers":
-        ALLOWED = LEFT_TOKENS
-    elif attacker_side == "Right Wingers":
-        ALLOWED = RIGHT_TOKENS
-    elif attacker_side == "Attacking Midfielders":
-        ALLOWED = AMF_TOKENS      # includes central AMF, plus LAMF/RAMF
-    else:
-        ALLOWED = ALL_TOKENS      # LW/RW + LAMF/RAMF/AMF
-
-    # stash for the filter function
-    st.session_state[f"att_allowed_{selected_file}"] = ALLOWED
-
-
+    # --- Contract filter ---
     apply_contract = st.checkbox("Filter by contract expiry", value=False, key=f"att_apply_contract_{selected_file}")
     cutoff_year = st.slider("Max contract year (inclusive)", 2025, 2030, 2026, key=f"att_cutoff_{selected_file}")
 
+    # --- League strength & weighting ---
     min_strength, max_strength = st.slider(
         "League quality (strength)", 0, 101, (0, 101), key=f"att_minmax_strength_{selected_file}"
     )
@@ -316,11 +319,12 @@ with st.sidebar:
         key=f"att_beta_{selected_file}"
     )
 
-    # Market value
+    # --- Market value ---
     df["Market value"] = pd.to_numeric(df["Market value"], errors="coerce")
     mv_col = "Market value"
     mv_max_raw = int(np.nanmax(df[mv_col])) if df[mv_col].notna().any() else 50_000_000
     mv_cap = int(math.ceil(mv_max_raw / 5_000_000) * 5_000_000)
+
     st.markdown("**Market value (€)**")
     use_m = st.checkbox("Adjust in millions", True, key=f"att_use_m_{selected_file}")
     if use_m:
@@ -332,11 +336,13 @@ with st.sidebar:
         min_value, max_value = st.slider(
             "Range (€)", 0, mv_cap, (0, mv_cap), step=100_000, key=f"att_mv_range_{selected_file}"
         )
+
     value_band_max = st.number_input(
         "Value band (tab 4 max €)", min_value=0,
         value=min_value if min_value > 0 else 5_000_000, step=250_000, key=f"att_value_band_{selected_file}"
     )
 
+    # --- Minimum performance thresholds ---
     st.subheader("Minimum performance thresholds")
     enable_min_perf = st.checkbox(
         "Require minimum percentile on selected metrics", value=False, key=f"att_enable_min_perf_{selected_file}"
@@ -348,8 +354,10 @@ with st.sidebar:
     )
     min_pct = st.slider("Minimum percentile (0–100)", 0, 100, 60, key=f"att_min_pct_{selected_file}")
 
+    # --- Table sizing / rounding ---
     top_n = st.number_input("Top N per table", 5, 200, 50, 5, key=f"att_topn_{selected_file}")
     round_to = st.selectbox("Round output percentiles to", [0, 1], index=0, key=f"att_round_to_{selected_file}")
+# ----------------- END SIDEBAR FILTERS -----------------
 
 # ----------------- VALIDATION -----------------
 missing = [c for c in REQUIRED_BASE if c not in df.columns]
@@ -368,7 +376,7 @@ df_f = df.copy()
 if st.session_state.get("att_leagues_sel"):
     df_f = df_f[df_f["League"].isin(st.session_state["att_leagues_sel"])]
 
-# position
+# position (driven by ROLE_CHOICE + position_filter)
 df_f = df_f[df_f["Position"].astype(str).apply(position_filter)]
 
 # numerics
