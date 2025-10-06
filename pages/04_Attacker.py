@@ -89,17 +89,24 @@ POLAR_METRICS = [
     "Passes per 90","Accurate passes, %","xA per 90","Progressive runs per 90",
 ]
 
-# -------- Position filter (attacker) --------
-# Define the prefixes that truly need startswith
-prefixes = ('RWF', 'LWF', 'LAMF', 'RAMF', 'AMF', 'RW, ', 'LW, ')
-def position_filter(pos):
-    pos_clean = str(pos).strip().upper()
-    if pos_clean in ('RW', 'LW'):      # exact match for RW and LW
-        return True
-    if pos_clean.startswith(prefixes): # startswith for others
-        return True
-    return False
-# -------------------------------------------
+# -------- Position filter (attacker) — token based & sidebar-driven --------
+import re
+SEP_RE = re.compile(r"[ ,;/\-\|]+")
+
+def _pos_tokens(pos):
+    return [t for t in SEP_RE.split(str(pos).strip().upper()) if t]
+
+# role token sets
+LEFT_TOKENS  = {"LW", "LWF", "LAMF"}
+RIGHT_TOKENS = {"RW", "RWF", "RAMF"}
+AMF_TOKENS   = {"AMF"}
+ALL_TOKENS   = LEFT_TOKENS | RIGHT_TOKENS | AMF_TOKENS  # “All attacker roles”
+
+def position_filter(pos) -> bool:
+    """Match any role token present in the sidebar-selected ALLOWED set."""
+    allowed = st.session_state.get(f"att_allowed_{selected_file}", ALL_TOKENS)
+    return any(t in allowed for t in _pos_tokens(pos))
+# --------------------------------------------------------------------------
 
 # Role buckets (unchanged)
 ROLES = {
@@ -273,7 +280,26 @@ with st.sidebar:
         "Age", age_min_data, age_max_data, (def_age_lo, def_age_hi), key=f"att_minmax_age_{selected_file}"
     )
 
-    pos_text = st.text_input("Position startswith", "RW", key=f"att_pos_text_{selected_file}")
+    # --- Attacker role selector ---
+    attacker_side = st.radio(
+        "Attacker roles to include",
+        ["All", "Left Wingers", "Right Wingers", "Attacking Midfielders"],
+        index=0,
+        key=f"attacker_side_{selected_file}",
+    )
+
+    if attacker_side == "Left Wingers":
+        ALLOWED = LEFT_TOKENS
+    elif attacker_side == "Right Wingers":
+        ALLOWED = RIGHT_TOKENS
+    elif attacker_side == "Attacking Midfielders":
+        ALLOWED = AMF_TOKENS      # includes central AMF, plus LAMF/RAMF
+    else:
+        ALLOWED = ALL_TOKENS      # LW/RW + LAMF/RAMF/AMF
+
+    # stash for the filter function
+    st.session_state[f"att_allowed_{selected_file}"] = ALLOWED
+
 
     apply_contract = st.checkbox("Filter by contract expiry", value=False, key=f"att_apply_contract_{selected_file}")
     cutoff_year = st.slider("Max contract year (inclusive)", 2025, 2030, 2026, key=f"att_cutoff_{selected_file}")
@@ -343,9 +369,7 @@ if st.session_state.get("att_leagues_sel"):
     df_f = df_f[df_f["League"].isin(st.session_state["att_leagues_sel"])]
 
 # position
-pos_text_val = st.session_state.get(f"att_pos_text_{selected_file}", "RW")
-if pos_text_val:  # keep your attacker filter; also accept startswith text if you want
-    df_f = df_f[df_f["Position"].astype(str).apply(position_filter)]
+df_f = df_f[df_f["Position"].astype(str).apply(position_filter)]
 
 # numerics
 df_f["Minutes played"] = pd.to_numeric(df_f["Minutes played"], errors="coerce")
