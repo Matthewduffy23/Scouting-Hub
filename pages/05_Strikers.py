@@ -1,14 +1,17 @@
-# app.py — Advanced Striker Scouting System (dataset-switch safe + working presets)
+# app.py — Advanced Striker Back Scouting System (dataset-switch safe)
 
 import os
 import io
 import math
 from pathlib import Path
+import re
 
 import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.patches import Circle, Wedge
 
 # ---- Optional sklearn (fallback provided) ----
 try:
@@ -29,12 +32,7 @@ except Exception:
         def fit_transform(self, X):
             self.fit(X); return self.transform(X)
 
-# ----------------- PAGE -----------------
-st.set_page_config(page_title="Advanced Striker Scouting System", layout="wide")
-st.title("🔎 Advanced Striker Scouting System")
-st.caption("Use the sidebar to shape your pool. Each section explains what you’re seeing and why.")
-
-# ----------------- DATA LOADER -----------------
+# ✅ --- Tiny CSV loaders (cached) ---
 @st.cache_data(show_spinner=False)
 def _read_csv_from_path(path_str: str) -> pd.DataFrame:
     return pd.read_csv(path_str)
@@ -63,6 +61,11 @@ if not csv_files:
     st.error("No WORLD*.csv files found in the project folder.")
     st.stop()
 
+# ----------------- PAGE -----------------
+st.set_page_config(page_title="Advanced Striker Back Scouting System", layout="wide")
+st.title("🔎 Advanced Striker Scouting System")
+st.caption("Use the sidebar to shape your pool. Each section explains what you’re seeing and why.")
+
 selected_file = st.selectbox("Select dataset to load:", csv_files, key="cf_dataset_select")
 df = load_df(selected_file)
 
@@ -70,7 +73,7 @@ df = load_df(selected_file)
 if st.session_state.get("_active_dataset_cf") != selected_file:
     for k in [
         "cf_leagues_sel",
-        # add more CF-specific keys here if you later create them elsewhere
+        # add more cf-specific keys here if you later create them elsewhere
     ]:
         st.session_state.pop(k, None)
     st.session_state["_active_dataset_cf"] = selected_file
