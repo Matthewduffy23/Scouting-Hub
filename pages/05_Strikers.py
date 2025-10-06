@@ -2641,6 +2641,12 @@ else:
 st.markdown("---")
 st.header("🧭 Similar players (within adjustable pool)")
 
+# Helper (safe multiselect) — keep once somewhere global if you already added it
+def _multiselect_safe(label, *, options, default=None, key=None, **kwargs):
+    options = list(options)
+    default = [x for x in (default or []) if x in options]
+    return st.multiselect(label, options=options, default=default, key=key, **kwargs)
+
 # --- Feature basket declared FIRST so UI can use it ---
 SIM_FEATURES = [
     'Defensive duels per 90', 'Aerial duels per 90', 'Aerial duels won, %',
@@ -2681,36 +2687,46 @@ _PRESETS_SIM = {
     "Custom": None,
 }
 
+# -------- dataset-scoped keys to avoid collisions --------
+_sim_ns = f"cf_sim__{selected_file}"          # namespace prefix
+_key_preset   = f"{_sim_ns}__preset"
+_key_leagues  = f"{_sim_ns}__leagues"
+_key_last_ps  = f"{_sim_ns}__last_preset"
+
 # ====================== UI (fixed preset behavior; multiselect always editable) ======================
 with st.expander("Similarity settings", expanded=False):
     # options
     candidate_league_options = sorted(_included_leagues_cf or _leagues_from_df)
-    default_sel = leagues_sel if 'leagues_sel' in globals() else candidate_league_options
+    # if you have a main leagues multiselect elsewhere, seed from that; else fall back to all
+    _main_leagues = st.session_state.get(f"cf_leagues_sel_{selected_file}", candidate_league_options)
+    default_sel = [x for x in _main_leagues if x in candidate_league_options] or candidate_league_options
 
     sim_preset_choices = list(_PRESETS_SIM.keys())
+    # initialize preset once
+    if _key_preset not in st.session_state:
+        st.session_state[_key_preset] = "All listed leagues"
     sim_preset = st.selectbox(
         "Candidate league preset",
         sim_preset_choices,
-        index=sim_preset_choices.index("All listed leagues"),
-        key="sim_preset"
+        index=sim_preset_choices.index(st.session_state[_key_preset]),
+        key=_key_preset
     )
 
     # compute preset values; keep only leagues that exist in options
     preset_vals_raw = _PRESETS_SIM.get(sim_preset) or []
     preset_vals = sorted([lg for lg in preset_vals_raw if lg in candidate_league_options])
 
-    # if preset changed, seed the selection once
-    _last_key = "_last_sim_preset"
-    if st.session_state.get(_last_key) != sim_preset:
-        st.session_state["sim_leagues"] = preset_vals if preset_vals else default_sel
-        st.session_state[_last_key] = sim_preset
+    # if preset changed, seed the dataset-scoped selection once
+    if st.session_state.get(_key_last_ps) != sim_preset:
+        st.session_state[_key_leagues] = preset_vals if preset_vals else default_sel
+        st.session_state[_key_last_ps] = sim_preset
 
-    # ALWAYS editable multiselect (no disabled=…)
-    sim_leagues = st.multiselect(
+    # ALWAYS editable multiselect, with safe defaults + dataset-scoped key
+    sim_leagues = _multiselect_safe(
         "Candidate leagues",
-        candidate_league_options,
-        default=st.session_state.get("sim_leagues", preset_vals if preset_vals else default_sel),
-        key="sim_leagues",
+        options=candidate_league_options,
+        default=st.session_state.get(_key_leagues, preset_vals if preset_vals else default_sel),
+        key=_key_leagues,
     )
 
     if preset_vals_raw and not preset_vals:
@@ -2719,21 +2735,21 @@ with st.expander("Similarity settings", expanded=False):
         st.caption(f"Preset: {sim_preset} — {len(preset_vals)} league(s). You can add/prune below.")
 
     # Base filters
-    sim_min_minutes, sim_max_minutes = st.slider("Minutes played (candidates)", 0, 5000, (500, 5000), key="sim_min")
-    sim_min_age, sim_max_age = st.slider("Age (candidates)", 14, 45, (16, 40), key="sim_age")
+    sim_min_minutes, sim_max_minutes = st.slider("Minutes played (candidates)", 0, 5000, (500, 5000), key=f"{_sim_ns}__min")
+    sim_min_age, sim_max_age = st.slider("Age (candidates)", 14, 45, (16, 40), key=f"{_sim_ns}__age")
 
     # Optional league quality filter (0–101)
-    use_strength_filter = st.toggle("Filter by league quality (0–101)", value=False, key="sim_use_strength")
+    use_strength_filter = st.toggle("Filter by league quality (0–101)", value=False, key=f"{_sim_ns}__use_strength")
     if use_strength_filter:
-        sim_min_strength, sim_max_strength = st.slider("League quality (strength)", 0, 101, (0, 101), key="sim_strength")
+        sim_min_strength, sim_max_strength = st.slider("League quality (strength)", 0, 101, (0, 101), key=f"{_sim_ns}__strength")
 
     # Blending
-    percentile_weight = st.slider("Percentile weight", 0.0, 1.0, 0.7, 0.05, key="sim_pw")
+    percentile_weight = st.slider("Percentile weight", 0.0, 1.0, 0.7, 0.05, key=f"{_sim_ns}__pw")
 
     # League difficulty adjustment
-    apply_league_adjust = st.toggle("Apply league difficulty adjustment", value=True, key="sim_apply_ladj")
+    apply_league_adjust = st.toggle("Apply league difficulty adjustment", value=True, key=f"{_sim_ns}__apply_ladj")
     league_weight_sim = st.slider(
-        "League weight (difficulty adj.)", 0.0, 1.0, 0.2, 0.05, key="sim_lw",
+        "League weight (difficulty adj.)", 0.0, 1.0, 0.2, 0.05, key=f"{_sim_ns}__lw",
         disabled=not apply_league_adjust
     )
 
@@ -2741,10 +2757,10 @@ with st.expander("Similarity settings", expanded=False):
     with st.expander("Advanced feature weights (1–5)", expanded=False):
         adv_weights = {}
         for f in SIM_FEATURES:
-            key = "simw_" + f.replace(" ", "_").replace("%", "pct").replace(",", "").replace(".", "_")
+            key = f"{_sim_ns}__w__" + f.replace(" ", "_").replace("%", "pct").replace(",", "").replace(".", "_")
             adv_weights[f] = st.slider(f"Weight — {f}", 1, 5, int(st.session_state.get(key, DEFAULT_SIM_WEIGHTS.get(f, 1))), key=key)
 
-    top_n_sim = st.number_input("Show top N", min_value=5, max_value=200, value=50, step=5, key="sim_top")
+    top_n_sim = st.number_input("Show top N", min_value=5, max_value=200, value=50, step=5, key=f"{_sim_ns}__top")
 
 # ====================== Similarity computation ======================
 if not player_row.empty:
@@ -2847,6 +2863,7 @@ if not player_row.empty:
         st.info("No candidates after similarity filters.")
 else:
     st.caption("Pick a player to see similar players.")
+# ----------------- END Similar Players -----------------
 
 
 
