@@ -182,34 +182,37 @@ with st.sidebar:
     use_top20 = c2.checkbox("Top-20 EU", value=False, key=f"cf_top20_{selected_file}")
     use_efl   = c3.checkbox("EFL", value=False, key=f"cf_efl_{selected_file}")
 
-    # Build seed from presets
+    # Options from CURRENT dataset only
+    leagues_avail = sorted(pd.Series(df.get("League", pd.Series(dtype=object))).dropna().unique().tolist())
+
+    # Build seed from presets and clamp to what's available
     seed = set()
     if use_top5:  seed |= PRESET_LEAGUES["Top 5 Europe"]
     if use_top20: seed |= PRESET_LEAGUES["Top 20 Europe"]
     if use_efl:   seed |= PRESET_LEAGUES["EFL (England 2–4)"]
-
-    # Options from CURRENT dataset only
-    leagues_avail = sorted(pd.Series(df.get("League", pd.Series(dtype=object))).dropna().unique().tolist())
     seed = {x for x in seed if x in leagues_avail}
+
+    # Defaults = presets if any, else everything available
     default_leagues = sorted(seed) if seed else leagues_avail
 
     # ONE source of truth (dataset-scoped)
     ms_key = f"cf_leagues_sel_{selected_file}"
     preset_sig = (use_top5, use_top20, use_efl, selected_file)
 
+    # Initialize and refresh defaults when presets/dataset change
     if ms_key not in st.session_state:
         st.session_state[ms_key] = default_leagues
     if st.session_state.get("cf_preset_sig") != preset_sig:
         st.session_state["cf_preset_sig"] = preset_sig
         st.session_state[ms_key] = default_leagues
 
-    leagues_sel = st.multiselect(
+    # Use the *safe* multiselect to clamp stale defaults
+    leagues_sel = multiselect_safe(
         "Leagues (add or prune the presets)",
         options=leagues_avail,
         default=st.session_state[ms_key],
         key=ms_key,
     )
-    st.session_state["cf_leagues_sel"] = leagues_sel
 
     # numeric coercions
     df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
