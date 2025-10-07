@@ -545,10 +545,6 @@ def _pro_chip_color(p: str) -> str:
 
 # ---- Flags (Twemoji) ----
 import unicodedata
-TWEMOJI_SPECIAL = {
-    "eng": "1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
-    "sct": "1f3f4-e0067-e0062-e0073-e0063-e006f-e0074-e007f",
-    "wls": "1f3f4-e0067-e0062-e0077-e0061-e006c-e0065-e007f",
 }
 COUNTRY_TO_CC = {
     "united kingdom":"gb","great britain":"gb","northern ireland":"gb",
