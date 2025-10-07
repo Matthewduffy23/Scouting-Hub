@@ -771,6 +771,12 @@ def render_pro_layout_cb(df_view: pd.DataFrame, top_n: int = 20):
                 + "</div>",
                 unsafe_allow_html=True
             )
+
+# --- Show the Pro Layout tiles in the 5th tab ---
+with tabs[4]:
+    st.subheader("Pro Layout — Top Center Backs")
+    render_pro_layout_cb(df_f, top_n=top_n)
+
 # ----------------- END PRO LAYOUT TAB — CENTER BACKS -----------------
 
 # ----------------- END CENTER BACK BLOCK -----------------
