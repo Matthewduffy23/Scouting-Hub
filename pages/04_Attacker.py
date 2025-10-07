@@ -90,31 +90,31 @@ POLAR_METRICS = [
 ]
 
 # -------- Position filter (attacker) --------
-# Sidebar will set ROLE_CHOICE to one of: "All", "Left Wingers", "Right Wingers", "Attacking Midfielders"
-ROLE_CHOICE = "All"  # default; sidebar will overwrite this
+# Sidebar sets ROLE_CHOICE to: "All", "Left Wingers", "Right Wingers", "Attacking Midfielders"
+ROLE_CHOICE = "All"  # sidebar will overwrite this
 
 def position_filter(pos: str) -> bool:
+    import re
     p = str(pos).upper().strip()
+    # only evaluate the *primary* position token (before any comma/slash/space)
+    tokens = [t for t in re.split(r"[,/;]\s*|\s+", p) if t]
+    if not tokens:
+        return False
+    t0 = tokens[0]  # primary code, e.g. "LW", "RWF", "AMF", "RWB", ...
 
     if ROLE_CHOICE == "All":
-        # Accept classic attacker roles only; avoid RWB/LWB/wing-backs etc.
-        allowed_prefixes = ("RW", "LW", "RWF", "LWF", "RAMF", "LAMF", "AMF")
-        # keep standalone exacts too
-        if p in ("RW", "LW", "AMF"):
-            return True
-        return p.startswith(allowed_prefixes)
+        # accept core attacking roles only (no wing-backs)
+        allowed = {"RW", "RWF", "RAMF", "LW", "LWF", "LAMF", "AMF"}
+        return t0 in allowed
 
     if ROLE_CHOICE == "Right Wingers":
-        # RW exact + RWF + RAMF
-        return (p == "RW") or p.startswith(("RWF", "RAMF"))
+        return t0 in {"RW", "RWF", "RAMF"}
 
     if ROLE_CHOICE == "Left Wingers":
-        # LW exact + LWF + LAMF   (LAMF covers Left-AMF)
-        return (p == "LW") or p.startswith(("LWF", "LAMF"))
+        return t0 in {"LW", "LWF", "LAMF"}
 
     if ROLE_CHOICE == "Attacking Midfielders":
-        # Central AMF only
-        return (p == "AMF") or p.startswith("AMF")
+        return t0 == "AMF"
 
     return False
 
