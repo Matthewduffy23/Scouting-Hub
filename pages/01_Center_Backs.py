@@ -547,9 +547,11 @@ import unicodedata
 
 # Subdivision flags that Twemoji supports
 TWEMOJI_SPECIAL = {
-    "eng": "1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",  # England
-    "sct": "1f3f4-e0067-e0062-e0073-e0063-e006f-e0074-e007f",  # Scotland
-    "wls": "1f3f4-e0067-e0062-e0077-e0061-e006c-e0065-e007f",  # Wales
+    "eng": "1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",  # gbeng
+    "sct": "1f3f4-e0067-e0062-e0073-e0063-e0074-e007f",  # gbsct  ✅
+    "wls": "1f3f4-e0067-e0062-e0077-e006c-e0073-e007f",  # gbwls  ✅
+}
+
 }
 
 # One big mapping (home nations included here with everyone else)
