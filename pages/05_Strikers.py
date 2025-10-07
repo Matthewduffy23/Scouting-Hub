@@ -391,7 +391,11 @@ def filtered_view(df_in: pd.DataFrame, *, age_max=None, contract_year=None, valu
 top_n = int(st.session_state[f"cf_topn_{selected_file}"])
 value_band_max = st.session_state[f"cf_value_band_{selected_file}"]
 
-tabs = st.tabs(["Overall Top N", "U23 Top N", "Expiring Contracts", "Value Band (≤ max €)"])
+tabs = st.tabs([
+    "Overall Top N", "U23 Top N", "Expiring Contracts",
+    "Value Band (≤ max €)", "Pro Layout"  # 👈 new tab
+])
+
 for role, role_def in ROLES.items():
     with tabs[0]:
         st.subheader(f"{role} — Overall Top {top_n}")
@@ -425,6 +429,219 @@ for role, role_def in ROLES.items():
         st.caption(role_def.get("desc", ""))
         st.dataframe(top_table(filtered_view(df_f, value_max=v_max), role, top_n), use_container_width=True)
         st.divider()
+
+# ----------------- PRO LAYOUT TAB (tiles) -----------------
+def _pro_rating_color(v: float) -> str:
+    # same palette used earlier in my tiles code
+    PALETTE=[(0,(208,2,27)),(50,(245,166,35)),(65,(248,231,28)),(75,(126,211,33)),(85,(65,117,5)),(100,(40,90,4))]
+    v=max(0.0,min(100.0,float(v)))
+    for i in range(len(PALETTE)-1):
+        x0,c0=PALETTE[i]; x1,c1=PALETTE[i+1]
+        if v<=x1:
+            t=0 if x1==x0 else (v-x0)/(x1-x0)
+            r=int(round(c0[0]+(c1[0]-c0[0])*t))
+            g=int(round(c0[1]+(c1[1]-c0[1])*t))
+            b=int(round(c0[2]+(c1[2]-c0[2])*t))
+            return f"rgb({r},{g},{b})"
+    r,g,b=PALETTE[-1][1]; return f"rgb({r},{g},{b})"
+
+def _pro_show99(x) -> int:
+    try: return min(99, int(round(float(x))))
+    except Exception: return 0
+
+_POS_COLORS={
+    "CF":"#183153","LWF":"#1f3f8c","LW":"#1f3f8c","LAMF":"#1f3f8c","RW":"#1f3f8c","RWF":"#1f3f8c","RAMF":"#1f3f8c",
+    "AMF":"#87d37c","LCMF":"#2ecc71","RCMF":"#2ecc71","RDMF":"#0e7a3b","LDMF":"#0e7a3b",
+    "LWB":"#e7d000","RWB":"#e7d000","LB":"#ff8a00","RB":"#ff8a00","RCB":"#c45a00","CB":"#c45a00","LCB":"#c45a00",
+}
+def _pro_chip_color(p:str)->str: return _POS_COLORS.get(str(p).strip().upper(),"#2d3550")
+
+# very small flag helper; blank if Birth country missing
+import unicodedata
+_TWEMOJI_SPECIAL = {
+    "eng": "1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
+    "sct": "1f3f4-e0067-e0062-e0073-e0063-e006f-e0074-e007f",
+    "wls": "1f3f4-e0067-e0062-e0077-e0061-e006c-e0065-e007f",
+}
+_COUNTRY_TO_CC = {"england":"eng","scotland":"sct","wales":"wls","ireland":"ie","republic of ireland":"ie",
+                  "united kingdom":"gb","great britain":"gb","northern ireland":"gb"}
+def _norm(s): 
+    if not s: return ""
+    return unicodedata.normalize("NFKD", str(s)).encode("ascii","ignore").decode("ascii").lower().strip()
+def _cc_to_twemoji(cc):
+    if not cc or len(cc)!=2: return None
+    a,b=cc.upper()
+    cp1=0x1F1E6+(ord(a)-65); cp2=0x1F1E6+(ord(b)-65)
+    return f"{cp1:04x}-{cp2:04x}"
+def _flag_html(country_name: str)->str:
+    if not country_name: return "<span class='chip'>—</span>"
+    n=_norm(country_name)
+    cc=_COUNTRY_TO_CC.get(n,"")
+    if cc in _TWEMOJI_SPECIAL:
+        code=_TWEMOJI_SPECIAL[cc]
+        src=f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
+        return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
+    if len(cc)==2:
+        code=_cc_to_twemoji(cc)
+        if code:
+            src=f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
+            return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
+    return "<span class='chip'>—</span>"
+
+def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
+    # ---- light CSS for tiles (scoped) ----
+    st.markdown("""
+    <style>
+      :root { --bg:#0f1115; --card:#161a22; --soft:#202633; }
+      .pro-wrap{ display:flex; justify-content:center; }
+      .pro-card{
+        width:min(420px,96%); display:grid; grid-template-columns:96px 1fr 48px;
+        gap:12px; align-items:start; background:var(--card); border:1px solid #252b3a;
+        border-radius:18px; padding:16px; margin-bottom:12px;
+      }
+      .pro-avatar{ width:96px; height:96px; border-radius:12px; background:#0b0d12 url('https://i.redd.it/43axcjdu59nd1.jpeg') center/cover no-repeat; border:1px solid #2a3145; }
+      .flagchip{ display:inline-flex; align-items:center; gap:6px; background:var(--soft); color:#cbd5f5; border:1px solid #2d3550; padding:2px 8px; border-radius:10px; font-size:13px; height:22px;}
+      .flagchip img{ width:18px; height:14px; border-radius:2px; display:block; }
+      .chip{ background:var(--soft); color:#cbd5f5; border:1px solid #2d3550; padding:3px 10px; border-radius:10px; font-size:13px; line-height:18px; }
+      .pill{ padding:2px 10px; border-radius:9px; font-weight:800; font-size:18px; color:#0b0d12; display:inline-block; min-width:42px; text-align:center; }
+      .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:4px 0; }
+      .name{ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px; }
+      .sub{ color:#a8b3cf; font-size:15px; }
+      .teamline{ color:#e6ebff; font-size:15px; font-weight:400; margin-top:2px; }
+      .pos{ color:#eaf0ff; font-weight:700; padding:4px 10px; border-radius:10px; font-size:12px; border:1px solid rgba(255,255,255,.08); }
+      .rank{ color:#94a0c6; font-weight:800; font-size:18px; text-align:right; }
+      .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:14px; padding:10px 12px; }
+      .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
+      .m-row{ display:flex; justify-content:space-between; align-items:center; padding:8px 8px; border-radius:10px; }
+      .m-label{ color:#c9d3f2; font-size:16px; }
+      .m-badge{ min-width:40px; text-align:center; padding:2px 10px; border-radius:8px; font-weight:800; font-size:18px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); }
+      .metrics-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
+      @media (min-width: 720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr);} }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # pick top by "All In" score column (already computed above)
+    all_col = "All In Score"
+    if all_col not in df_view.columns:
+        st.info("Pro Layout needs the role scores. Make sure the table section above ran first.")
+        return
+    ranked = df_view.sort_values(all_col, ascending=False).head(top_n).reset_index(drop=True)
+
+    for i,row in ranked.iterrows():
+        # meta
+        player = str(row.get("Player","")) or ""
+        team   = str(row.get("Team","")) or ""
+        league = str(row.get("League","")) or ""
+        pos    = str(row.get("Position","")) or ""
+        age    = int(row.get("Age",0)) if not pd.isna(row.get("Age",np.nan)) else 0
+        cy     = pd.to_datetime(row.get("Contract expires"), errors="coerce")
+        cyr    = int(cy.year) if pd.notna(cy) else 0
+        birth  = row.get("Birth country","") if "Birth country" in row else ""
+        foot   = (row.get("Foot","") or row.get("Preferred foot","") or row.get("Preferred Foot","") or "").strip()
+
+        # pills (capped at 99)
+        gt = _pro_show99(row.get("Goal Threat CF Score",0))
+        lu = _pro_show99(row.get("Link-Up CF Score",0))
+        tm = _pro_show99(row.get("Target Man CF Score",0))
+
+        # pos chips (CF first)
+        import re as _re
+        codes=[c for c in _re.split(r"[,/; ]+", pos.strip().upper()) if c]
+        if "CF" in codes: codes=["CF"]+[c for c in codes if c!="CF"]
+        chips="".join(f"<span class='pos' style='background:{_pro_chip_color(c)}'>{c}</span> " for c in dict.fromkeys(codes))
+
+        # left meta (flag, age, contract, foot)
+        flag=_flag_html(birth)
+        age_chip=f"<span class='chip'>{age}y.o.</span>"
+        yr=f"{cyr}" if cyr>0 else "—"
+        contract_chip=f"<span class='chip'>{yr}</span>"
+        foot_chip=f"<span class='chip'>{foot}</span>" if foot else "<span class='chip'></span>"
+
+        st.markdown(f"""
+        <div class='pro-wrap'>
+          <div class='pro-card'>
+            <div class='leftcol'>
+              <div class='pro-avatar'></div>
+              <div class='row'>{flag}{age_chip}{contract_chip}</div>
+              <div class='row'>{foot_chip}</div>
+            </div>
+            <div>
+              <div class='name'>{player}</div>
+              <div class='row' style='align-items:center;'>
+                <span class='pill' style='background:{_pro_rating_color(gt)}'>{gt}</span>
+                <span class='sub'>Goal Threat</span>
+              </div>
+              <div class='row' style='align-items:center;'>
+                <span class='pill' style='background:{_pro_rating_color(lu)}'>{lu}</span>
+                <span class='sub'>Link-Up CF</span>
+              </div>
+              <div class='row' style='align-items:center;'>
+                <span class='pill' style='background:{_pro_rating_color(tm)}'>{tm}</span>
+                <span class='sub'>Target Man CF</span>
+              </div>
+              <div class='row'>{chips}</div>
+              <div class='teamline'>{team} · {league}</div>
+            </div>
+            <div class='rank'>#{i+1}</div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # dropdown of individual metrics (no raw values; pills max 99)
+        with st.expander("▼ Show individual metrics", expanded=False):
+            def _pct(m): 
+                col=f"{m} Percentile"
+                return float(row[col]) if col in row and not pd.isna(row[col]) else 0.0
+
+            ATT=[("Crosses","Crosses per 90"),
+                 ("Crossing Accuracy %","Accurate crosses, %"),
+                 ("Goals: Non-Penalty","Non-penalty goals per 90"),
+                 ("xG","xG per 90"),
+                 ("Conversion Rate %","Goal conversion, %"),
+                 ("Header Goals","Head goals per 90"),
+                 ("Expected Assists","xA per 90"),
+                 ("Offensive Duels","Offensive duels per 90"),
+                 ("Offensive Duel Success %","Offensive duels won, %"),
+                 ("Progressive Runs","Progressive runs per 90"),
+                 ("Shots","Shots per 90"),
+                 ("Shooting Accuracy %","Shots on target, %"),
+                 ("Touches in Opposition Box","Touches in box per 90")]
+            DEF=[("Aerial Duels","Aerial duels per 90"),
+                 ("Aerial Duel Success %","Aerial duels won, %"),
+                 ("Defensive Duels","Defensive duels per 90"),
+                 ("Defensive Duel Success %","Defensive duels won, %"),
+                 ("PAdj. Interceptions","PAdj Interceptions")]
+            POS=[("Deep Completions","Deep completions per 90"),
+                 ("Dribbles","Dribbles per 90"),
+                 ("Dribbling Success %","Successful dribbles, %"),
+                 ("Key Passes","Key passes per 90"),
+                 ("Passes","Passes per 90"),
+                 ("Passing Accuracy %","Accurate passes, %"),
+                 ("Passes to Penalty Area","Passes to penalty area per 90"),
+                 ("Passes to Penalty Area %","Accurate passes to penalty area, %"),
+                 ("Smart Passes","Smart passes per 90")]
+
+            def _sec_html(title, pairs):
+                rows=[]
+                for lab,met in pairs:
+                    p=_pro_show99(_pct(met))
+                    rows.append(f"<div class='m-row'><div class='m-label'>{lab}</div><div class='m-badge' style='background:{_pro_rating_color(p)}'>{p}</div></div>")
+                return f"<div class='m-sec'><div class='m-title'>{title}</div>{''.join(rows)}</div>"
+
+            st.markdown(
+                "<div class='metrics-grid'>"
+                + _sec_html("ATTACKING", ATT)
+                + _sec_html("DEFENSIVE", DEF)
+                + _sec_html("POSSESSION", POS)
+                + "</div>",
+                unsafe_allow_html=True
+            )
+
+with tabs[4]:
+    st.subheader("Pro Layout — Top Tiles")
+    render_pro_layout(df_f, top_n=top_n)
+# ----------------- END PRO LAYOUT TAB -----------------
+
 # ----------------- END STRIKER (CF) BLOCK -----------------
 
 
