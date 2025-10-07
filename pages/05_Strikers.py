@@ -432,7 +432,6 @@ for role, role_def in ROLES.items():
 
 # ----------------- PRO LAYOUT TAB (tiles) -----------------
 def _pro_rating_color(v: float) -> str:
-    # same palette used earlier in my tiles code
     PALETTE=[(0,(208,2,27)),(50,(245,166,35)),(65,(248,231,28)),(75,(126,211,33)),(85,(65,117,5)),(100,(40,90,4))]
     v=max(0.0,min(100.0,float(v)))
     for i in range(len(PALETTE)-1):
@@ -450,11 +449,8 @@ def _pro_show99(x) -> int:
     except Exception: return 0
 
 def _fmt2(n: int) -> str:
-    """Two-digit string for presentation (e.g., 7 -> '07')."""
-    try:
-        return f"{int(n):02d}"
-    except Exception:
-        return "00"
+    try: return f"{int(n):02d}"
+    except Exception: return "00"
 
 _POS_COLORS={
     "CF":"#183153","LWF":"#1f3f8c","LW":"#1f3f8c","LAMF":"#1f3f8c","RW":"#1f3f8c","RWF":"#1f3f8c","RAMF":"#1f3f8c",
@@ -517,6 +513,29 @@ def _flag_html(country_name: str) -> str:
             return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
     return "<span class='chip'>—</span>"
 
+# --- SAFE foot extractor (avoids .strip() on NaN/float) ---
+def _get_foot(row) -> str:
+    for col in ("Foot", "Preferred foot", "Preferred Foot"):
+        if col in row.index:
+            val = row[col]
+            # handle NaN/None/non-string
+            try:
+                import pandas as _pd
+                if _pd.isna(val):
+                    continue
+            except Exception:
+                pass
+            if isinstance(val, str):
+                s = val.strip()
+                if s and s.lower() not in {"nan", "none", "null"}:
+                    return s
+            else:
+                # non-string but meaningful? present as string
+                s = str(val).strip()
+                if s and s.lower() not in {"nan", "none", "null"}:
+                    return s
+    return ""
+
 def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     # ---- light CSS for tiles (scoped) ----
     st.markdown("""
@@ -566,7 +585,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         cy     = pd.to_datetime(row.get("Contract expires"), errors="coerce")
         cyr    = int(cy.year) if pd.notna(cy) else 0
         birth  = row.get("Birth country","") if "Birth country" in row else ""
-        foot   = (row.get("Foot","") or row.get("Preferred foot","") or row.get("Preferred Foot","") or "").strip()
+        foot   = _get_foot(row)
 
         # pills (capped at 99; two-digit text)
         gt_i = _pro_show99(row.get("Goal Threat CF Score",0))
@@ -679,6 +698,7 @@ with tabs[4]:
     st.subheader("Pro Layout — Top Tiles")
     render_pro_layout(df_f, top_n=top_n)
 # ----------------- END PRO LAYOUT TAB -----------------
+
 
 # ----------------- END STRIKER (CF) BLOCK -----------------
 
