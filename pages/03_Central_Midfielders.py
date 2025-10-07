@@ -510,7 +510,7 @@ for role, role_def in ROLES.items():
         st.dataframe(top_table(filtered_view(df_f, value_max=v_max), role, top_n), use_container_width=True)
         st.divider()
 
-# ----------------- PRO LAYOUT TAB (tiles) -----------------
+# ----------------- PRO LAYOUT TAB (tiles) — CENTRAL MIDFIELDERS -----------------
 def _pro_rating_color(v: float) -> str:
     PALETTE = [
         (0,   (208, 2, 27)),
@@ -532,21 +532,21 @@ def _pro_rating_color(v: float) -> str:
     r, g, b = PALETTE[-1][1]; return f"rgb({r},{g},{b})"
 
 def _pro_show99(x) -> int:
-    try: 
+    try:
         return min(99, int(round(float(x))))
-    except Exception: 
+    except Exception:
         return 0
 
 def _fmt2(n: int) -> str:
-    try: 
+    try:
         return f"{int(n):02d}"
-    except Exception: 
+    except Exception:
         return "00"
 
 # position chip colors (includes CM/DM)
 _POS_COLORS = {
     "CF":"#183153","LWF":"#1f3f8c","LW":"#1f3f8c","LAMF":"#1f3f8c","RW":"#1f3f8c","RWF":"#1f3f8c","RAMF":"#1f3f8c",
-    "AMF":"#87d37c","LCMF":"#2ecc71","RCMF":"#2ecc71","RDMF":"#0e7a3b","LDMF":"#0e7a3b", "DMF":"#0e7a3b",
+    "AMF":"#87d37c","LCMF":"#2ecc71","RCMF":"#2ecc71","RDMF":"#0e7a3b","LDMF":"#0e7a3b","DMF":"#0e7a3b",
     "LWB":"#e7d000","RWB":"#e7d000","LB":"#ff8a00","RB":"#ff8a00","RCB":"#c45a00","CB":"#c45a00","LCB":"#c45a00",
 }
 def _pro_chip_color(p: str) -> str:
@@ -615,7 +615,7 @@ def _get_foot(row) -> str:
                 return s
     return ""
 
-def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
+def render_pro_layout_cm(df_view: pd.DataFrame, top_n: int = 20):
     # CSS (scoped)
     st.markdown("""
     <style>
@@ -647,7 +647,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
     </style>
     """, unsafe_allow_html=True)
 
-    # use already-filtered view; still guard by primary CM token
+    # work from the already-filtered df_f
     all_col = "All In Score"
     if all_col not in df_view.columns:
         st.info("Pro Layout needs the role scores computed above.")
@@ -658,9 +658,11 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
     for i, row in ranked.iterrows():
         pos_raw = str(row.get("Position", "") or "")
         codes = [c for c in _re.split(r"[,/; ]+", pos_raw.strip().upper()) if c]
+
+        # extra safety: only render if the *primary* token matches the same page position_filter
         primary = codes[0] if codes else ""
         if primary and not position_filter(primary):
-            continue  # keep Pro Layout aligned with the same CM filter
+            continue
 
         # meta
         player = str(row.get("Player", "") or "")
@@ -722,57 +724,16 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
         </div>
         """, unsafe_allow_html=True)
 
-        # optional metric stacks (unchanged, but you can tune to CM needs)
+        # Individual metrics — EXACT Attacking / Defensive / Possession order you provided
         with st.expander("▼ Show individual metrics", expanded=False):
-            def _pct(m):
+            def pct_of(m):
                 col = f"{m} Percentile"
                 return float(row[col]) if (col in row and not pd.isna(row[col])) else 0.0
-
-            DEF = [
-                ("Successful Defensive Actions", "Successful defensive actions per 90"),
-                ("Defensive Duels", "Defensive duels per 90"),
-                ("Defensive Duel Success %", "Defensive duels won, %"),
-                ("Aerial Duels", "Aerial duels per 90"),
-                ("Aerial Duel Success %", "Aerial duels won, %"),
-                ("PAdj. Interceptions", "PAdj Interceptions"),
-                ("Shots Blocked", "Shots blocked per 90"),
-            ]
-            PASS = [
-                ("Passes", "Passes per 90"),
-                ("Passing Accuracy %", "Accurate passes, %"),
-                ("Forward Passes", "Forward passes per 90"),
-                ("Forward Pass %", "Accurate forward passes, %"),
-                ("Long Passes", "Long passes per 90"),
-                ("Long Pass %", "Accurate long passes, %"),
-                ("Progressive Passes", "Progressive passes per 90"),
-                ("Prog Pass %", "Accurate progressive passes, %"),
-                ("Passes to Final Third", "Passes to final third per 90"),
-                ("Passes F3rd %", "Accurate passes to final third, %"),
-                ("Passes to Penalty Area", "Passes to penalty area per 90"),
-                ("Passes PA %", "Accurate passes to penalty area, %"),
-                ("Key Passes", "Key passes per 90"),
-                ("Smart Passes", "Smart passes per 90"),
-                ("xA", "xA per 90"),
-            ]
-            CARRY = [
-                ("Progressive Runs", "Progressive runs per 90"),
-                ("Accelerations", "Accelerations per 90"),
-                ("Dribbles", "Dribbles per 90"),
-                ("Dribble Success %", "Successful dribbles, %"),
-                ("Deep Completions", "Deep completions per 90"),
-                ("xG", "xG per 90"),
-                ("Non-Penalty Goals", "Non-penalty goals per 90"),
-                ("Shots", "Shots per 90"),
-                ("Shots on Target %", "Shots on target, %"),
-                ("Touches in Box", "Touches in box per 90"),
-                ("Crosses", "Crosses per 90"),
-                ("Crossing Accuracy %", "Accurate crosses, %"),
-            ]
 
             def _sec_html(title, pairs):
                 rows = []
                 for lab, met in pairs:
-                    p = _pro_show99(_pct(met))
+                    p = _pro_show99(pct_of(met))
                     ptxt = _fmt2(p)
                     rows.append(
                         f"<div class='m-row'>"
@@ -782,19 +743,60 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
                     )
                 return f"<div class='m-sec'><div class='m-title'>{title}</div>{''.join(rows)}</div>"
 
+            ATTACKING = [
+                ("Crosses", "Crosses per 90"),
+                ("Crossing Accuracy %", "Accurate crosses, %"),
+                ("Goals: Non-Penalty", "Non-penalty goals per 90"),
+                ("xG", "xG per 90"),
+                ("Expected Assists", "xA per 90"),
+                ("Offensive Duels", "Offensive duels per 90"),
+                ("Offensive Duel Success %", "Offensive duels won, %"),
+                ("Progressive Runs", "Progressive runs per 90"),
+                ("Shots", "Shots per 90"),
+                ("Touches in Opposition Box", "Touches in box per 90"),
+            ]
+            DEFENSIVE = [
+                ("Aerial Duels", "Aerial duels per 90"),
+                ("Aerial Duel Success %", "Aerial duels won, %"),
+                ("Defensive Duels", "Defensive duels per 90"),
+                ("Defensive Duel Success %", "Defensive duels won, %"),
+                ("Shots Blocked", "Shots blocked per 90"),
+                ("PAdj. Interceptions", "PAdj Interceptions"),
+            ]
+            POSSESSION = [
+                ("Deep Completions", "Deep completions per 90"),
+                ("Dribbles", "Dribbles per 90"),
+                ("Dribbling Success %", "Successful dribbles, %"),
+                ("Forward Passes", "Forward passes per 90"),
+                ("Forward Passing %", "Accurate forward passes, %"),
+                ("Key passes", "Key passes per 90"),
+                ("Long Passes", "Long passes per 90"),
+                ("Long Passing %", "Accurate long passes, %"),
+                ("Passes", "Passes per 90"),
+                ("Passing %", "Accurate passes, %"),
+                ("Passes to Final 3rd", "Passes to final third per 90"),
+                ("Passes to Final 3rd %", "Accurate passes to final third, %"),
+                ("Passes to Penalty Area", "Passes to penalty area per 90"),
+                ("Pass to Penalty Area %", "Accurate passes to penalty area, %"),
+                ("Progessive Passes", "Progressive passes per 90"),
+                ("Progessive Passing %", "Accurate progressive passes, %"),
+                ("Progressive Runs", "Progressive runs per 90"),
+                ("Smart Passes", "Smart passes per 90"),
+            ]
+
             st.markdown(
                 "<div class='metrics-grid'>"
-                + _sec_html("DEFENDING", DEF)
-                + _sec_html("PASSING/CREATION", PASS)
-                + _sec_html("CARRY & OUTPUT", CARRY)
+                + _sec_html("ATTACKING", ATTACKING)
+                + _sec_html("DEFENSIVE", DEFENSIVE)
+                + _sec_html("POSSESSION", POSSESSION)
                 + "</div>",
                 unsafe_allow_html=True
             )
 
 with tabs[4]:
-    st.subheader("Pro Layout — Top Tiles")
-    render_pro_layout(df_f, top_n=top_n)
-# ----------------- END PRO LAYOUT TAB -----------------
+    st.subheader("Pro Layout — Top Central Midfielders")
+    render_pro_layout_cm(df_f, top_n=top_n)
+# ----------------- END PRO LAYOUT TAB — CENTRAL MIDFIELDERS -----------------
 
 
 
