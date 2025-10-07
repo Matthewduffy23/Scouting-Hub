@@ -4,7 +4,7 @@ numpy
 matplotlib
 scikit-learn
 altair
-
+unicodedata2
 
 
 
