@@ -545,29 +545,22 @@ def _pro_chip_color(p: str) -> str:
 # ---- Flags (Twemoji) ----
 import unicodedata
 
-# Twemoji "subdivision" flags (tag sequences) that *do* exist
-# ENG = England, SCT = Scotland, WLS = Wales
+# Subdivision flags that Twemoji supports
 TWEMOJI_SPECIAL = {
-    "eng": "1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
-    "sct": "1f3f4-e0067-e0062-e0073-e0063-e006f-e0074-e007f",
-    "wls": "1f3f4-e0067-e0062-e0077-e0061-e006c-e0065-e007f",
-    # If you have your own NIR asset, add it here and map 'northern ireland' to 'nir' below.
-    # "nir": "PATH_OR_CODE_FOR_YOUR_CUSTOM_NIR_FLAG"
+    "eng": "1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",  # England
+    "sct": "1f3f4-e0067-e0062-e0073-e0063-e006f-e0074-e007f",  # Scotland
+    "wls": "1f3f4-e0067-e0062-e0077-e0061-e006c-e0065-e007f",  # Wales
 }
 
-# Map normalized country names -> code.
-# Use "eng/sct/wls" to force the special Twemoji flags.
+# One big mapping (home nations included here with everyone else)
 COUNTRY_TO_CC = {
-    # Home nations
+    # Home nations (own entries)
     "england": "eng",
     "scotland": "sct",
     "wales": "wls",
+    "northern ireland": "nir",
 
-    # Twemoji has no official Northern Ireland flag.
-    # We default to GB; replace with "nir" if you add a custom asset above.
-    "northern ireland": "gb",
-
-    # UK synonyms
+    # UK / GB remains separate if it ever appears
     "united kingdom": "gb",
     "great britain": "gb",
     "uk": "gb",
@@ -577,37 +570,35 @@ COUNTRY_TO_CC = {
     "ireland": "ie",
     "republic of ireland": "ie",
 
-    # Common countries (add as needed)
-    "spain": "es","france": "fr","germany": "de","italy": "it","portugal": "pt","netherlands": "nl","belgium": "be",
-    "austria": "at","switzerland": "ch","denmark": "dk","sweden": "se","norway": "no","finland": "fi","iceland": "is",
-    "poland": "pl","czech republic": "cz","czechia": "cz","slovakia": "sk","slovenia": "si","croatia": "hr","serbia": "rs",
-    "bosnia and herzegovina": "ba","montenegro": "me","kosovo": "xk","albania": "al","greece": "gr","hungary": "hu",
-    "romania": "ro","bulgaria": "bg","russia": "ru","ukraine": "ua","georgia": "ge","kazakhstan": "kz","azerbaijan": "az",
-    "armenia": "am","turkey": "tr","qatar": "qa","saudi arabia": "sa","uae": "ae","israel": "il","morocco": "ma",
-    "algeria": "dz","tunisia": "tn","egypt": "eg","nigeria": "ng","ghana": "gh","senegal": "sn","ivory coast": "ci",
-    "cote d'ivoire": "ci","south africa": "za","brazil": "br","argentina": "ar","uruguay": "uy","chile": "cl",
-    "colombia": "co","peru": "pe","ecuador": "ec","paraguay": "py","bolivia": "bo","mexico": "mx","canada": "ca",
-    "united states": "us","usa": "us","japan": "jp","korea": "kr","south korea": "kr","china": "cn","australia": "au",
-    "new zealand": "nz","latvia": "lv","lithuania": "lt","estonia": "ee","moldova": "md","north macedonia": "mk",
-    "malta": "mt","cyprus": "cy","luxembourg": "lu","andorra": "ad","monaco": "mc","san marino": "sm",
+    # --- keep your existing list below ---
+    "spain":"es","france":"fr","germany":"de","italy":"it","portugal":"pt","netherlands":"nl","belgium":"be",
+    "austria":"at","switzerland":"ch","denmark":"dk","sweden":"se","norway":"no","finland":"fi","iceland":"is",
+    "poland":"pl","czech republic":"cz","czechia":"cz","slovakia":"sk","slovenia":"si","croatia":"hr","serbia":"rs",
+    "bosnia and herzegovina":"ba","montenegro":"me","kosovo":"xk","albania":"al","greece":"gr","hungary":"hu",
+    "romania":"ro","bulgaria":"bg","russia":"ru","ukraine":"ua","georgia":"ge","kazakhstan":"kz","azerbaijan":"az",
+    "armenia":"am","turkey":"tr","qatar":"qa","saudi arabia":"sa","uae":"ae","israel":"il","morocco":"ma",
+    "algeria":"dz","tunisia":"tn","egypt":"eg","nigeria":"ng","ghana":"gh","senegal":"sn","ivory coast":"ci",
+    "cote d'ivoire":"ci","south africa":"za","brazil":"br","argentina":"ar","uruguay":"uy","chile":"cl",
+    "colombia":"co","peru":"pe","ecuador":"ec","paraguay":"py","bolivia":"bo","mexico":"mx","canada":"ca",
+    "united states":"us","usa":"us","japan":"jp","korea":"kr","south korea":"kr","china":"cn","australia":"au",
+    "new zealand":"nz","latvia":"lv","lithuania":"lt","estonia":"ee","moldova":"md","north macedonia":"mk",
+    "malta":"mt","cyprus":"cy","luxembourg":"lu","andorra":"ad","monaco":"mc","san marino":"sm",
 }
 
 def _norm(s: str) -> str:
     if not s:
         return ""
-    return unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode("ascii").strip().lower()
+    return unicodedata.normalize("NFKD", str(s)).encode("ascii","ignore").decode("ascii").strip().lower()
 
 def _cc_to_twemoji(cc: str) -> str | None:
-    """Convert a 2-letter country code (e.g., 'GB') to Twemoji regional indicator code string."""
     if not cc or len(cc) != 2:
         return None
     a, b = cc.upper()
-    cp1 = 0x1F1E6 + (ord(a) - ord("A"))
-    cp2 = 0x1F1E6 + (ord(b) - ord("A"))
+    cp1 = 0x1F1E6 + (ord(a) - ord('A'))
+    cp2 = 0x1F1E6 + (ord(b) - ord('A'))
     return f"{cp1:04x}-{cp2:04x}"
 
 def _flag_html(country_name: str) -> str:
-    """Return a small HTML chip with a Twemoji SVG flag for the given country/home nation."""
     if not country_name:
         return "<span class='chip'>—</span>"
 
@@ -616,21 +607,20 @@ def _flag_html(country_name: str) -> str:
     if not cc:
         return "<span class='chip'>—</span>"
 
-    # Home-nation specials first (ENG/SCT/WLS or your custom 'nir')
+    # Subdivision flags (ENG/SCT/WLS)
     if cc in TWEMOJI_SPECIAL:
         code = TWEMOJI_SPECIAL[cc]
         src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
         return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
 
-    # Regular 2-letter ISO flags
+    # Regular 2-letter country flags
     code = _cc_to_twemoji(cc) if len(cc) == 2 else None
     if code:
         src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
         return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
 
-    # Fallback
-    return "<span class='chip'>—</span>"
-
+    # Fallback (e.g., 'nir' has no Twemoji): show code
+    return f"<span class='chip'>{cc.upper()}</span>"
 
 # Safe foot extractor
 def _get_foot(row) -> str:
