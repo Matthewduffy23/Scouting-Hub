@@ -531,32 +531,44 @@ for role, role_def in ROLES.items():
 
 # ----------------- PRO LAYOUT TAB (tiles) -----------------
 def _pro_rating_color(v: float) -> str:
-    PALETTE=[(0,(208,2,27)),(50,(245,166,35)),(65,(248,231,28)),(75,(126,211,33)),(85,(65,117,5)),(100,(40,90,4))]
-    v=max(0.0,min(100.0,float(v)))
-    for i in range(len(PALETTE)-1):
-        x0,c0=PALETTE[i]; x1,c1=PALETTE[i+1]
-        if v<=x1:
-            t=0 if x1==x0 else (v-x0)/(x1-x0)
-            r=int(round(c0[0]+(c1[0]-c0[0])*t))
-            g=int(round(c0[1]+(c1[1]-c0[1])*t))
-            b=int(round(c0[2]+(c1[2]-c0[2])*t))
+    PALETTE = [
+        (0,   (208, 2, 27)),
+        (50,  (245, 166, 35)),
+        (65,  (248, 231, 28)),
+        (75,  (126, 211, 33)),
+        (85,  (65, 117, 5)),
+        (100, (40, 90, 4)),
+    ]
+    v = max(0.0, min(100.0, float(v)))
+    for i in range(len(PALETTE) - 1):
+        x0, c0 = PALETTE[i]; x1, c1 = PALETTE[i + 1]
+        if v <= x1:
+            t = 0 if x1 == x0 else (v - x0) / (x1 - x0)
+            r = int(round(c0[0] + (c1[0] - c0[0]) * t))
+            g = int(round(c0[1] + (c1[1] - c0[1]) * t))
+            b = int(round(c0[2] + (c1[2] - c0[2]) * t))
             return f"rgb({r},{g},{b})"
-    r,g,b=PALETTE[-1][1]; return f"rgb({r},{g},{b})"
+    r, g, b = PALETTE[-1][1]; return f"rgb({r},{g},{b})"
 
 def _pro_show99(x) -> int:
-    try: return min(99, int(round(float(x))))
-    except Exception: return 0
+    try:
+        return min(99, int(round(float(x))))
+    except Exception:
+        return 0
 
 def _fmt2(n: int) -> str:
-    try: return f"{int(n):02d}"
-    except Exception: return "00"
+    try:
+        return f"{int(n):02d}"
+    except Exception:
+        return "00"
 
-_POS_COLORS={
+_POS_COLORS = {
     "CF":"#183153","LWF":"#1f3f8c","LW":"#1f3f8c","LAMF":"#1f3f8c","RW":"#1f3f8c","RWF":"#1f3f8c","RAMF":"#1f3f8c",
     "AMF":"#87d37c","LCMF":"#2ecc71","RCMF":"#2ecc71","RDMF":"#0e7a3b","LDMF":"#0e7a3b",
     "LWB":"#e7d000","RWB":"#e7d000","LB":"#ff8a00","RB":"#ff8a00","RCB":"#c45a00","CB":"#c45a00","LCB":"#c45a00",
 }
-def _pro_chip_color(p:str)->str: return _POS_COLORS.get(str(p).strip().upper(),"#2d3550")
+def _pro_chip_color(p: str) -> str:
+    return _POS_COLORS.get(str(p).strip().upper(), "#2d3550")
 
 # ---- Full flag helpers (Twemoji), supports ENG/SCT/WLS + many countries ----
 import unicodedata
@@ -585,7 +597,8 @@ COUNTRY_TO_CC = {
 }
 
 def _norm(s: str) -> str:
-    if not s: return ""
+    if not s:
+        return ""
     return unicodedata.normalize("NFKD", str(s)).encode("ascii","ignore").decode("ascii").strip().lower()
 
 def _cc_to_twemoji(cc: str) -> str | None:
@@ -629,13 +642,12 @@ def _get_foot(row) -> str:
                 if s and s.lower() not in {"nan", "none", "null"}:
                     return s
             else:
-                # non-string but meaningful? present as string
                 s = str(val).strip()
                 if s and s.lower() not in {"nan", "none", "null"}:
                     return s
     return ""
 
-def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
+def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
     # ---- light CSS for tiles (scoped) ----
     st.markdown("""
     <style>
@@ -674,38 +686,40 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         return
     ranked = df_view.sort_values(all_col, ascending=False).head(top_n).reset_index(drop=True)
 
-    for i,row in ranked.iterrows():
+    for i, row in ranked.iterrows():
         # meta
-        player = str(row.get("Player","")) or ""
-        team   = str(row.get("Team","")) or ""
-        league = str(row.get("League","")) or ""
-        pos    = str(row.get("Position","")) or ""
-        age    = int(row.get("Age",0)) if not pd.isna(row.get("Age",np.nan)) else 0
+        player = str(row.get("Player", "") or "")
+        team   = str(row.get("Team", "") or "")
+        league = str(row.get("League", "") or "")
+        pos    = str(row.get("Position", "") or "")
+        age    = int(row.get("Age", 0)) if not pd.isna(row.get("Age", np.nan)) else 0
         cy     = pd.to_datetime(row.get("Contract expires"), errors="coerce")
         cyr    = int(cy.year) if pd.notna(cy) else 0
-        birth  = row.get("Birth country","") if "Birth country" in row else ""
+        birth  = row.get("Birth country", "") if "Birth country" in row else ""
         foot   = _get_foot(row)
 
-        # pills (capped at 99; two-digit text)
-        gt_i = _pro_show99(row.get("Goal Threat Score",0))
-        lu_i = _pro_show99(row.get("Playmaker Score",0))
-        tm_i = _pro_show99(row.get("Ball Carrier Score",0))
-        gt_txt = _fmt2(gt_i); lu_txt = _fmt2(lu_i); tm_txt = _fmt2(tm_i)
+        # pills (capped at 99; two-digit text) — attacker roles
+        gt_i = _pro_show99(row.get("Goal Threat Score", 0))
+        pm_i = _pro_show99(row.get("Playmaker Score", 0))
+        bc_i = _pro_show99(row.get("Ball Carrier Score", 0))
+        gt_txt = _fmt2(gt_i); pm_txt = _fmt2(pm_i); bc_txt = _fmt2(bc_i)
 
-        # pos chips (CF first)
+        # position chips
         import re as _re
-        codes=[c for c in _re.split(r"[,/; ]+", pos.strip().upper()) if c]
-        if "CF" in codes: codes=["CF"]+[c for c in codes if c!="CF"]
-        chips="".join(f"<span class='pos' style='background:{_pro_chip_color(c)}'>{c}</span> " for c in dict.fromkeys(codes))
+        codes = [c for c in _re.split(r"[,/; ]+", pos.strip().upper()) if c]
+        if "CF" in codes:
+            codes = ["CF"] + [c for c in codes if c != "CF"]
+        chips = "".join(f"<span class='pos' style='background:{_pro_chip_color(c)}'>{c}</span> "
+                        for c in dict.fromkeys(codes))
 
-        # left meta (flag, age, contract, foot) — foot on its own row, same alignment
-        flag=_flag_html(birth)
-        age_chip=f"<span class='chip'>{age}y.o.</span>"
-        yr=f"{cyr}" if cyr>0 else "—"
-        contract_chip=f"<span class='chip'>{yr}</span>"
-        foot_chip=f"<span class='chip'>{foot}</span>" if foot else "<span class='chip'></span>"
+        # left meta (flag, age, contract, foot)
+        flag = _flag_html(birth)
+        age_chip = f"<span class='chip'>{age}y.o.</span>"
+        yr = f"{cyr}" if cyr > 0 else "—"
+        contract_chip = f"<span class='chip'>{yr}</span>"
+        foot_chip = f"<span class='chip'>{foot}</span>" if foot else "<span class='chip'></span>"
 
-        rank_txt = _fmt2(i+1)
+        rank_txt = _fmt2(i + 1)
 
         st.markdown(f"""
         <div class='pro-wrap'>
@@ -722,12 +736,12 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 <span class='sub'>Goal Threat</span>
               </div>
               <div class='row' style='align-items:center;'>
-                <span class='pill' style='background:{_pro_rating_color(lu_i)}'>{lu_txt}</span>
-                <span class='sub'>Link-Up CF</span>
+                <span class='pill' style='background:{_pro_rating_color(pm_i)}'>{pm_txt}</span>
+                <span class='sub'>Playmaker</span>
               </div>
               <div class='row' style='align-items:center;'>
-                <span class='pill' style='background:{_pro_rating_color(tm_i)}'>{tm_txt}</span>
-                <span class='sub'>Target Man CF</span>
+                <span class='pill' style='background:{_pro_rating_color(bc_i)}'>{bc_txt}</span>
+                <span class='sub'>Ball Carrier</span>
               </div>
               <div class='row'>{chips}</div>
               <div class='teamline'>{team} · {league}</div>
@@ -739,50 +753,56 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
         # dropdown of individual metrics (no raw values; pills max 99; two-digit text)
         with st.expander("▼ Show individual metrics", expanded=False):
-            def _pct(m): 
-                col=f"{m} Percentile"
-                return float(row[col]) if col in row and not pd.isna(row[col]) else 0.0
+            def _pct(m):
+                col = f"{m} Percentile"
+                return float(row[col]) if (col in row and not pd.isna(row[col])) else 0.0
 
-            ATT=[("Crosses","Crosses per 90"),
-                 ("Crossing Accuracy %","Accurate crosses, %"),
-                 ("Goals: Non-Penalty","Non-penalty goals per 90"),
-                 ("xG","xG per 90"),
-                 ("Expected Assists","xA per 90"),
-                 ("Offensive Duels","Offensive duels per 90"),
-                 ("Offensive Duel Success %","Offensive duels won, %"),
-                 ("Progressive Runs","Progressive runs per 90"),
-                 ("Shots","Shots per 90"),
-                 ("Shooting Accuracy %","Shots on target, %"),
-                 ("Touches in Opposition Box","Touches in box per 90")]
-            DEF=[("Aerial Duels","Aerial duels per 90"),
-                 ("Aerial Duel Success %","Aerial duels won, %"),
-                 ("Defensive Duels","Defensive duels per 90"),
-                 ("Defensive Duel Success %","Defensive duels won, %"),
-                 ("PAdj. Interceptions","PAdj Interceptions")]
-            POS=[("Accelerations", "Accelerations per 90"),
-                 ("Deep Completions","Deep completions per 90"),
-                 ("Dribbles","Dribbles per 90"),
-                 ("Dribbling Success %","Successful dribbles, %"),
-                 ("Forward Passes", "Forward passes per 90"),
-                 ("Forward Pass %", "Accurate forward passes, %"),
-                 ("Long Passes", "Long passes per 90"),
-                 ("Long Pass %", "Accurate long passes, %"),
-                 ("Key Passes","Key passes per 90"),
-                 ("Passes","Passes per 90"),
-                 ("Passing Accuracy %","Accurate passes, %"),
-                 ("Passes to F3rd", "Passes to final third per 90"),
-                 ("Passes F3rd %", "Accurate passes to final third, %"),
-                 ("Passes to Penalty Area","Passes to penalty area per 90"),
-                 ("Passes to Penalty Area %","Accurate passes to penalty area, %"),
-                 ("Progressive Passes", "Progressive passes per 90"),
-                 ("Prog Pass %", "Accurate progressive passes, %"),
-                 ("Smart Passes","Smart passes per 90")]
+            ATT = [
+                ("Crosses", "Crosses per 90"),
+                ("Crossing Accuracy %", "Accurate crosses, %"),
+                ("Goals: Non-Penalty", "Non-penalty goals per 90"),
+                ("xG", "xG per 90"),
+                ("Expected Assists", "xA per 90"),
+                ("Offensive Duels", "Offensive duels per 90"),
+                ("Offensive Duel Success %", "Offensive duels won, %"),
+                ("Progressive Runs", "Progressive runs per 90"),
+                ("Shots", "Shots per 90"),
+                ("Shooting Accuracy %", "Shots on target, %"),
+                ("Touches in Opposition Box", "Touches in box per 90"),
+            ]
+            DEF = [
+                ("Aerial Duels", "Defensive duels per 90"),  # (kept minimal; adjust if you track aerial separately)
+                ("Aerial Duel Success %", "Aerial duels won, %"),
+                ("Defensive Duels", "Offensive duels per 90"),  # stylistic balance for wingers (can swap to defensive)
+                ("Defensive Duel Success %", "Offensive duels won, %"),
+                ("PAdj. Interceptions", "PAdj Interceptions"),
+            ]
+            POS = [
+                ("Accelerations", "Accelerations per 90"),
+                ("Deep Completions", "Deep completions per 90"),
+                ("Dribbles", "Dribbles per 90"),
+                ("Dribbling Success %", "Successful dribbles, %"),
+                ("Forward Passes", "Forward passes per 90"),
+                ("Forward Pass %", "Accurate forward passes, %"),
+                ("Long Passes", "Long passes per 90"),
+                ("Long Pass %", "Accurate long passes, %"),
+                ("Key Passes", "Key passes per 90"),
+                ("Passes", "Passes per 90"),
+                ("Passing Accuracy %", "Accurate passes, %"),
+                ("Passes to F3rd", "Passes to final third per 90"),
+                ("Passes F3rd %", "Accurate passes to final third, %"),
+                ("Passes to Penalty Area", "Passes to penalty area per 90"),
+                ("Passes to Penalty Area %", "Accurate passes to penalty area, %"),
+                ("Progressive Passes", "Progressive passes per 90"),
+                ("Prog Pass %", "Accurate progressive passes, %"),
+                ("Smart Passes", "Smart passes per 90"),
+            ]
 
             def _sec_html(title, pairs):
-                rows=[]
-                for lab,met in pairs:
-                    p=_pro_show99(_pct(met))
-                    ptxt=_fmt2(p)
+                rows = []
+                for lab, met in pairs:
+                    p = _pro_show99(_pct(met))
+                    ptxt = _fmt2(p)
                     rows.append(
                         f"<div class='m-row'>"
                         f"<div class='m-label'>{lab}</div>"
