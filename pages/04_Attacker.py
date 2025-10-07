@@ -551,16 +551,12 @@ def _pro_rating_color(v: float) -> str:
     r, g, b = PALETTE[-1][1]; return f"rgb({r},{g},{b})"
 
 def _pro_show99(x) -> int:
-    try:
-        return min(99, int(round(float(x))))
-    except Exception:
-        return 0
+    try: return min(99, int(round(float(x))))
+    except Exception: return 0
 
 def _fmt2(n: int) -> str:
-    try:
-        return f"{int(n):02d}"
-    except Exception:
-        return "00"
+    try: return f"{int(n):02d}"
+    except Exception: return "00"
 
 _POS_COLORS = {
     "CF":"#183153","LWF":"#1f3f8c","LW":"#1f3f8c","LAMF":"#1f3f8c",
@@ -619,7 +615,6 @@ def _flag_html(country_name: str) -> str:
         return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
     return "<span class='chip'>—</span>"
 
-# --- Foot extractor (robust) ---
 def _get_foot(row) -> str:
     for col in ("Foot", "Preferred foot", "Preferred Foot"):
         if col in row.index:
@@ -636,7 +631,7 @@ def _get_foot(row) -> str:
     return ""
 
 def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
-    # ---- CSS ----
+    # CSS
     st.markdown("""
     <style>
       :root { --bg:#0f1115; --card:#161a22; --soft:#202633; }
@@ -667,40 +662,46 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
     </style>
     """, unsafe_allow_html=True)
 
-    # ✅ Use the same attacker position filter as the other tabs
-    df_view = df_view[df_view["Position"].astype(str).apply(position_filter)]
-
-    # pick top by "All In" score
+    # work from the already-filtered df_f
     all_col = "All In Score"
     if all_col not in df_view.columns:
-        st.info("Pro Layout needs the role scores. Make sure the table section above ran first.")
+        st.info("Pro Layout needs the role scores computed above.")
         return
     ranked = df_view.sort_values(all_col, ascending=False).head(top_n).reset_index(drop=True)
 
+    import re as _re
+
     for i, row in ranked.iterrows():
+        # keep original order of position tokens
+        pos_raw = str(row.get("Position", "") or "")
+        codes = [c for c in _re.split(r"[,/; ]+", pos_raw.strip().upper()) if c]
+
+        # extra safety: only render if the *primary* token matches the same position_filter
+        primary = codes[0] if codes else ""
+        if primary and not position_filter(primary):
+            continue
+
+        # meta
         player = str(row.get("Player", "") or "")
         team   = str(row.get("Team", "") or "")
         league = str(row.get("League", "") or "")
-        pos    = str(row.get("Position", "") or "")
         age    = int(row.get("Age", 0)) if not pd.isna(row.get("Age", np.nan)) else 0
         cy     = pd.to_datetime(row.get("Contract expires"), errors="coerce")
         cyr    = int(cy.year) if pd.notna(cy) else 0
         birth  = row.get("Birth country", "") if "Birth country" in row else ""
         foot   = _get_foot(row)
 
-        # role pills (capped 99, two digits)
+        # role pills (two-digit, capped 99)
         gt_i = _pro_show99(row.get("Goal Threat Score", 0))
         pm_i = _pro_show99(row.get("Playmaker Score", 0))
         bc_i = _pro_show99(row.get("Ball Carrier Score", 0))
         gt_txt, pm_txt, bc_txt = _fmt2(gt_i), _fmt2(pm_i), _fmt2(bc_i)
 
-        # position chips
-        import re as _re
-        codes = [c for c in _re.split(r"[,/; ]+", pos.strip().upper()) if c]
-        if "CF" in codes:
-            codes = ["CF"] + [c for c in codes if c != "CF"]
-        chips = "".join(f"<span class='pos' style='background:{_pro_chip_color(c)}'>{c}</span> "
-                        for c in dict.fromkeys(codes))
+        # chips: keep dataset order; de-dup while preserving order
+        chips = "".join(
+            f"<span class='pos' style='background:{_pro_chip_color(c)}'>{c}</span> "
+            for c in dict.fromkeys(codes)
+        )
 
         # left meta
         flag = _flag_html(birth)
@@ -708,7 +709,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
         yr = f"{cyr}" if cyr > 0 else "—"
         contract_chip = f"<span class='chip'>{yr}</span>"
         foot_chip = f"<span class='chip'>{foot}</span>" if foot else "<span class='chip'></span>"
-
         rank_txt = _fmt2(i + 1)
 
         st.markdown(f"""
@@ -741,7 +741,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
         </div>
         """, unsafe_allow_html=True)
 
-        # ── dropdown metrics (percentile pills only) ──
         with st.expander("▼ Show individual metrics", expanded=False):
             def _pct(m):
                 col = f"{m} Percentile"
@@ -761,7 +760,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
                 ("Touches in Opposition Box", "Touches in box per 90"),
             ]
             DEF = [
-                ("Aerial Duels", "Defensive duels per 90"),   # adjust if you store aerial separately
+                ("Aerial Duels", "Defensive duels per 90"),
                 ("Aerial Duel Success %", "Aerial duels won, %"),
                 ("Defensive Duels", "Offensive duels per 90"),
                 ("Defensive Duel Success %", "Offensive duels won, %"),
@@ -814,6 +813,7 @@ with tabs[4]:
     st.subheader("Pro Layout — Top Tiles")
     render_pro_layout(df_f, top_n=top_n)
 # ----------------- END PRO LAYOUT TAB -----------------
+
 
 
 # ----------------- END ATTACKER BLOCK -----------------
