@@ -563,16 +563,17 @@ def _fmt2(n: int) -> str:
         return "00"
 
 _POS_COLORS = {
-    "CF":"#183153","LWF":"#1f3f8c","LW":"#1f3f8c","LAMF":"#1f3f8c","RW":"#1f3f8c","RWF":"#1f3f8c","RAMF":"#1f3f8c",
-    "AMF":"#87d37c","LCMF":"#2ecc71","RCMF":"#2ecc71","RDMF":"#0e7a3b","LDMF":"#0e7a3b",
-    "LWB":"#e7d000","RWB":"#e7d000","LB":"#ff8a00","RB":"#ff8a00","RCB":"#c45a00","CB":"#c45a00","LCB":"#c45a00",
+    "CF":"#183153","LWF":"#1f3f8c","LW":"#1f3f8c","LAMF":"#1f3f8c",
+    "RW":"#1f3f8c","RWF":"#1f3f8c","RAMF":"#1f3f8c",
+    "AMF":"#87d37c","LCMF":"#2ecc71","RCMF":"#2ecc71",
+    "RDMF":"#0e7a3b","LDMF":"#0e7a3b","LWB":"#e7d000","RWB":"#e7d000",
+    "LB":"#ff8a00","RB":"#ff8a00","RCB":"#c45a00","CB":"#c45a00","LCB":"#c45a00",
 }
 def _pro_chip_color(p: str) -> str:
     return _POS_COLORS.get(str(p).strip().upper(), "#2d3550")
 
-# ---- Full flag helpers (Twemoji), supports ENG/SCT/WLS + many countries ----
+# ---- Flags (Twemoji) ----
 import unicodedata
-
 TWEMOJI_SPECIAL = {
     "eng": "1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
     "sct": "1f3f4-e0067-e0062-e0073-e0063-e006f-e0074-e007f",
@@ -595,60 +596,47 @@ COUNTRY_TO_CC = {
     "new zealand":"nz","latvia":"lv","lithuania":"lt","estonia":"ee","moldova":"md","north macedonia":"mk",
     "malta":"mt","cyprus":"cy","luxembourg":"lu","andorra":"ad","monaco":"mc","san marino":"sm",
 }
-
 def _norm(s: str) -> str:
-    if not s:
-        return ""
+    if not s: return ""
     return unicodedata.normalize("NFKD", str(s)).encode("ascii","ignore").decode("ascii").strip().lower()
-
 def _cc_to_twemoji(cc: str) -> str | None:
-    if not cc or len(cc) != 2:
-        return None
+    if not cc or len(cc) != 2: return None
     a, b = cc.upper()
     cp1 = 0x1F1E6 + (ord(a) - ord('A'))
     cp2 = 0x1F1E6 + (ord(b) - ord('A'))
     return f"{cp1:04x}-{cp2:04x}"
-
 def _flag_html(country_name: str) -> str:
-    if not country_name:
-        return "<span class='chip'>—</span>"
+    if not country_name: return "<span class='chip'>—</span>"
     n = _norm(country_name)
     cc = COUNTRY_TO_CC.get(n, "")
     if cc in TWEMOJI_SPECIAL:
         code = TWEMOJI_SPECIAL[cc]
         src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
         return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
-    else:
-        code = _cc_to_twemoji(cc) if len(cc) == 2 else None
-        if code:
-            src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
-            return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
+    code = _cc_to_twemoji(cc) if len(cc) == 2 else None
+    if code:
+        src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
+        return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
     return "<span class='chip'>—</span>"
 
-# --- SAFE foot extractor (avoids .strip() on NaN/float) ---
+# --- Foot extractor (robust) ---
 def _get_foot(row) -> str:
     for col in ("Foot", "Preferred foot", "Preferred Foot"):
         if col in row.index:
             val = row[col]
-            # handle NaN/None/non-string
             try:
                 import pandas as _pd
                 if _pd.isna(val):
                     continue
             except Exception:
                 pass
-            if isinstance(val, str):
-                s = val.strip()
-                if s and s.lower() not in {"nan", "none", "null"}:
-                    return s
-            else:
-                s = str(val).strip()
-                if s and s.lower() not in {"nan", "none", "null"}:
-                    return s
+            s = str(val).strip()
+            if s and s.lower() not in {"nan", "none", "null"}:
+                return s
     return ""
 
 def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
-    # ---- light CSS for tiles (scoped) ----
+    # ---- CSS ----
     st.markdown("""
     <style>
       :root { --bg:#0f1115; --card:#161a22; --soft:#202633; }
@@ -679,7 +667,10 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
     </style>
     """, unsafe_allow_html=True)
 
-    # pick top by "All In" score column (already computed above)
+    # ✅ Use the same attacker position filter as the other tabs
+    df_view = df_view[df_view["Position"].astype(str).apply(position_filter)]
+
+    # pick top by "All In" score
     all_col = "All In Score"
     if all_col not in df_view.columns:
         st.info("Pro Layout needs the role scores. Make sure the table section above ran first.")
@@ -687,7 +678,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
     ranked = df_view.sort_values(all_col, ascending=False).head(top_n).reset_index(drop=True)
 
     for i, row in ranked.iterrows():
-        # meta
         player = str(row.get("Player", "") or "")
         team   = str(row.get("Team", "") or "")
         league = str(row.get("League", "") or "")
@@ -698,11 +688,11 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
         birth  = row.get("Birth country", "") if "Birth country" in row else ""
         foot   = _get_foot(row)
 
-        # pills (capped at 99; two-digit text) — attacker roles
+        # role pills (capped 99, two digits)
         gt_i = _pro_show99(row.get("Goal Threat Score", 0))
         pm_i = _pro_show99(row.get("Playmaker Score", 0))
         bc_i = _pro_show99(row.get("Ball Carrier Score", 0))
-        gt_txt = _fmt2(gt_i); pm_txt = _fmt2(pm_i); bc_txt = _fmt2(bc_i)
+        gt_txt, pm_txt, bc_txt = _fmt2(gt_i), _fmt2(pm_i), _fmt2(bc_i)
 
         # position chips
         import re as _re
@@ -712,7 +702,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
         chips = "".join(f"<span class='pos' style='background:{_pro_chip_color(c)}'>{c}</span> "
                         for c in dict.fromkeys(codes))
 
-        # left meta (flag, age, contract, foot)
+        # left meta
         flag = _flag_html(birth)
         age_chip = f"<span class='chip'>{age}y.o.</span>"
         yr = f"{cyr}" if cyr > 0 else "—"
@@ -751,7 +741,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
         </div>
         """, unsafe_allow_html=True)
 
-        # dropdown of individual metrics (no raw values; pills max 99; two-digit text)
+        # ── dropdown metrics (percentile pills only) ──
         with st.expander("▼ Show individual metrics", expanded=False):
             def _pct(m):
                 col = f"{m} Percentile"
@@ -771,9 +761,9 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
                 ("Touches in Opposition Box", "Touches in box per 90"),
             ]
             DEF = [
-                ("Aerial Duels", "Defensive duels per 90"),  # (kept minimal; adjust if you track aerial separately)
+                ("Aerial Duels", "Defensive duels per 90"),   # adjust if you store aerial separately
                 ("Aerial Duel Success %", "Aerial duels won, %"),
-                ("Defensive Duels", "Offensive duels per 90"),  # stylistic balance for wingers (can swap to defensive)
+                ("Defensive Duels", "Offensive duels per 90"),
                 ("Defensive Duel Success %", "Offensive duels won, %"),
                 ("PAdj. Interceptions", "PAdj Interceptions"),
             ]
@@ -824,6 +814,7 @@ with tabs[4]:
     st.subheader("Pro Layout — Top Tiles")
     render_pro_layout(df_f, top_n=top_n)
 # ----------------- END PRO LAYOUT TAB -----------------
+
 
 # ----------------- END ATTACKER BLOCK -----------------
 
