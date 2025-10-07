@@ -771,10 +771,10 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                  ("Passes","Passes per 90"),
                  ("Passing Accuracy %","Accurate passes, %"),
                  ("Passes to F3rd", "Passes to final third per 90"),
-                 ("Passes F3rd %", "Accurate passes to final third, %")
+                 ("Passes F3rd %", "Accurate passes to final third, %"),
                  ("Passes to Penalty Area","Passes to penalty area per 90"),
                  ("Passes to Penalty Area %","Accurate passes to penalty area, %"),
-                 ("Progessive Passes", "Progressive passes per 90"),
+                 ("Progressive Passes", "Progressive passes per 90"),
                  ("Prog Pass %", "Accurate progressive passes, %"),
                  ("Smart Passes","Smart passes per 90")]
 
