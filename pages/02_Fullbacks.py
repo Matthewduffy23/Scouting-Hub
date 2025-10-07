@@ -582,15 +582,19 @@ def _pos_tokens(pos_raw: str) -> list[str]:
             out.append(code)
     return out
 
-# ---- Flags (Twemoji) + safe foot extractor (reuse across pages) ----
 import unicodedata
+
 TWEMOJI_SPECIAL = {
     "eng": "1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
-    "sct": "1f3f4-e0067-e0062-e0073-e0063-e006f-e0074-e007f",
-    "wls": "1f3f4-e0067-e0062-e0077-e0061-e006c-e0065-e007f",
+    "sct": "1f3f4-e0067-e0062-e0073-e0063-e0074-e007f",
+    "wls": "1f3f4-e0067-e0062-e0077-e006c-e0073-e007f",
 }
+
 COUNTRY_TO_CC = {
-    "united kingdom":"gb","great britain":"gb","northern ireland":"gb",
+    "united kingdom":"gb","great britain":"gb",
+    # choose ONE of these behaviors for NI:
+    # "northern ireland":"gb",   # shows UK flag
+    "northern ireland":"nir",    # shows fallback chip (since Twemoji has no NIR)
     "england":"eng","scotland":"sct","wales":"wls",
     "ireland":"ie","republic of ireland":"ie",
     "spain":"es","france":"fr","germany":"de","italy":"it","portugal":"pt","netherlands":"nl","belgium":"be",
@@ -606,28 +610,36 @@ COUNTRY_TO_CC = {
     "new zealand":"nz","latvia":"lv","lithuania":"lt","estonia":"ee","moldova":"md","north macedonia":"mk",
     "malta":"mt","cyprus":"cy","luxembourg":"lu","andorra":"ad","monaco":"mc","san marino":"sm",
 }
+
 def _norm(s: str) -> str:
     if not s: return ""
     return unicodedata.normalize("NFKD", str(s)).encode("ascii","ignore").decode("ascii").strip().lower()
+
 def _cc_to_twemoji(cc: str) -> str | None:
     if not cc or len(cc) != 2: return None
     a, b = cc.upper()
     cp1 = 0x1F1E6 + (ord(a) - ord('A'))
     cp2 = 0x1F1E6 + (ord(b) - ord('A'))
     return f"{cp1:04x}-{cp2:04x}"
+
 def _flag_html(country_name: str) -> str:
     if not country_name: return "<span class='chip'>—</span>"
     n = _norm(country_name)
     cc = COUNTRY_TO_CC.get(n, "")
+    if not cc: return "<span class='chip'>—</span>"
+
     if cc in TWEMOJI_SPECIAL:
         code = TWEMOJI_SPECIAL[cc]
         src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
         return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
+
     code = _cc_to_twemoji(cc) if len(cc) == 2 else None
     if code:
         src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
         return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
-    return "<span class='chip'>—</span>"
+
+    # e.g., 'nir' → not supported by Twemoji
+    return f"<span class='chip'>{cc.upper()}</span>"
 
 def _get_foot(row) -> str:
     for col in ("Foot", "Preferred foot", "Preferred Foot"):
