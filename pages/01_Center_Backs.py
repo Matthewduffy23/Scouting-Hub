@@ -123,7 +123,9 @@ FEATURES = [
     'Accurate forward passes, %', 'Long passes per 90',
     'Accurate long passes, %',
     'Passes to final third per 90', 'Accurate passes to final third, %', 'Progressive passes per 90',
-    'Accurate progressive passes, %',
+    'Accurate progressive passes, %','Non-penalty goals per 90', 'xG per 90',
+    'Offensive duels per 90', 'Offensive duels won, %',
+
 ]
 
 POLAR_METRICS = [
@@ -749,17 +751,17 @@ def render_pro_layout_cb(df_view: pd.DataFrame, top_n: int = 20):
             POSSESSION = [
                 ("Accelerations", "Accelerations per 90"),
                 ("Dribbles", "Dribbles per 90"),
-                ("Dribbling Success %", "Successful dribbles, %"),
+                ("Dribbling  %", "Successful dribbles, %"),
                 ("Forward Passes", "Forward passes per 90"),
                 ("Forward Passing Accuracy %", "Accurate forward passes, %"),
                 ("Long Passes", "Long passes per 90"),
-                ("Long Passing Success %", "Accurate long passes, %"),
+                ("Long Passing  %", "Accurate long passes, %"),
                 ("Passes", "Passes per 90"),
                 ("Passing Accuracy %", "Accurate passes, %"),
                 ("Passes to Final 3rd", "Passes to final third per 90"),
-                ("Passes to Final 3rd Success %", "Accurate passes to final third, %"),
+                ("Passes to Final 3rd  %", "Accurate passes to final third, %"),
                 ("Progessive Passes", "Progressive passes per 90"),
-                ("Progessive Passing Success %", "Accurate progressive passes, %"),
+                ("Progessive Passing  %", "Accurate progressive passes, %"),
                 ("Progressive Runs", "Progressive runs per 90"),
             ]
 
