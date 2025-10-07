@@ -475,7 +475,7 @@ value_band_max = st.session_state[f"cm_value_band_{selected_file}"]
 
 tabs = st.tabs([
     "Overall Top N", "U23 Top N", "Expiring Contracts",
-    "Value Band (≤ max €)", "Pro Layout"  # 👈 new tab
+    "Value Band (≤ max €)", "Pro Layout" ])  # 👈 new tab
 for role, role_def in ROLES.items():
     with tabs[0]:
         st.subheader(f"{role} — Overall Top {top_n}")
