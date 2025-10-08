@@ -776,7 +776,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
                 ("Aerial Duel Success %", "Aerial duels won, %"),
                 ("Defensive Duels", "Offensive duels per 90"),
                 ("Defensive Duel Success %", "Offensive duels won, %"),
-                ("PAdj. Interceptions", "PAdj Interceptions"),
             ]
             POS = [
                 ("Accelerations", "Accelerations per 90"),
@@ -784,9 +783,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
                 ("Dribbles", "Dribbles per 90"),
                 ("Dribbling Success %", "Successful dribbles, %"),
                 ("Forward Passes", "Forward passes per 90"),
-                ("Forward Pass %", "Accurate forward passes, %"),
                 ("Long Passes", "Long passes per 90"),
-                ("Long Pass %", "Accurate long passes, %"),
                 ("Key Passes", "Key passes per 90"),
                 ("Passes", "Passes per 90"),
                 ("Passing Accuracy %", "Accurate passes, %"),

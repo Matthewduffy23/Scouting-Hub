@@ -656,8 +656,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                  ("Conversion Rate %","Goal conversion, %"),
                  ("Header Goals","Head goals per 90"),
                  ("Expected Assists","xA per 90"),
-                 ("Offensive Duels","Offensive duels per 90"),
-                 ("Offensive Duel Success %","Offensive duels won, %"),
                  ("Progressive Runs","Progressive runs per 90"),
                  ("Shots","Shots per 90"),
                  ("Shooting Accuracy %","Shots on target, %"),

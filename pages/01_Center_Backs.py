@@ -759,7 +759,7 @@ def render_pro_layout_cb(df_view: pd.DataFrame, top_n: int = 20):
                 ("Defensive Duel Success %", "Defensive duels won, %"),
                 ("PAdj Interceptions", "PAdj Interceptions"),
                 ("Shots Blocked", "Shots blocked per 90"),
-                ("Successful Defensive Actions", "Successful defensive actions per 90"),
+                ("Suc. Defensive Actions", "Successful defensive actions per 90"),
             ]
             POSSESSION = [
                 ("Accelerations", "Accelerations per 90"),
