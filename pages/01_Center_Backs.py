@@ -766,7 +766,7 @@ def render_pro_layout_cb(df_view: pd.DataFrame, top_n: int = 20):
                 ("Dribbles", "Dribbles per 90"),
                 ("Dribbling  %", "Successful dribbles, %"),
                 ("Forward Passes", "Forward passes per 90"),
-                ("Forward Passing Accuracy %", "Accurate forward passes, %"),
+                ("Forward Passing  %", "Accurate forward passes, %"),
                 ("Long Passes", "Long passes per 90"),
                 ("Long Passing  %", "Accurate long passes, %"),
                 ("Passes", "Passes per 90"),
