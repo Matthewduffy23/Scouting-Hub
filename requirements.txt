@@ -5,6 +5,7 @@ matplotlib
 scikit-learn
 altair
 unicodedata2
+requests
 
 
 
