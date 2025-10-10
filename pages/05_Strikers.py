@@ -430,33 +430,7 @@ for role, role_def in ROLES.items():
         st.dataframe(top_table(filtered_view(df_f, value_max=v_max), role, top_n), use_container_width=True)
         st.divider()
 
-# ----------------- PRO LAYOUT TAB (tiles, with photo override + robust calling) -----------------
-import time as _time
-import re as _re
-import pandas as _pd
-
-# --- avatar helpers (standalone) ---
-PLACEHOLDER_IMG = "https://i.redd.it/43axcjdu59nd1.jpeg"
-if "pro_photo_map" not in st.session_state:
-    st.session_state["pro_photo_map"] = {}
-
-def _avatar_url_for(player: str, team: str, *, key_id: str) -> str:
-    """
-    Prefer manual override; else try optional auto lookup if user defined
-    `playmakerstats_image_by_name_team`; else placeholder.
-    """
-    override = st.session_state["pro_photo_map"].get(key_id, "")
-    if override:
-        return f"{override}?t={int(_time.time())}"  # cache-bust
-    # use auto lookup if you've defined it elsewhere in the app
-    try:
-        auto = playmakerstats_image_by_name_team(player, team)  # type: ignore[name-defined]
-        if auto:
-            return auto
-    except Exception:
-        pass
-    return PLACEHOLDER_IMG
-
+# ----------------- PRO LAYOUT TAB (tiles) -----------------
 def _pro_rating_color(v: float) -> str:
     PALETTE=[(0,(208,2,27)),(50,(245,166,35)),(65,(248,231,28)),(75,(126,211,33)),(85,(65,117,5)),(100,(40,90,4))]
     v=max(0.0,min(100.0,float(v)))
@@ -480,16 +454,27 @@ def _fmt2(n: int) -> str:
 
 _POS_COLORS={
     "CF":"#183153","LWF":"#1f3f8c","LW":"#1f3f8c","LAMF":"#1f3f8c","RW":"#1f3f8c","RWF":"#1f3f8c","RAMF":"#1f3f8c",
-    "AMF":"#87d37c","LCMF":"#2ecc71","RCMF":"#2ecc71","RDMF":"#0e7a3b","LDMF":"#0e7a3b", "DMF":"#0e7a3b",
+    "AMF":"#87d37c","LCMF":"#2ecc71","RCMF":"#2ecc71","RDMF":"#0e7a3b","LDMF":"#0e7a3b",
+    "DMF":"#0e7a3b",
     "LWB":"#e7d000","RWB":"#e7d000","LB":"#ff8a00","RB":"#ff8a00","RCB":"#c45a00","CB":"#c45a00","LCB":"#c45a00",
 }
-def _pro_chip_color(p:str)->str: return _POS_COLORS.get(str(p).strip().upper(),"#2d3550")
+
+def _pro_chip_color(p:str)->str:
+    return _POS_COLORS.get(str(p).strip().upper(),"#2d3550")
 
 import unicodedata
-TWEMOJI_SPECIAL = {"eng":"1f3f4-e0067-e0062-e0065-e006e-e0067-e007f","sct":"1f3f4-e0067-e0062-e0073-e0063-e0074-e007f","wls":"1f3f4-e0067-e0062-e0077-e006c-e0073-e007f"}
+TWEMOJI_SPECIAL = {
+    "eng": "1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
+    "sct": "1f3f4-e0067-e0062-e0073-e0063-e0074-e007f",
+    "wls": "1f3f4-e0067-e0062-e0077-e006c-e0073-e007f",
+}
 COUNTRY_TO_CC = {
-    "united kingdom":"gb","great britain":"gb","northern ireland":"nir",
-    "england":"eng","scotland":"sct","wales":"wls","ireland":"ie","republic of ireland":"ie",
+    "united kingdom":"gb","great britain":"gb",
+    # choose ONE of these behaviors for NI:
+    # "northern ireland":"gb",    # shows UK flag
+    "northern ireland":"nir",     # shows fallback chip (since Twemoji has no NIR)
+    "england":"eng","scotland":"sct","wales":"wls",
+    "ireland":"ie","republic of ireland":"ie",
     "spain":"es","france":"fr","germany":"de","italy":"it","portugal":"pt","netherlands":"nl","belgium":"be",
     "austria":"at","switzerland":"ch","denmark":"dk","sweden":"se","norway":"no","finland":"fi","iceland":"is",
     "poland":"pl","czech republic":"cz","czechia":"cz","slovakia":"sk","slovenia":"si","croatia":"hr","serbia":"rs",
@@ -506,21 +491,31 @@ COUNTRY_TO_CC = {
 def _norm(s: str) -> str:
     if not s: return ""
     return unicodedata.normalize("NFKD", str(s)).encode("ascii","ignore").decode("ascii").strip().lower()
+
 def _cc_to_twemoji(cc: str) -> str | None:
-    if not cc or len(cc) != 2: return None
-    a, b = cc.upper(); cp1 = 0x1F1E6 + (ord(a) - ord('A')); cp2 = 0x1F1E6 + (ord(b) - ord('A'))
+    if not cc or len(cc) != 2:
+        return None
+    a, b = cc.upper()
+    cp1 = 0x1F1E6 + (ord(a) - ord('A'))
+    cp2 = 0x1F1E6 + (ord(b) - ord('A'))
     return f"{cp1:04x}-{cp2:04x}"
+
 def _flag_html(country_name: str) -> str:
-    if not country_name: return "<span class='chip'>—</span>"
-    n = _norm(country_name); cc = COUNTRY_TO_CC.get(n, "")
-    if not cc: return "<span class='chip'>—</span>"
+    if not country_name:
+        return "<span class='chip'>—</span>"
+    n = _norm(country_name)
+    cc = COUNTRY_TO_CC.get(n, "")
+    if not cc:
+        return "<span class='chip'>—</span>"
     if cc in TWEMOJI_SPECIAL:
-        code = TWEMOJI_SPECIAL[cc]; src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
+        code = TWEMOJI_SPECIAL[cc]
+        src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
         return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
     code = _cc_to_twemoji(cc) if len(cc) == 2 else None
     if code:
         src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
         return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
+    # e.g., 'nir' → not supported by Twemoji
     return f"<span class='chip'>{cc.upper()}</span>"
 
 # --- SAFE foot extractor (avoids .strip() on NaN/float) ---
@@ -528,95 +523,73 @@ def _get_foot(row) -> str:
     for col in ("Foot", "Preferred foot", "Preferred Foot"):
         if col in row.index:
             val = row[col]
+            # handle NaN/None/non-string
             try:
-                if _pd.isna(val):  # pandas-aware NaN check
+                import pandas as _pd
+                if _pd.isna(val):
                     continue
             except Exception:
                 pass
             if isinstance(val, str):
                 s = val.strip()
-                if s and s.lower() not in {"nan","none","null"}: return s
+                if s and s.lower() not in {"nan", "none", "null"}:
+                    return s
             else:
+                # non-string but meaningful? present as string
                 s = str(val).strip()
-                if s and s.lower() not in {"nan","none","null"}: return s
+                if s and s.lower() not in {"nan", "none", "null"}:
+                    return s
     return ""
 
-def _detect_score_column(df: _pd.DataFrame) -> str | None:
-    """Find a reasonable score column to sort by."""
-    candidates = [
-        "All In Score",
-        "Role Fit Score",
-        "Overall Fit",
-        "Fit",
-        "Score",
-        "Role Fit %",
-        "Fit %"
-    ]
-    for c in candidates:
-        if c in df.columns:
-            return c
-    return None
-
-def render_pro_layout(df_view: _pd.DataFrame, top_n:int=20):
-    # Fast guards with visible messages
-    if df_view is None:
-        st.error("Pro Layout: df_view is None (nothing to render).")
-        return
-    if len(df_view) == 0:
-        st.warning("Pro Layout: your candidate DataFrame is empty after filters.")
-        return
-
-    # ---- scoped CSS ----
+def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
+    # ---- light CSS for tiles (scoped) ----
     st.markdown("""
     <style>
-      :root { --bg:#0f1115; --card:#161a22; --soft:#202633; }
-      .pro-wrap{ display:flex; justify-content:center; }
-      .pro-card{
-        width:min(420px,96%); display:grid; grid-template-columns:96px 1fr 48px;
-        gap:12px; align-items:start; background:var(--card); border:1px solid #252b3a;
-        border-radius:18px; padding:16px; margin-bottom:12px;
-      }
-      .pro-avatar{ width:96px; height:96px; border-radius:12px; background:#0b0d12 center/cover no-repeat; border:1px solid #2a3145; }
-      .flagchip{ display:inline-flex; align-items:center; gap:6px; background:var(--soft); color:#cbd5f5; border:1px solid #2d3550; padding:2px 8px; border-radius:10px; font-size:13px; height:22px;}
-      .flagchip img{ width:18px; height:14px; border-radius:2px; display:block; }
-      .chip{ background:var(--soft); color:#cbd5f5; border:1px solid #2d3550; padding:3px 10px; border-radius:10px; font-size:13px; line-height:18px; }
-      .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:4px 0; }
-      .pill{ padding:2px 10px; border-radius:9px; font-weight:800; font-size:18px; color:#0b0d12; display:inline-block; min-width:42px; text-align:center; }
-      .name{ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px; }
-      .sub{ color:#a8b3cf; font-size:15px; }
-      .teamline{ color:#e6ebff; font-size:15px; font-weight:400; margin-top:2px; }
-      .pos{ color:#eaf0ff; font-weight:700; padding:4px 10px; border-radius:10px; font-size:12px; border:1px solid rgba(255,255,255,.08); }
-      .rank{ color:#94a0c6; font-weight:800; font-size:18px; text-align:right; }
-      .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:14px; padding:10px 12px; }
-      .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
-      .m-row{ display:flex; justify-content:space-between; align-items:center; padding:8px 8px; border-radius:10px; }
-      .m-label{ color:#c9d3f2; font-size:16px; }
-      .m-badge{ min-width:40px; text-align:center; padding:2px 10px; border-radius:8px; font-weight:800; font-size:18px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); }
-      .metrics-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
-      @media (min-width: 720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr);} }
+    :root { --bg:#0f1115; --card:#161a22; --soft:#202633; }
+    .pro-wrap{ display:flex; justify-content:center; }
+    .pro-card{ width:min(420px,96%); display:grid; grid-template-columns:96px 1fr 48px; gap:12px; align-items:start; background:var(--card); border:1px solid #252b3a; border-radius:18px; padding:16px; margin-bottom:12px; }
+    .pro-avatar{ width:96px; height:96px; border-radius:12px; background:#0b0d12 url('https://i.redd.it/43axcjdu59nd1.jpeg') center/cover no-repeat; border:1px solid #2a3145; }
+    .flagchip{ display:inline-flex; align-items:center; gap:6px; background:var(--soft); color:#cbd5f5; border:1px solid #2d3550; padding:2px 8px; border-radius:10px; font-size:13px; height:22px;}
+    .flagchip img{ width:18px; height:14px; border-radius:2px; display:block; }
+    .chip{ background:var(--soft); color:#cbd5f5; border:1px solid #2d3550; padding:3px 10px; border-radius:10px; font-size:13px; line-height:18px; }
+    .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:4px 0; }
+    .pill{ padding:2px 10px; border-radius:9px; font-weight:800; font-size:18px; color:#0b0d12; display:inline-block; min-width:42px; text-align:center; }
+    .name{ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px; }
+    .sub{ color:#a8b3cf; font-size:15px; }
+    .teamline{ color:#e6ebff; font-size:15px; font-weight:400; margin-top:2px; }
+    .pos{ color:#eaf0ff; font-weight:700; padding:4px 10px; border-radius:10px; font-size:12px; border:1px solid rgba(255,255,255,.08); }
+    .rank{ color:#94a0c6; font-weight:800; font-size:18px; text-align:right; }
+    .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:14px; padding:10px 12px; }
+    .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
+    .m-row{ display:flex; justify-content:space-between; align-items:center; padding:8px 8px; border-radius:10px; }
+    .m-label{ color:#c9d3f2; font-size:16px; }
+    .m-badge{ min-width:40px; text-align:center; padding:2px 10px; border-radius:8px; font-weight:800; font-size:18px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); }
+    .metrics-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
+    @media (min-width: 720px){
+        .metrics-grid{ grid-template-columns:repeat(3,1fr);}
+    }
     </style>
     """, unsafe_allow_html=True)
 
-    score_col = _detect_score_column(df_view)
-    if score_col is None:
-        st.warning("Pro Layout: no score column found (looked for 'All In Score', 'Role Fit Score', etc.). Showing top by Minutes played.")
-        sort_col = "Minutes played" if "Minutes played" in df_view.columns else df_view.columns[0]
-    else:
-        sort_col = score_col
+    # pick top by "All In" score column (already computed above)
+    all_col = "All In Score"
+    if all_col not in df_view.columns:
+        st.info("Pro Layout needs the role scores. Make sure the table section above ran first.")
+        return
 
-    ranked = df_view.sort_values(sort_col, ascending=False).head(top_n).reset_index(drop=True)
+    ranked = df_view.sort_values(all_col, ascending=False).head(top_n).reset_index(drop=True)
 
     for i,row in ranked.iterrows():
         # meta
         player = str(row.get("Player","")) or ""
-        team   = str(row.get("Team","")) or ""
+        team = str(row.get("Team","")) or ""
         league = str(row.get("League","")) or ""
-        pos    = str(row.get("Position","")) or ""
-        age    = int(row.get("Age",0)) if not _pd.isna(row.get("Age",_pd.NA)) else 0
-        cy     = _pd.to_datetime(row.get("Contract expires"), errors="coerce")
-        cyr    = int(cy.year) if _pd.notna(cy) else 0
-        birth  = row.get("Birth country","") if "Birth country" in row else ""
-        foot   = _get_foot(row)
+        pos = str(row.get("Position","")) or ""
+        age = int(row.get("Age",0)) if not pd.isna(row.get("Age",np.nan)) else 0
+        cy = pd.to_datetime(row.get("Contract expires"), errors="coerce")
+        cyr = int(cy.year) if pd.notna(cy) else 0
+        birth = row.get("Birth country","") if "Birth country" in row else ""
+        foot = _get_foot(row)
 
         # pills (capped at 99; two-digit text)
         gt_i = _pro_show99(row.get("Goal Threat CF Score",0))
@@ -625,11 +598,13 @@ def render_pro_layout(df_view: _pd.DataFrame, top_n:int=20):
         gt_txt = _fmt2(gt_i); lu_txt = _fmt2(lu_i); tm_txt = _fmt2(tm_i)
 
         # pos chips (CF first)
+        import re as _re
         codes=[c for c in _re.split(r"[,/; ]+", pos.strip().upper()) if c]
-        if "CF" in codes: codes=["CF"]+[c for c in codes if c!="CF"]
+        if "CF" in codes:
+            codes=["CF"]+[c for c in codes if c!="CF"]
         chips="".join(f"<span class='pos' style='background:{_pro_chip_color(c)}'>{c}</span> " for c in dict.fromkeys(codes))
 
-        # left meta (flag, age, contract, foot)
+        # left meta (flag, age, contract, foot) — foot on its own row, same alignment
         flag=_flag_html(birth)
         age_chip=f"<span class='chip'>{age}y.o.</span>"
         yr=f"{cyr}" if cyr>0 else "—"
@@ -638,15 +613,11 @@ def render_pro_layout(df_view: _pd.DataFrame, top_n:int=20):
 
         rank_txt = _fmt2(i+1)
 
-        # avatar URL (override-aware)
-        key_id = f"{player}|||{team}|||{league}"
-        avatar_url = _avatar_url_for(player, team, key_id=key_id)
-
         st.markdown(f"""
         <div class='pro-wrap'>
           <div class='pro-card'>
             <div class='leftcol'>
-              <div class='pro-avatar' style="background-image:url('{avatar_url}');"></div>
+              <div class='pro-avatar'></div>
               <div class='row'>{flag}{age_chip}{contract_chip}</div>
               <div class='row'>{foot_chip}</div>
             </div>
@@ -672,11 +643,11 @@ def render_pro_layout(df_view: _pd.DataFrame, top_n:int=20):
         </div>
         """, unsafe_allow_html=True)
 
-        # ▼ dropdown with metrics + MANUAL IMAGE OVERRIDE
-        with st.expander("▼ Show individual metrics / Set photo override", expanded=False):
-            def _pct(m): 
+        # dropdown of individual metrics (no raw values; pills max 99; two-digit text)
+        with st.expander("▼ Show individual metrics", expanded=False):
+            def _pct(m):
                 col=f"{m} Percentile"
-                return float(row[col]) if col in row and not _pd.isna(row[col]) else 0.0
+                return float(row[col]) if col in row and not pd.isna(row[col]) else 0.0
 
             ATT=[("Crosses","Crosses per 90"),
                  ("Crossing Accuracy %","Accurate crosses, %"),
@@ -689,11 +660,13 @@ def render_pro_layout(df_view: _pd.DataFrame, top_n:int=20):
                  ("Shots","Shots per 90"),
                  ("Shooting Accuracy %","Shots on target, %"),
                  ("Touches in Opposition Box","Touches in box per 90")]
+
             DEF=[("Aerial Duels","Aerial duels per 90"),
                  ("Aerial Duel Success %","Aerial duels won, %"),
                  ("Defensive Duels","Defensive duels per 90"),
                  ("Defensive Duel Success %","Defensive duels won, %"),
                  ("PAdj. Interceptions","PAdj Interceptions")]
+
             POS=[("Deep Completions","Deep completions per 90"),
                  ("Dribbles","Dribbles per 90"),
                  ("Dribbling Success %","Successful dribbles, %"),
@@ -707,7 +680,8 @@ def render_pro_layout(df_view: _pd.DataFrame, top_n:int=20):
             def _sec_html(title, pairs):
                 rows=[]
                 for lab,met in pairs:
-                    p=_pro_show99(_pct(met)); ptxt=_fmt2(p)
+                    p=_pro_show99(_pct(met))
+                    ptxt=_fmt2(p)
                     rows.append(
                         f"<div class='m-row'>"
                         f"<div class='m-label'>{lab}</div>"
@@ -725,43 +699,10 @@ def render_pro_layout(df_view: _pd.DataFrame, top_n:int=20):
                 unsafe_allow_html=True
             )
 
-            # --- Manual image URL override controls (per player) ---
-            img_key = f"pro_imgurl_{key_id}"
-            default_url = st.session_state["pro_photo_map"].get(key_id, "")
-            _ = st.text_input(
-                "Custom image URL (override avatar — e.g., https://images.fotmob.com/image_resources/playerimages/1199383.png)",
-                value=default_url, key=img_key
-            )
-            c1, c2 = st.columns([1, 3])
-            with c1:
-                if st.button("Apply to this player", key=f"pro_apply_{key_id}"):
-                    val = (st.session_state.get(img_key, "") or "").strip()
-                    if not val:
-                        st.error("Please paste an image URL.")
-                    elif not (val.startswith("http://") or val.startswith("https://")):
-                        st.error("Image URL must start with http:// or https://")
-                    else:
-                        st.session_state["pro_photo_map"][key_id] = val
-                        st.success("Saved!")
-                        try: st.rerun()
-                        except Exception: st.experimental_rerun()
-            with c2:
-                if st.button("Clear override", key=f"pro_clear_{key_id}"):
-                    st.session_state["pro_photo_map"].pop(key_id, None)
-                    st.info("Cleared.")
-                    try: st.rerun()
-                    except Exception: st.experimental_rerun()
-
-# ------- Usage (works with or without tabs) -------
-# If you already have `tabs = st.tabs([...])` and you want this on a tab:
-# with tabs[4]:
-#     st.subheader("Pro Layout — Top Tiles")
-#     render_pro_layout(df_f, top_n=top_n)
-
-# If you DON'T have tabs or `tabs[4]` doesn't exist, just call:
-# st.subheader("Pro Layout — Top Tiles")
-# render_pro_layout(df_f, top_n=20)
-# ----------------- END PRO LAYOUT TAB -----------------
+with tabs[4]:
+    st.subheader("Pro Layout — Top Tiles")
+    render_pro_layout(df_f, top_n=top_n)
+# ----------------- END PRO LAYOUT TAB ----------------
 
 
 # ----------------- END STRIKER (CF) BLOCK -----------------
