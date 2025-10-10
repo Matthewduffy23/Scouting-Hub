@@ -430,7 +430,32 @@ for role, role_def in ROLES.items():
         st.dataframe(top_table(filtered_view(df_f, value_max=v_max), role, top_n), use_container_width=True)
         st.divider()
 
-# ----------------- PRO LAYOUT TAB (tiles) -----------------
+# ----------------- PRO LAYOUT TAB (tiles, with photo override) -----------------
+import time as _time
+import re as _re
+
+# --- avatar helpers (standalone) ---
+PLACEHOLDER_IMG = "https://i.redd.it/43axcjdu59nd1.jpeg"
+if "pro_photo_map" not in st.session_state:
+    st.session_state["pro_photo_map"] = {}
+
+def _avatar_url_for(player: str, team: str, *, key_id: str) -> str:
+    """
+    Prefer manual override; else try optional auto lookup if user defined
+    `playmakerstats_image_by_name_team`; else placeholder.
+    """
+    override = st.session_state["pro_photo_map"].get(key_id, "")
+    if override:
+        return f"{override}?t={int(_time.time())}"  # cache-bust
+    # use auto lookup if you've defined it elsewhere in the app
+    try:
+        auto = playmakerstats_image_by_name_team(player, team)  # type: ignore[name-defined]
+        if auto:
+            return auto
+    except Exception:
+        pass
+    return PLACEHOLDER_IMG
+
 def _pro_rating_color(v: float) -> str:
     PALETTE=[(0,(208,2,27)),(50,(245,166,35)),(65,(248,231,28)),(75,(126,211,33)),(85,(65,117,5)),(100,(40,90,4))]
     v=max(0.0,min(100.0,float(v)))
@@ -460,20 +485,10 @@ _POS_COLORS={
 def _pro_chip_color(p:str)->str: return _POS_COLORS.get(str(p).strip().upper(),"#2d3550")
 
 import unicodedata
-
-TWEMOJI_SPECIAL = {
-    "eng": "1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
-    "sct": "1f3f4-e0067-e0062-e0073-e0063-e0074-e007f",
-    "wls": "1f3f4-e0067-e0062-e0077-e006c-e0073-e007f",
-}
-
+TWEMOJI_SPECIAL = {"eng":"1f3f4-e0067-e0062-e0065-e006e-e0067-e007f","sct":"1f3f4-e0067-e0062-e0073-e0063-e0074-e007f","wls":"1f3f4-e0067-e0062-e0077-e006c-e0073-e007f"}
 COUNTRY_TO_CC = {
-    "united kingdom":"gb","great britain":"gb",
-    # choose ONE of these behaviors for NI:
-    # "northern ireland":"gb",   # shows UK flag
-    "northern ireland":"nir",    # shows fallback chip (since Twemoji has no NIR)
-    "england":"eng","scotland":"sct","wales":"wls",
-    "ireland":"ie","republic of ireland":"ie",
+    "united kingdom":"gb","great britain":"gb","northern ireland":"nir",
+    "england":"eng","scotland":"sct","wales":"wls","ireland":"ie","republic of ireland":"ie",
     "spain":"es","france":"fr","germany":"de","italy":"it","portugal":"pt","netherlands":"nl","belgium":"be",
     "austria":"at","switzerland":"ch","denmark":"dk","sweden":"se","norway":"no","finland":"fi","iceland":"is",
     "poland":"pl","czech republic":"cz","czechia":"cz","slovakia":"sk","slovenia":"si","croatia":"hr","serbia":"rs",
@@ -487,35 +502,24 @@ COUNTRY_TO_CC = {
     "new zealand":"nz","latvia":"lv","lithuania":"lt","estonia":"ee","moldova":"md","north macedonia":"mk",
     "malta":"mt","cyprus":"cy","luxembourg":"lu","andorra":"ad","monaco":"mc","san marino":"sm",
 }
-
 def _norm(s: str) -> str:
     if not s: return ""
     return unicodedata.normalize("NFKD", str(s)).encode("ascii","ignore").decode("ascii").strip().lower()
-
 def _cc_to_twemoji(cc: str) -> str | None:
     if not cc or len(cc) != 2: return None
-    a, b = cc.upper()
-    cp1 = 0x1F1E6 + (ord(a) - ord('A'))
-    cp2 = 0x1F1E6 + (ord(b) - ord('A'))
+    a, b = cc.upper(); cp1 = 0x1F1E6 + (ord(a) - ord('A')); cp2 = 0x1F1E6 + (ord(b) - ord('A'))
     return f"{cp1:04x}-{cp2:04x}"
-
 def _flag_html(country_name: str) -> str:
     if not country_name: return "<span class='chip'>—</span>"
-    n = _norm(country_name)
-    cc = COUNTRY_TO_CC.get(n, "")
+    n = _norm(country_name); cc = COUNTRY_TO_CC.get(n, "")
     if not cc: return "<span class='chip'>—</span>"
-
     if cc in TWEMOJI_SPECIAL:
-        code = TWEMOJI_SPECIAL[cc]
-        src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
+        code = TWEMOJI_SPECIAL[cc]; src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
         return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
-
     code = _cc_to_twemoji(cc) if len(cc) == 2 else None
     if code:
         src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
         return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
-
-    # e.g., 'nir' → not supported by Twemoji
     return f"<span class='chip'>{cc.upper()}</span>"
 
 # --- SAFE foot extractor (avoids .strip() on NaN/float) ---
@@ -523,26 +527,21 @@ def _get_foot(row) -> str:
     for col in ("Foot", "Preferred foot", "Preferred Foot"):
         if col in row.index:
             val = row[col]
-            # handle NaN/None/non-string
             try:
                 import pandas as _pd
-                if _pd.isna(val):
-                    continue
+                if _pd.isna(val): continue
             except Exception:
                 pass
             if isinstance(val, str):
                 s = val.strip()
-                if s and s.lower() not in {"nan", "none", "null"}:
-                    return s
+                if s and s.lower() not in {"nan","none","null"}: return s
             else:
-                # non-string but meaningful? present as string
                 s = str(val).strip()
-                if s and s.lower() not in {"nan", "none", "null"}:
-                    return s
+                if s and s.lower() not in {"nan","none","null"}: return s
     return ""
 
 def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
-    # ---- light CSS for tiles (scoped) ----
+    # ---- scoped CSS ----
     st.markdown("""
     <style>
       :root { --bg:#0f1115; --card:#161a22; --soft:#202633; }
@@ -552,7 +551,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         gap:12px; align-items:start; background:var(--card); border:1px solid #252b3a;
         border-radius:18px; padding:16px; margin-bottom:12px;
       }
-      .pro-avatar{ width:96px; height:96px; border-radius:12px; background:#0b0d12 url('https://i.redd.it/43axcjdu59nd1.jpeg') center/cover no-repeat; border:1px solid #2a3145; }
+      .pro-avatar{ width:96px; height:96px; border-radius:12px; background:#0b0d12 center/cover no-repeat; border:1px solid #2a3145; }
       .flagchip{ display:inline-flex; align-items:center; gap:6px; background:var(--soft); color:#cbd5f5; border:1px solid #2d3550; padding:2px 8px; border-radius:10px; font-size:13px; height:22px;}
       .flagchip img{ width:18px; height:14px; border-radius:2px; display:block; }
       .chip{ background:var(--soft); color:#cbd5f5; border:1px solid #2d3550; padding:3px 10px; border-radius:10px; font-size:13px; line-height:18px; }
@@ -573,7 +572,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     </style>
     """, unsafe_allow_html=True)
 
-    # pick top by "All In" score column (already computed above)
+    # pick top by "All In" score column
     all_col = "All In Score"
     if all_col not in df_view.columns:
         st.info("Pro Layout needs the role scores. Make sure the table section above ran first.")
@@ -599,12 +598,11 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         gt_txt = _fmt2(gt_i); lu_txt = _fmt2(lu_i); tm_txt = _fmt2(tm_i)
 
         # pos chips (CF first)
-        import re as _re
         codes=[c for c in _re.split(r"[,/; ]+", pos.strip().upper()) if c]
         if "CF" in codes: codes=["CF"]+[c for c in codes if c!="CF"]
         chips="".join(f"<span class='pos' style='background:{_pro_chip_color(c)}'>{c}</span> " for c in dict.fromkeys(codes))
 
-        # left meta (flag, age, contract, foot) — foot on its own row, same alignment
+        # left meta (flag, age, contract, foot)
         flag=_flag_html(birth)
         age_chip=f"<span class='chip'>{age}y.o.</span>"
         yr=f"{cyr}" if cyr>0 else "—"
@@ -613,11 +611,15 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
         rank_txt = _fmt2(i+1)
 
+        # avatar URL (override-aware)
+        key_id = f"{player}|||{team}|||{league}"
+        avatar_url = _avatar_url_for(player, team, key_id=key_id)
+
         st.markdown(f"""
         <div class='pro-wrap'>
           <div class='pro-card'>
             <div class='leftcol'>
-              <div class='pro-avatar'></div>
+              <div class='pro-avatar' style="background-image:url('{avatar_url}');"></div>
               <div class='row'>{flag}{age_chip}{contract_chip}</div>
               <div class='row'>{foot_chip}</div>
             </div>
@@ -643,8 +645,8 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         </div>
         """, unsafe_allow_html=True)
 
-        # dropdown of individual metrics (no raw values; pills max 99; two-digit text)
-        with st.expander("▼ Show individual metrics", expanded=False):
+        # ▼ dropdown with metrics + MANUAL IMAGE OVERRIDE (same UX as Club Tool)
+        with st.expander("▼ Show individual metrics / Set photo override", expanded=False):
             def _pct(m): 
                 col=f"{m} Percentile"
                 return float(row[col]) if col in row and not pd.isna(row[col]) else 0.0
@@ -678,8 +680,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
             def _sec_html(title, pairs):
                 rows=[]
                 for lab,met in pairs:
-                    p=_pro_show99(_pct(met))
-                    ptxt=_fmt2(p)
+                    p=_pro_show99(_pct(met)); ptxt=_fmt2(p)
                     rows.append(
                         f"<div class='m-row'>"
                         f"<div class='m-label'>{lab}</div>"
@@ -697,11 +698,38 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 unsafe_allow_html=True
             )
 
-with tabs[4]:
-    st.subheader("Pro Layout — Top Tiles")
-    render_pro_layout(df_f, top_n=top_n)
-# ----------------- END PRO LAYOUT TAB -----------------
+            # --- Manual image URL override controls (per player) ---
+            img_key = f"pro_imgurl_{key_id}"
+            default_url = st.session_state["pro_photo_map"].get(key_id, "")
+            _ = st.text_input(
+                "Custom image URL (override avatar — e.g., https://images.fotmob.com/image_resources/playerimages/1199383.png)",
+                value=default_url, key=img_key
+            )
+            c1, c2 = st.columns([1, 3])
+            with c1:
+                if st.button("Apply to this player", key=f"pro_apply_{key_id}"):
+                    val = (st.session_state.get(img_key, "") or "").strip()
+                    if not val:
+                        st.error("Please paste an image URL.")
+                    elif not (val.startswith("http://") or val.startswith("https://")):
+                        st.error("Image URL must start with http:// or https://")
+                    else:
+                        st.session_state["pro_photo_map"][key_id] = val
+                        st.success("Saved!")
+                        try: st.rerun()
+                        except Exception: st.experimental_rerun()
+            with c2:
+                if st.button("Clear override", key=f"pro_clear_{key_id}"):
+                    st.session_state["pro_photo_map"].pop(key_id, None)
+                    st.info("Cleared.")
+                    try: st.rerun()
+                    except Exception: st.experimental_rerun()
 
+# Usage:
+# with tabs[4]:
+#     st.subheader("Pro Layout — Top Tiles")
+#     render_pro_layout(df_f, top_n=top_n)
+# ----------------- END PRO LAYOUT TAB -----------------
 
 # ----------------- END STRIKER (CF) BLOCK -----------------
 
