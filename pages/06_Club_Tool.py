@@ -1,8 +1,9 @@
-# --- PART 1 ---
+# --- PART 1 (DROP-IN REPLACEMENT WITH DATASET PICKER) ---
 
 import io, math, uuid, re, time
 from pathlib import Path
 from urllib.parse import quote
+from typing import List, Tuple  # Py3.8+ friendly
 
 import numpy as np
 import pandas as pd
@@ -18,9 +19,7 @@ st.caption(
     "Each tab computes its own Fit %. Dropdown per tile lets you paste a custom image URL to override the photo."
 )
 
-## ======================== DATA LOADER (unified, robust) ========================
-from typing import List, Tuple  # keeps it Py3.8+ friendly
-
+# ======================== DATA LOADER (picker + upload) ========================
 @st.cache_data(show_spinner=False)
 def _read_csv_from_path(path_str: str) -> pd.DataFrame:
     return pd.read_csv(path_str)
@@ -30,28 +29,25 @@ def _read_csv_from_bytes(data: bytes) -> pd.DataFrame:
     return pd.read_csv(io.BytesIO(data))
 
 def _candidate_dirs() -> List[Path]:
-    """Places we look for WORLD*.csv (cwd, cwd parent, script dir, script parent)."""
+    """Directories to search for WORLD*.csv files."""
     dirs: List[Path] = [Path.cwd()]
-    # also try the cwd's parent (common when running from /pages)
+    # common project layouts (e.g., running from /pages)
     try:
         dirs.append(Path.cwd().parent)
     except Exception:
         pass
-    # add script directory if available
+    # include script directory and its parent if __file__ exists
     try:
         here = Path(__file__).resolve().parent
         dirs.extend([here, here.parent])
     except Exception:
-        # __file__ may not exist in some Streamlit environments
         pass
     # de-duplicate while preserving order
-    seen = set()
-    uniq: List[Path] = []
+    seen, uniq = set(), []
     for d in dirs:
         rp = d.resolve()
         if rp not in seen:
-            seen.add(rp)
-            uniq.append(rp)
+            seen.add(rp); uniq.append(rp)
     return uniq
 
 def _find_world_csvs() -> List[Path]:
@@ -59,29 +55,27 @@ def _find_world_csvs() -> List[Path]:
     for base in _candidate_dirs():
         files.extend(sorted(base.glob("WORLD*.csv")))
     # unique by resolved path, preserve order
-    seen = set()
-    uniq: List[Path] = []
+    seen, uniq = set(), []
     for p in files:
         rp = p.resolve()
         if rp not in seen:
-            seen.add(rp)
-            uniq.append(rp)
+            seen.add(rp); uniq.append(rp)
     return uniq
 
+def _label_for(p: Path) -> str:
+    """Human-friendly label that disambiguates duplicates by parent folder."""
+    parent_hint = p.parent.name or str(p.parent)
+    return f"{p.name} — {parent_hint}/"
+
 def pick_or_upload_world_csv() -> Tuple[pd.DataFrame, str]:
-    """Let the user pick a detected WORLD*.csv or upload one. Returns (df, display_name)."""
+    """
+    UI: choose one of the detected WORLD*.csv files or upload your own.
+    Returns (df, dataset_name_for_state)
+    """
     st.markdown("### 📁 Data Source")
-
     found = _find_world_csvs()
-    # Human-friendly labels with a hint of location to avoid duplicate-name confusion
-    def _label_for(p: Path) -> str:
-        try:
-            parent_hint = p.parent.name
-        except Exception:
-            parent_hint = str(p.parent)
-        return f"{p.name}  —  {parent_hint}/"
-
     labels_found = [_label_for(p) for p in found]
+
     labels = ["Upload a CSV…"] + labels_found
     default_index = 1 if found else 0
 
@@ -92,14 +86,29 @@ def pick_or_upload_world_csv() -> Tuple[pd.DataFrame, str]:
         if up is None:
             st.info("Pick a file from the list above or upload one.")
             st.stop()
-        df = _read_csv_from_bytes(up.getvalue())
-        return df, up.name
+        df_up = _read_csv_from_bytes(up.getvalue())
+        return df_up, up.name
 
-    # Map selection back to Path by index (robust even if names repeat)
-    idx = labels.index(sel) - 1  # shift for the upload entry
+    # Map label back to the concrete Path (robust if duplicate names exist)
+    idx = labels.index(sel) - 1  # shift for "Upload a CSV…"
     chosen_path = found[idx]
-    df = _read_csv_from_path(str(chosen_path))
-    return df, chosen_path.name
+    df_disk = _read_csv_from_path(str(chosen_path))
+    # Use resolved name for stable session checks
+    return df_disk, chosen_path.resolve().name
+
+# ---- Load dataset now (df used by the rest of the app) ----
+df, DATASET_NAME = pick_or_upload_world_csv()
+
+# Optional: reset any dataset-scoped widgets/state on change
+if st.session_state.get("_active_dataset_name") != DATASET_NAME:
+    for key in [
+        # add any widget keys you want cleared when switching datasets
+        "att_role_choice", "fb_role_choice",
+        "st_tmpl_pick", "att_tmpl_pick", "cm_tmpl_pick", "fb_tmpl_pick", "cb_tmpl_pick",
+        "photo_map",
+    ]:
+        st.session_state.pop(key, None)
+    st.session_state["_active_dataset_name"] = DATASET_NAME
 
 # ======================== leagues & strengths ========================
 INCLUDED_LEAGUES = [
