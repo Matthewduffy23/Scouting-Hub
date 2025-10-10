@@ -431,12 +431,6 @@ for role, role_def in ROLES.items():
         st.divider()
 
 # ----------------- PRO LAYOUT TAB (tiles) -----------------
-import time  # NEW
-
-PLACEHOLDER_IMG = "https://i.redd.it/43axcjdu59nd1.jpeg"  # NEW
-if "pro_photo_map" not in st.session_state:               # NEW
-    st.session_state["pro_photo_map"] = {}               # NEW
-
 def _pro_rating_color(v: float) -> str:
     PALETTE=[(0,(208,2,27)),(50,(245,166,35)),(65,(248,231,28)),(75,(126,211,33)),(85,(65,117,5)),(100,(40,90,4))]
     v=max(0.0,min(100.0,float(v)))
