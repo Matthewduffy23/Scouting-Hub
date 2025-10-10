@@ -1,3 +1,5 @@
+# --- PART 1 ---
+
 import io, math, uuid, re, time
 from pathlib import Path
 from urllib.parse import quote
@@ -8,54 +10,6 @@ import streamlit as st
 from numpy.linalg import norm
 from numpy import exp
 
-# ---- Optional sklearn (fallback provided) ----
-try:
-    from sklearn.preprocessing import StandardScaler
-except Exception:
-    class StandardScaler:  # minimal drop-in
-        def __init__(self): self.mean_ = None; self.scale_ = None
-        def fit(self, X):
-            X = np.asarray(X, dtype=float)
-            self.mean_ = X.mean(axis=0)
-            std = X.std(axis=0, ddof=0)
-            std[std == 0] = 1.0
-            self.scale_ = std
-            return self
-        def transform(self, X):
-            X = np.asarray(X, dtype=float)
-            return (X - self.mean_) / self.scale_
-        def fit_transform(self, X):
-            self.fit(X); return self.transform(X)
-
-# ✅ --- Tiny CSV loaders (cached) ---
-@st.cache_data(show_spinner=False)
-def _read_csv_from_path(path_str: str) -> pd.DataFrame:
-    return pd.read_csv(path_str)
-
-@st.cache_data(show_spinner=False)
-def _read_csv_from_bytes(data: bytes) -> pd.DataFrame:
-    return pd.read_csv(io.BytesIO(data))
-
-def load_df(csv_name: str) -> pd.DataFrame:
-    candidates = [
-        Path.cwd() / csv_name,
-        Path(__file__).resolve().parent.parent / csv_name,
-        Path(__file__).resolve().parent / csv_name,
-    ]
-    for p in candidates:
-        if p.exists():
-            return _read_csv_from_path(str(p))
-    up = st.file_uploader(f"Upload {csv_name}", type=["csv"])
-    if up is None:
-        st.stop()
-    return _read_csv_from_bytes(up.getvalue())
-
-# 🔍 Detect all CSVs starting with WORLD*
-csv_files = [f.name for f in Path.cwd().glob("WORLD*.csv")]
-if not csv_files:
-    st.error("No WORLD*.csv files found in the project folder.")
-    st.stop()
-
 # ---------- Page ----------
 st.set_page_config(page_title="Club Scouting — Tiles", layout="wide")
 st.title("🔎 Advanced Club Scouting — Tiles View")
@@ -64,7 +18,34 @@ st.caption(
     "Each tab computes its own Fit %. Dropdown per tile lets you paste a custom image URL to override the photo."
 )
 
+# ======================== CSV loader ========================
+@st.cache_data(show_spinner=False)
+def _read_csv_from_path(path_str: str) -> pd.DataFrame:
+    return pd.read_csv(path_str)
 
+@st.cache_data(show_spinner=False)
+def _read_csv_from_bytes(data: bytes) -> pd.DataFrame:
+    return pd.read_csv(io.BytesIO(data))
+
+def load_df(csv_name: str = "WORLDJUNE25.csv") -> pd.DataFrame:
+    candidates = [Path.cwd() / csv_name, Path.cwd().parent / csv_name]
+    try:
+        here = Path(__file__).resolve().parent
+        candidates += [here / csv_name, here.parent / csv_name]
+    except Exception:
+        pass
+
+    for p in candidates:
+        if p.exists():
+            return _read_csv_from_path(str(p))
+
+    st.warning(f"Could not find **{csv_name}**. Please upload below.")
+    up = st.file_uploader("Upload WORLDJUNE25.csv", type=["csv"])
+    if up is None:
+        st.stop()
+    return _read_csv_from_bytes(up.getvalue())
+
+df = load_df("WORLDJUNE25.csv")
 
 # ======================== leagues & strengths ========================
 INCLUDED_LEAGUES = [
@@ -1120,6 +1101,29 @@ with tab_cb:
     ranked, pool, tag, tmpl_src = compute_center_backs()
     render_template_players_used("CB", tmpl_src)
     render_tiles_and_featureZ(ranked, pool, tag)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
