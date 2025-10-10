@@ -431,6 +431,12 @@ for role, role_def in ROLES.items():
         st.divider()
 
 # ----------------- PRO LAYOUT TAB (tiles) -----------------
+import time  # NEW
+
+PLACEHOLDER_IMG = "https://i.redd.it/43axcjdu59nd1.jpeg"  # NEW
+if "pro_photo_map" not in st.session_state:               # NEW
+    st.session_state["pro_photo_map"] = {}               # NEW
+
 def _pro_rating_color(v: float) -> str:
     PALETTE=[(0,(208,2,27)),(50,(245,166,35)),(65,(248,231,28)),(75,(126,211,33)),(85,(65,117,5)),(100,(40,90,4))]
     v=max(0.0,min(100.0,float(v)))
@@ -671,6 +677,142 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                  ("Key Passes","Key passes per 90"),
                  ("Passes","Passes per 90"),
                  ("Passing Accuracy %","Accurate passes, %"),
+                 ("Passes to Pedef render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
+    # ---- light CSS for tiles (scoped) ----
+    st.markdown("""
+    <style>
+      :root { --bg:#0f1115; --card:#161a22; --soft:#202633; }
+      .pro-wrap{ display:flex; justify-content:center; }
+      .pro-card{
+        width:min(420px,96%); display:grid; grid-template-columns:96px 1fr 48px;
+        gap:12px; align-items:start; background:var(--card); border:1px solid #252b3a;
+        border-radius:18px; padding:16px; margin-bottom:12px;
+      }
+      .pro-avatar{ width:96px; height:96px; border-radius:12px; background:#0b0d12 center/cover no-repeat; border:1px solid #2a3145; }
+      .flagchip{ display:inline-flex; align-items:center; gap:6px; background:var(--soft); color:#cbd5f5; border:1px solid #2d3550; padding:2px 8px; border-radius:10px; font-size:13px; height:22px;}
+      .flagchip img{ width:18px; height:14px; border-radius:2px; display:block; }
+      .chip{ background:var(--soft); color:#cbd5f5; border:1px solid #2d3550; padding:3px 10px; border-radius:10px; font-size:13px; line-height:18px; }
+      .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:4px 0; }
+      .pill{ padding:2px 10px; border-radius:9px; font-weight:800; font-size:18px; color:#0b0d12; display:inline-block; min-width:42px; text-align:center; }
+      .name{ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px; }
+      .sub{ color:#a8b3cf; font-size:15px; }
+      .teamline{ color:#e6ebff; font-size:15px; font-weight:400; margin-top:2px; }
+      .pos{ color:#eaf0ff; font-weight:700; padding:4px 10px; border-radius:10px; font-size:12px; border:1px solid rgba(255,255,255,.08); }
+      .rank{ color:#94a0c6; font-weight:800; font-size:18px; text-align:right; }
+      .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:14px; padding:10px 12px; }
+      .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
+      .m-row{ display:flex; justify-content:space-between; align-items:center; padding:8px 8px; border-radius:10px; }
+      .m-label{ color:#c9d3f2; font-size:16px; }
+      .m-badge{ min-width:40px; text-align:center; padding:2px 10px; border-radius:8px; font-weight:800; font-size:18px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); }
+      .metrics-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
+      @media (min-width: 720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr);} }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # pick top by "All In" score column (already computed above)
+    all_col = "All In Score"
+    if all_col not in df_view.columns:
+        st.info("Pro Layout needs the role scores. Make sure the table section above ran first.")
+        return
+    ranked = df_view.sort_values(all_col, ascending=False).head(top_n).reset_index(drop=True)
+
+    for i,row in ranked.iterrows():
+        # meta
+        player = str(row.get("Player","")) or ""
+        team   = str(row.get("Team","")) or ""
+        league = str(row.get("League","")) or ""
+        pos    = str(row.get("Position","")) or ""
+        age    = int(row.get("Age",0)) if not pd.isna(row.get("Age",np.nan)) else 0
+        cy     = pd.to_datetime(row.get("Contract expires"), errors="coerce")
+        cyr    = int(cy.year) if pd.notna(cy) else 0
+        birth  = row.get("Birth country","") if "Birth country" in row else ""
+        foot   = _get_foot(row)
+
+        # NEW — stable per-player key & resolve avatar URL
+        key_id = f"{player}|||{team}|||{league}"                       # NEW
+        override_url = st.session_state["pro_photo_map"].get(key_id, "")  # NEW
+        avatar_url = override_url or PLACEHOLDER_IMG                   # NEW
+        _ts = int(time.time())                                         # NEW
+
+        # pills (capped at 99; two-digit text)
+        gt_i = _pro_show99(row.get("Goal Threat CF Score",0))
+        lu_i = _pro_show99(row.get("Link-Up CF Score",0))
+        tm_i = _pro_show99(row.get("Target Man CF Score",0))
+        gt_txt = _fmt2(gt_i); lu_txt = _fmt2(lu_i); tm_txt = _fmt2(tm_i)
+
+        # pos chips (CF first)
+        import re as _re
+        codes=[c for c in _re.split(r"[,/; ]+", pos.strip().upper()) if c]
+        if "CF" in codes: codes=["CF"]+[c for c in codes if c!="CF"]
+        chips="".join(f"<span class='pos' style='background:{_pro_chip_color(c)}'>{c}</span> " for c in dict.fromkeys(codes))
+
+        # left meta (flag, age, contract, foot) — foot on its own row, same alignment
+        flag=_flag_html(birth)
+        age_chip=f"<span class='chip'>{age}y.o.</span>"
+        yr=f"{cyr}" if cyr>0 else "—"
+        contract_chip=f"<span class='chip'>{yr}</span>"
+        foot_chip=f"<span class='chip'>{foot}</span>" if foot else "<span class='chip'></span>"
+
+        rank_txt = _fmt2(i+1)
+
+        st.markdown(f"""
+        <div class='pro-wrap'>
+          <div class='pro-card'>
+            <div class='leftcol'>
+              <div class='pro-avatar' style="background-image:url('{avatar_url}?t={_ts}');"></div>  <!-- NEW -->
+              <div class='row'>{flag}{age_chip}{contract_chip}</div>
+              <div class='row'>{foot_chip}</div>
+            </div>
+            <div>
+              <div class='name'>{player}</div>
+              <div class='row' style='align-items:center;'>
+                <span class='pill' style='background:{_pro_rating_color(gt_i)}'>{gt_txt}</span>
+                <span class='sub'>Goal Threat</span>
+              </div>
+              <div class='row' style='align-items:center;'>
+                <span class='pill' style='background:{_pro_rating_color(lu_i)}'>{lu_txt}</span>
+                <span class='sub'>Link-Up CF</span>
+              </div>
+              <div class='row' style='align-items:center;'>
+                <span class='pill' style='background:{_pro_rating_color(tm_i)}'>{tm_txt}</span>
+                <span class='sub'>Target Man CF</span>
+              </div>
+              <div class='row'>{chips}</div>
+              <div class='teamline'>{team} · {league}</div>
+            </div>
+            <div class='rank'>#{rank_txt}</div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # dropdown of individual metrics
+        with st.expander("▼ Show individual metrics", expanded=False):
+            def _pct(m): 
+                col=f"{m} Percentile"
+                return float(row[col]) if col in row and not pd.isna(row[col]) else 0.0
+
+            ATT=[("Crosses","Crosses per 90"),
+                 ("Crossing Accuracy %","Accurate crosses, %"),
+                 ("Goals: Non-Penalty","Non-penalty goals per 90"),
+                 ("xG","xG per 90"),
+                 ("Conversion Rate %","Goal conversion, %"),
+                 ("Header Goals","Head goals per 90"),
+                 ("Expected Assists","xA per 90"),
+                 ("Progressive Runs","Progressive runs per 90"),
+                 ("Shots","Shots per 90"),
+                 ("Shooting Accuracy %","Shots on target, %"),
+                 ("Touches in Opposition Box","Touches in box per 90")]
+            DEF=[("Aerial Duels","Aerial duels per 90"),
+                 ("Aerial Duel Success %","Aerial duels won, %"),
+                 ("Defensive Duels","Defensive duels per 90"),
+                 ("Defensive Duel Success %","Defensive duels won, %"),
+                 ("PAdj. Interceptions","PAdj Interceptions")]
+            POS=[("Deep Completions","Deep completions per 90"),
+                 ("Dribbles","Dribbles per 90"),
+                 ("Dribbling Success %","Successful dribbles, %"),
+                 ("Key Passes","Key passes per 90"),
+                 ("Passes","Passes per 90"),
+                 ("Passing Accuracy %","Accurate passes, %"),
                  ("Passes to Penalty Area","Passes to penalty area per 90"),
                  ("Passes to Penalty Area %","Accurate passes to penalty area, %"),
                  ("Smart Passes","Smart passes per 90")]
@@ -697,9 +839,31 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 unsafe_allow_html=True
             )
 
-with tabs[4]:
-    st.subheader("Pro Layout — Top Tiles")
-    render_pro_layout(df_f, top_n=top_n)
+            # --- NEW: tiny FotMob / custom image URL override UI ---
+            url_key = f"pro_imgurl_{key_id}"  # stable key
+            current = st.session_state["pro_photo_map"].get(key_id, "")
+            img_url = st.text_input(
+                "Custom image URL (e.g., https://images.fotmob.com/image_resources/playerimages/1199383.png)",
+                value=current, key=url_key
+            )
+            c1, c2 = st.columns([1,1])
+            with c1:
+                if st.button("Apply to this player", key=f"apply_{key_id}"):
+                    val = (st.session_state.get(url_key, "") or "").strip()
+                    if not val:
+                        st.error("Please paste an image URL.")
+                    elif not (val.startswith("http://") or val.startswith("https://")):
+                        st.error("Image URL must start with http:// or https://")
+                    else:
+                        st.session_state["pro_photo_map"][key_id] = val
+                        st.success("Saved!")
+                        st.rerun()
+            with c2:
+                if st.button("Clear override", key=f"clear_{key_id}"):
+                    st.session_state["pro_photo_map"].pop(key_id, None)
+                    st.info("Cleared.")
+                    st.rerun()
+
 # ----------------- END PRO LAYOUT TAB -----------------
 
 
