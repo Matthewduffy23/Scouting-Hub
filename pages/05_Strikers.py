@@ -649,8 +649,8 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         </div>
         """, unsafe_allow_html=True)
 
-        # dropdown of individual metrics (no raw values; pills max 99; two-digit text)
-        with st.expander("▼ Show individual metrics", expanded=False):
+        # Single expander ONLY: "Individual Metrics" (also contains image controls)
+        with st.expander("Individual Metrics", expanded=False):
             def _pct(m):
                 col=f"{m} Percentile"
                 return float(row[col]) if col in row and not pd.isna(row[col]) else 0.0
@@ -705,8 +705,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 unsafe_allow_html=True
             )
 
-        # --- Image override controls (uploader + URL) per player ---
-        with st.expander("🖼️ Set/override player image", expanded=False):
+            # ---- Image override controls (embedded, no extra label) ----
             img_key = f"imgurl_{key_id}"
             default_url = st.session_state.get("photo_map", {}).get(key_id, "")
 
@@ -764,6 +763,7 @@ with tabs[4]:
     st.subheader("Pro Layout — Top Tiles")
     render_pro_layout(df_f, top_n=top_n)
 # ----------------- END PRO LAYOUT TAB ----------------
+
 
 
 
