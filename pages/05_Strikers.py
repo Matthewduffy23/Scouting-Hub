@@ -464,21 +464,69 @@ def _pro_chip_color(p:str)->str:
     return _POS_COLORS.get(str(p).strip().upper(),"#2d3550")
 
 import unicodedata
-TWEMOJI_SPECIAL={"eng":"1f3f4-e0067-e0062-e0065-e006e-e0067-e007f","sct":"1f3f4-e0067-e0062-e0073-e0063-e0074-e007f","wls":"1f3f4-e0067-e0062-e0077-e006c-e0073-e007f"}
-COUNTRY_TO_CC={
+TWEMOJI_SPECIAL = {
+    "eng":"1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
+    "sct":"1f3f4-e0067-e0062-e0073-e0063-e0074-e007f",
+    "wls":"1f3f4-e0067-e0062-e0077-e006c-e0073-e007f",
+}
+
+# Expanded country-name -> ISO-2 code map (many African additions + aliases)
+COUNTRY_TO_CC = {
+    # UK home nations (kept as before)
     "united kingdom":"gb","great britain":"gb","northern ireland":"nir","england":"eng","scotland":"sct","wales":"wls",
+
+    # Europe (existing + a few extras for completeness)
     "ireland":"ie","republic of ireland":"ie","spain":"es","france":"fr","germany":"de","italy":"it","portugal":"pt",
     "netherlands":"nl","belgium":"be","austria":"at","switzerland":"ch","denmark":"dk","sweden":"se","norway":"no",
     "finland":"fi","iceland":"is","poland":"pl","czech republic":"cz","czechia":"cz","slovakia":"sk","slovenia":"si",
-    "croatia":"hr","serbia":"rs","bosnia and herzegovina":"ba","montenegro":"me","kosovo":"xk","albania":"al",
+    "croatia":"hr","serbia":"rs","bosnia and herzegovina":"ba","bosnia":"ba","montenegro":"me","kosovo":"xk","albania":"al",
     "greece":"gr","hungary":"hu","romania":"ro","bulgaria":"bg","russia":"ru","ukraine":"ua","georgia":"ge",
-    "kazakhstan":"kz","azerbaijan":"az","armenia":"am","turkey":"tr","qatar":"qa","saudi arabia":"sa","uae":"ae",
-    "israel":"il","morocco":"ma","algeria":"dz","tunisia":"tn","egypt":"eg","nigeria":"ng","ghana":"gh","senegal":"sn",
-    "ivory coast":"ci","cote d'ivoire":"ci","south africa":"za","brazil":"br","argentina":"ar","uruguay":"uy","chile":"cl",
-    "colombia":"co","peru":"pe","ecuador":"ec","paraguay":"py","bolivia":"bo","mexico":"mx","canada":"ca",
-    "united states":"us","usa":"us","japan":"jp","korea":"kr","south korea":"kr","china":"cn","australia":"au",
-    "new zealand":"nz","latvia":"lv","lithuania":"lt","estonia":"ee","moldova":"md","north macedonia":"mk",
-    "malta":"mt","cyprus":"cy","luxembourg":"lu","andorra":"ad","monaco":"mc","san marino":"sm",
+    "kazakhstan":"kz","azerbaijan":"az","armenia":"am","turkey":"tr","cyprus":"cy","luxembourg":"lu","andorra":"ad",
+    "monaco":"mc","san marino":"sm","malta":"mt","moldova":"md","north macedonia":"mk","macedonia":"mk","estonia":"ee",
+    "latvia":"lv","lithuania":"lt",
+
+    # Middle East & Asia (existing)
+    "qatar":"qa","saudi arabia":"sa","uae":"ae","united arab emirates":"ae","israel":"il","japan":"jp","korea":"kr",
+    "south korea":"kr","korea republic":"kr","china":"cn",
+
+    # Africa — big expansion
+    "algeria":"dz","angola":"ao","benin":"bj","botswana":"bw","burkina faso":"bf","burundi":"bi","cabo verde":"cv",
+    "cape verde":"cv","cameroon":"cm","central african republic":"cf","car":"cf","chad":"td","comoros":"km",
+    "congo":"cg","republic of the congo":"cg","congo brazzaville":"cg",
+    "dr congo":"cd","drc":"cd","democratic republic of the congo":"cd","congo kinshasa":"cd",
+    "djibouti":"dj","egypt":"eg","equatorial guinea":"gq","eritrea":"er","eswatini":"sz","swaziland":"sz",
+    "ethiopia":"et","gabon":"ga","gambia":"gm","ghana":"gh","guinea":"gn","guinea-bissau":"gw","guinea bissau":"gw",
+    "ivory coast":"ci","cote d'ivoire":"ci","cote divoire":"ci","cote d ivoire":"ci","côte d’ivoire":"ci","côte d'ivoire":"ci",
+    "kenya":"ke","lesotho":"ls","liberia":"lr","libya":"ly","madagascar":"mg","malawi":"mw","mali":"ml","mauritania":"mr",
+    "mauritius":"mu","morocco":"ma","mozambique":"mz","namibia":"na","niger":"ne","nigeria":"ng","rwanda":"rw",
+    "sao tome and principe":"st","sao tome":"st","são tomé and príncipe":"st","são tomé":"st","sao tome & principe":"st",
+    "senegal":"sn","seychelles":"sc","sierra leone":"sl","somalia":"so","south africa":"za","south sudan":"ss","sudan":"sd",
+    "tanzania":"tz","united republic of tanzania":"tz","togo":"tg","tunisia":"tn","uganda":"ug","zambia":"zm","zimbabwe":"zw",
+    "western sahara":"eh","réunion":"re","reunion":"re","mayotte":"yt",
+
+    # North Africa already above; also include common Arabic/French variants (normalized by _norm)
+    "maroc":"ma","algerie":"dz","tunis":"tn","egypte":"eg","cameroun":"cm","cote d’ivoire":"ci","cote-d-ivoire":"ci",
+
+    # Horn/variants
+    "somaliland":"so","ethiopie":"et",
+
+    # Southern Africa variants
+    "eswatini (swaziland)":"sz","swaziland (eswatini)":"sz",
+
+    # West/Central variants
+    "congo-brazzaville":"cg","congo-kinshasa":"cd","gbissau":"gw",
+
+    # Americas (existing)
+    "brazil":"br","argentina":"ar","uruguay":"uy","chile":"cl","colombia":"co","peru":"pe","ecuador":"ec","paraguay":"py",
+    "bolivia":"bo","mexico":"mx","canada":"ca","united states":"us","usa":"us",
+
+    # Oceania (existing)
+    "australia":"au","new zealand":"nz",
+
+    # Extras sometimes seen in datasets
+    "palestine":"ps","state of palestine":"ps",
+    "hong kong":"hk","macau":"mo","macao":"mo",
+    "curacao":"cw","curaçao":"cw","cape verde islands":"cv",
 }
 def _norm(s: str) -> str:
     if not s: return ""
@@ -609,7 +657,44 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         st.info("No players match the selected age filter.")
         return
 
-    ranked = df_filtered.sort_values(all_col, ascending=False).head(top_n).reset_index(drop=True)
+    # =========================
+    # NEW — sort controls
+    # =========================
+    # Build options: All In Score + any other columns that look like scores/percentiles
+    sort_candidates = [all_col] + [
+        c for c in df_view.columns
+        if c != all_col and any(tok in c for tok in ("Score", "Percentile"))
+    ]
+    # Deduplicate while preserving order & keep only existing columns
+    sort_candidates = list(dict.fromkeys([c for c in sort_candidates if c in df_view.columns]))
+
+    sort_by = st.selectbox(
+        "Order by",
+        options=sort_candidates if sort_candidates else [all_col],
+        index=0, key="pro_sort_by", label_visibility="visible"
+    )
+    sort_dir_label = st.radio(
+        "Direction",
+        options=["High → Low", "Low → High"],
+        index=0, key="pro_sort_dir", horizontal=True
+    )
+    asc = (sort_dir_label == "Low → High")
+
+    # Numeric helper column for robust sorting
+    _sort_col = "__sort_val"
+    df_filtered[_sort_col] = pd.to_numeric(df_filtered.get(sort_by, pd.Series(index=df_filtered.index)), errors="coerce")
+
+    # Tie-break on All In Score (desc) to preserve previous behavior
+    ranked = (
+        df_filtered
+        .sort_values([_sort_col, all_col], ascending=[asc, False], na_position="last")
+        .drop(columns=[_sort_col])
+        .head(top_n)
+        .reset_index(drop=True)
+    )
+    # =========================
+    # END NEW
+    # =========================
 
     for i,row in ranked.iterrows():
         player = str(row.get("Player","")) or ""
