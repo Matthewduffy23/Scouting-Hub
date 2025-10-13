@@ -796,9 +796,9 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         foot = _get_foot(row) or "—"
 
         # role scores
-        gt_i=_pro_show99(row.get("Build Up FB Score",0))
-        lu_i=_pro_show99(row.get("Attacking FB Score",0))
-        tm_i=_pro_show99(row.get("Defensive FB Score",0))
+        gt_i=_pro_show99(row.get("Build Up FB ",0))
+        lu_i=_pro_show99(row.get("Attacking FB ",0))
+        tm_i=_pro_show99(row.get("Defensive FB",0))
         gt_txt=_fmt2(gt_i); lu_txt=_fmt2(lu_i); tm_txt=_fmt2(tm_i)
 
         # positions
@@ -844,9 +844,9 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
             </div>
             <div>
               <div class='name'>{player}</div>
-              <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(gt_i)}'>{gt_txt}</span><span class='sub'>Goal Threat</span></div>
-              <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(lu_i)}'>{lu_txt}</span><span class='sub'>Playmaker</span></div>
-              <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(tm_i)}'>{tm_txt}</span><span class='sub'>Ball Carrier</span></div>
+              <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(gt_i)}'>{gt_txt}</span><span class='sub'>Build Up FB</span></div>
+              <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(lu_i)}'>{lu_txt}</span><span class='sub'>Attacking FB</span></div>
+              <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(tm_i)}'>{tm_txt}</span><span class='sub'>Defensive FB</span></div>
               <div class='row posrow'>{pos_html}</div>
               {teamline_html}
             </div>
@@ -875,8 +875,8 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                  ("Aerial Duel Success %","Aerial duels won, %"),
                  ("Defensive Duels","Defensive duels per 90"),
                  ("Defensive Duel Success %","Defensive duels won, %"),
-                 ("PAdj. Interceptions","PAdj Interceptions")],
-                 ("Shots Blocked", "Shots blocked per 90"),
+                 ("PAdj. Interceptions","PAdj Interceptions"),
+                 ("Shots Blocked", "Shots blocked per 90")],
 
             POS = [
                 ("Accelerations", "Accelerations per 90"),
