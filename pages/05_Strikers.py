@@ -453,7 +453,6 @@ def _fmt2(n: int) -> str:
     except Exception: return "00"
 
 _POS_COLORS = {
-_POS_COLORS = {
     # Forwards / strikers — vivid blue
     "CF":   "#6EA8FF",
     "LWF":  "#6EA8FF", "LW":   "#6EA8FF", "LAMF": "#6EA8FF",
