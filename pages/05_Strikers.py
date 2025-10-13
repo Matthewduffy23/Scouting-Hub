@@ -453,42 +453,31 @@ def _fmt2(n: int) -> str:
     except Exception: return "00"
 
 _POS_COLORS = {
-    # Forwards / striker (deep navy)
-    "CF":   "#1b3356",
+_POS_COLORS = {
+    # Forwards / strikers — vivid blue
+    "CF":   "#6EA8FF",
+    "LWF":  "#6EA8FF", "LW":   "#6EA8FF", "LAMF": "#6EA8FF",
+    "RW":   "#6EA8FF", "RWF":  "#6EA8FF", "RAMF": "#6EA8FF",
 
-    # Wingers / wide forwards (blue)
-    "LWF":  "#23437c",
-    "LW":   "#23437c",
-    "LAMF": "#23437c",
-    "RW":   "#23437c",
-    "RWF":  "#23437c",
-    "RAMF": "#23437c",
+    # Attacking mid — bright fresh green
+    "AMF":  "#7FE28A",
 
-    # Attacking mid (fresh green)
-    "AMF":  "#70c979",
+    # Central mids — lively green
+    "LCMF": "#5FD37A", "RCMF": "#5FD37A",
 
-    # Central mids (green)
-    "LCMF": "#2ecc71",
-    "RCMF": "#2ecc71",
+    # Defensive mids — punchy teal/green (still distinct)
+    "RDMF": "#31B56B", "LDMF": "#31B56B", "DMF": "#31B56B",
 
-    # Defensive mids (dark green)
-    "RDMF": "#0e7a3b",
-    "LDMF": "#0e7a3b",
-    "DMF":  "#0e7a3b",
+    # Wing-backs — saturated yellow
+    "LWB":  "#FFD34D", "RWB": "#FFD34D",
 
-    # Wing-backs (yellow)
-    "LWB":  "#e7d000",
-    "RWB":  "#e7d000",
+    # Full-backs — bright orange
+    "LB":   "#FF9A3C", "RB":  "#FF9A3C",
 
-    # Full-backs (orange)
-    "LB":   "#ff8a00",
-    "RB":   "#ff8a00",
-
-    # Centre-backs (burnt orange/brown)
-    "RCB":  "#c45a00",
-    "CB":   "#c45a00",
-    "LCB":  "#c45a00",
+    # Centre-backs — warm amber/brown with more pop
+    "RCB":  "#D1763A", "CB":  "#D1763A", "LCB": "#D1763A",
 }
+
 def _pro_chip_color(p:str)->str:
     return _POS_COLORS.get(str(p).strip().upper(),"#2d3550")
 
@@ -616,7 +605,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     .sub{ color:#a8b3cf; font-size:15px; opacity:.9; }
 
     /* Positions: larger colored text; ALIGN with foot row => tiny top margin */
-    .posrow{ margin-top:3px; }
+    .posrow{ margin-top:4px; }
     .postext{ font-weight:800; font-size:14.5px; letter-spacing:.2px; margin-right:10px; }
 
     /* Fixed corner rank */
@@ -628,7 +617,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     /* Team + league together, small and clipped if long */
     .teamline{
       color:#dbe3ff; font-size:13.5px; font-weight:600;
-      margin-top:10.5px; letter-spacing:.05px; opacity:.95;
+      margin-top:11.5px; letter-spacing:.05px; opacity:.95;
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
     }
 
