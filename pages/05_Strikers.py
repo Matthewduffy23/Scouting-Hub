@@ -658,25 +658,28 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         return
 
     # =========================
-    # NEW — sort controls
+    # NEW — sort controls (ONLY roles + All In; default = All In)
     # =========================
-    # Build options: All In Score + any other columns that look like scores/percentiles
-    sort_candidates = [all_col] + [
-        c for c in df_view.columns
-        if c != all_col and any(tok in c for tok in ("Score", "Percentile"))
+    ROLE_SCORE_COLS = [
+        "Goal Threat CF Score",
+        "Link-Up CF Score",
+        "Target Man CF Score",
     ]
-    # Deduplicate while preserving order & keep only existing columns
-    sort_candidates = list(dict.fromkeys([c for c in sort_candidates if c in df_view.columns]))
+    sort_candidates = [all_col] + [c for c in ROLE_SCORE_COLS if c in df_view.columns]
 
     sort_by = st.selectbox(
         "Order by",
-        options=sort_candidates if sort_candidates else [all_col],
-        index=0, key="pro_sort_by", label_visibility="visible"
+        options=sort_candidates,
+        index=0,  # default All In
+        key="pro_sort_by",
+        label_visibility="visible"
     )
     sort_dir_label = st.radio(
         "Direction",
         options=["High → Low", "Low → High"],
-        index=0, key="pro_sort_dir", horizontal=True
+        index=0,
+        key="pro_sort_dir",
+        horizontal=True
     )
     asc = (sort_dir_label == "Low → High")
 
