@@ -875,7 +875,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                  ("Aerial Duel Success %","Aerial duels won, %"),
                  ("Defensive Duels","Defensive duels per 90"),
                  ("Defensive Duel Success %","Defensive duels won, %"),
-                 ("PAdj. Interceptions","PAdj Interceptions")]
+                 ("PAdj. Interceptions","PAdj Interceptions")],
                  ("Shots Blocked", "Shots blocked per 90"),
 
             POS = [
