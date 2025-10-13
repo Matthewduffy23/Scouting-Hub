@@ -609,13 +609,13 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
     /* Fixed corner rank */
     .rank{
-      position:absolute; top:10px; right:14px;
+      position:absolute; top:10.5px; right:14px;
       color:#b7bfe1; font-weight:800; font-size:18px; text-align:right; pointer-events:none;
     }
 
     /* Team + league together, small and clipped if long */
     .teamline{
-      color:#dbe3ff; font-size:13.5px; font-weight:600;
+      color:#dbe3ff; font-size:13px; font-weight:600;
       margin-top:11px; letter-spacing:.05px; opacity:.95;
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
     }
