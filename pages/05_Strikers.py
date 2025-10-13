@@ -613,11 +613,15 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
       color:#b7bfe1; font-weight:800; font-size:18px; text-align:right; pointer-events:none;
     }
 
-    /* Team + league together, small and clipped if long */
+    /* Team + league together, small and clipped if long, with crest */
     .teamline{
       color:#dbe3ff; font-size:14px; font-weight:600;
       margin-top:6.5px; letter-spacing:.05px; opacity:.95;
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    .crest-icon{
+      height:1.35em; width:auto; vertical-align:middle;
+      margin-right:8px; display:inline-block; object-fit:contain; image-rendering:auto;
     }
 
     .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
@@ -669,6 +673,11 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         default_avatar = "https://i.redd.it/43axcjdu59nd1.jpeg"
         avatar_url = st.session_state.get("photo_map", {}).get(key_id, default_avatar)
 
+        # crest (optional) — key by team+league to avoid collisions
+        crest_key = f"{_norm(team)}|{_norm(league)}"
+        crest_url = st.session_state.get("crest_map", {}).get(crest_key, "")
+        crest_html = f"<img class='crest-icon' src='{crest_url}' alt=''>" if crest_url else ""
+
         st.markdown(f"""
         <div class='pro-wrap'>
           <div class='pro-card'>
@@ -695,14 +704,14 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 <span class='sub'>Target Man CF</span>
               </div>
               <div class='row posrow'>{pos_html}</div>
-              <div class='teamline'>{team} · {league}</div>
+              <div class='teamline'>{crest_html}{team} · {league}</div>
             </div>
             <div class='rank'>#{rank_txt}</div>
           </div>
         </div>
         """, unsafe_allow_html=True)
 
-        # ----- Single expander: Individual Metrics (and embedded image override) -----
+        # ----- Single expander: Individual Metrics (and embedded image + crest overrides) -----
         with st.expander("Individual Metrics", expanded=False):
             def _pct(m):
                 col=f"{m} Percentile"
@@ -758,7 +767,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 unsafe_allow_html=True
             )
 
-            # --- Image override (upload or URL) ---
+            # --- Player image override (upload or URL) ---
             img_key = f"imgurl_{key_id}"
             default_url = st.session_state.get("photo_map", {}).get(key_id, "")
 
@@ -791,6 +800,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                                 mime = "image/png"
                             else:
                                 mime = uploaded_file.type if getattr(uploaded_file, "type", "").startswith("image/") else "image/png"
+                            import base64
                             b64 = base64.b64encode(data).decode("ascii")
                             data_url = f"data:{mime};base64,{b64}"
                             st.session_state.setdefault("photo_map", {})[key_id] = data_url
@@ -818,10 +828,63 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                     try: st.rerun()
                     except Exception: st.experimental_rerun()
 
+            # --- Club crest override (upload or URL) ---
+            crest_key = f"{_norm(team)}|{_norm(league)}"
+            crest_url_default = st.session_state.get("crest_map", {}).get(crest_key, "")
+            crest_upload = st.file_uploader(
+                "Upload club crest (SVG/PNG/JPG)", type=["svg","png","jpg","jpeg"], key=f"crest_upload_{crest_key}"
+            )
+            crest_url_input = st.text_input(
+                "Custom crest URL (e.g., https://…/club.png or SVG)",
+                value=crest_url_default, key=f"crest_url_{crest_key}"
+            )
+            col_c, col_d = st.columns([1, 3])
+            with col_c:
+                if st.button("Apply crest", key=f"apply_crest_{crest_key}"):
+                    if crest_upload is not None:
+                        try:
+                            import base64, os
+                            data = crest_upload.getvalue()
+                            # MIME detection for crest (include svg)
+                            mime = crest_upload.type or ""
+                            if not mime.startswith("image/"):
+                                # try via extension
+                                ext = os.path.splitext(crest_upload.name or "")[1].lower()
+                                if ext == ".svg": mime = "image/svg+xml"
+                                elif ext in (".png",): mime = "image/png"
+                                elif ext in (".jpg",".jpeg"): mime = "image/jpeg"
+                                else: mime = "image/png"
+                            b64 = base64.b64encode(data).decode("ascii")
+                            data_url = f"data:{mime};base64,{b64}"
+                            st.session_state.setdefault("crest_map", {})[crest_key] = data_url
+                            st.success("Crest saved!")
+                            try: st.rerun()
+                            except Exception: st.experimental_rerun()
+                        except Exception as e:
+                            st.error(f"Couldn't process crest: {e}")
+                    else:
+                        val = (st.session_state.get(f"crest_url_{crest_key}", "") or "").strip()
+                        if not val:
+                            st.error("Upload a crest or paste a crest URL.")
+                        elif not (val.startswith("http://") or val.startswith("https://") or val.startswith("data:image/")):
+                            st.error("Crest URL must start with http://, https://, or data:image/…")
+                        else:
+                            st.session_state.setdefault("crest_map", {})[crest_key] = val
+                            st.success("Crest URL saved!")
+                            try: st.rerun()
+                            except Exception: st.experimental_rerun()
+            with col_d:
+                if st.button("Clear crest", key=f"clear_crest_{crest_key}"):
+                    st.session_state.setdefault("crest_map", {}).pop(crest_key, None)
+                    st.info("Crest cleared.")
+                    try: st.rerun()
+                    except Exception: st.experimental_rerun()
+
 with tabs[4]:
     st.subheader("Pro Layout — Top Tiles")
     render_pro_layout(df_f, top_n=top_n)
 # ----------------- END PRO LAYOUT TAB -----------------
+
 
 
 
