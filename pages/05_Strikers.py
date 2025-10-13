@@ -537,7 +537,7 @@ def _get_foot(row) -> str:
     return ""
 
 def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
-    # ---- CSS ----
+    # ---- CSS tweaks per latest request ----
     st.markdown("""
     <style>
     html, body, .block-container *{
@@ -562,16 +562,17 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     .pro-avatar{ width:96px; height:96px; border-radius:12px; border:1px solid #2a3145; overflow:hidden; background:#0b0d12; }
     .pro-avatar img{ width:100%; height:100%; object-fit:cover; image-rendering:auto; transform: translateZ(0); }
 
-    /* bigger flag, no ring */
+    /* Flag bigger, no ring */
     .flagchip{ display:inline-flex; align-items:center; gap:6px; background:transparent; border:none; padding:0; height:auto;}
-    .flagchip img{ width:24px; height:18px; border-radius:2px; display:block; }
+    .flagchip img{ width:26px; height:18px; border-radius:2px; display:block; }
 
     /* meta info (plain text, no rings) */
-    .chip{ background:transparent; color:#cbd5f5; border:none; padding:0; border-radius:0; font-size:13px; line-height:18px; }
+    .chip{ background:transparent; color:#cbd5f5; border:none; padding:0; border-radius:0; font-size:14.5px; line-height:18px; }
     .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:2px 0; }
-    .leftrow{ min-height:20px; } /* reserve height so rows stay fixed even if empty */
+    .leftrow1{ margin-top:6px; } /* flag + age slightly lower to align with positions */
+    .leftrow{ min-height:20px; }
 
-    /* role score pills: flat, slightly less bold, less rounded, tighter width */
+    /* role score pills: flat, lighter weight, less rounded, tighter */
     .pill{
       padding:2px 8px;
       min-width:36px;
@@ -585,13 +586,19 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     .name{ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px; letter-spacing:.2px; line-height:1.15; }
     .sub{ color:#a8b3cf; font-size:15px; opacity:.9; }
 
-    /* positions: colored text only, bigger, spaced down */
-    .posrow{ margin-top:10px; }
+    /* positions: colored text only, bigger; moved up a bit (≈1mm) */
+    .posrow{ margin-top:6px; }
     .postext{ font-weight:800; font-size:14.5px; letter-spacing:.2px; margin-right:10px; }
 
     .rank{ color:#94a0c6; font-weight:800; font-size:18px; text-align:right; }
-    .teamline-team{ color:#e6ebff; font-size:15px; font-weight:600; margin-top:10px; letter-spacing:.1px; }
-    .teamline-league{ color:#c9d3f2; font-size:14px; font-weight:400; margin-top:2px; letter-spacing:.05px; }
+
+    /* Team + league on one (smaller) line with ellipsis if needed */
+    .teamline{
+      color:#dbe3ff;
+      font-size:13.5px; font-weight:600;
+      margin-top:10px; letter-spacing:.05px; opacity:.95;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
 
     .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
     .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
@@ -637,9 +644,8 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
             codes=["CF"]+[c for c in codes if c!="CF"]
         pos_html="".join(f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>" for c in dict.fromkeys(codes))
 
-        # left meta rows (fixed rows even if empty)
+        # left column: fixed 3 rows (flag+age / foot / contract)
         flag=_flag_html(birth)
-        age_chip=f"<span class='chip'>{age_txt}</span>"
         contract_txt=f"{cyr}" if cyr>0 else "—"
 
         rank_txt = _fmt2(i+1)
@@ -657,7 +663,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
               <div class='pro-avatar'>
                 <img src="{avatar_url}" srcset="{avatar_url} 1x, {avatar_url} 2x" alt="{player}" loading="lazy" />
               </div>
-              <div class='row leftrow'>{flag}{age_chip}</div>
+              <div class='row leftrow leftrow1'>{flag}<span class='chip'>{age_txt}</span></div>
               <div class='row leftrow'><span class='chip'>{foot}</span></div>
               <div class='row leftrow'><span class='chip'>{contract_txt}</span></div>
             </div>
@@ -676,8 +682,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 <span class='sub'>Target Man CF</span>
               </div>
               <div class='row posrow'>{pos_html}</div>
-              <div class='teamline-team'>{team}</div>
-              <div class='teamline-league'>{league}</div>
+              <div class='teamline'>{team} · {league}</div>
             </div>
             <div class='rank'>#{rank_txt}</div>
           </div>
@@ -805,6 +810,7 @@ with tabs[4]:
     st.subheader("Pro Layout — Top Tiles")
     render_pro_layout(df_f, top_n=top_n)
 # ----------------- END PRO LAYOUT TAB -----------------
+
 
 
 
