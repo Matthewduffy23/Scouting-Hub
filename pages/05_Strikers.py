@@ -452,11 +452,42 @@ def _fmt2(n: int) -> str:
     try: return f"{int(n):02d}"
     except Exception: return "00"
 
-_POS_COLORS={
-    "CF":"#183153","LWF":"#1f3f8c","LW":"#1f3f8c","LAMF":"#1f3f8c","RW":"#1f3f8c","RWF":"#1f3f8c","RAMF":"#1f3f8c",
-    "AMF":"#87d37c","LCMF":"#2ecc71","RCMF":"#2ecc71","RDMF":"#0e7a3b","LDMF":"#0e7a3b",
-    "DMF":"#0e7a3b",
-    "LWB":"#e7d000","RWB":"#e7d000","LB":"#ff8a00","RB":"#ff8a00","RCB":"#c45a00","CB":"#c45a00","LCB":"#c45a00",
+_POS_COLORS = {
+    # Forwards / striker (deep navy)
+    "CF":   "#1b3356",
+
+    # Wingers / wide forwards (blue)
+    "LWF":  "#23437c",
+    "LW":   "#23437c",
+    "LAMF": "#23437c",
+    "RW":   "#23437c",
+    "RWF":  "#23437c",
+    "RAMF": "#23437c",
+
+    # Attacking mid (fresh green)
+    "AMF":  "#70c979",
+
+    # Central mids (green)
+    "LCMF": "#2ecc71",
+    "RCMF": "#2ecc71",
+
+    # Defensive mids (dark green)
+    "RDMF": "#0e7a3b",
+    "LDMF": "#0e7a3b",
+    "DMF":  "#0e7a3b",
+
+    # Wing-backs (yellow)
+    "LWB":  "#e7d000",
+    "RWB":  "#e7d000",
+
+    # Full-backs (orange)
+    "LB":   "#ff8a00",
+    "RB":   "#ff8a00",
+
+    # Centre-backs (burnt orange/brown)
+    "RCB":  "#c45a00",
+    "CB":   "#c45a00",
+    "LCB":  "#c45a00",
 }
 def _pro_chip_color(p:str)->str:
     return _POS_COLORS.get(str(p).strip().upper(),"#2d3550")
@@ -568,7 +599,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     .flagchip img{ width:26px; height:18px; border-radius:2px; display:block; }
 
     /* Meta text (age/foot/contract) light grey */
-    .chip{ background:transparent; color:#cfd6ea; border:none; padding:0; border-radius:0; font-size:14.5px; line-height:18px; opacity:.92; }
+    .chip{ background:transparent; color:#a6a6a6; border:none; padding:0; border-radius:0; font-size:15px; line-height:18px; opacity:.92; }
     .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:2px 0; }
     .leftrow1{ margin-top:6px; }     /* flag + age */
     .leftrow-foot{ margin-top:2px; } /* foot */
@@ -585,7 +616,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     .sub{ color:#a8b3cf; font-size:15px; opacity:.9; }
 
     /* Positions: larger colored text; ALIGN with foot row => tiny top margin */
-    .posrow{ margin-top:2px; }
+    .posrow{ margin-top:3px; }
     .postext{ font-weight:800; font-size:14.5px; letter-spacing:.2px; margin-right:10px; }
 
     /* Fixed corner rank */
@@ -597,7 +628,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     /* Team + league together, small and clipped if long */
     .teamline{
       color:#dbe3ff; font-size:13.5px; font-weight:600;
-      margin-top:10px; letter-spacing:.05px; opacity:.95;
+      margin-top:10.5px; letter-spacing:.05px; opacity:.95;
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
     }
 
@@ -665,7 +696,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
               <div class='name'>{player}</div>
               <div class='row' style='align-items:center;'>
                 <span class='pill' style='background:{_pro_rating_color(gt_i)}'>{gt_txt}</span>
-                <span class='sub'>Goal Threat</span>
+                <span class='sub'>Goal Threat CF</span>
               </div>
               <div class='row' style='align-items:center;'>
                 <span class='pill' style='background:{_pro_rating_color(lu_i)}'>{lu_txt}</span>
