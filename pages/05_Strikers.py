@@ -631,7 +631,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
               <div class='name'>{player}</div>
               <div class='row' style='align-items:center;'>
                 <span class='pill' style='background:{_pro_rating_color(gt_i)}'>{gt_txt}</span>
-                <span class='sub'>Goal Threat</span>
+                <span class='sub'>Goal Threat CF</span>
               </div>
               <div class='row' style='align-items:center;'>
                 <span class='pill' style='background:{_pro_rating_color(lu_i)}'>{lu_txt}</span>
