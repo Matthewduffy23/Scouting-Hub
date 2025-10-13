@@ -605,7 +605,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
     /* Positions: larger colored text; ALIGN with foot row => tiny top margin */
     .posrow{ margin-top:13.5px; }
-    .postext{ font-weight:600; font-size:14px; letter-spacing:.2px; margin-right:11px; }
+    .postext{ font-weight:600; font-size:14.5px; letter-spacing:.2px; margin-right:11px; }
 
     /* Fixed corner rank */
     .rank{
@@ -616,7 +616,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     /* Team + league together, small and clipped if long */
     .teamline{
       color:#dbe3ff; font-size:14px; font-weight:600;
-      margin-top:7px; letter-spacing:.05px; opacity:.95;
+      margin-top:6.5px; letter-spacing:.05px; opacity:.95;
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
     }
 
