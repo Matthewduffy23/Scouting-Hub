@@ -537,7 +537,7 @@ def _get_foot(row) -> str:
     return ""
 
 def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
-    # ---- CSS (rank fixed; meta color lighter gray; pos row lower) ----
+    # ---- CSS (align foot<->positions, contract<->teamline, light-grey meta; fixed rank) ----
     st.markdown("""
     <style>
     html, body, .block-container *{
@@ -551,7 +551,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
     .pro-wrap{ display:flex; justify-content:center; }
     .pro-card{
-      position:relative; /* <-- for fixed corner rank */
+      position:relative;
       width:min(420px,96%);
       display:grid; grid-template-columns:96px 1fr 48px; gap:12px; align-items:start;
       background:var(--card);
@@ -563,17 +563,18 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     .pro-avatar{ width:96px; height:96px; border-radius:12px; border:1px solid #2a3145; overflow:hidden; background:#0b0d12; }
     .pro-avatar img{ width:100%; height:100%; object-fit:cover; image-rendering:auto; transform: translateZ(0); }
 
-    /* bigger flag, no ring */
+    /* Flag bigger, clean */
     .flagchip{ display:inline-flex; align-items:center; gap:6px; background:transparent; border:none; padding:0; height:auto;}
     .flagchip img{ width:26px; height:18px; border-radius:2px; display:block; }
 
-    /* meta info (plain, slightly greyer-white) */
-    .chip{ background:transparent; color:#e2e7fb; border:none; padding:0; border-radius:0; font-size:14.5px; line-height:18px; opacity:.92; }
+    /* Meta text (age/foot/contract) light grey */
+    .chip{ background:transparent; color:#cfd6ea; border:none; padding:0; border-radius:0; font-size:14.5px; line-height:18px; opacity:.92; }
     .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:2px 0; }
-    .leftrow1{ margin-top:6px; }  /* flag+age slight drop */
-    .leftrow{ min-height:20px; }
+    .leftrow1{ margin-top:6px; }     /* flag + age */
+    .leftrow-foot{ margin-top:2px; } /* foot */
+    .leftrow-contract{ margin-top:10px; } /* drops to align with teamline on right */
 
-    /* role score pills: flat, lighter weight */
+    /* score pills: flat, lighter weight */
     .pill{
       padding:2px 8px; min-width:36px; border-radius:6px;
       font-weight:700; font-size:18px; line-height:1;
@@ -583,18 +584,17 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     .name{ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px; letter-spacing:.2px; line-height:1.15; }
     .sub{ color:#a8b3cf; font-size:15px; opacity:.9; }
 
-    /* positions: colored text only, bigger; moved DOWN a touch */
-    .posrow{ margin-top:10px; }  /* ~1mm more than before */
+    /* Positions: larger colored text; ALIGN with foot row => tiny top margin */
+    .posrow{ margin-top:2px; }
     .postext{ font-weight:800; font-size:14.5px; letter-spacing:.2px; margin-right:10px; }
 
-    /* rank fixed in the top-right corner */
+    /* Fixed corner rank */
     .rank{
       position:absolute; top:10px; right:14px;
-      color:#b7bfe1; font-weight:800; font-size:18px; text-align:right;
-      pointer-events:none;
+      color:#b7bfe1; font-weight:800; font-size:18px; text-align:right; pointer-events:none;
     }
 
-    /* team+league on one line, smaller, ellipsis if needed */
+    /* Team + league together, small and clipped if long */
     .teamline{
       color:#dbe3ff; font-size:13.5px; font-weight:600;
       margin-top:10px; letter-spacing:.05px; opacity:.95;
@@ -611,7 +611,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     </style>
     """, unsafe_allow_html=True)
 
-    # ---- check ----
+    # ---- data check ----
     all_col = "All In Score"
     if all_col not in df_view.columns:
         st.info("Pro Layout needs the role scores. Make sure the table section above ran first.")
@@ -620,7 +620,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     ranked = df_view.sort_values(all_col, ascending=False).head(top_n).reset_index(drop=True)
 
     for i,row in ranked.iterrows():
-        # meta
         player = str(row.get("Player","")) or ""
         team = str(row.get("Team","")) or ""
         league = str(row.get("League","")) or ""
@@ -632,31 +631,25 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         birth = row.get("Birth country","") if "Birth country" in row else ""
         foot = _get_foot(row) or "—"
 
-        # score pills
         gt_i = _pro_show99(row.get("Goal Threat CF Score",0))
         lu_i = _pro_show99(row.get("Link-Up CF Score",0))
         tm_i = _pro_show99(row.get("Target Man CF Score",0))
         gt_txt = _fmt2(gt_i); lu_txt = _fmt2(lu_i); tm_txt = _fmt2(tm_i)
 
-        # positions (CF first) — colored text only
         import re as _re
         codes=[c for c in _re.split(r"[,/; ]+", pos.strip().upper()) if c]
         if "CF" in codes:
             codes=["CF"]+[c for c in codes if c!="CF"]
         pos_html="".join(f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>" for c in dict.fromkeys(codes))
 
-        # left column rows (flag+age / foot / contract)
         flag=_flag_html(birth)
         contract_txt=f"{cyr}" if cyr>0 else "—"
-
         rank_txt = _fmt2(i+1)
 
-        # avatar
         key_id = f"{_norm(player)}|{_norm(team)}"
         default_avatar = "https://i.redd.it/43axcjdu59nd1.jpeg"
         avatar_url = st.session_state.get("photo_map", {}).get(key_id, default_avatar)
 
-        # card
         st.markdown(f"""
         <div class='pro-wrap'>
           <div class='pro-card'>
@@ -664,9 +657,9 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
               <div class='pro-avatar'>
                 <img src="{avatar_url}" srcset="{avatar_url} 1x, {avatar_url} 2x" alt="{player}" loading="lazy" />
               </div>
-              <div class='row leftrow leftrow1'>{flag}<span class='chip'>{age_txt}</span></div>
-              <div class='row leftrow'><span class='chip'>{foot}</span></div>
-              <div class='row leftrow'><span class='chip'>{contract_txt}</span></div>
+              <div class='row leftrow1'>{flag}<span class='chip'>{age_txt}</span></div>
+              <div class='row leftrow-foot'><span class='chip'>{foot}</span></div>
+              <div class='row leftrow-contract'><span class='chip'>{contract_txt}</span></div>
             </div>
             <div>
               <div class='name'>{player}</div>
@@ -690,7 +683,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         </div>
         """, unsafe_allow_html=True)
 
-        # ----- Single expander: Individual Metrics (also contains embedded image controls) -----
+        # ----- Single expander: Individual Metrics (and embedded image override) -----
         with st.expander("Individual Metrics", expanded=False):
             def _pct(m):
                 col=f"{m} Percentile"
@@ -746,8 +739,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 unsafe_allow_html=True
             )
 
-            # ---- Image override controls (embedded) ----
-            key_id = f"{_norm(player)}|{_norm(team)}"
+            # --- Image override (upload or URL) ---
             img_key = f"imgurl_{key_id}"
             default_url = st.session_state.get("photo_map", {}).get(key_id, "")
 
@@ -811,6 +803,7 @@ with tabs[4]:
     st.subheader("Pro Layout — Top Tiles")
     render_pro_layout(df_f, top_n=top_n)
 # ----------------- END PRO LAYOUT TAB -----------------
+
 
 
 
