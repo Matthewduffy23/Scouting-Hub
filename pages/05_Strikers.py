@@ -595,8 +595,8 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
     /* score pills: flat, lighter weight */
     .pill{
-      padding:2px 7px; min-width:36px; border-radius:6px;
-      font-weight:500; font-size:18px; line-height:1;
+      padding:2px 6px; min-width:36px; border-radius:6px;
+      font-weight:600; font-size:18px; line-height:1;
       color:#0b0d12; text-align:center; display:inline-block; box-shadow:none;
     }
 
@@ -604,7 +604,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     .sub{ color:#a8b3cf; font-size:15px; opacity:.9; }
 
     /* Positions: larger colored text; ALIGN with foot row => tiny top margin */
-    .posrow{ margin-top:13px; }
+    .posrow{ margin-top:13.5px; }
     .postext{ font-weight:600; font-size:14px; letter-spacing:.2px; margin-right:11px; }
 
     /* Fixed corner rank */
@@ -616,7 +616,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     /* Team + league together, small and clipped if long */
     .teamline{
       color:#dbe3ff; font-size:14px; font-weight:600;
-      margin-top:8px; letter-spacing:.05px; opacity:.95;
+      margin-top:7.5px; letter-spacing:.05px; opacity:.95;
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
     }
 
