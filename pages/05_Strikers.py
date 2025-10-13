@@ -446,7 +446,7 @@ def _pro_rating_color(v: float) -> str:
 
 def _pro_show99(x) -> int:
     try:
-        # floor instead of round to avoid "mystery 99s"
+        # floor instead of round to avoid “mystery 99s”
         return max(0, min(99, int(float(x))))
     except Exception:
         return 0
@@ -560,37 +560,42 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
     .teamline{ color:#dbe3ff; font-size:14px; font-weight:600; margin-top:6.5px; letter-spacing:.05px; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .tl-wrap{ position:relative; }
-    .tl-has-crest{ padding-left:24px; }
+    .tl-has-crest{ padding-left:24px; }     /* reserve space only when crest exists */
     .crest-icon{ height:1.35em; width:auto; object-fit:contain; image-rendering:auto; }
     .crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
 
-    /* tiny filter row styles */
-    .filter-row{ display:flex; gap:8px; align-items:center; margin: 0 0 10px 0; }
-    .filter-label{ color:#cbd3ef; font-weight:700; font-size:13px; letter-spacing:.02em; }
+    /* Individual metrics — restore compact layout */
+    .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
+    .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
+    .m-row{ display:flex; justify-content:space-between; align-items:center; padding:8px 8px; border-radius:10px; }
+    .m-label{ color:#c9d3f2; font-size:15.5px; letter-spacing:.1px; flex:1 1 auto; }
+    .m-badge{ flex:0 0 auto; min-width:44px; text-align:center; padding:2px 10px; border-radius:8px; font-weight:700; font-size:18.5px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); box-shadow:none; }
+    .metrics-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
+    @media (min-width: 720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr);} }
+
+    /* Filter row */
+    .filter-label{ color:#cbd3ef; font-weight:700; font-size:13px; letter-spacing:.02em; margin-bottom:4px; }
     </style>
     """, unsafe_allow_html=True)
 
-    # ---- Filters (Age only for now: All, U18, U21, U22, U23, U25, 30+) ----
-    col_f1, col_f2 = st.columns([1,3])
-    with col_f1:
-        st.markdown("<div class='filter-label'>Filter</div>", unsafe_allow_html=True)
-    with col_f2:
-        age_choice = st.selectbox(
-            "Age", ["All","U18","U21","U22","U23","U25","30+"],
-            index=0, key="pro_age_filter", label_visibility="collapsed"
-        )
+    # ---- Filters: Age buckets ----
+    age_choice = st.selectbox(
+        "Age",
+        ["All","U18","U20","U21","U22","U23","U25","U30"],
+        index=0, key="pro_age_filter", label_visibility="visible"
+    )
 
     df_filtered = df_view.copy()
     if "Age" in df_filtered.columns and age_choice != "All":
         try:
-            # coerce Age to numeric
             df_filtered["Age_num"] = pd.to_numeric(df_filtered["Age"], errors="coerce")
-            if age_choice == "U18":   df_filtered = df_filtered[df_filtered["Age_num"] <= 18]
+            if   age_choice == "U18": df_filtered = df_filtered[df_filtered["Age_num"] <= 18]
+            elif age_choice == "U20": df_filtered = df_filtered[df_filtered["Age_num"] <= 20]
             elif age_choice == "U21": df_filtered = df_filtered[df_filtered["Age_num"] <= 21]
             elif age_choice == "U22": df_filtered = df_filtered[df_filtered["Age_num"] <= 22]
             elif age_choice == "U23": df_filtered = df_filtered[df_filtered["Age_num"] <= 23]
             elif age_choice == "U25": df_filtered = df_filtered[df_filtered["Age_num"] <= 25]
-            elif age_choice == "30+": df_filtered = df_filtered[df_filtered["Age_num"] >= 30]
+            elif age_choice == "U30": df_filtered = df_filtered[df_filtered["Age_num"] <= 30]
         except Exception:
             pass
 
@@ -611,41 +616,40 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         team = str(row.get("Team","")) or ""
         league = str(row.get("League","")) or ""
         pos = str(row.get("Position","")) or ""
-        # use original Age if present, else derived numeric
-        age_val = row.get("Age", None)
+        # Age text
         try:
-            import numpy as np
-            age_val = int(age_val) if (age_val is not None and not pd.isna(age_val)) else int(row.get("Age_num", 0))
+            age_val = int(row.get("Age")) if not pd.isna(row.get("Age", None)) else int(row.get("Age_num", 0))
         except Exception:
-            try: age_val = int(float(age_val))
-            except Exception: age_val = 0
+            age_val = 0
         age_txt = f"{age_val}y.o." if age_val>0 else "—"
-
         cy = pd.to_datetime(row.get("Contract expires"), errors="coerce")
         cyr = int(cy.year) if pd.notna(cy) else 0
         birth = row.get("Birth country","") if "Birth country" in row else ""
         foot = _get_foot(row) or "—"
 
+        # role scores
         gt_i=_pro_show99(row.get("Goal Threat CF Score",0))
         lu_i=_pro_show99(row.get("Link-Up CF Score",0))
         tm_i=_pro_show99(row.get("Target Man CF Score",0))
         gt_txt=_fmt2(gt_i); lu_txt=_fmt2(lu_i); tm_txt=_fmt2(tm_i)
 
+        # positions
         import re as _re
         codes=[c for c in _re.split(r"[,/; ]+", pos.strip().upper()) if c]
         if "CF" in codes: codes=["CF"]+[c for c in codes if c!="CF"]
         pos_html="".join(f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>" for c in dict.fromkeys(codes))
 
+        # left meta
         flag=_flag_html(birth)
         contract_txt=f"{cyr}" if cyr>0 else "—"
         rank_txt=_fmt2(i+1)
 
-        # unique per player
+        # keys & avatar
         key_id = f"{_norm(player)}|{_norm(team)}"
         default_avatar="https://i.redd.it/43axcjdu59nd1.jpeg"
         avatar_url=st.session_state.get("photo_map", {}).get(key_id, default_avatar)
 
-        # crest (stored per club)
+        # crest (stored per club), positioned absolute so text doesn’t move
         crest_store_key = f"{_norm(team)}|{_norm(league)}"
         crest_url = st.session_state.get("crest_map", {}).get(crest_store_key, "")
         if crest_url:
@@ -678,7 +682,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
               <div class='row posrow'>{pos_html}</div>
               {teamline_html}
             </div>
-            <div class='rank'>#{rank_txt}</div>
+            <div class='rank'>#{_fmt2(i+1)}</div>
           </div>
         </div>
         """, unsafe_allow_html=True)
@@ -689,29 +693,54 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 col=f"{m} Percentile"
                 return float(row[col]) if col in row and not pd.isna(row[col]) else 0.0
 
-            ATT=[("Crosses","Crosses per 90"),("Crossing Accuracy %","Accurate crosses, %"),
-                 ("Goals: Non-Penalty","Non-penalty goals per 90"),("xG","xG per 90"),
-                 ("Conversion Rate %","Goal conversion, %"),("Header Goals","Head goals per 90"),
-                 ("Expected Assists","xA per 90"),("Progressive Runs","Progressive runs per 90"),
-                 ("Shots","Shots per 90"),("Shooting Accuracy %","Shots on target, %"),
+            ATT=[("Crosses","Crosses per 90"),
+                 ("Crossing Accuracy %","Accurate crosses, %"),
+                 ("Goals: Non-Penalty","Non-penalty goals per 90"),
+                 ("xG","xG per 90"),
+                 ("Conversion Rate %","Goal conversion, %"),
+                 ("Header Goals","Head goals per 90"),
+                 ("Expected Assists","xA per 90"),
+                 ("Progressive Runs","Progressive runs per 90"),
+                 ("Shots","Shots per 90"),
+                 ("Shooting Accuracy %","Shots on target, %"),
                  ("Touches in Opposition Box","Touches in box per 90")]
-            DEF=[("Aerial Duels","Aerial duels per 90"),("Aerial Duel Success %","Aerial duels won, %"),
-                 ("Defensive Duels","Defensive duels per 90"),("Defensive Duel Success %","Defensive duels won, %"),
+
+            DEF=[("Aerial Duels","Aerial duels per 90"),
+                 ("Aerial Duel Success %","Aerial duels won, %"),
+                 ("Defensive Duels","Defensive duels per 90"),
+                 ("Defensive Duel Success %","Defensive duels won, %"),
                  ("PAdj. Interceptions","PAdj Interceptions")]
-            POS=[("Deep Completions","Deep completions per 90"),("Dribbles","Dribbles per 90"),
-                 ("Dribbling Success %","Successful dribbles, %"),("Key Passes","Key passes per 90"),
-                 ("Passes","Passes per 90"),("Passing Accuracy %","Accurate passes, %"),
-                 ("Passes to Penalty Area","Passes to penalty area per 90"),("Passes to Penalty Area %","Accurate passes to penalty area, %"),
+
+            POS=[("Deep Completions","Deep completions per 90"),
+                 ("Dribbles","Dribbles per 90"),
+                 ("Dribbling Success %","Successful dribbles, %"),
+                 ("Key Passes","Key passes per 90"),
+                 ("Passes","Passes per 90"),
+                 ("Passing Accuracy %","Accurate passes, %"),
+                 ("Passes to Penalty Area","Passes to penalty area per 90"),
+                 ("Passes to Penalty Area %","Accurate passes to penalty area, %"),
                  ("Smart Passes","Smart passes per 90")]
 
             def _sec_html(title, pairs):
                 rows=[]
                 for lab,met in pairs:
                     p=_pro_show99(_pct(met)); ptxt=_fmt2(p)
-                    rows.append(f"<div class='m-row'><div class='m-label'>{lab}</div><div class='m-badge' style='background:{_pro_rating_color(p)}'>{ptxt}</div></div>")
+                    rows.append(
+                        f"<div class='m-row'>"
+                        f"<div class='m-label'>{lab}</div>"
+                        f"<div class='m-badge' style='background:{_pro_rating_color(p)}'>{ptxt}</div>"
+                        f"</div>"
+                    )
                 return f"<div class='m-sec'><div class='m-title'>{title}</div>{''.join(rows)}</div>"
 
-            st.markdown("<div class='metrics-grid'>"+_sec_html("ATTACKING",ATT)+_sec_html("DEFENSIVE",DEF)+_sec_html("POSSESSION",POS)+"</div>", unsafe_allow_html=True)
+            st.markdown(
+                "<div class='metrics-grid'>"
+                + _sec_html("ATTACKING", ATT)
+                + _sec_html("DEFENSIVE", DEF)
+                + _sec_html("POSSESSION", POS)
+                + "</div>",
+                unsafe_allow_html=True
+            )
 
             # --- Player image override (per-player keys) ---
             img_key = f"imgurl_{key_id}"
