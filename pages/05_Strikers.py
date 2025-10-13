@@ -613,11 +613,17 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
         rank_txt = _fmt2(i+1)
 
+        # --- Avatar image override (photo_map) ---
+        # use normalized player+team as key to keep it stable & unique
+        key_id = f"{_norm(player)}|{_norm(team)}"
+        default_avatar = "https://i.redd.it/43axcjdu59nd1.jpeg"
+        avatar_url = st.session_state.get("photo_map", {}).get(key_id, default_avatar)
+
         st.markdown(f"""
         <div class='pro-wrap'>
           <div class='pro-card'>
             <div class='leftcol'>
-              <div class='pro-avatar'></div>
+              <div class='pro-avatar' style="background-image:url('{avatar_url}'); background-size:cover; background-position:center;"></div>
               <div class='row'>{flag}{age_chip}{contract_chip}</div>
               <div class='row'>{foot_chip}</div>
             </div>
@@ -699,10 +705,66 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 unsafe_allow_html=True
             )
 
+        # --- Image override controls (uploader + URL) per player ---
+        with st.expander("🖼️ Set/override player image", expanded=False):
+            img_key = f"imgurl_{key_id}"
+            default_url = st.session_state.get("photo_map", {}).get(key_id, "")
+
+            uploaded_file = st.file_uploader(
+                "Upload player image (PNG/JPG)", type=["png","jpg","jpeg"], key=f"upload_{key_id}"
+            )
+
+            _ = st.text_input(
+                "Custom image URL (override avatar — e.g., https://images.fotmob.com/image_resources/playerimages/1199383.png)",
+                value=default_url, key=img_key
+            )
+
+            col_a, col_b = st.columns([1, 3])
+            with col_a:
+                if st.button("Apply to this player", key=f"apply_{key_id}"):
+                    if uploaded_file is not None:
+                        try:
+                            import base64, imghdr
+                            data = uploaded_file.getvalue()
+                            kind = imghdr.what(None, h=data)
+                            if kind in ("jpeg","jpg"):
+                                mime = "image/jpeg"
+                            elif kind == "png":
+                                mime = "image/png"
+                            else:
+                                mime = uploaded_file.type if getattr(uploaded_file, "type", "").startswith("image/") else "image/png"
+                            b64 = base64.b64encode(data).decode("ascii")
+                            data_url = f"data:{mime};base64,{b64}"
+                            st.session_state.setdefault("photo_map", {})[key_id] = data_url
+                            st.success("Uploaded image saved!")
+                            try: st.rerun()
+                            except Exception: st.experimental_rerun()
+                        except Exception as e:
+                            st.error(f"Couldn't process the uploaded image: {e}")
+                    else:
+                        val = (st.session_state.get(img_key, "") or "").strip()
+                        if not val:
+                            st.error("Please upload an image or paste an image URL.")
+                        elif not (val.startswith("http://") or val.startswith("https://") or val.startswith("data:image/")):
+                            st.error("Image URL must start with http://, https://, or data:image/…")
+                        else:
+                            st.session_state.setdefault("photo_map", {})[key_id] = val
+                            st.success("Saved!")
+                            try: st.rerun()
+                            except Exception: st.experimental_rerun()
+
+            with col_b:
+                if st.button("Clear override", key=f"clear_{key_id}"):
+                    st.session_state.setdefault("photo_map", {}).pop(key_id, None)
+                    st.info("Cleared.")
+                    try: st.rerun()
+                    except Exception: st.experimental_rerun()
+
 with tabs[4]:
     st.subheader("Pro Layout — Top Tiles")
     render_pro_layout(df_f, top_n=top_n)
 # ----------------- END PRO LAYOUT TAB ----------------
+
 
 
 # ----------------- END STRIKER (CF) BLOCK -----------------
