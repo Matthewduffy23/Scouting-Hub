@@ -537,7 +537,7 @@ def _get_foot(row) -> str:
     return ""
 
 def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
-    # ---- CSS tweaks per latest request ----
+    # ---- CSS (rank fixed; meta color lighter gray; pos row lower) ----
     st.markdown("""
     <style>
     html, body, .block-container *{
@@ -551,6 +551,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
     .pro-wrap{ display:flex; justify-content:center; }
     .pro-card{
+      position:relative; /* <-- for fixed corner rank */
       width:min(420px,96%);
       display:grid; grid-template-columns:96px 1fr 48px; gap:12px; align-items:start;
       background:var(--card);
@@ -562,40 +563,40 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     .pro-avatar{ width:96px; height:96px; border-radius:12px; border:1px solid #2a3145; overflow:hidden; background:#0b0d12; }
     .pro-avatar img{ width:100%; height:100%; object-fit:cover; image-rendering:auto; transform: translateZ(0); }
 
-    /* Flag bigger, no ring */
+    /* bigger flag, no ring */
     .flagchip{ display:inline-flex; align-items:center; gap:6px; background:transparent; border:none; padding:0; height:auto;}
     .flagchip img{ width:26px; height:18px; border-radius:2px; display:block; }
 
-    /* meta info (plain text, no rings) */
-    .chip{ background:transparent; color:#cbd5f5; border:none; padding:0; border-radius:0; font-size:14.5px; line-height:18px; }
+    /* meta info (plain, slightly greyer-white) */
+    .chip{ background:transparent; color:#e2e7fb; border:none; padding:0; border-radius:0; font-size:14.5px; line-height:18px; opacity:.92; }
     .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:2px 0; }
-    .leftrow1{ margin-top:6px; } /* flag + age slightly lower to align with positions */
+    .leftrow1{ margin-top:6px; }  /* flag+age slight drop */
     .leftrow{ min-height:20px; }
 
-    /* role score pills: flat, lighter weight, less rounded, tighter */
+    /* role score pills: flat, lighter weight */
     .pill{
-      padding:2px 8px;
-      min-width:36px;
-      border-radius:6px;
-      font-weight:700;
-      font-size:18px; line-height:1;
-      color:#0b0d12; text-align:center; display:inline-block;
-      box-shadow:none;
+      padding:2px 8px; min-width:36px; border-radius:6px;
+      font-weight:700; font-size:18px; line-height:1;
+      color:#0b0d12; text-align:center; display:inline-block; box-shadow:none;
     }
 
     .name{ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px; letter-spacing:.2px; line-height:1.15; }
     .sub{ color:#a8b3cf; font-size:15px; opacity:.9; }
 
-    /* positions: colored text only, bigger; moved up a bit (≈1mm) */
-    .posrow{ margin-top:6px; }
+    /* positions: colored text only, bigger; moved DOWN a touch */
+    .posrow{ margin-top:10px; }  /* ~1mm more than before */
     .postext{ font-weight:800; font-size:14.5px; letter-spacing:.2px; margin-right:10px; }
 
-    .rank{ color:#94a0c6; font-weight:800; font-size:18px; text-align:right; }
+    /* rank fixed in the top-right corner */
+    .rank{
+      position:absolute; top:10px; right:14px;
+      color:#b7bfe1; font-weight:800; font-size:18px; text-align:right;
+      pointer-events:none;
+    }
 
-    /* Team + league on one (smaller) line with ellipsis if needed */
+    /* team+league on one line, smaller, ellipsis if needed */
     .teamline{
-      color:#dbe3ff;
-      font-size:13.5px; font-weight:600;
+      color:#dbe3ff; font-size:13.5px; font-weight:600;
       margin-top:10px; letter-spacing:.05px; opacity:.95;
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
     }
@@ -644,7 +645,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
             codes=["CF"]+[c for c in codes if c!="CF"]
         pos_html="".join(f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>" for c in dict.fromkeys(codes))
 
-        # left column: fixed 3 rows (flag+age / foot / contract)
+        # left column rows (flag+age / foot / contract)
         flag=_flag_html(birth)
         contract_txt=f"{cyr}" if cyr>0 else "—"
 
@@ -810,6 +811,7 @@ with tabs[4]:
     st.subheader("Pro Layout — Top Tiles")
     render_pro_layout(df_f, top_n=top_n)
 # ----------------- END PRO LAYOUT TAB -----------------
+
 
 
 
