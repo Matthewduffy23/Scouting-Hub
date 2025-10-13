@@ -535,7 +535,6 @@ def _get_foot(row) -> str:
                 if s and s.lower() not in {"nan", "none", "null"}:
                     return s
             else:
-                # non-string but meaningful? present as string
                 s = str(val).strip()
                 if s and s.lower() not in {"nan", "none", "null"}:
                     return s
@@ -545,29 +544,43 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     # ---- light CSS for tiles (scoped) ----
     st.markdown("""
     <style>
-    :root { --bg:#0f1115; --card:#161a22; --soft:#202633; }
+    /* Sharper, Sofifa-like */
+    html, body, .block-container *{
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+      font-feature-settings: "liga","kern","tnum";
+      font-variant-numeric: tabular-nums;
+    }
+    :root { --bg:#0c0e13; --card:#141823; --soft:#1e2533; }
+
     .pro-wrap{ display:flex; justify-content:center; }
-    .pro-card{ width:min(420px,96%); display:grid; grid-template-columns:96px 1fr 48px; gap:12px; align-items:start; background:var(--card); border:1px solid #252b3a; border-radius:18px; padding:16px; margin-bottom:12px; }
-    .pro-avatar{ width:96px; height:96px; border-radius:12px; background:#0b0d12 url('https://i.redd.it/43axcjdu59nd1.jpeg') center/cover no-repeat; border:1px solid #2a3145; }
+    .pro-card{
+      width:min(420px,96%); display:grid; grid-template-columns:96px 1fr 48px; gap:12px; align-items:start;
+      background:var(--card); border:1px solid rgba(255,255,255,.06); border-radius:20px; padding:16px; margin-bottom:12px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.03), 0 6px 24px rgba(0,0,0,.35);
+    }
+
+    .pro-avatar{ width:96px; height:96px; border-radius:12px; border:1px solid #2a3145; overflow:hidden; background:#0b0d12; }
+    .pro-avatar img{ width:100%; height:100%; object-fit:cover; image-rendering:auto; transform: translateZ(0); }
+
     .flagchip{ display:inline-flex; align-items:center; gap:6px; background:var(--soft); color:#cbd5f5; border:1px solid #2d3550; padding:2px 8px; border-radius:10px; font-size:13px; height:22px;}
     .flagchip img{ width:18px; height:14px; border-radius:2px; display:block; }
     .chip{ background:var(--soft); color:#cbd5f5; border:1px solid #2d3550; padding:3px 10px; border-radius:10px; font-size:13px; line-height:18px; }
-    .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:4px 0; }
-    .pill{ padding:2px 10px; border-radius:9px; font-weight:800; font-size:18px; color:#0b0d12; display:inline-block; min-width:42px; text-align:center; }
-    .name{ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px; }
-    .sub{ color:#a8b3cf; font-size:15px; }
-    .teamline{ color:#e6ebff; font-size:15px; font-weight:400; margin-top:2px; }
-    .pos{ color:#eaf0ff; font-weight:700; padding:4px 10px; border-radius:10px; font-size:12px; border:1px solid rgba(255,255,255,.08); }
+    .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:2px 0; }
+    .pill{ padding:2px 10px; border-radius:10px; font-weight:800; font-size:18px; color:#0b0d12; display:inline-block; min-width:42px; text-align:center; line-height:1; box-shadow: inset 0 -1px 0 rgba(0,0,0,.25); }
+    .name{ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px; letter-spacing:.2px; line-height:1.15; }
+    .sub{ color:#a8b3cf; font-size:15px; opacity:.9; }
+    .teamline{ color:#e6ebff; font-size:15px; font-weight:400; margin-top:2px; letter-spacing:.1px; opacity:.95; }
+    .pos{ color:#eaf0ff; font-weight:700; padding:3px 9px; border-radius:11px; font-size:12px; border:1px solid rgba(255,255,255,.09); }
     .rank{ color:#94a0c6; font-weight:800; font-size:18px; text-align:right; }
-    .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:14px; padding:10px 12px; }
+    .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
     .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
-    .m-row{ display:flex; justify-content:space-between; align-items:center; padding:8px 8px; border-radius:10px; }
-    .m-label{ color:#c9d3f2; font-size:16px; }
-    .m-badge{ min-width:40px; text-align:center; padding:2px 10px; border-radius:8px; font-weight:800; font-size:18px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); }
+    .m-row{ display:flex; justify-content:space-between; align-items:center; padding:10px 10px; border-radius:10px; }
+    .m-label{ color:#c9d3f2; font-size:15.5px; letter-spacing:.1px; }
+    .m-badge{ min-width:44px; text-align:center; padding:2px 10px; border-radius:8px; font-weight:800; font-size:18.5px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); box-shadow: inset 0 -1px 0 rgba(0,0,0,.25); }
     .metrics-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
-    @media (min-width: 720px){
-        .metrics-grid{ grid-template-columns:repeat(3,1fr);}
-    }
+    @media (min-width: 720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr);} }
     </style>
     """, unsafe_allow_html=True)
 
@@ -604,7 +617,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
             codes=["CF"]+[c for c in codes if c!="CF"]
         chips="".join(f"<span class='pos' style='background:{_pro_chip_color(c)}'>{c}</span> " for c in dict.fromkeys(codes))
 
-        # left meta (flag, age, contract, foot) — foot on its own row, same alignment
+        # left meta (flag, age, contract, foot)
         flag=_flag_html(birth)
         age_chip=f"<span class='chip'>{age}y.o.</span>"
         yr=f"{cyr}" if cyr>0 else "—"
@@ -614,16 +627,18 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         rank_txt = _fmt2(i+1)
 
         # --- Avatar image override (photo_map) ---
-        # use normalized player+team as key to keep it stable & unique
         key_id = f"{_norm(player)}|{_norm(team)}"
         default_avatar = "https://i.redd.it/43axcjdu59nd1.jpeg"
         avatar_url = st.session_state.get("photo_map", {}).get(key_id, default_avatar)
 
+        # Card
         st.markdown(f"""
         <div class='pro-wrap'>
           <div class='pro-card'>
             <div class='leftcol'>
-              <div class='pro-avatar' style="background-image:url('{avatar_url}'); background-size:cover; background-position:center;"></div>
+              <div class='pro-avatar'>
+                <img src="{avatar_url}" srcset="{avatar_url} 1x, {avatar_url} 2x" alt="{player}" loading="lazy" />
+              </div>
               <div class='row'>{flag}{age_chip}{contract_chip}</div>
               <div class='row'>{foot_chip}</div>
             </div>
@@ -631,7 +646,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
               <div class='name'>{player}</div>
               <div class='row' style='align-items:center;'>
                 <span class='pill' style='background:{_pro_rating_color(gt_i)}'>{gt_txt}</span>
-                <span class='sub'>Goal Threat CF</span>
+                <span class='sub'>Goal Threat</span>
               </div>
               <div class='row' style='align-items:center;'>
                 <span class='pill' style='background:{_pro_rating_color(lu_i)}'>{lu_txt}</span>
@@ -649,7 +664,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         </div>
         """, unsafe_allow_html=True)
 
-        # Single expander ONLY: "Individual Metrics" (also contains image controls)
+        # Single expander ONLY: "Individual Metrics" (also contains embedded image controls)
         with st.expander("Individual Metrics", expanded=False):
             def _pct(m):
                 col=f"{m} Percentile"
@@ -723,8 +738,18 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 if st.button("Apply to this player", key=f"apply_{key_id}"):
                     if uploaded_file is not None:
                         try:
-                            import base64, imghdr
+                            import base64, imghdr, io
                             data = uploaded_file.getvalue()
+
+                            # Optional sharpness guard: nudge user if tiny
+                            try:
+                                from PIL import Image  # type: ignore
+                                im = Image.open(io.BytesIO(data))
+                                if min(im.size) < 160:
+                                    st.warning("Upload a larger image (≥192×192) for a sharper avatar.")
+                            except Exception:
+                                pass
+
                             kind = imghdr.what(None, h=data)
                             if kind in ("jpeg","jpg"):
                                 mime = "image/jpeg"
@@ -763,6 +788,7 @@ with tabs[4]:
     st.subheader("Pro Layout — Top Tiles")
     render_pro_layout(df_f, top_n=top_n)
 # ----------------- END PRO LAYOUT TAB ----------------
+
 
 
 
