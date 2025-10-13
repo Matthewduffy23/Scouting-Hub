@@ -513,7 +513,6 @@ def _flag_html(country_name: str) -> str:
     if code:
         src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
         return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
-    # fallback (e.g., nir)
     return f"<span class='chip'>{cc.upper()}</span>"
 
 # --- SAFE foot extractor (avoids .strip() on NaN/float) ---
@@ -538,7 +537,7 @@ def _get_foot(row) -> str:
     return ""
 
 def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
-    # ---- CSS (sharper text, tighter pills, bigger flag, extra team gap) ----
+    # ---- CSS (flags bigger; meta chips plain; pos text only; pills flat + lighter weight) ----
     st.markdown("""
     <style>
     html, body, .block-container *{
@@ -565,33 +564,40 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     .pro-avatar img{ width:100%; height:100%; object-fit:cover; image-rendering:auto; transform: translateZ(0); }
 
     /* bigger flag, no ring */
-    .flagchip{ display:inline-flex; align-items:center; gap:6px; background:transparent; color:#cbd5f5; border:none; padding:0; height:auto;}
-    .flagchip img{ width:22px; height:16px; border-radius:2px; display:block; }
+    .flagchip{ display:inline-flex; align-items:center; gap:6px; background:transparent; border:none; padding:0; height:auto;}
+    .flagchip img{ width:24px; height:18px; border-radius:2px; display:block; }
 
-    .chip{ background:var(--soft); color:#cbd5f5; border:1px solid #2d3550; padding:3px 10px; border-radius:10px; font-size:13px; line-height:18px; }
+    /* meta info (age/contract/foot): plain text, no pill/ring */
+    .chip{ background:transparent; color:#cbd5f5; border:none; padding:0; border-radius:0; font-size:13px; line-height:18px; }
+
     .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:2px 0; }
 
-    /* score pills: less rounded, tighter width */
+    /* role score pills: flat, slightly less bold, less rounded, tighter width */
     .pill{
       padding:2px 8px;
       min-width:36px;
-      border-radius:8px;
-      font-weight:800; font-size:18px; line-height:1;
+      border-radius:6px;
+      font-weight:700;              /* down from 800 */
+      font-size:18px; line-height:1;
       color:#0b0d12; text-align:center; display:inline-block;
-      box-shadow: inset 0 -1px 0 rgba(0,0,0,.25);
+      box-shadow:none;              /* flat (no 3D) */
     }
 
     .name{ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px; letter-spacing:.2px; line-height:1.15; }
     .sub{ color:#a8b3cf; font-size:15px; opacity:.9; }
-    .pos{ color:#eaf0ff; font-weight:700; padding:3px 9px; border-radius:11px; font-size:12px; border:1px solid rgba(255,255,255,.09); }
+
+    /* positions: colored text only (no pill) + spaced down a bit */
+    .posrow{ margin-top:8px; }
+    .postext{ font-weight:700; font-size:12.5px; letter-spacing:.2px; margin-right:8px; }
+
     .rank{ color:#94a0c6; font-weight:800; font-size:18px; text-align:right; }
-    .teamline{ color:#e6ebff; font-size:15px; font-weight:400; margin-top:10px; letter-spacing:.1px; opacity:.95; } /* extra gap */
+    .teamline{ color:#e6ebff; font-size:15px; font-weight:400; margin-top:10px; letter-spacing:.1px; opacity:.95; }
 
     .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
     .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
     .m-row{ display:flex; justify-content:space-between; align-items:center; padding:10px 10px; border-radius:10px; }
     .m-label{ color:#c9d3f2; font-size:15.5px; letter-spacing:.1px; }
-    .m-badge{ min-width:44px; text-align:center; padding:2px 10px; border-radius:8px; font-weight:800; font-size:18.5px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); box-shadow: inset 0 -1px 0 rgba(0,0,0,.25); }
+    .m-badge{ min-width:44px; text-align:center; padding:2px 10px; border-radius:8px; font-weight:700; font-size:18.5px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); box-shadow:none; }
     .metrics-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
     @media (min-width: 720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr);} }
     </style>
@@ -623,22 +629,23 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         tm_i = _pro_show99(row.get("Target Man CF Score",0))
         gt_txt = _fmt2(gt_i); lu_txt = _fmt2(lu_i); tm_txt = _fmt2(tm_i)
 
-        # positions (CF first)
+        # positions (CF first) — render as colored text, not pills
         import re as _re
         codes=[c for c in _re.split(r"[,/; ]+", pos.strip().upper()) if c]
         if "CF" in codes:
             codes=["CF"]+[c for c in codes if c!="CF"]
-        chips="".join(f"<span class='pos' style='background:{_pro_chip_color(c)}'>{c}</span> " for c in dict.fromkeys(codes))
+        chips="".join(f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>" for c in dict.fromkeys(codes))
 
-        # left meta chips
+        # left meta (plain text chips)
         flag=_flag_html(birth)
         age_chip=f"<span class='chip'>{age}y.o.</span>"
         yr=f"{cyr}" if cyr>0 else "—"
         contract_chip=f"<span class='chip'>{yr}</span>"
         foot_chip=f"<span class='chip'>{foot}</span>" if foot else "<span class='chip'></span>"
+
         rank_txt = _fmt2(i+1)
 
-        # avatar url (supports data: URLs from uploader)
+        # avatar
         key_id = f"{_norm(player)}|{_norm(team)}"
         default_avatar = "https://i.redd.it/43axcjdu59nd1.jpeg"
         avatar_url = st.session_state.get("photo_map", {}).get(key_id, default_avatar)
@@ -668,10 +675,10 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 <span class='pill' style='background:{_pro_rating_color(tm_i)}'>{tm_txt}</span>
                 <span class='sub'>Target Man CF</span>
               </div>
-              <div class='row'>{chips}</div>
+              <div class='row posrow'>{chips}</div>
               <div class='teamline'>{team} · {league}</div>
             </div>
-            <div class='rank'>#{rank_txt}</div>
+            <div class='rank'>#{_fmt2(i+1)}</div>
           </div>
         </div>
         """, unsafe_allow_html=True)
@@ -752,7 +759,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                         try:
                             import base64, imghdr, io
                             data = uploaded_file.getvalue()
-                            # Optional size hint for sharpness
                             try:
                                 from PIL import Image
                                 im = Image.open(io.BytesIO(data))
@@ -760,7 +766,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                                     st.warning("Upload a larger image (≥192×192) for a sharper avatar.")
                             except Exception:
                                 pass
-
                             kind = imghdr.what(None, h=data)
                             if kind in ("jpeg","jpg"):
                                 mime = "image/jpeg"
@@ -799,6 +804,7 @@ with tabs[4]:
     st.subheader("Pro Layout — Top Tiles")
     render_pro_layout(df_f, top_n=top_n)
 # ----------------- END PRO LAYOUT TAB -----------------
+
 
 
 
