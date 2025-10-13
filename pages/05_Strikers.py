@@ -570,13 +570,13 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     </style>
     """, unsafe_allow_html=True)
 
-    # ---- Filters (Age only for now: All, U18, U21, U23, U25, U30, 30+) ----
+    # ---- Filters (Age only for now: All, U18, U21, U22, U23, U25, 30+) ----
     col_f1, col_f2 = st.columns([1,3])
     with col_f1:
         st.markdown("<div class='filter-label'>Filter</div>", unsafe_allow_html=True)
     with col_f2:
         age_choice = st.selectbox(
-            "Age", ["All","U18","U21","U23","U25","U30","30+"],
+            "Age", ["All","U18","U21","U22","U23","U25","30+"],
             index=0, key="pro_age_filter", label_visibility="collapsed"
         )
 
