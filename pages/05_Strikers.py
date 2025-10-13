@@ -458,7 +458,6 @@ _POS_COLORS={
     "DMF":"#0e7a3b",
     "LWB":"#e7d000","RWB":"#e7d000","LB":"#ff8a00","RB":"#ff8a00","RCB":"#c45a00","CB":"#c45a00","LCB":"#c45a00",
 }
-
 def _pro_chip_color(p:str)->str:
     return _POS_COLORS.get(str(p).strip().upper(),"#2d3550")
 
@@ -470,9 +469,8 @@ TWEMOJI_SPECIAL = {
 }
 COUNTRY_TO_CC = {
     "united kingdom":"gb","great britain":"gb",
-    # choose ONE of these behaviors for NI:
-    # "northern ireland":"gb",    # shows UK flag
-    "northern ireland":"nir",     # shows fallback chip (since Twemoji has no NIR)
+    # "northern ireland":"gb",
+    "northern ireland":"nir",
     "england":"eng","scotland":"sct","wales":"wls",
     "ireland":"ie","republic of ireland":"ie",
     "spain":"es","france":"fr","germany":"de","italy":"it","portugal":"pt","netherlands":"nl","belgium":"be",
@@ -515,7 +513,7 @@ def _flag_html(country_name: str) -> str:
     if code:
         src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
         return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
-    # e.g., 'nir' → not supported by Twemoji
+    # fallback (e.g., nir)
     return f"<span class='chip'>{cc.upper()}</span>"
 
 # --- SAFE foot extractor (avoids .strip() on NaN/float) ---
@@ -523,7 +521,6 @@ def _get_foot(row) -> str:
     for col in ("Foot", "Preferred foot", "Preferred Foot"):
         if col in row.index:
             val = row[col]
-            # handle NaN/None/non-string
             try:
                 import pandas as _pd
                 if _pd.isna(val):
@@ -541,10 +538,9 @@ def _get_foot(row) -> str:
     return ""
 
 def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
-    # ---- light CSS for tiles (scoped) ----
+    # ---- CSS (sharper text, tighter pills, bigger flag, extra team gap) ----
     st.markdown("""
     <style>
-    /* Sharper, Sofifa-like */
     html, body, .block-container *{
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
@@ -556,24 +552,41 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
     .pro-wrap{ display:flex; justify-content:center; }
     .pro-card{
-      width:min(420px,96%); display:grid; grid-template-columns:96px 1fr 48px; gap:12px; align-items:start;
-      background:var(--card); border:1px solid rgba(255,255,255,.06); border-radius:20px; padding:16px; margin-bottom:12px;
+      width:min(420px,96%);
+      display:grid; grid-template-columns:96px 1fr 48px; gap:12px; align-items:start;
+      background:var(--card);
+      border:1px solid rgba(255,255,255,.06);
+      border-radius:20px; padding:16px; margin-bottom:12px;
       box-shadow: inset 0 1px 0 rgba(255,255,255,.03), 0 6px 24px rgba(0,0,0,.35);
     }
 
+    /* avatar as <img> for retina sharpness */
     .pro-avatar{ width:96px; height:96px; border-radius:12px; border:1px solid #2a3145; overflow:hidden; background:#0b0d12; }
     .pro-avatar img{ width:100%; height:100%; object-fit:cover; image-rendering:auto; transform: translateZ(0); }
 
-    .flagchip{ display:inline-flex; align-items:center; gap:6px; background:var(--soft); color:#cbd5f5; border:1px solid #2d3550; padding:2px 8px; border-radius:10px; font-size:13px; height:22px;}
-    .flagchip img{ width:18px; height:14px; border-radius:2px; display:block; }
+    /* bigger flag, no ring */
+    .flagchip{ display:inline-flex; align-items:center; gap:6px; background:transparent; color:#cbd5f5; border:none; padding:0; height:auto;}
+    .flagchip img{ width:22px; height:16px; border-radius:2px; display:block; }
+
     .chip{ background:var(--soft); color:#cbd5f5; border:1px solid #2d3550; padding:3px 10px; border-radius:10px; font-size:13px; line-height:18px; }
     .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:2px 0; }
-    .pill{ padding:2px 10px; border-radius:10px; font-weight:800; font-size:18px; color:#0b0d12; display:inline-block; min-width:42px; text-align:center; line-height:1; box-shadow: inset 0 -1px 0 rgba(0,0,0,.25); }
+
+    /* score pills: less rounded, tighter width */
+    .pill{
+      padding:2px 8px;
+      min-width:36px;
+      border-radius:8px;
+      font-weight:800; font-size:18px; line-height:1;
+      color:#0b0d12; text-align:center; display:inline-block;
+      box-shadow: inset 0 -1px 0 rgba(0,0,0,.25);
+    }
+
     .name{ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px; letter-spacing:.2px; line-height:1.15; }
     .sub{ color:#a8b3cf; font-size:15px; opacity:.9; }
-    .teamline{ color:#e6ebff; font-size:15px; font-weight:400; margin-top:2px; letter-spacing:.1px; opacity:.95; }
     .pos{ color:#eaf0ff; font-weight:700; padding:3px 9px; border-radius:11px; font-size:12px; border:1px solid rgba(255,255,255,.09); }
     .rank{ color:#94a0c6; font-weight:800; font-size:18px; text-align:right; }
+    .teamline{ color:#e6ebff; font-size:15px; font-weight:400; margin-top:10px; letter-spacing:.1px; opacity:.95; } /* extra gap */
+
     .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
     .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
     .m-row{ display:flex; justify-content:space-between; align-items:center; padding:10px 10px; border-radius:10px; }
@@ -584,7 +597,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     </style>
     """, unsafe_allow_html=True)
 
-    # pick top by "All In" score column (already computed above)
+    # ---- check ----
     all_col = "All In Score"
     if all_col not in df_view.columns:
         st.info("Pro Layout needs the role scores. Make sure the table section above ran first.")
@@ -604,34 +617,33 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         birth = row.get("Birth country","") if "Birth country" in row else ""
         foot = _get_foot(row)
 
-        # pills (capped at 99; two-digit text)
+        # score pills
         gt_i = _pro_show99(row.get("Goal Threat CF Score",0))
         lu_i = _pro_show99(row.get("Link-Up CF Score",0))
         tm_i = _pro_show99(row.get("Target Man CF Score",0))
         gt_txt = _fmt2(gt_i); lu_txt = _fmt2(lu_i); tm_txt = _fmt2(tm_i)
 
-        # pos chips (CF first)
+        # positions (CF first)
         import re as _re
         codes=[c for c in _re.split(r"[,/; ]+", pos.strip().upper()) if c]
         if "CF" in codes:
             codes=["CF"]+[c for c in codes if c!="CF"]
         chips="".join(f"<span class='pos' style='background:{_pro_chip_color(c)}'>{c}</span> " for c in dict.fromkeys(codes))
 
-        # left meta (flag, age, contract, foot)
+        # left meta chips
         flag=_flag_html(birth)
         age_chip=f"<span class='chip'>{age}y.o.</span>"
         yr=f"{cyr}" if cyr>0 else "—"
         contract_chip=f"<span class='chip'>{yr}</span>"
         foot_chip=f"<span class='chip'>{foot}</span>" if foot else "<span class='chip'></span>"
-
         rank_txt = _fmt2(i+1)
 
-        # --- Avatar image override (photo_map) ---
+        # avatar url (supports data: URLs from uploader)
         key_id = f"{_norm(player)}|{_norm(team)}"
         default_avatar = "https://i.redd.it/43axcjdu59nd1.jpeg"
         avatar_url = st.session_state.get("photo_map", {}).get(key_id, default_avatar)
 
-        # Card
+        # card
         st.markdown(f"""
         <div class='pro-wrap'>
           <div class='pro-card'>
@@ -664,7 +676,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         </div>
         """, unsafe_allow_html=True)
 
-        # Single expander ONLY: "Individual Metrics" (also contains embedded image controls)
+        # Single expander: Individual Metrics (also contains embedded image controls)
         with st.expander("Individual Metrics", expanded=False):
             def _pct(m):
                 col=f"{m} Percentile"
@@ -720,7 +732,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 unsafe_allow_html=True
             )
 
-            # ---- Image override controls (embedded, no extra label) ----
+            # ---- Image override controls (embedded, no additional label) ----
             img_key = f"imgurl_{key_id}"
             default_url = st.session_state.get("photo_map", {}).get(key_id, "")
 
@@ -740,10 +752,9 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                         try:
                             import base64, imghdr, io
                             data = uploaded_file.getvalue()
-
-                            # Optional sharpness guard: nudge user if tiny
+                            # Optional size hint for sharpness
                             try:
-                                from PIL import Image  # type: ignore
+                                from PIL import Image
                                 im = Image.open(io.BytesIO(data))
                                 if min(im.size) < 160:
                                     st.warning("Upload a larger image (≥192×192) for a sharper avatar.")
@@ -787,7 +798,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 with tabs[4]:
     st.subheader("Pro Layout — Top Tiles")
     render_pro_layout(df_f, top_n=top_n)
-# ----------------- END PRO LAYOUT TAB ----------------
+# ----------------- END PRO LAYOUT TAB -----------------
 
 
 
