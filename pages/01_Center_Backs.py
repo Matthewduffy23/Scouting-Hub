@@ -787,9 +787,9 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         foot = _get_foot(row) or "—"
 
         # role scores
-        gt_i=_pro_show99(row.get("Goal Threat Score",0))
-        lu_i=_pro_show99(row.get("Playmaker Score",0))
-        tm_i=_pro_show99(row.get("Ball Carrier Score",0))
+        gt_i=_pro_show99(row.get("Ball Playing CB Score",0))
+        lu_i=_pro_show99(row.get("Wide CB Score",0))
+        tm_i=_pro_show99(row.get("Box Defender Score",0))
         gt_txt=_fmt2(gt_i); lu_txt=_fmt2(lu_i); tm_txt=_fmt2(tm_i)
 
         # positions
