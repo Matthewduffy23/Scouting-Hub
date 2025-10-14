@@ -852,19 +852,20 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 col=f"{m} Percentile"
                 return float(row[col]) if col in row and not pd.isna(row[col]) else 0.0
 
-            ATT=[
-                 ("Goals: Non-Penalty","Non-penalty goals per 90"),
-                 ("xG","xG per 90"),
-                 ("Progressive Runs","Progressive runs per 90"),
+            ATT=[("Goals: Non-Penalty", "Non-penalty goals per 90"),
+                ("xG", "xG per 90"),
+                ("Offensive Duels", "Offensive duels per 90"),
+                ("Offensive Duel Success %", "Offensive duels won, %"),
+                ("Progressive Runs", "Progressive runs per 90")]
 
-            DEF=[
-                ("Aerial Duels", "Aerial duels per 90"),
+            DEF=[("Aerial Duels", "Aerial duels per 90"),
                 ("Aerial Duel Success %", "Aerial duels won, %"),
                 ("Defensive Duels", "Defensive duels per 90"),
                 ("Defensive Duel Success %", "Defensive duels won, %"),
                 ("PAdj Interceptions", "PAdj Interceptions"),
                 ("Shots Blocked", "Shots blocked per 90"),
-                ("Suc. Defensive Actions", "Successful defensive actions per 90"),
+                ("Suc. Defensive Actions", "Successful defensive actions per 90")]
+
             POS = [
                 ("Accelerations", "Accelerations per 90"),
                 ("Dribbles", "Dribbles per 90"),
@@ -879,7 +880,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 ("Passes to Final 3rd  %", "Accurate passes to final third, %"),
                 ("Progessive Passes", "Progressive passes per 90"),
                 ("Progessive Passing  %", "Accurate progressive passes, %"),
-                ("Progressive Runs", "Progressive runs per 90"),
+                ("Progressive Runs", "Progressive runs per 90")]
 
             def _sec_html(title, pairs):
                 rows=[]
@@ -997,6 +998,7 @@ with tabs[4]:
     st.subheader("Pro Layout — Top Tiles")
     render_pro_layout(df_f, top_n=top_n)
 # ----------------- END PRO LAYOUT TAB -----------------
+
 
 # ----------------- END CENTER BACK BLOCK -----------------
 
