@@ -351,13 +351,13 @@ def _foot_bucket_apply(s):
         return "(Blank)"
     low = s.lower()
     if low.startswith("r"):
-        return "Right"
+        return "right"
     if low.startswith("l"):
-        return "Left"
+        return "left"
     return "Unknown"
 
 df_f["_FootBucket"] = df_f.get("Foot", np.nan).apply(_foot_bucket_apply)
-foot_sel = st.session_state.get(f"cf_foot_sel_{selected_file}", ["Right","Left","Unknown","(Blank)"])
+foot_sel = st.session_state.get(f"cf_foot_sel_{selected_file}", ["right","left","unknown","(Blank)"])
 df_f = df_f[df_f["_FootBucket"].isin(foot_sel)]
 
 # ----------------- NEW: Birth country filter apply -----------------
