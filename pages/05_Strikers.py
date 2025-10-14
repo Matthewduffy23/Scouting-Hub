@@ -214,6 +214,42 @@ with st.sidebar:
         key=ms_key,
     )
 
+    # ----------------- NEW: Foot filter -----------------
+    # Bucketize Foot values into Right / Left / Unknown / (Blank)
+    _foot_raw = df.get("Foot", pd.Series(dtype=object))
+    _foot_str = pd.Series(_foot_raw, dtype="object").fillna("").astype(str).str.strip()
+
+    def _foot_bucket(s: str) -> str:
+        if not s:
+            return "(Blank)"
+        low = s.lower()
+        if low.startswith("r"):   # Right, R, Right Foot, etc.
+            return "Right"
+        if low.startswith("l"):   # Left, L, Left Foot, etc.
+            return "Left"
+        return "Unknown"          # anything else: Both, Ambidextrous, etc.
+
+    foot_options = sorted({"Right","Left","Unknown","(Blank)"})
+    foot_default = foot_options[:]  # default all
+    foot_sel = st.multiselect(
+        "Foot",
+        options=foot_options,
+        default=foot_default,
+        key=f"cf_foot_sel_{selected_file}"
+    )
+
+    # ----------------- NEW: Nationality filter (Birth country) -----------------
+    bc_raw = df.get("Birth country", pd.Series(dtype=object))
+    bc_vals = pd.Series(bc_raw, dtype="object").fillna("").astype(str).str.strip()
+    bc_options = sorted({v for v in bc_vals.unique().tolist() if v}) + ["(Blank)"]
+    bc_default = bc_options[:]  # default all
+    bc_sel = st.multiselect(
+        "Birth country",
+        options=bc_options,
+        default=bc_default,
+        key=f"cf_bc_sel_{selected_file}"
+    )
+
     # numeric coercions
     df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
     df["Age"] = pd.to_numeric(df["Age"], errors="coerce")
@@ -250,13 +286,33 @@ with st.sidebar:
         min_value, max_value = st.slider("Range (€)", 0, mv_cap, (0, mv_cap), step=100_000, key=f"cf_mv_range_{selected_file}")
     value_band_max = st.number_input("Value band (tab 4 max €)", min_value=0, value=min_value if min_value>0 else 5_000_000, step=250_000, key=f"cf_value_band_{selected_file}")
 
+    # ----------------- NEW: Per-metric minimum thresholds -----------------
     st.subheader("Minimum performance thresholds")
-    enable_min_perf = st.checkbox("Require minimum percentile on selected metrics", value=False, key=f"cf_enable_min_perf_{selected_file}")
-    sel_metrics = st.multiselect("Metrics to threshold", FEATURES[:], default=(['Non-penalty goals per 90','xG per 90'] if enable_min_perf else []), key=f"cf_sel_metrics_{selected_file}")
-    min_pct = st.slider("Minimum percentile (0–100)", 0, 100, 60, key=f"cf_min_pct_{selected_file}")
+    enable_min_perf = st.checkbox("Enable per-metric minimums", value=False, key=f"cf_enable_min_perf_{selected_file}")
+
+    # When ON: choose metrics and set an individual threshold for each (percentile)
+    if enable_min_perf:
+        sel_metrics = st.multiselect(
+            "Metrics to threshold",
+            FEATURES[:],
+            default=[],
+            key=f"cf_sel_metrics_{selected_file}"
+        )
+        # Render a slider for each selected metric; store each in session state
+        for m in sel_metrics:
+            st.slider(
+                f"Min percentile — {m}",
+                0, 100,
+                st.session_state.get(f"cf_thr_{selected_file}_{m}", 60),
+                key=f"cf_thr_{selected_file}_{m}"
+            )
+    else:
+        # Ensure keys exist even when off
+        st.session_state[f"cf_sel_metrics_{selected_file}"] = []
 
     top_n = st.number_input("Top N per table", 5, 200, 50, 5, key=f"cf_topn_{selected_file}")
     round_to = st.selectbox("Round output percentiles to", [0, 1], index=0, key=f"cf_round_to_{selected_file}")
+
 
 # ----------------- VALIDATION -----------------
 missing = [c for c in REQUIRED_BASE if c not in df.columns]
@@ -288,6 +344,35 @@ df_f = df_f[df_f["Minutes played"].between(min_minutes, max_minutes)]
 min_age, max_age = st.session_state[f"cf_minmax_age_{selected_file}"]
 df_f = df_f[df_f["Age"].between(min_age, max_age)]
 
+# ----------------- NEW: Foot filter apply -----------------
+def _foot_bucket_apply(s):
+    s = ("" if pd.isna(s) else str(s).strip())
+    if not s:
+        return "(Blank)"
+    low = s.lower()
+    if low.startswith("r"):
+        return "Right"
+    if low.startswith("l"):
+        return "Left"
+    return "Unknown"
+
+df_f["_FootBucket"] = df_f.get("Foot", np.nan).apply(_foot_bucket_apply)
+foot_sel = st.session_state.get(f"cf_foot_sel_{selected_file}", ["Right","Left","Unknown","(Blank)"])
+df_f = df_f[df_f["_FootBucket"].isin(foot_sel)]
+
+# ----------------- NEW: Birth country filter apply -----------------
+bc_sel = st.session_state.get(f"cf_bc_sel_{selected_file}", [])
+if bc_sel:
+    # Split into explicit countries and blanks
+    want_blank = "(Blank)" in bc_sel
+    wanted = {x for x in bc_sel if x != "(Blank)"}
+    bc_series = df_f.get("Birth country", pd.Series(dtype=object))
+    bc_str = pd.Series(bc_series, dtype="object").fillna("").astype(str).str.strip()
+    mask = bc_str.isin(wanted)
+    if want_blank:
+        mask |= (bc_str == "")
+    df_f = df_f[mask]
+
 # contract (optional)
 df_f["Contract expires"] = pd.to_datetime(df_f["Contract expires"], errors="coerce")
 if st.session_state.get(f"cf_apply_contract_{selected_file}", False):
@@ -313,6 +398,16 @@ df_f = df_f[(df_f["Market value"] >= min_value) & (df_f["Market value"] <= max_v
 for c in FEATURES:
     df_f[c] = pd.to_numeric(df_f[c], errors="coerce")
 df_f = df_f.dropna(subset=FEATURES)
+
+# ----------------- NEW: Apply per-metric minimum thresholds -----------------
+if st.session_state.get(f"cf_enable_min_perf_{selected_file}", False):
+    sel_metrics = st.session_state.get(f"cf_sel_metrics_{selected_file}", [])
+    for m in sel_metrics:
+        thr_key = f"cf_thr_{selected_file}_{m}"
+        min_pct_m = int(st.session_state.get(thr_key, 60))
+        pct_col = f"{m} Percentile"
+        if pct_col in df_f.columns:
+            df_f = df_f[df_f[pct_col] >= min_pct_m]
 
 if df_f.empty:
     st.warning("No players after filters. Loosen filters.")
