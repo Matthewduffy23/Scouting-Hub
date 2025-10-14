@@ -214,45 +214,6 @@ with st.sidebar:
         key=ms_key,
     )
 
-    # --------- FOOT FILTER (left/right/unknown/blank) ---------
-    foot_raw = pd.Series(df.get("Foot", pd.Series(dtype=object)), dtype="object")
-
-    def _foot_bucket_lower(x) -> str:
-        s = "" if pd.isna(x) else str(x).strip()
-        if s == "":
-            return ""  # blank bucket
-        low = s.lower()
-        if low.startswith("l"):
-            return "left"
-        if low.startswith("r"):
-            return "right"
-        return "unknown"  # anything else (both/ambidextrous/etc.)
-
-    foot_options_values = ["left", "right", "unknown", ""]
-    foot_options_labels = ["left", "right", "unknown", "(blank)"]
-    _val_to_label = dict(zip(foot_options_values, foot_options_labels))
-    _label_to_val = dict(zip(foot_options_labels, foot_options_values))
-
-    foot_sel_labels = st.multiselect(
-        "Foot",
-        options=foot_options_labels,
-        default=foot_options_labels,  # default = all
-        key=f"cf_foot_sel_display_{selected_file}",
-        help="Choose left / right / unknown / (blank)."
-    )
-    st.session_state[f"cf_foot_sel_{selected_file}"] = [_label_to_val[l] for l in foot_sel_labels]
-
-    # --------- NATIONALITY FILTER (Birth country; includes (Blank)) ---------
-    bc_raw = pd.Series(df.get("Birth country", pd.Series(dtype=object)), dtype="object")
-    bc_vals = bc_raw.fillna("").astype(str).str.strip()
-    bc_options = sorted({v for v in bc_vals.unique().tolist() if v}) + ["(Blank)"]
-    bc_sel = st.multiselect(
-        "Birth country",
-        options=bc_options,
-        default=bc_options,  # default = all
-        key=f"cf_bc_sel_{selected_file}"
-    )
-
     # numeric coercions
     df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
     df["Age"] = pd.to_numeric(df["Age"], errors="coerce")
@@ -289,31 +250,13 @@ with st.sidebar:
         min_value, max_value = st.slider("Range (€)", 0, mv_cap, (0, mv_cap), step=100_000, key=f"cf_mv_range_{selected_file}")
     value_band_max = st.number_input("Value band (tab 4 max €)", min_value=0, value=min_value if min_value>0 else 5_000_000, step=250_000, key=f"cf_value_band_{selected_file}")
 
-    # --------- PER-METRIC MINIMUM THRESHOLDS (default OFF) ---------
     st.subheader("Minimum performance thresholds")
-    enable_min_perf = st.checkbox("Enable per-metric minimums", value=False, key=f"cf_enable_min_perf_{selected_file}")
-
-    if enable_min_perf:
-        sel_metrics = st.multiselect(
-            "Metrics to threshold",
-            FEATURES[:],
-            default=[],
-            key=f"cf_sel_metrics_{selected_file}"
-        )
-        for m in sel_metrics:
-            st.slider(
-                f"Min percentile — {m}",
-                0, 100,
-                st.session_state.get(f"cf_thr_{selected_file}_{m}", 60),
-                key=f"cf_thr_{selected_file}_{m}"
-            )
-    else:
-        st.session_state[f"cf_sel_metrics_{selected_file}"] = []
+    enable_min_perf = st.checkbox("Require minimum percentile on selected metrics", value=False, key=f"cf_enable_min_perf_{selected_file}")
+    sel_metrics = st.multiselect("Metrics to threshold", FEATURES[:], default=(['Non-penalty goals per 90','xG per 90'] if enable_min_perf else []), key=f"cf_sel_metrics_{selected_file}")
+    min_pct = st.slider("Minimum percentile (0–100)", 0, 100, 60, key=f"cf_min_pct_{selected_file}")
 
     top_n = st.number_input("Top N per table", 5, 200, 50, 5, key=f"cf_topn_{selected_file}")
     round_to = st.selectbox("Round output percentiles to", [0, 1], index=0, key=f"cf_round_to_{selected_file}")
-# ----------------- END SIDEBAR -----------------
-
 
 # ----------------- VALIDATION -----------------
 missing = [c for c in REQUIRED_BASE if c not in df.columns]
@@ -325,15 +268,11 @@ if missing_feats:
     st.error(f"Dataset missing required feature columns: {missing_feats}")
     st.stop()
 
-
 # ----------------- FILTER POOL (READ THE SAME KEY THE MULTISELECT WRITES) -----------------
 df_f = df.copy()
 
 # leagues
-active_leagues = st.session_state.get(
-    f"cf_leagues_sel_{selected_file}",
-    sorted(pd.Series(df.get("League", pd.Series(dtype=object))).dropna().unique().tolist())
-)
+active_leagues = st.session_state.get(f"cf_leagues_sel_{selected_file}", sorted(pd.Series(df.get("League", pd.Series(dtype=object))).dropna().unique().tolist()))
 if not active_leagues:  # safety fallback
     active_leagues = sorted(pd.Series(df.get("League", pd.Series(dtype=object))).dropna().unique().tolist())
 df_f = df_f[df_f["League"].isin(active_leagues)]
@@ -375,47 +314,10 @@ for c in FEATURES:
     df_f[c] = pd.to_numeric(df_f[c], errors="coerce")
 df_f = df_f.dropna(subset=FEATURES)
 
-# --------- APPLY FOOT FILTER ---------
-def _foot_bucket_apply(x) -> str:
-    s = "" if pd.isna(x) else str(x).strip()
-    if s == "":
-        return ""  # blank bucket
-    low = s.lower()
-    if low.startswith("l"):
-        return "left"
-    if low.startswith("r"):
-        return "right"
-    return "unknown"
-
-df_f["_foot_bucket"] = df_f.get("Foot", np.nan).apply(_foot_bucket_apply)
-foot_sel_vals = st.session_state.get(f"cf_foot_sel_{selected_file}", ["left", "right", "unknown", ""])
-df_f = df_f[df_f["_foot_bucket"].isin(foot_sel_vals)]
-
-# --------- APPLY BIRTH COUNTRY FILTER ---------
-bc_sel = st.session_state.get(f"cf_bc_sel_{selected_file}", [])
-if bc_sel:
-    want_blank = "(Blank)" in bc_sel
-    wanted = {x for x in bc_sel if x != "(Blank)"}
-    bc_series = df_f.get("Birth country", pd.Series(dtype=object))
-    bc_str = pd.Series(bc_series, dtype="object").fillna("").astype(str).str.strip()
-    mask = bc_str.isin(wanted)
-    if want_blank:
-        mask |= (bc_str == "")
-    df_f = df_f[mask]
-
-# --------- APPLY PER-METRIC MINIMUM THRESHOLDS ---------
-if st.session_state.get(f"cf_enable_min_perf_{selected_file}", False):
-    sel_metrics = st.session_state.get(f"cf_sel_metrics_{selected_file}", [])
-    for m in sel_metrics:
-        thr_key = f"cf_thr_{selected_file}_{m}"
-        min_pct_m = int(st.session_state.get(thr_key, 60))
-        pct_col = f"{m} Percentile"
-        if pct_col in df_f.columns:
-            df_f = df_f[df_f[pct_col] >= min_pct_m]
-
 if df_f.empty:
     st.warning("No players after filters. Loosen filters.")
     st.stop()
+
 
 # ----------------- PERCENTILES FOR TABLES (per league) -----------------
 for feat in FEATURES:
