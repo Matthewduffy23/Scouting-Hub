@@ -910,14 +910,14 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
             )
 
             # --- Player image override (per-player keys) ---
-            img_key = f"imgurl_{key_id}"
+            img_key = f"imgurl_{i}_{key_id}"
             default_url = st.session_state.get("photo_map", {}).get(key_id, "")
-            uploaded_file = st.file_uploader("Upload player image (PNG/JPG)", type=["png","jpg","jpeg"], key=f"upload_{key_id}")
+            uploaded_file = st.file_uploader("Upload player image (PNG/JPG)", type=["png","jpg","jpeg"], key=f"upload_{i}_{key_id}")
             _ = st.text_input("Custom image URL (override avatar — e.g., https://images.fotmob.com/image_resources/playerimages/1199383.png)", value=default_url, key=img_key)
 
             col_a, col_b = st.columns([1, 3])
             with col_a:
-                if st.button("Apply to this player", key=f"apply_{key_id}"):
+                if st.button("Apply to this player", key=f"apply_{i}_{key_id}"):
                     if uploaded_file is not None:
                         try:
                             import base64, imghdr, io
@@ -950,7 +950,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                             try: st.rerun()
                             except Exception: st.experimental_rerun()
             with col_b:
-                if st.button("Clear override", key=f"clear_{key_id}"):
+                if st.button("Clear override", key=f"clear_{i}_{key_id}"):
                     st.session_state.setdefault("photo_map", {}).pop(key_id, None)
                     st.info("Cleared.")
                     try: st.rerun()
@@ -959,11 +959,11 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
             # --- Club crest override (per-player widget keys; stored per-club) ---
             crest_widget_ns = f"{crest_store_key}|{key_id}"
             crest_default = st.session_state.get("crest_map", {}).get(crest_store_key, "")
-            crest_upload = st.file_uploader("Upload club crest (SVG/PNG/JPG)", type=["svg","png","jpg","jpeg"], key=f"crest_upload_{crest_widget_ns}")
-            _ = st.text_input("Custom crest URL (e.g., https://…/club.svg or .png)", value=crest_default, key=f"crest_url_{crest_widget_ns}")
+            crest_upload = st.file_uploader("Upload club crest (SVG/PNG/JPG)", type=["svg","png","jpg","jpeg"], key=f"crest_upload_{i}_{crest_widget_ns}")
+            _ = st.text_input("Custom crest URL (e.g., https://…/club.svg or .png)", value=crest_default, key=f"crest_url_{i}_{crest_widget_ns}")
             col_c, col_d = st.columns([1, 3])
             with col_c:
-                if st.button("Apply crest", key=f"apply_crest_{crest_widget_ns}"):
+                if st.button("Apply crest", key=f"apply_crest_{i}_{crest_widget_ns}"):
                     if crest_upload is not None:
                         try:
                             import base64, os
@@ -983,7 +983,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                         except Exception as e:
                             st.error(f"Couldn't process crest: {e}")
                     else:
-                        val = (st.session_state.get(f"crest_url_{crest_widget_ns}", "") or "").strip()
+                        val = (st.session_state.get(f"crest_url_{i}_{crest_widget_ns}", "") or "").strip()
                         if not val:
                             st.error("Upload a crest or paste a crest URL.")
                         elif not (val.startswith("http://") or val.startswith("https://") or val.startswith("data:image/")):
@@ -994,7 +994,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                             try: st.rerun()
                             except Exception: st.experimental_rerun()
             with col_d:
-                if st.button("Clear crest", key=f"clear_crest_{crest_widget_ns}"):
+                if st.button("Clear crest", key=f"clear_crest_{i}_{crest_widget_ns}"):
                     st.session_state.setdefault("crest_map", {}).pop(crest_store_key, None)
                     st.info("Crest cleared.")
                     try: st.rerun()
