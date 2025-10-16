@@ -820,11 +820,25 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         tm_i=_pro_show99(row.get("Ball Carrier Score",0))
         gt_txt=_fmt2(gt_i); lu_txt=_fmt2(lu_i); tm_txt=_fmt2(tm_i)
 
-        # positions
         import re as _re
-        codes=[c for c in _re.split(r"[,/; ]+", pos.strip().upper()) if c]
-        if "CF" in codes: codes=["CF"]+[c for c in codes if c!="CF"]
-        pos_html="".join(f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>" for c in dict.fromkeys(codes))
+
+                   # Split positions, keep original order, and remove duplicates
+        raw = (pos or "").strip().upper()
+        codes = [c for c in _re.split(r"[,\s/;]+", raw) if c]
+
+        seen = set()
+        ordered = []
+        for c in codes:
+                         if c not in seen:
+                             seen.add(c)
+                             ordered.append(c)
+
+                   # Build HTML chips preserving true order
+        pos_html = "".join(
+          f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>"
+                        for c in ordered
+)
+
 
         # left meta
         flag=_flag_html(birth)
