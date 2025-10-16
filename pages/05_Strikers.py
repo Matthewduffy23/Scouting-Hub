@@ -2986,59 +2986,101 @@ with st.expander("Scatter settings", expanded=False):
         st.info(f"Scatter could not be drawn: {e}")
 # ==========================================================================================================
 
-# ========================= CF SCATTER — like example (compact, fixed colours, square if carry ≥ P75) =========================
-st.markdown("---")
-st.subheader("League CFs — Goal Threat vs Possession")
-
+# ========================== CF SCORES + EXAMPLE-STYLE SCATTER (compact) ==========================
 import numpy as np, pandas as pd, matplotlib as mpl, matplotlib.pyplot as plt
+import streamlit as st
+from scipy.stats import rankdata
 from matplotlib.ticker import MultipleLocator, FormatStrFormatter
 from matplotlib.lines import Line2D
 from matplotlib import patheffects as pe
 
-# ---------- Required columns ----------
-REQUIRED = ["Threat_score","poss_score","carry_score","Archetype","Player","Team","League","Minutes played","Age","Position"]
-missing_req = [c for c in REQUIRED if c not in df.columns]
-if missing_req:
-    st.warning(f"Scatter needs columns: {', '.join(missing_req)}")
-    st.stop()
+# ---------- 1) Build the needed columns if they don't exist ----------
+NEEDED = ["Threat_score","poss_score","carry_score","Archetype"]
+if any(c not in df.columns for c in NEEDED):
+    df = df.copy()
 
-# ---------- Base casting ----------
+    # safe casts
+    for c in ["Minutes played","Age"]:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    # metric weights
+    metrics = {
+        "Threat_score": {"xG per 90":0.4, "Non-penalty goals per 90":0.6},
+        "poss_score":   {"xA per 90":0.2, "Dribbles per 90":0.3, "Aerial duels won, %":0.1,
+                         "Progressive runs per 90":0.2, "Accurate passes, %":0.1, "Passes to penalty area per 90":0.1},
+        "carry_score":  {"Dribbles per 90":0.5, "Successful dribbles, %":0.05, "Progressive runs per 90":0.45},
+    }
+
+    def weighted_percentile_score(frame: pd.DataFrame, mgroup: dict) -> pd.Series:
+        n = len(frame)
+        if n == 0: return pd.Series(0.0, index=frame.index)
+        total = pd.Series(0.0, index=frame.index)
+        for col, w in mgroup.items():
+            vals = pd.to_numeric(frame[col], errors="coerce") if col in frame.columns else pd.Series(0.0, index=frame.index)
+            vals = vals.fillna(0.0)
+            pct = pd.Series(rankdata(vals), index=frame.index) / n  # 0..1
+            total += pct * w
+        return (total * 100).clip(0, 100)
+
+    for name, mgroup in metrics.items():
+        df[name] = weighted_percentile_score(df, mgroup)
+
+    def classify(r):
+        if r["Threat_score"] >= 50 and r["poss_score"] >= 50: return "Multi-Threat"
+        if r["Threat_score"] >= 50: return "Goal Threat"
+        if r["poss_score"] >= 50:   return "Link Player"
+        return "Limited"
+
+    df["Archetype"] = df.apply(classify, axis=1)
+
+# ---------- 2) UI controls (minimal & stable) ----------
+st.markdown("---")
+st.subheader("League CFs — Goal Threat vs Possession")
+
+# base casts (idempotent)
 df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
 df["Age"] = pd.to_numeric(df["Age"], errors="coerce")
 
-# ---------- Controls (minimal, stable) ----------
 leagues_avail = sorted(df["League"].dropna().unique().tolist())
-player_league = player_row.iloc[0]["League"] if not player_row.empty else None
+player_league = (player_row.iloc[0]["League"] if not player_row.empty else None)
 default_leagues = [player_league] if player_league in leagues_avail else leagues_avail[:1]
 
-leagues_pick = st.multiselect("Leagues", leagues_avail, default=default_leagues, key="cf_leagues")
-min_minutes, max_minutes = st.slider("Minutes", 0, 5000, (500, 5000), key="cf_min")
-age_lo, age_hi = st.slider("Age", 16, 55, (16, 40), key="cf_age")
-cf_only = st.checkbox("Position = CF only", value=True, key="cf_only")
+col1, col2, col3, col4 = st.columns([1.2,1.2,1,1])
+with col1:
+    leagues_pick = st.multiselect("Leagues", leagues_avail, default=default_leagues, key="cf_leagues")
+with col2:
+    min_minutes, max_minutes = st.slider("Minutes", 0, 5000, (500, 5000), key="cf_min")
+with col3:
+    age_lo, age_hi = st.slider("Age", 16, 55, (16, 40), key="cf_age")
+with col4:
+    cf_only = st.checkbox("CF only", value=True, key="cf_only")
+
 include_selected = st.toggle("Include selected player", True, key="cf_sel")
 
-# ---------- Pool ----------
+# ---------- 3) Build pool ----------
 pool = df[df["League"].isin(leagues_pick)].copy()
 if cf_only:
     pool = pool[pool["Position"].astype(str).str.startswith("CF", na=False)]
 pool = pool[pool["Minutes played"].between(min_minutes, max_minutes)]
 pool = pool[pool["Age"].between(age_lo, age_hi)]
 
-if pool.empty:
-    st.info("No players in pool after filters.")
+need_now = ["Player","Team","League","Threat_score","poss_score","carry_score","Archetype"]
+missing_now = [c for c in need_now if c not in pool.columns]
+if missing_now or pool.empty:
+    st.warning("Scatter needs columns: " + ", ".join(missing_now) if missing_now else "No players after filters.")
     st.stop()
 
-# ---------- Example-style theme ----------
-FIG_W, FIG_H, DPI = 10.0, 6.0, 110
+# ---------- 4) Example-style figure (compact) ----------
+FIG_W, FIG_H, DPI = 10.0, 6.0, 110      # ~1100×660 px
 DISPLAY_WIDTH = 900
-PAGE_BG = "#0a0f1c"; PLOT_BG = "#0f151f"; GRID_MAJ = "#3a4050"; TXT = "#f5f5f5"
 
-# Fixed profile colours (match mock)
-ARCH_COL = {
-    "Goal Threat":  "#3B82F6",   # blue
-    "Limited":      "#F97316",   # orange
-    "Link Player":  "#EF4444",   # red
-    "Multi-Threat": "#34D399",   # teal/green
+PAGE_BG = "#0a0f1c"; PLOT_BG = "#0f151f"; GRID_MAJ = "#3a4050"; TXT = "#f5f5f5"
+ARCH_COL = {  # fixed colors like the mock
+    "Goal Threat":  "#3B82F6",
+    "Limited":      "#F97316",
+    "Link Player":  "#EF4444",
+    "Multi-Threat": "#34D399",
 }
 OTHER_COL = "#94a3b8"
 
@@ -3052,24 +3094,25 @@ mpl.rcParams.update({
 fig, ax = plt.subplots(figsize=(FIG_W, FIG_H))
 fig.patch.set_facecolor(PAGE_BG); ax.set_facecolor(PLOT_BG)
 
-# Data
 x = pd.to_numeric(pool["Threat_score"], errors="coerce").to_numpy()
 y = pd.to_numeric(pool["poss_score"], errors="coerce").to_numpy()
 
-# Limits + headroom (like mock)
 def padded_limits(a, pad=0.06, head=0.03):
-    a = a[np.isfinite(a)]; lo, hi = float(np.nanmin(a)), float(np.nanmax(a))
+    a = a[np.isfinite(a)]
+    lo, hi = float(np.nanmin(a)), float(np.nanmax(a))
     if lo == hi: lo -= 1e-3; hi += 1e-3
-    span = hi - lo; return lo - span*pad, hi + span*(pad + head)
+    span = hi - lo
+    return lo - span*pad, hi + span*(pad + head)
+
 xlim, ylim = padded_limits(x), padded_limits(y)
 ax.set_xlim(*xlim); ax.set_ylim(*ylim)
 
-# ---- SHAPE RULE: square if carry_score ≥ 75th percentile of current pool ----
+# ---------- 5) Shape rule: square if carry_score ≥ 75th percentile of current pool ----------
 carry_p75 = float(pd.to_numeric(pool["carry_score"], errors="coerce").quantile(0.75))
 is_square = pd.to_numeric(pool["carry_score"], errors="coerce") >= carry_p75
 
-# ---- Points by archetype (fixed colours) ----
-S = 130  # compact
+# ---------- 6) Plot points by archetype with shapes ----------
+S = 130  # compact point size
 for arch, g in pool.groupby(pool["Archetype"].fillna("Other")):
     col = ARCH_COL.get(arch, OTHER_COL)
     g_sq = g[is_square.loc[g.index]]
@@ -3081,7 +3124,7 @@ for arch, g in pool.groupby(pool["Archetype"].fillna("Other")):
         ax.scatter(g_sq["Threat_score"], g_sq["poss_score"], s=S, c=col, alpha=0.92,
                    edgecolors="none", marker="s", zorder=3)
 
-# ---- Selected player (red with white ring + label) ----
+# Selected player highlight (red + white ring + label)
 if include_selected and not player_row.empty:
     sel_name = player_row.iloc[0]["Player"]
     sp = pool[pool["Player"] == sel_name]
@@ -3093,7 +3136,7 @@ if include_selected and not player_row.empty:
                         fontsize=12, fontweight="semibold", color=TXT, ha="left", va="bottom", zorder=6)
         t.set_path_effects([pe.withStroke(linewidth=2.0, foreground="#1e293b", alpha=0.9)])
 
-# ---- Medians + IQR (dashed white; soft shade) ----
+# Medians + IQR (white dashed, soft shade)
 mx, my = float(np.nanmedian(x)), float(np.nanmedian(y))
 ax.axvline(mx, color="#ffffff", ls=(0,(4,4)), lw=2.0, zorder=1)
 ax.axhline(my, color="#ffffff", ls=(0,(4,4)), lw=2.0, zorder=1)
@@ -3101,7 +3144,7 @@ xq1, xq3 = np.nanpercentile(x,[25,75]); yq1, yq3 = np.nanpercentile(y,[25,75])
 ax.axvspan(xq1, xq3, color="#9aa4b1", alpha=0.22, zorder=0)
 ax.axhspan(yq1, yq3, color="#9aa4b1", alpha=0.22, zorder=0)
 
-# ---- Quadrant tags (like the mock) ----
+# Quadrant labels
 kw = dict(color=TXT, fontsize=12.5, fontweight="semibold",
           bbox=dict(facecolor="#9ca3af55", edgecolor="none", boxstyle="round,pad=0.25"))
 ax.text(xlim[0]+0.02*(xlim[1]-xlim[0]), ylim[1]-0.07*(ylim[1]-ylim[0]), "FACILITATOR", **kw)
@@ -3109,7 +3152,7 @@ ax.text(xlim[1]-0.21*(xlim[1]-xlim[0]), ylim[1]-0.07*(ylim[1]-ylim[0]), "COMPLET
 ax.text(xlim[0]+0.02*(xlim[1]-xlim[0]), ylim[0]+0.02*(ylim[1]-ylim[0]), "LIMITED", **kw)
 ax.text(xlim[1]-0.17*(xlim[1]-xlim[0]), ylim[0]+0.02*(ylim[1]-ylim[0]), "POACHER", **kw)
 
-# ---- Axes, dense ticks, grid (Tableau-ish spacing) ----
+# Axes, dense ticks, grid
 def nice_step(vmin, vmax, target=12):
     span = abs(vmax - vmin)
     if span <= 0: return 5
@@ -3128,7 +3171,7 @@ ax.grid(True, which="major", linewidth=0.9, color=GRID_MAJ)
 for s in ax.spines.values(): s.set_linewidth(0.9); s.set_color("#6b7280")
 for t in ax.get_xticklabels() + ax.get_yticklabels(): t.set_fontweight("semibold"); t.set_color(TXT)
 
-# ---- Legend (profiles + shape key) on the right ----
+# Legend (profiles + shape key) on the right
 legend_elems = [
     Line2D([0],[0], marker='o', color='none', label='Goal Threat',  markerfacecolor=ARCH_COL["Goal Threat"],  markersize=9),
     Line2D([0],[0], marker='o', color='none', label='Limited',      markerfacecolor=ARCH_COL["Limited"],      markersize=9),
@@ -3142,17 +3185,17 @@ leg = ax.legend(handles=legend_elems, frameon=False, loc="center left",
 for txt in leg.get_texts(): txt.set_color(TXT)
 if leg.get_title(): leg.get_title().set_color(TXT)
 
-# ---- Title (small) ----
+# Small title + render compact
 fig.text(0.5, 0.985, "League CFs — Goal Threat vs Possession", ha="center", va="top",
          color=TXT, fontsize=14, fontweight="semibold")
 
-# ---- Render compact ----
 from io import BytesIO
 buf = BytesIO()
 fig.savefig(buf, format="png", dpi=DPI, facecolor=fig.get_facecolor(), bbox_inches="tight")
 buf.seek(0)
 st.image(buf, width=DISPLAY_WIDTH, caption="CF archetypes (compact)")
-# ==============================================================================================================================
+# =================================================================================================
+
 
 
 
