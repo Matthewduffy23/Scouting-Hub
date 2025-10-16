@@ -2986,6 +2986,204 @@ with st.expander("Scatter settings", expanded=False):
         st.info(f"Scatter could not be drawn: {e}")
 # ==========================================================================================================
 
+# ============================== CF SCATTER — Threat vs Possession ==============================
+st.markdown("---")
+st.header("📊 CF Archetypes")
+
+import numpy as np
+import pandas as pd
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+from matplotlib.ticker import MultipleLocator, FormatStrFormatter
+from matplotlib import patheffects as pe
+
+# ---------- Controls ----------
+with st.expander("Scatter settings", expanded=False):
+    # Pool
+    leagues_avail = sorted(df["League"].dropna().unique().tolist())
+    leagues_pick = st.multiselect("Leagues included", leagues_avail, default=leagues_avail)
+    min_minutes = st.slider("Minutes played ≥", 0, 5000, 500, 50)
+    age_lo, age_hi = st.slider("Age range", 16, 55, (16, 40))
+    only_cf = st.checkbox("Position = CF only", value=True)
+
+    # Labels & highlight
+    show_labels = st.toggle("Show labels", True)
+    label_u23_only = st.checkbox("Label only U23", value=False)
+    label_size = st.slider("Label size", 8, 20, 13, 1)
+    select_team = st.selectbox("Highlight team", ["(None)"] + sorted(df["Team"].dropna().unique().tolist()))
+    select_player = st.selectbox("Highlight player (optional)", ["(None)"] + sorted(df["Player"].dropna().unique().tolist()))
+
+    # Theme + canvas
+    theme = st.radio("Theme", ["Dark", "Light"], index=0, horizontal=True)
+    canvas = st.selectbox("Canvas size (px)", ["1280×720", "1600×900", "1920×820", "1920×1080"], index=2)
+    w_px, h_px = map(int, canvas.replace("×", "x").split("x"))
+    show_title = st.checkbox("Show custom title", value=True)
+    title_text = st.text_input("Custom title", "League One CFs 24–25 — Goal Threat vs Possession")
+    top_gap_px = st.slider("Top blank gap (px)", 0, 240, 75, 5)
+
+# ---------- Data pool ----------
+pool = df.copy()
+pool = pool[pool["League"].isin(leagues_pick)]
+pool = pool[(pd.to_numeric(pool["Minutes played"], errors="coerce") >= min_minutes)]
+pool = pool[(pd.to_numeric(pool["Age"], errors="coerce").between(age_lo, age_hi))]
+if only_cf:
+    pool = pool[(pool["Primary Position"] == "CF") | (pool["Position"].astype(str).str.startswith("CF"))]
+
+# Columns required
+needed_cols = ["Player","Team","League","Threat_score","poss_score","Archetype","Box-to-Box Ball Carrier","Age"]
+missing = [c for c in needed_cols if c not in pool.columns]
+if missing or pool.empty:
+    st.warning(f"Scatter needs columns {missing} and a non-empty pool.")
+    st.stop()
+
+# ---------- Style ----------
+PAGE_BG = "#0a0f1c" if theme == "Dark" else "#ebebeb"
+PLOT_BG = "#0f151f" if theme == "Dark" else "#f3f3f3"
+GRID_MAJ = "#3a4050" if theme == "Dark" else "#d7d7d7"
+TXT = "#f5f5f5" if theme == "Dark" else "#111111"
+
+# Archetype palette (matches your example vibe)
+ARCH_COL = {
+    "Goal Threat":   "#3b82f6",  # blue
+    "Limited":       "#f97316",  # orange
+    "Link Player":   "#ef4444",  # red
+    "Multi-Threat":  "#22c55e",  # green
+}
+default_col = "#94a3b8"
+
+mpl.rcParams.update({
+    "figure.dpi": 100, "savefig.dpi": 220,
+    "font.size": 12, "axes.labelsize": 13,
+    "xtick.labelsize": 11, "ytick.labelsize": 11,
+    "axes.spines.right": False, "axes.spines.top": False,
+})
+
+# ---------- Figure ----------
+fig, ax = plt.subplots(figsize=(w_px/100, h_px/100), dpi=100)
+fig.patch.set_facecolor(PAGE_BG)
+ax.set_facecolor(PLOT_BG)
+
+x = pd.to_numeric(pool["Threat_score"], errors="coerce").to_numpy()
+y = pd.to_numeric(pool["poss_score"], errors="coerce").to_numpy()
+
+# Limits + headroom
+def padded_limits(a, pad=0.06, head=0.03):
+    a = a[np.isfinite(a)]
+    lo, hi = float(np.nanmin(a)), float(np.nanmax(a))
+    if lo == hi: lo -= 1e-3; hi += 1e-3
+    span = hi - lo
+    return lo - span*pad, hi + span*(pad + head)
+
+ax.set_xlim(*padded_limits(x))
+ax.set_ylim(*padded_limits(y))
+
+# Points, colored by archetype; ball carriers ringed
+sizes = 250
+for archetype, chunk in pool.groupby(pool["Archetype"].fillna("Other")):
+    c = ARCH_COL.get(archetype, default_col)
+    mask = chunk["Box-to-Box Ball Carrier"].fillna(False)
+    # base dots
+    ax.scatter(
+        chunk["Threat_score"], chunk["poss_score"],
+        s=sizes, c=c, alpha=0.92, edgecolors="none", zorder=2
+    )
+    # ring for carriers
+    if mask.any():
+        ax.scatter(
+            chunk.loc[mask, "Threat_score"], chunk.loc[mask, "poss_score"],
+            s=sizes, facecolors="none", edgecolors="#ffffff", linewidths=1.8, zorder=3
+        )
+
+# Team highlight overlay
+if select_team != "(None)":
+    hl = pool[pool["Team"] == select_team]
+    if not hl.empty:
+        ax.scatter(
+            hl["Threat_score"], hl["poss_score"],
+            s=sizes, c="#f59e0b", edgecolors="#ffffff", linewidths=1.6, zorder=4
+        )
+
+# Selected player (red, labelled)
+if select_player != "(None)":
+    sp = pool[pool["Player"] == select_player]
+    if not sp.empty:
+        ax.scatter(
+            sp["Threat_score"], sp["poss_score"],
+            s=sizes, c="#dc2626", edgecolors="#ffffff", linewidths=1.8, zorder=5
+        )
+        sx, sy = float(sp.iloc[0]["Threat_score"]), float(sp.iloc[0]["poss_score"])
+        t = ax.annotate(
+            sp.iloc[0]["Player"], (sx, sy), xytext=(10, 12), textcoords="offset points",
+            fontsize=13, fontweight="semibold", color=TXT, ha="left", va="bottom", zorder=6
+        )
+        t.set_path_effects([pe.withStroke(linewidth=2.0, foreground=("#1e293b" if theme=="Dark" else "#ffffff"), alpha=0.9)])
+
+# Medians (dashed) + IQR shade
+med_x, med_y = float(np.nanmedian(x)), float(np.nanmedian(y))
+ax.axvline(med_x, color=("#ffffff" if theme=="Dark" else "#000000"), ls=(0,(4,4)), lw=2.2, zorder=1)
+ax.axhline(med_y, color=("#ffffff" if theme=="Dark" else "#000000"), ls=(0,(4,4)), lw=2.2, zorder=1)
+
+x_q1, x_q3 = np.nanpercentile(x, [25, 75])
+y_q1, y_q3 = np.nanpercentile(y, [25, 75])
+ax.axvspan(x_q1, x_q3, color="#9aa4b1" if theme=="Dark" else "#cfd3da", alpha=0.25, zorder=0)
+ax.axhspan(y_q1, y_q3, color="#9aa4b1" if theme=="Dark" else "#cfd3da", alpha=0.25, zorder=0)
+
+# Quadrant titles (like your example)
+kw = dict(color=TXT, fontsize=14, fontweight="semibold", bbox=dict(facecolor="#9ca3af55", edgecolor="none", boxstyle="round,pad=0.25"))
+ax.text(ax.get_xlim()[0]+0.02*(ax.get_xlim()[1]-ax.get_xlim()[0]), ax.get_ylim()[1]-0.06*(ax.get_ylim()[1]-ax.get_ylim()[0]), "FACILITATOR", **kw)
+ax.text(ax.get_xlim()[1]-0.22*(ax.get_xlim()[1]-ax.get_xlim()[0]), ax.get_ylim()[1]-0.06*(ax.get_ylim()[1]-ax.get_ylim()[0]), "COMPLETE", **kw)
+ax.text(ax.get_xlim()[0]+0.02*(ax.get_xlim()[1]-ax.get_xlim()[0]), ax.get_ylim()[0]+0.02*(ax.get_ylim()[1]-ax.get_ylim()[0]), "LIMITED", **kw)
+ax.text(ax.get_xlim()[1]-0.18*(ax.get_xlim()[1]-ax.get_xlim()[0]), ax.get_ylim()[0]+0.02*(ax.get_ylim()[1]-ax.get_ylim()[0]), "POACHER", **kw)
+
+# Axes, ticks (denser), grid
+ax.set_xlabel("Goal Threat Score", fontsize=14, fontweight="semibold", color=TXT)
+ax.set_ylabel("Possession Score", fontsize=14, fontweight="semibold", color=TXT)
+
+def nice_step(vmin, vmax, target=12):
+    span = abs(vmax - vmin); 
+    if span <= 0: return 5
+    raw = span/max(target,2); power = 10**np.floor(np.log10(raw)); mult = raw/power
+    for k in (1,2,2.5,5,10):
+        if mult <= k: return k*power
+    return 10*power
+
+sx = nice_step(*ax.get_xlim()); sy = nice_step(*ax.get_ylim())
+ax.xaxis.set_major_locator(MultipleLocator(sx))
+ax.yaxis.set_major_locator(MultipleLocator(sy))
+ax.xaxis.set_major_formatter(FormatStrFormatter(f"%.{0 if sx>=1 else 1}f"))
+ax.yaxis.set_major_formatter(FormatStrFormatter(f"%.{0 if sy>=1 else 1}f"))
+ax.grid(True, which="major", linewidth=0.9, color=GRID_MAJ)
+for s in ax.spines.values():
+    s.set_linewidth(0.9)
+    s.set_color("#6b7280" if theme=="Dark" else "#9ca3af")
+for tick in ax.get_xticklabels() + ax.get_yticklabels():
+    tick.set_fontweight("semibold"); tick.set_color(TXT)
+
+# Legend
+from matplotlib.lines import Line2D
+legend_elems = [
+    Line2D([0],[0], marker='o', color='none', label='Goal Threat', markerfacecolor=ARCH_COL["Goal Threat"], markersize=10),
+    Line2D([0],[0], marker='o', color='none', label='Limited', markerfacecolor=ARCH_COL["Limited"], markersize=10),
+    Line2D([0],[0], marker='o', color='none', label='Link Player', markerfacecolor=ARCH_COL["Link Player"], markersize=10),
+    Line2D([0],[0], marker='o', color='none', label='Multi-Threat', markerfacecolor=ARCH_COL["Multi-Threat"], markersize=10),
+    Line2D([0],[0], marker='o', label='Ball Carrier', markerfacecolor='none', markeredgecolor="#ffffff", markersize=10, markeredgewidth=1.8),
+]
+leg = ax.legend(handles=legend_elems, frameon=False, loc="upper right")
+for text in leg.get_texts(): text.set_color(TXT)
+
+# Fixed top gap + optional title
+top_frac = 1.0 - (top_gap_px / float(h_px))
+fig.subplots_adjust(left=0.075, right=0.985, bottom=0.105, top=top_frac)
+if show_title and title_text.strip():
+    fig.text(0.5, top_frac + (1-top_frac)*0.44, title_text.strip(), ha="center", va="center",
+             color=TXT, fontsize=26, fontweight="semibold")
+
+# Render exactly in pixels, export-ready
+from io import BytesIO
+buf = BytesIO()
+fig.savefig(buf, format="png", dpi=100, facecolor=fig.get_facecolor(), bbox_inches="tight")
+buf.seek(0)
+st.image(buf, width=w_px, caption="Threat vs Possession — CF archetypes")
 
 
 # ----------------- (B) COMPARISON RADAR — decile tick values (1dp) + light/dark theme + exact edge + centered/upright outside labels -----------------
