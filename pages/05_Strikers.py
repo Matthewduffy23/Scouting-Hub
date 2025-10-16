@@ -2986,7 +2986,7 @@ with st.expander("Scatter settings", expanded=False):
         st.info(f"Scatter could not be drawn: {e}")
 # ==========================================================================================================
 
-# ========================= CF SCATTER — compact + example colours =========================
+# ========================= CF SCATTER — compact; builds missing score columns; shape by carry p75 =========================
 st.markdown("---")
 st.subheader("CF Profiles — Goal Threat vs Possession (compact)")
 
@@ -2995,23 +2995,72 @@ from matplotlib.ticker import MultipleLocator, FormatStrFormatter
 from matplotlib.lines import Line2D
 from matplotlib import patheffects as pe
 
-# ---- compact sizing (smaller than your general scatter) ----
-FIG_W, FIG_H, DPI = 10.0, 5.8, 110   # ~1100×638 px
-DISPLAY_WIDTH = 880                   # how wide to show in Streamlit
+# ---------- 0) Ensure needed numeric columns exist (create if missing) ----------
+REQUIRED = ["Threat_score","poss_score","carry_score","pass_score","Archetype","Box-to-Box Ball Carrier"]
+need_build = any(c not in df.columns for c in REQUIRED)
 
-# ---- theme (dark like your screenshot) ----
-PAGE_BG = "#0a0f1c"; PLOT_BG = "#0f151f"; GRID_MAJ = "#3a4050"; TXT = "#f5f5f5"
+if need_build:
+    # Sanity numeric cast
+    for c in ["Minutes played","Age"]:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
 
-# ---- colours (match the example) ----
-ARCH_COL = {
-    "Goal Threat":  "#3B82F6",   # blue
-    "Limited":      "#F97316",   # orange
-    "Link Player":  "#EF4444",   # red
-    "Multi-Threat": "#34D399",   # teal/green
-}
-OTHER_COL = "#94a3b8"  # fallback
+    # Metric weights (as you shared)
+    metrics = {
+        'Threat_score': {
+            'xG per 90': 0.4,
+            'Non-penalty goals per 90': 0.6,
+        },
+        'poss_score': {
+            'xA per 90': 0.2,
+            'Dribbles per 90': 0.3,
+            'Aerial duels won, %': 0.1,
+            'Progressive runs per 90': 0.2,
+            'Accurate passes, %': 0.1,
+            'Passes to penalty area per 90': 0.1,
+        },
+        'carry_score': {
+            'Dribbles per 90': 0.5,
+            'Successful dribbles, %': 0.05,
+            'Progressive runs per 90': 0.45,
+        },
+        'pass_score': {
+            'xA per 90': 0.3,
+            'Passes per 90': 0.3,
+            'Passes to penalty area per 90': 0.3,
+            'Passes to final third per 90': 0.1,
+        }
+    }
 
-# ---- pool (same pattern as your general scatter) ----
+    # Weighted percentile helper (uses pandas rank pct)
+    def weighted_percentile_score(frame: pd.DataFrame, metric_dict: dict) -> pd.Series:
+        total = pd.Series(0.0, index=frame.index)
+        for m, w in metric_dict.items():
+            vals = pd.to_numeric(frame.get(m, 0), errors="coerce").fillna(0)
+            pct = vals.rank(pct=True)  # 0..1
+            total = total + (pct * w)
+        return (total * 100).clip(0, 100)
+
+    # Build scores across whole df (you can pre-filter by minutes if you prefer)
+    for score_name, mgroup in metrics.items():
+        df[score_name] = weighted_percentile_score(df, mgroup)
+
+    # Archetype & flags
+    def classify(r):
+        if r["Threat_score"] >= 50 and r["poss_score"] >= 50: return "Multi-Threat"
+        if r["Threat_score"] >= 50: return "Goal Threat"
+        if r["poss_score"] >= 50:   return "Link Player"
+        return "Limited"
+
+    df["Archetype"] = df.apply(classify, axis=1)
+    # Keep your original 70 threshold; can be tweaked
+    df["Box-to-Box Ball Carrier"] = df["carry_score"] >= 70
+
+# (Optional) safe 'Primary Position' (not required here, but harmless)
+if "Primary Position" not in df.columns:
+    df["Primary Position"] = df["Position"].astype(str).str.split(",").str[0].str.strip()
+
+# ---------- 1) Controls (same style as your general scatter) ----------
 df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
 df["Age"] = pd.to_numeric(df["Age"], errors="coerce")
 
@@ -3043,6 +3092,7 @@ min_strength_s, max_strength_s = st.slider("League quality (strength)", 0, 101, 
 same_pos_scatter = st.checkbox("Limit pool to current position prefix", value=True, key="cf_samepos")
 only_cf = st.checkbox("Position = CF only", value=True, key="cf_only")
 
+# ---------- 2) Build pool ----------
 pool = df[df["League"].isin(leagues_scatter)].copy()
 if same_pos_scatter and not player_row.empty:
     pool = pool[pool["Position"].astype(str).apply(position_filter)]
@@ -3055,19 +3105,32 @@ pool["League Strength"] = pool["League"].map(LEAGUE_STRENGTHS).fillna(0.0)
 pool = pool[(pool["League Strength"] >= float(min_strength_s)) &
             (pool["League Strength"] <= float(max_strength_s))]
 
-needed_cols = ["Player","Team","League","Threat_score","poss_score","Archetype","Box-to-Box Ball Carrier","Age"]
+needed_cols = ["Player","Team","League","Threat_score","poss_score","Archetype","Box-to-Box Ball Carrier","carry_score"]
 missing = [c for c in needed_cols if c not in pool.columns]
 if missing or pool.empty:
     st.warning("Scatter needs columns: " + ", ".join(missing) if missing else "No players after filters.")
     st.stop()
 
-# ---- figure (compact) ----
+# ---------- 3) Compact figure + theme ----------
+FIG_W, FIG_H, DPI = 10.0, 5.8, 110   # ~1100×638 px
+DISPLAY_WIDTH = 880
+
+PAGE_BG = "#0a0f1c"; PLOT_BG = "#0f151f"; GRID_MAJ = "#3a4050"; TXT = "#f5f5f5"
+ARCH_COL = {
+    "Goal Threat":  "#3B82F6",
+    "Limited":      "#F97316",
+    "Link Player":  "#EF4444",
+    "Multi-Threat": "#34D399",
+}
+OTHER_COL = "#94a3b8"
+
 mpl.rcParams.update({
     "figure.dpi": DPI, "savefig.dpi": 220,
     "font.size": 11.5, "axes.labelsize": 13,
     "xtick.labelsize": 10.5, "ytick.labelsize": 10.5,
     "axes.spines.right": False, "axes.spines.top": False,
 })
+
 fig, ax = plt.subplots(figsize=(FIG_W, FIG_H))
 fig.patch.set_facecolor(PAGE_BG); ax.set_facecolor(PLOT_BG)
 
@@ -3078,34 +3141,41 @@ def padded_limits(a, pad=0.06, head=0.03):
     a = a[np.isfinite(a)]; lo, hi = float(np.nanmin(a)), float(np.nanmax(a))
     if lo == hi: lo -= 1e-3; hi += 1e-3
     span = hi - lo; return lo - span*pad, hi + span*(pad + head)
-
 xlim, ylim = padded_limits(x), padded_limits(y)
 ax.set_xlim(*xlim); ax.set_ylim(*ylim)
 
-# ---- points (profile colours) + carrier ring ----
-S = 120  # smaller than your main scatter
+# ---------- 4) Shape rule by carry_score 75th percentile (within current pool) ----------
+carry_p75 = float(np.nanpercentile(pd.to_numeric(pool["carry_score"], errors="coerce"), 75))
+is_square = pd.to_numeric(pool["carry_score"], errors="coerce") >= carry_p75  # True -> 's', False -> 'o'
+
+# ---------- 5) Plot points per archetype, splitting by shape ----------
+S = 120
 for archetype, g in pool.groupby(pool["Archetype"].fillna("Other")):
     c = ARCH_COL.get(archetype, OTHER_COL)
-    ax.scatter(g["Threat_score"], g["poss_score"], s=S, c=c, alpha=0.90,
-               edgecolors="none", linewidths=0.0, zorder=2)
-    mask = g["Box-to-Box Ball Carrier"].fillna(False)
-    if mask.any():
-        ax.scatter(g.loc[mask, "Threat_score"], g.loc[mask, "poss_score"],
-                   s=S, facecolors="none", edgecolors="#ffffff", linewidths=1.4, zorder=3)
 
-# ---- selected player highlight (red dot + label) ----
+    g_sq = g[is_square.loc[g.index]]
+    g_circ = g[~is_square.loc[g.index]]
+
+    if not g_circ.empty:
+        ax.scatter(g_circ["Threat_score"], g_circ["poss_score"],
+                   s=S, c=c, alpha=0.90, edgecolors="none", marker="o", zorder=2)
+    if not g_sq.empty:
+        ax.scatter(g_sq["Threat_score"], g_sq["poss_score"],
+                   s=S, c=c, alpha=0.90, edgecolors="none", marker="s", zorder=2)
+
+# Selected player highlight
 if not player_row.empty:
     sel_name = player_row.iloc[0]["Player"]
     sp = pool[pool["Player"] == sel_name]
     if not sp.empty:
         ax.scatter(sp["Threat_score"], sp["poss_score"], s=S, c="#dc2626",
-                   edgecolors="#ffffff", linewidths=1.4, zorder=4)
+                   edgecolors="#ffffff", linewidths=1.4, marker="o", zorder=4)
         sx, sy = float(sp.iloc[0]["Threat_score"]), float(sp.iloc[0]["poss_score"])
         t = ax.annotate(sel_name, (sx, sy), xytext=(8, 10), textcoords="offset points",
                         fontsize=12, fontweight="semibold", color=TXT, ha="left", va="bottom", zorder=6)
         t.set_path_effects([pe.withStroke(linewidth=2.0, foreground="#1e293b", alpha=0.9)])
 
-# ---- medians + IQR ----
+# Medians + IQR
 mx, my = float(np.nanmedian(x)), float(np.nanmedian(y))
 ax.axvline(mx, color="#ffffff", ls=(0,(4,4)), lw=2.0, zorder=1)
 ax.axhline(my, color="#ffffff", ls=(0,(4,4)), lw=2.0, zorder=1)
@@ -3113,7 +3183,7 @@ xq1, xq3 = np.nanpercentile(x,[25,75]); yq1, yq3 = np.nanpercentile(y,[25,75])
 ax.axvspan(xq1, xq3, color="#9aa4b1", alpha=0.22, zorder=0)
 ax.axhspan(yq1, yq3, color="#9aa4b1", alpha=0.22, zorder=0)
 
-# ---- quadrant labels ----
+# Quadrant labels
 kw = dict(color=TXT, fontsize=12.5, fontweight="semibold",
           bbox=dict(facecolor="#9ca3af55", edgecolor="none", boxstyle="round,pad=0.25"))
 ax.text(xlim[0]+0.02*(xlim[1]-xlim[0]), ylim[1]-0.07*(ylim[1]-ylim[0]), "FACILITATOR", **kw)
@@ -3121,7 +3191,7 @@ ax.text(xlim[1]-0.21*(xlim[1]-xlim[0]), ylim[1]-0.07*(ylim[1]-ylim[0]), "COMPLET
 ax.text(xlim[0]+0.02*(xlim[1]-xlim[0]), ylim[0]+0.02*(ylim[1]-ylim[0]), "LIMITED", **kw)
 ax.text(xlim[1]-0.17*(xlim[1]-xlim[0]), ylim[0]+0.02*(ylim[1]-ylim[0]), "POACHER", **kw)
 
-# ---- axes, dense ticks, grid ----
+# Axes, dense ticks, grid
 def nice_step(vmin, vmax, target=12):
     span = abs(vmax - vmin); 
     if span <= 0: return 5
@@ -3140,31 +3210,32 @@ ax.grid(True, which="major", linewidth=0.9, color=GRID_MAJ)
 for s in ax.spines.values(): s.set_linewidth(0.9); s.set_color("#6b7280")
 for t in ax.get_xticklabels() + ax.get_yticklabels(): t.set_fontweight("semibold"); t.set_color(TXT)
 
-# ---- right-side legend block (PROFILE + BALL CARRIER) ----
+# Legend (profiles + shape key)
 legend_elems = [
-    Line2D([0],[0], marker='o', color='none', label='Goal Threat', markerfacecolor=ARCH_COL["Goal Threat"], markersize=9),
-    Line2D([0],[0], marker='o', color='none', label='Limited',     markerfacecolor=ARCH_COL["Limited"],     markersize=9),
-    Line2D([0],[0], marker='o', color='none', label='Link Player', markerfacecolor=ARCH_COL["Link Player"], markersize=9),
-    Line2D([0],[0], marker='o', color='none', label='Multi-Threat',markerfacecolor=ARCH_COL["Multi-Threat"],markersize=9),
-    Line2D([0],[0], marker='o', label='Ball Carrier', markerfacecolor='none', markeredgecolor="#ffffff",
-           markersize=9, markeredgewidth=1.4),
+    Line2D([0],[0], marker='o', color='none', label='Goal Threat',  markerfacecolor=ARCH_COL["Goal Threat"],  markersize=9),
+    Line2D([0],[0], marker='o', color='none', label='Limited',      markerfacecolor=ARCH_COL["Limited"],      markersize=9),
+    Line2D([0],[0], marker='o', color='none', label='Link Player',  markerfacecolor=ARCH_COL["Link Player"],  markersize=9),
+    Line2D([0],[0], marker='o', color='none', label='Multi-Threat', markerfacecolor=ARCH_COL["Multi-Threat"], markersize=9),
+    Line2D([0],[0], marker='o', color='none', label='Carry < 75th', markerfacecolor="#9ca3af", markersize=0, markeredgewidth=0),
+    Line2D([0],[0], marker='s', color='none', label='Carry ≥ 75th', markerfacecolor="#9ca3af", markersize=9),
 ]
 leg = ax.legend(handles=legend_elems, frameon=False, loc="center left",
-                bbox_to_anchor=(1.02, 0.5), title="PROFILE / BALL CARRIER", title_fontsize=11)
+                bbox_to_anchor=(1.02, 0.5), title="PROFILE / SHAPE", title_fontsize=11)
 for txt in leg.get_texts(): txt.set_color(TXT)
 if leg.get_title(): leg.get_title().set_color(TXT)
 
-# ---- title (small) ----
+# Title
 fig.text(0.5, 0.98, "League CFs — Goal Threat vs Possession", ha="center", va="top",
          color=TXT, fontsize=14, fontweight="semibold")
 
-# ---- render compact ----
+# Render (compact)
 from io import BytesIO
 buf = BytesIO()
 fig.savefig(buf, format="png", dpi=DPI, facecolor=fig.get_facecolor(), bbox_inches="tight")
 buf.seek(0)
 st.image(buf, width=DISPLAY_WIDTH, caption="CF archetypes (compact)")
-# ===========================================================================================
+# =============================================================================================================================
+
 
 
 
