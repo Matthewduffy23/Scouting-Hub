@@ -362,42 +362,23 @@ bc_sel = st.session_state.get(f"cf_bc_sel_{selected_file}", [])
 if bc_sel:
     want_blank = "(Blank)" in bc_sel
     wanted = {x for x in bc_sel if x != "(Blank)"}
-    bc_series = df_f.get("Birth country", pd.Series(dtype=object))
+
+    # Make sure we always have a Series aligned to df_f.index
+    if "Birth country" in df_f.columns:
+        bc_series = df_f["Birth country"]
+    else:
+        # Column missing in this dataset → default to empty strings for all rows
+        bc_series = pd.Series("", index=df_f.index, dtype="object")
+
     bc_str = pd.Series(bc_series, dtype="object").fillna("").astype(str).str.strip()
+
     mask = bc_str.isin(wanted)
     if want_blank:
-        mask |= (bc_str == "")
-    df_f = df_f[mask]
+        mask |= bc_str.eq("")
 
-# contract (optional)
-df_f["Contract expires"] = pd.to_datetime(df_f["Contract expires"], errors="coerce")
-if st.session_state.get(f"cf_apply_contract_{selected_file}", False):
-    cutoff_year = st.session_state[f"cf_cutoff_{selected_file}"]
-    df_f = df_f[df_f["Contract expires"].dt.year <= cutoff_year]
-
-# league strength — default 50.0 for unknown leagues (so weighting won't blow up)
-df_f["League Strength"] = df_f["League"].map(LEAGUE_STRENGTHS).fillna(50.0)
-min_strength, max_strength = st.session_state[f"cf_minmax_strength_{selected_file}"]
-df_f = df_f[(df_f["League Strength"] >= float(min_strength)) & (df_f["League Strength"] <= float(max_strength))]
-
-# market value
-df_f["Market value"] = pd.to_numeric(df_f["Market value"], errors="coerce")
-if st.session_state.get(f"cf_use_m_{selected_file}", True):
-    mv_min_m, mv_max_m = st.session_state[f"cf_mv_range_m_{selected_file}"]
-    min_value = mv_min_m * 1_000_000
-    max_value = mv_max_m * 1_000_000
-else:
-    min_value, max_value = st.session_state[f"cf_mv_range_{selected_file}"]
-df_f = df_f[(df_f["Market value"] >= min_value) & (df_f["Market value"] <= max_value)]
-
-# features numeric + dropna
-for c in FEATURES:
-    df_f[c] = pd.to_numeric(df_f[c], errors="coerce")
-df_f = df_f.dropna(subset=FEATURES)
-
-if df_f.empty:
-    st.warning("No players after filters. Loosen filters.")
-    st.stop()
+    # align + ensure boolean
+    mask = mask.reindex(df_f.index, fill_value=False).astype(bool)
+    df_f = df_f.loc[mask]
 
 
 # ----------------- PERCENTILES FOR TABLES (per league) -----------------
