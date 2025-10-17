@@ -357,29 +357,6 @@ df_f["_foot_bucket"] = df_f.get("Foot", np.nan).apply(_foot_bucket_apply)
 foot_sel_vals = st.session_state.get(f"cf_foot_sel_{selected_file}", ["left", "right", "unknown", ""])
 df_f = df_f[df_f["_foot_bucket"].isin(foot_sel_vals)]
 
-# --------- APPLY BIRTH COUNTRY FILTER ---------
-bc_sel = st.session_state.get(f"cf_bc_sel_{selected_file}", [])
-if bc_sel:
-    want_blank = "(Blank)" in bc_sel
-    wanted = {x for x in bc_sel if x != "(Blank)"}
-
-    # Make sure we always have a Series aligned to df_f.index
-    if "Birth country" in df_f.columns:
-        bc_series = df_f["Birth country"]
-    else:
-        # Column missing in this dataset → default to empty strings for all rows
-        bc_series = pd.Series("", index=df_f.index, dtype="object")
-
-    bc_str = pd.Series(bc_series, dtype="object").fillna("").astype(str).str.strip()
-
-    mask = bc_str.isin(wanted)
-    if want_blank:
-        mask |= bc_str.eq("")
-
-    # align + ensure boolean
-    mask = mask.reindex(df_f.index, fill_value=False).astype(bool)
-    df_f = df_f.loc[mask]
-
 
 # ----------------- PERCENTILES FOR TABLES (per league) -----------------
 for feat in FEATURES:
