@@ -606,7 +606,7 @@ def _pro_chip_color(p:str)->str:
 import unicodedata
 TWEMOJI_SPECIAL = {
     "eng":"1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
-    "sct":"1f3f4-e0067-e0062-e0063-e0074-e007f".replace("e0062-e0063","e0062-e0073"),  # keep as-is in your code if you prefer
+    "sct":"1f3f4-e0067-e0062-e0073-e0063-e0074-e007f",
     "wls":"1f3f4-e0067-e0062-e0077-e006c-e0073-e007f",
 }
 
@@ -773,7 +773,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         index=0, key="pro_age_filter", label_visibility="visible"
     )
 
-    # ---- NEW: Player search (case-insensitive substring) ----
+    # ---- Player search (case-insensitive substring) ----
     player_query = st.text_input(
         "Player search",
         value="",
@@ -817,7 +817,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     # Sort controls — All In + any role score columns present
     # (Includes Modern Winger, Traditional Winger, Protagonist if computed)
     # =========================
-    # If ROLES is defined upstream, prefer that list; else fall back to common role names.
     try:
         role_names = list(ROLES.keys())
     except Exception:
@@ -845,7 +844,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     # ---- Advanced (hidden): choose & ORDER exactly 3 role pills ----
     role_labels = [name for name in role_names if f"{name} Score" in df_view.columns]
 
-    # Default three
     default_labels = ["Goal Threat", "Playmaker", "Ball Carrier"]
     default_labels = [lbl for lbl in default_labels if lbl in role_labels]
     for lbl in role_labels:
@@ -930,7 +928,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         flag=_flag_html(birth)
         contract_txt=f"{cyr}" if cyr>0 else "—"
 
-        # keys & avatar
+        # keys & avatar (stable id for storage)
         key_id = f"{_norm(player)}|{_norm(team)}"
         default_avatar="https://i.redd.it/43axcjdu59nd1.jpeg"
         avatar_url=st.session_state.get("photo_map", {}).get(key_id, default_avatar)
@@ -1047,15 +1045,23 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 unsafe_allow_html=True
             )
 
-            # --- Player image override (per-player keys) ---
-            img_key = f"imgurl_{key_id}"
+            # --- Player image override (PER-CARD UNIQUE KEYS) ---
+            img_key = f"imgurl_{i}_{key_id}"
             default_url = st.session_state.get("photo_map", {}).get(key_id, "")
-            uploaded_file = st.file_uploader("Upload player image (PNG/JPG)", type=["png","jpg","jpeg"], key=f"upload_{key_id}")
-            _ = st.text_input("Custom image URL (override avatar — e.g., https://images.fotmob.com/image_resources/playerimages/1199383.png)", value=default_url, key=img_key)
+            uploaded_file = st.file_uploader(
+                "Upload player image (PNG/JPG)",
+                type=["png","jpg","jpeg"],
+                key=f"upload_{i}_{key_id}"
+            )
+            _ = st.text_input(
+                "Custom image URL (override avatar — e.g., https://images.fotmob.com/image_resources/playerimages/1199383.png)",
+                value=default_url,
+                key=img_key
+            )
 
             col_a, col_b = st.columns([1, 3])
             with col_a:
-                if st.button("Apply to this player", key=f"apply_{key_id}"):
+                if st.button("Apply to this player", key=f"apply_{i}_{key_id}"):
                     if uploaded_file is not None:
                         try:
                             import base64, imghdr, io
@@ -1088,17 +1094,25 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                             try: st.rerun()
                             except Exception: st.experimental_rerun()
             with col_b:
-                if st.button("Clear override", key=f"clear_{key_id}"):
+                if st.button("Clear override", key=f"clear_{i}_{key_id}"):
                     st.session_state.setdefault("photo_map", {}).pop(key_id, None)
                     st.info("Cleared.")
                     try: st.rerun()
                     except Exception: st.experimental_rerun()
 
-            # --- Club crest override (per-player widget keys; stored per-club) ---
-            crest_widget_ns = f"{crest_store_key}|{key_id}"
+            # --- Club crest override (PER-CARD UNIQUE KEYS; stored per-club) ---
+            crest_widget_ns = f"{i}_{crest_store_key}|{key_id}"
             crest_default = st.session_state.get("crest_map", {}).get(crest_store_key, "")
-            crest_upload = st.file_uploader("Upload club crest (SVG/PNG/JPG)", type=["svg","png","jpg","jpeg"], key=f"crest_upload_{crest_widget_ns}")
-            _ = st.text_input("Custom crest URL (e.g., https://…/club.svg or .png)", value=crest_default, key=f"crest_url_{crest_widget_ns}")
+            crest_upload = st.file_uploader(
+                "Upload club crest (SVG/PNG/JPG)",
+                type=["svg","png","jpg","jpeg"],
+                key=f"crest_upload_{crest_widget_ns}"
+            )
+            _ = st.text_input(
+                "Custom crest URL (e.g., https://…/club.svg or .png)",
+                value=crest_default,
+                key=f"crest_url_{crest_widget_ns}"
+            )
             col_c, col_d = st.columns([1, 3])
             with col_c:
                 if st.button("Apply crest", key=f"apply_crest_{crest_widget_ns}"):
@@ -1142,6 +1156,7 @@ with tabs[4]:
     st.subheader("Pro Layout — Top Tiles")
     render_pro_layout(df_f, top_n=top_n)
 # ----------------- END PRO LAYOUT TAB -----------------
+
 
 
 

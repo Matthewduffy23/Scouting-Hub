@@ -69,6 +69,12 @@ st.caption("Use the sidebar to shape your pool. Each section explains what you�
 selected_file = st.selectbox("Select dataset to load:", csv_files, key="cm_dataset_select")
 df = load_df(selected_file)
 
+# --- Derived features (must run immediately after loading df) ---
+# Pass Ratio = Progressive passes per 90 / Passes per 90
+pp90 = pd.to_numeric(df.get("Progressive passes per 90"), errors="coerce")
+p90  = pd.to_numeric(df.get("Passes per 90"), errors="coerce")
+df["Pass Ratio"] = (pp90 / p90).replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(lower=0)
+
 # If dataset changes, clear dataset-scoped widget state
 if st.session_state.get("_active_dataset_cm") != selected_file:
     for k in [
@@ -125,7 +131,9 @@ FEATURES = [
     'Smart passes per 90', 'Key passes per 90', 'Passes to final third per 90',
     'Accurate passes to final third, %', 'Passes to penalty area per 90',
     'Accurate passes to penalty area, %', 'Deep completions per 90',
-    'Progressive passes per 90', 'Accurate progressive passes, %'
+    'Progressive passes per 90', 'Accurate progressive passes, %',
+     # ✅ New derived feature:
+    'Pass Ratio',
 ]
 
 POLAR_METRICS = [
@@ -187,6 +195,50 @@ ROLES = {
             "Accelerations per 90": 3,
         }
     },
+
+    # ===== NEW ROLES (inserted here) =====
+    "Modern 6": {
+        "metrics": {
+            # Tackler-Carrier
+            "Accurate passes, %": 2,
+            "PAdj Interceptions": 2,
+            "Defensive duels per 90": 2,
+            "Defensive duels won, %": 3,
+            "Dribbles per 90": 3,
+            "Progressive runs per 90": 2,
+            "Aerial duels won, %": 2,
+        }
+    },
+    "Box to Box": {
+        "metrics": {
+            # Two-way runner: carries, coverage, arrivals
+            "Touches in box per 90 per 90": 3,
+            "Defensive duels per 90": 3,
+            "Non-penalty goals per 90": 2,
+        }
+    },
+    "Ball Winner": {
+        "metrics": {
+            # High regain profile
+            "Defensive duels per 90": 2,
+            "Defensive duels won, %": 2,
+        }
+    },
+    "PL Profile": {
+        "metrics": {
+            # Physicality + tempo to suit Premier League intensity
+            "Aerial duels won, %": 1,
+            "Defensive duels per 90": 2,
+            "Defensive duels won, %": 2,
+            "Progressive runs per 90": 2,
+            "Dribbles per 90": 2,
+            "PAdj Interceptions": 1,
+            # ✅ Added: PL 8–6 pass tempo/ambition signal
+            "Pass Ratio": 2,  # Progressive passes per 90 / Passes per 90
+        }
+    },
+    # ===== END NEW ROLES =====
+
     "All In": {
         "metrics": {
             "Progressive passes per 90": 2,
@@ -399,6 +451,19 @@ df_f = df_f.dropna(subset=FEATURES)
 if df_f.empty:
     st.warning("No players after filters. Loosen filters.")
     st.stop()
+
+# --- Pass Ratio (Progressive passes / Passes), with league-relative percentile
+if "Progressive passes per 90" in df_f.columns and "Passes per 90" in df_f.columns:
+    df_f["Pass Ratio"] = (
+        df_f["Progressive passes per 90"] / df_f["Passes per 90"]
+    ).replace([np.inf, -np.inf], np.nan).fillna(0).clip(lower=0)
+
+    # Ensure a percentile exists for the Featured stat pill
+    df_f["Pass Ratio Percentile"] = (
+        df_f.groupby("League")["Pass Ratio"]
+            .transform(lambda x: x.rank(pct=True) * 100.0)
+    )
+
 
 # ----------------- PERCENTILES FOR TABLES (per league) -----------------
 for feat in FEATURES:
@@ -671,6 +736,10 @@ def _get_foot(row) -> str:
 # Optional toggles to swap in:
 #   - Goal Threat (CM)
 #   - Ball-Carrying (CM)
+#   - Modern 6
+#   - Box to Box
+#   - Ball Winner
+#   - PL Profile
 
 # Label → (column_name, pretty_label)
 _CM_ROLE_MAP = [
@@ -679,6 +748,11 @@ _CM_ROLE_MAP = [
     ("Defensive Midfielder DM Score", "Defensive Midfielder"),
     ("Goal Threat CM Score", "Goal Threat"),
     ("Ball-Carrying CM Score", "Ball-Carrying"),
+    # NEW roles (will show only if the columns exist)
+    ("Modern 6 Score", "Modern 6"),
+    ("Box to Box Score", "Box to Box"),
+    ("Ball Winner Score", "Ball Winner"),
+    ("PL Profile Score", "PL Profile"),
 ]
 
 # Helper to filter to existing columns
@@ -747,6 +821,14 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
         index=0, key="pro_age_filter_cm", label_visibility="visible"
     )
 
+    # ---- NEW: Player/Team search (non-destructive; empty = show all) ----
+    q = st.text_input(
+        "Search (player or team)",
+        value="",
+        key="cm_player_search",
+        help="Type to filter cards by Player or Team (case-insensitive)."
+    ).strip()
+
     # ---- NEW: Pill toggle (choose exactly 3 from CM set) ----
     # Build choices from columns actually present
     choices = [(col, label) for col, label in _CM_ROLE_MAP if col in df_view.columns]
@@ -775,6 +857,27 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
         st.warning("Please select exactly 3 pills — showing the first three available.")
         selected_labels = (selected_labels + [lbl for lbl in labels if lbl not in selected_labels])[:3]
 
+    # ---- NEW: Optional featured stat pill (shows percentile) ----
+    # Pick from common CM stats + Pass Ratio if present
+    _feature_candidates = [
+        "Pass Ratio",  # Progressive passes per 90 / Passes per 90
+        "Progressive passes per 90",
+        "Progressive runs per 90",
+        "PAdj Interceptions",
+        "Defensive duels per 90",
+        "xA per 90",
+        "Passes to penalty area per 90",
+        "Dribbles per 90",
+    ]
+    available_feats = ["None"] + [m for m in _feature_candidates if f"{m} Percentile" in df_view.columns]
+    featured_metric = st.selectbox(
+        "Featured stat (optional)",
+        options=available_feats,
+        index=0,
+        key="cm_featured_metric",
+        help="Adds a fourth pill showing the selected metric’s percentile."
+    )
+
     df_filtered = df_view.copy()
     if "Age" in df_filtered.columns and age_choice != "All":
         try:
@@ -789,6 +892,12 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
         except Exception:
             pass
 
+    # ---- NEW: apply search filter (player OR team contains) ----
+    if q:
+        pat = _re.compile(_re.escape(q), _re.IGNORECASE)
+        def _hit(s): return bool(pat.search(str(s or "")))
+        df_filtered = df_filtered[df_filtered.apply(lambda r: _hit(r.get("Player","")) or _hit(r.get("Team","")), axis=1)]
+
     # ---- data check ----
     all_col = "All In Score"
     if all_col not in df_view.columns:
@@ -796,7 +905,7 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
         return
 
     if df_filtered.empty:
-        st.info("No players match the selected age filter.")
+        st.info("No players match the selected filters.")
         return
 
     # =========================
@@ -856,14 +965,26 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
             val = _pro_show99(row.get(col, 0))
             pill_triplet.append((lbl, val, _fmt2(val)))
 
-                  # positions — preserve actual dataset order (remove forced CF-first rule)
+        # ---- optional featured stat pill ----
+        feat_html = ""
+        if featured_metric and featured_metric != "None":
+            col = f"{featured_metric} Percentile"
+            if col in row.index and pd.notna(row[col]):
+                p = _pro_show99(row[col])
+                feat_html = (
+                    f"<div class='row' style='align-items:center;'>"
+                    f"<span class='pill' style='background:{_pro_rating_color(p)}'>{_fmt2(p)}</span>"
+                    f"<span class='sub'>{featured_metric}</span>"
+                    f"</div>"
+                )
+
+        # positions — preserve actual dataset order (remove forced CF-first rule)
         codes = [c for c in _re.split(r"[,/; ]+", str(pos).strip().upper()) if c]
         codes = list(dict.fromkeys(codes))  # keep original sequence but de-dupe
         pos_html = "".join(
-                   f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>"
-                  for c in codes
-                  )
-
+            f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>"
+            for c in codes
+        )
 
         # left meta
         flag=_flag_html(birth)
@@ -887,7 +1008,7 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
         else:
             teamline_html = f"<div class='teamline'>{team} · {league}</div>"
 
-        # card (layout EXACTLY the same; only the three pills' labels/values change)
+        # card (layout EXACTLY the same; only the three pills + optional featured metric change)
         # Map friendly label to shorter subtitle text
         _subtitle_map = {
             "Deep Playmaker":"Deep Playmaker",
@@ -895,6 +1016,10 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
             "Defensive Midfielder":"Defensive Midfielder",
             "Goal Threat":"Goal Threat",
             "Ball-Carrying":"Ball-Carrying",
+            "Modern 6":"Modern 6",
+            "Box to Box":"Box to Box",
+            "Ball Winner":"Ball Winner",
+            "PL Profile":"PL Profile",
         }
 
         # safety in case someone selected fewer/more (already handled above)
@@ -921,6 +1046,7 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
               <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(v1)}'>{t1}</span><span class='sub'>{_subtitle_map.get(l1,l1)}</span></div>
               <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(v2)}'>{t2}</span><span class='sub'>{_subtitle_map.get(l2,l2)}</span></div>
               <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(v3)}'>{t3}</span><span class='sub'>{_subtitle_map.get(l3,l3)}</span></div>
+              {feat_html}
               <div class='row posrow'>{pos_html}</div>
               {teamline_html}
             </div>
