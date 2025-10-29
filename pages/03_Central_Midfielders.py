@@ -736,10 +736,7 @@ def _get_foot(row) -> str:
 # Optional toggles to swap in:
 #   - Goal Threat (CM)
 #   - Ball-Carrying (CM)
-#   - Modern 6
-#   - Box to Box
-#   - Ball Winner
-#   - PL Profile
+#   - Modern 6 / Box to Box / Ball Winner / PL Profile  (included when columns exist)
 
 # Label → (column_name, pretty_label)
 _CM_ROLE_MAP = [
@@ -748,7 +745,6 @@ _CM_ROLE_MAP = [
     ("Defensive Midfielder DM Score", "Defensive Midfielder"),
     ("Goal Threat CM Score", "Goal Threat"),
     ("Ball-Carrying CM Score", "Ball-Carrying"),
-    # NEW roles (will show only if the columns exist)
     ("Modern 6 Score", "Modern 6"),
     ("Box to Box Score", "Box to Box"),
     ("Ball Winner Score", "Ball Winner"),
@@ -797,7 +793,7 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
 
     .teamline{ color:#dbe3ff; font-size:14px; font-weight:600; margin-top:6.5px; letter-spacing:.05px; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .tl-wrap{ position:relative; }
-    .tl-has-crest{ padding-left:24px; }     /* reserve space only when crest exists */
+    .tl-has-crest{ padding-left:24px; }
     .crest-icon{ height:1.35em; width:auto; object-fit:contain; image-rendering:auto; }
     .crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
 
@@ -815,33 +811,28 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
     """, unsafe_allow_html=True)
 
     # ---- Filters: Age buckets (EXACT) ----
-    age_choice = st.selectbox(
-        "Age",
-        ["All","U18","U20","U21","U22","U23","U25","U30"],
-        index=0, key="pro_age_filter_cm", label_visibility="visible"
-    )
-
-    # ---- NEW: Player/Team search (non-destructive; empty = show all) ----
-    q = st.text_input(
-        "Search (player or team)",
-        value="",
-        key="cm_player_search",
-        help="Type to filter cards by Player or Team (case-insensitive)."
-    ).strip()
+    c1, c2 = st.columns([1,2])
+    with c1:
+        age_choice = st.selectbox(
+            "Age",
+            ["All","U18","U20","U21","U22","U23","U25","U30"],
+            index=0, key="pro_age_filter_cm", label_visibility="visible"
+        )
+    with c2:
+        # 🔎 Player search (contains, case-insensitive)
+        search_q = st.text_input("Search player (name contains)", "", key="cm_player_search")
 
     # ---- NEW: Pill toggle (choose exactly 3 from CM set) ----
-    # Build choices from columns actually present
-    choices = [(col, label) for col, label in _CM_ROLE_MAP if col in df_view.columns]
-    if not choices:
+    # Build choices from columns actually present (includes the 4 new roles if present)
+    available = [(col, label) for col, label in _CM_ROLE_MAP if col in df_view.columns]
+    if not available:
         st.info("No CM role score columns found in the dataframe.")
         return
-    labels = [label for _,label in choices]
-    label_to_col = {label: col for col,label in choices}
+    labels = [label for _,label in available]
+    label_to_col = {label: col for col,label in available}
 
     default_labels = ["Deep Playmaker","Advanced Playmaker","Defensive Midfielder"]
-    # keep only those available
     default_labels = [lbl for lbl in default_labels if lbl in labels]
-    # if fewer than 3 defaults available, pad with whatever exists
     for lbl in labels:
         if len(default_labels) >= 3: break
         if lbl not in default_labels: default_labels.append(lbl)
@@ -857,27 +848,7 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
         st.warning("Please select exactly 3 pills — showing the first three available.")
         selected_labels = (selected_labels + [lbl for lbl in labels if lbl not in selected_labels])[:3]
 
-    # ---- NEW: Optional featured stat pill (shows percentile) ----
-    # Pick from common CM stats + Pass Ratio if present
-    _feature_candidates = [
-        "Pass Ratio",  # Progressive passes per 90 / Passes per 90
-        "Progressive passes per 90",
-        "Progressive runs per 90",
-        "PAdj Interceptions",
-        "Defensive duels per 90",
-        "xA per 90",
-        "Passes to penalty area per 90",
-        "Dribbles per 90",
-    ]
-    available_feats = ["None"] + [m for m in _feature_candidates if f"{m} Percentile" in df_view.columns]
-    featured_metric = st.selectbox(
-        "Featured stat (optional)",
-        options=available_feats,
-        index=0,
-        key="cm_featured_metric",
-        help="Adds a fourth pill showing the selected metric’s percentile."
-    )
-
+    # ---- Apply age & search filters ----
     df_filtered = df_view.copy()
     if "Age" in df_filtered.columns and age_choice != "All":
         try:
@@ -892,11 +863,10 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
         except Exception:
             pass
 
-    # ---- NEW: apply search filter (player OR team contains) ----
-    if q:
-        pat = _re.compile(_re.escape(q), _re.IGNORECASE)
-        def _hit(s): return bool(pat.search(str(s or "")))
-        df_filtered = df_filtered[df_filtered.apply(lambda r: _hit(r.get("Player","")) or _hit(r.get("Team","")), axis=1)]
+    if search_q:
+        s = str(search_q).strip().lower()
+        if "Player" in df_filtered.columns:
+            df_filtered = df_filtered[df_filtered["Player"].astype(str).str.lower().str.contains(s, na=False)]
 
     # ---- data check ----
     all_col = "All In Score"
@@ -965,32 +935,24 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
             val = _pro_show99(row.get(col, 0))
             pill_triplet.append((lbl, val, _fmt2(val)))
 
-        # ---- optional featured stat pill ----
-        feat_html = ""
-        if featured_metric and featured_metric != "None":
-            col = f"{featured_metric} Percentile"
-            if col in row.index and pd.notna(row[col]):
-                p = _pro_show99(row[col])
-                feat_html = (
-                    f"<div class='row' style='align-items:center;'>"
-                    f"<span class='pill' style='background:{_pro_rating_color(p)}'>{_fmt2(p)}</span>"
-                    f"<span class='sub'>{featured_metric}</span>"
-                    f"</div>"
-                )
-
-        # positions — preserve actual dataset order (remove forced CF-first rule)
-        codes = [c for c in _re.split(r"[,/; ]+", str(pos).strip().upper()) if c]
-        codes = list(dict.fromkeys(codes))  # keep original sequence but de-dupe
+        # ---- positions — preserve dataset order & de-dupe (FIXED placement) ----
+        raw = (pos or "").strip().upper()
+        codes = [c for c in _re.split(r"[,\s/;]+", raw) if c]
+        seen = set(); ordered = []
+        for c in codes:
+            if c not in seen:
+                seen.add(c)
+                ordered.append(c)
         pos_html = "".join(
             f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>"
-            for c in codes
+            for c in ordered
         )
 
         # left meta
         flag=_flag_html(birth)
         contract_txt=f"{cyr}" if cyr>0 else "—"
 
-        # keys & avatar
+        # keys & avatar (use per-row unique keys to avoid duplicate widget keys)
         key_id = f"{_norm(player)}|{_norm(team)}"
         default_avatar="https://i.redd.it/43axcjdu59nd1.jpeg"
         avatar_url=st.session_state.get("photo_map", {}).get(key_id, default_avatar)
@@ -1008,8 +970,7 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
         else:
             teamline_html = f"<div class='teamline'>{team} · {league}</div>"
 
-        # card (layout EXACTLY the same; only the three pills + optional featured metric change)
-        # Map friendly label to shorter subtitle text
+        # card (layout same; three pills dynamic)
         _subtitle_map = {
             "Deep Playmaker":"Deep Playmaker",
             "Advanced Playmaker":"Advanced Playmaker",
@@ -1022,12 +983,9 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
             "PL Profile":"PL Profile",
         }
 
-        # safety in case someone selected fewer/more (already handled above)
         while len(pill_triplet) < 3:
             pill_triplet.append(("—", 0, "00"))
         pill_triplet = pill_triplet[:3]
-
-        # unpack for template
         (l1,v1,t1),(l2,v2,t2),(l3,v3,t3) = pill_triplet
 
         st.markdown(f"""
@@ -1046,7 +1004,6 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
               <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(v1)}'>{t1}</span><span class='sub'>{_subtitle_map.get(l1,l1)}</span></div>
               <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(v2)}'>{t2}</span><span class='sub'>{_subtitle_map.get(l2,l2)}</span></div>
               <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(v3)}'>{t3}</span><span class='sub'>{_subtitle_map.get(l3,l3)}</span></div>
-              {feat_html}
               <div class='row posrow'>{pos_html}</div>
               {teamline_html}
             </div>
@@ -1061,7 +1018,6 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
                 col=f"{m} Percentile"
                 return float(row[col]) if col in row and not pd.isna(row[col]) else 0.0
 
-            # EXACT CM metric sets (from your CM version)
             ATT=[("Crosses","Crosses per 90"),
                  ("Crossing Accuracy %","Accurate crosses, %"),
                  ("Goals: Non-Penalty","Non-penalty goals per 90"),
@@ -1120,15 +1076,15 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
                 unsafe_allow_html=True
             )
 
-            # --- Player image override (unchanged) ---
-            img_key = f"imgurl_{key_id}"
+            # --- Player image override (per-player unique keys) ---
+            img_key = f"imgurl_{i}_{key_id}"
             default_url = st.session_state.get("photo_map", {}).get(key_id, "")
-            uploaded_file = st.file_uploader("Upload player image (PNG/JPG)", type=["png","jpg","jpeg"], key=f"upload_{key_id}")
+            uploaded_file = st.file_uploader("Upload player image (PNG/JPG)", type=["png","jpg","jpeg"], key=f"upload_{i}_{key_id}")
             _ = st.text_input("Custom image URL (override avatar — e.g., https://images.fotmob.com/image_resources/playerimages/1199383.png)", value=default_url, key=img_key)
 
             col_a, col_b = st.columns([1, 3])
             with col_a:
-                if st.button("Apply to this player", key=f"apply_{key_id}"):
+                if st.button("Apply to this player", key=f"apply_{i}_{key_id}"):
                     if uploaded_file is not None:
                         try:
                             import base64, imghdr, io
@@ -1161,14 +1117,14 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
                             try: st.rerun()
                             except Exception: st.experimental_rerun()
             with col_b:
-                if st.button("Clear override", key=f"clear_{key_id}"):
+                if st.button("Clear override", key=f"clear_{i}_{key_id}"):
                     st.session_state.setdefault("photo_map", {}).pop(key_id, None)
                     st.info("Cleared.")
                     try: st.rerun()
                     except Exception: st.experimental_rerun()
 
-            # --- Club crest override (unchanged) ---
-            crest_widget_ns = f"{crest_store_key}|{key_id}"
+            # --- Club crest override (unchanged UI; unique widget keys) ---
+            crest_widget_ns = f"{crest_store_key}|{key_id}|{i}"
             crest_default = st.session_state.get("crest_map", {}).get(crest_store_key, "")
             crest_upload = st.file_uploader("Upload club crest (SVG/PNG/JPG)", type=["svg","png","jpg","jpeg"], key=f"crest_upload_{crest_widget_ns}")
             _ = st.text_input("Custom crest URL (e.g., https://…/club.svg or .png)", value=crest_default, key=f"crest_url_{crest_widget_ns}")
@@ -1216,6 +1172,7 @@ with tabs[4]:
     st.subheader("Pro Layout — Top Central Midfielders (Tiles)")
     render_pro_layout_cm(df_f, top_n=top_n)
 # ----------------- END PRO LAYOUT TAB — CENTRAL MIDFIELDERS -----------------
+
 
 
 
