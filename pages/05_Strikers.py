@@ -824,14 +824,11 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         return
 
     # =========================
-    # NEW — sort controls (ONLY roles + All In; default = All In)
+    # NEW — sort controls (roles from ROLES + All In; default = All In)
     # =========================
-    ROLE_SCORE_COLS = [
-        "Goal Threat CF Score",
-        "Link-Up CF Score",
-        "Target Man CF Score",
-    ]
-    sort_candidates = [all_col] + [c for c in ROLE_SCORE_COLS if c in df_view.columns]
+    ROLE_SCORE_COLS = [f"{name} Score" for name in ROLES.keys()
+                       if f"{name} Score" in df_view.columns]
+    sort_candidates = [all_col] + ROLE_SCORE_COLS
 
     sort_by = st.selectbox(
         "Order by",
@@ -849,6 +846,47 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     )
     asc = (sort_dir_label == "Low → High")
 
+    # ---- Advanced (hidden): choose & ORDER exactly 3 CF role pills ----
+    role_labels = [name for name in ROLES.keys() if f"{name} Score" in df_view.columns]
+
+    # Default pills = your current three, unchanged
+    default_labels = ["Goal Threat CF", "Link-Up CF", "Target Man CF"]
+    default_labels = [lbl for lbl in default_labels if lbl in role_labels]
+    for lbl in role_labels:
+        if len(default_labels) >= 3: break
+        if lbl not in default_labels:
+            default_labels.append(lbl)
+
+    with st.expander("Advanced: choose & order role pills (optional)", expanded=False):
+        sel_for_order = st.multiselect(
+            "Pick the 3 role pills to show",
+            options=role_labels,
+            default=default_labels[:3],
+            key="cf_pill_select"
+        )
+
+        # Enforce exactly 3; pad if needed
+        if len(sel_for_order) != 3:
+            st.warning("Please pick exactly 3 roles — auto-filling to 3.")
+            sel_for_order = (sel_for_order + [x for x in role_labels if x not in sel_for_order])[:3]
+
+        # Order controls
+        o1 = st.selectbox("1st pill", sel_for_order, index=0, key="cf_pill_order1")
+        remaining2 = [x for x in sel_for_order if x != o1]
+        o2 = st.selectbox("2nd pill", remaining2, index=0, key="cf_pill_order2")
+        remaining3 = [x for x in remaining2 if x != o2]
+        o3 = remaining3[0] if remaining3 else o2  # safety
+        st.write("3rd pill:", f"**{o3}**")
+
+        selected_labels = [o1, o2, o3]
+
+    # If user didn’t open Advanced, fall back to defaults
+    if "cf_pill_select" not in st.session_state:
+        selected_labels = default_labels[:3]
+
+    # Map label -> score column
+    label_to_col = {lbl: f"{lbl} Score" for lbl in role_labels}
+
     # Numeric helper column for robust sorting
     _sort_col = "__sort_val"
     df_filtered[_sort_col] = pd.to_numeric(df_filtered.get(sort_by, pd.Series(index=df_filtered.index)), errors="coerce")
@@ -861,9 +899,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         .head(top_n)
         .reset_index(drop=True)
     )
-    # =========================
-    # END NEW
-    # =========================
 
     for i,row in ranked.iterrows():
         player = str(row.get("Player","")) or ""
@@ -880,12 +915,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         cyr = int(cy.year) if pd.notna(cy) else 0
         birth = row.get("Birth country","") if "Birth country" in row else ""
         foot = _get_foot(row) or "—"
-
-        # role scores
-        gt_i=_pro_show99(row.get("Goal Threat CF Score",0))
-        lu_i=_pro_show99(row.get("Link-Up CF Score",0))
-        tm_i=_pro_show99(row.get("Target Man CF Score",0))
-        gt_txt=_fmt2(gt_i); lu_txt=_fmt2(lu_i); tm_txt=_fmt2(tm_i)
 
         # positions
         import re as _re
@@ -916,6 +945,20 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         else:
             teamline_html = f"<div class='teamline'>{team} · {league}</div>"
 
+        # --- Dynamic pills (3, ordered) ---
+        pill_rows = []
+        for lbl in selected_labels:
+            col = label_to_col.get(lbl, f"{lbl} Score")
+            val = _pro_show99(row.get(col, 0))
+            txt = _fmt2(val)
+            pill_rows.append(
+                f"<div class='row' style='align-items:center;'>"
+                f"<span class='pill' style='background:{_pro_rating_color(val)}'>{txt}</span>"
+                f"<span class='sub'>{lbl}</span>"
+                f"</div>"
+            )
+        pills_html = "".join(pill_rows)
+
         # card
         st.markdown(f"""
         <div class='pro-wrap'>
@@ -930,9 +973,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
             </div>
             <div>
               <div class='name'>{player}</div>
-              <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(gt_i)}'>{gt_txt}</span><span class='sub'>Goal Threat CF</span></div>
-              <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(lu_i)}'>{lu_txt}</span><span class='sub'>Link-Up CF</span></div>
-              <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(tm_i)}'>{tm_txt}</span><span class='sub'>Target Man CF</span></div>
+              {pills_html}
               <div class='row posrow'>{pos_html}</div>
               {teamline_html}
             </div>
