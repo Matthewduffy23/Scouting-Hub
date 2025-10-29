@@ -512,16 +512,22 @@ for role, role_def in ROLES.items():
 
 # ----------------- PRO LAYOUT TAB (tiles) -----------------
 def _pro_rating_color(v: float) -> str:
-    PALETTE=[(0,(208,2,27)),(50,(245,166,35)),(65,(248,231,28)),(75,(126,211,33)),(85,(65,117,5)),(100,(40,90,4))]
-    v=max(0.0,min(100.0,float(v)))
-    for i in range(len(PALETTE)-1):
-        x0,c0=PALETTE[i]; x1,c1=PALETTE[i+1]
-        if v<=x1:
-            t=0 if x1==x0 else (v-x0)/(x1-x0)
-            r=int(round(c0[0]+(c1[0]-c0[0])*t))
-            g=int(round(c0[1]+(c1[1]-c0[1])*t))
-            b=int(round(c0[2]+(c1[2]-c0[2])*t))
-            return f"rgb({r},{g},{b})"
+    v = float(v)
+
+    COLORS = [
+        (85, "#2E6114"),  # Deep green
+        (75, "#5C9E2E"),  # Green+
+        (66, "#7FBC41"),  # Green
+        (55, "#A7D763"),  # Green-
+        (41, "#F6D645"),  # Bright yellow (improved)
+        (25, "#D77A2E"),  # Orange
+        (0,  "#C63733"),  # Red
+    ]
+
+    for threshold, color in COLORS:
+        if v >= threshold:
+            return color
+    return COLORS[-1][1]
     r,g,b=PALETTE[-1][1]; return f"rgb({r},{g},{b})"
 
 def _pro_show99(x) -> int:
