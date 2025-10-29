@@ -856,10 +856,14 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
             val = _pro_show99(row.get(col, 0))
             pill_triplet.append((lbl, val, _fmt2(val)))
 
-        # positions (unchanged)
-        codes=[c for c in _re.split(r"[,/; ]+", pos.strip().upper()) if c]
-        if "CF" in codes: codes=["CF"]+[c for c in codes if c!="CF"]
-        pos_html="".join(f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>" for c in dict.fromkeys(codes))
+                  # positions — preserve actual dataset order (remove forced CF-first rule)
+        codes = [c for c in _re.split(r"[,/; ]+", str(pos).strip().upper()) if c]
+        codes = list(dict.fromkeys(codes))  # keep original sequence but de-dupe
+        pos_html = "".join(
+                   f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>"
+                  for c in codes
+                  )
+
 
         # left meta
         flag=_flag_html(birth)
