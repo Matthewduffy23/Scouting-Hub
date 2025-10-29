@@ -531,26 +531,24 @@ for role, role_def in ROLES.items():
 
 # ----------------- PRO LAYOUT TAB (tiles) -----------------
 def _pro_rating_color(v: float) -> str:
-    # More lenient version – greens start sooner, fewer yellows/oranges
-    PALETTE = [
-        (0,   (208,  2,  27)),  # red
-        (45,  (245,166, 35)),   # orange
-        (55,  (248,231, 28)),   # yellow
-        (65,  (126,211, 33)),   # light green
-        (75,  (65,117,  5)),    # medium green
-        (100, (40, 90,   4)),   # dark green
+    v = float(v)
+
+    # Modern professional palette
+    COLORS = [
+        (85, "#2E6114"), # Dark Green
+        (75, "#5C9E2E"), # Green
+        (66, "#8ACF55"), # Light Green
+        (55, "#C8E46A"), # Yellow-Green
+        (41, "#E5B345"), # Amber
+        (25, "#D77A2E"), # Orange
+        (0,  "#C63733"), # Red
     ]
 
-    v = max(0.0, min(100.0, float(v)))
-    for i in range(len(PALETTE) - 1):
-        x0, c0 = PALETTE[i]
-        x1, c1 = PALETTE[i + 1]
-        if v <= x1:
-            t = 0 if x1 == x0 else (v - x0) / (x1 - x0)
-            r = int(round(c0[0] + (c1[0] - c0[0]) * t))
-            g = int(round(c0[1] + (c1[1] - c0[1]) * t))
-            b = int(round(c0[2] + (c1[2] - c0[2]) * t))
-            return f"rgb({r},{g},{b})"
+    for threshold, color in COLORS:
+        if v >= threshold:
+            return color
+
+    return COLORS[-1][1]  # fallback
 
     r, g, b = PALETTE[-1][1]
     return f"rgb({r},{g},{b})"
