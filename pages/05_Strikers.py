@@ -534,10 +534,10 @@ def _pro_rating_color(v: float) -> str:
     PALETTE = [
         (0,   (208, 2, 27)),    # red
         (40,  (245, 166, 35)),  # orange
-        (55,  (248, 231, 28)),  # yellow
-        (65,  (126, 211, 33)),  # light green
+        (53,  (248, 231, 28)),  # yellow
+        (66,  (126, 211, 33)),  # light green
         (75,  (65, 117, 5)),    # green
-        (90,  (40, 90, 4))      # darker green (top)
+        (85,  (40, 90, 4))      # darker green (top)
     ]
     v = max(0.0, min(100.0, float(v)))
     for i in range(len(PALETTE)-1):
