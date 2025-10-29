@@ -533,24 +533,20 @@ for role, role_def in ROLES.items():
 def _pro_rating_color(v: float) -> str:
     v = float(v)
 
-    # Balanced reward-friendly thresholds
     COLORS = [
-        (85, "#2E6114"), # Deep green (excellent)
-        (75, "#5C9E2E"), # Green+ (very good)
-        (66, "#7FBC41"), # Green (good)
-        (55, "#A7D763"), # Green- (slight improvement)
-        (41, "#E5B345"), # Yellow (neutral)
-        (25, "#D77A2E"), # Orange (needs improvement)
-        (0,  "#C63733"), # Red (poor)
+        (85, "#2E6114"),  # Deep green
+        (75, "#5C9E2E"),  # Green+
+        (66, "#7FBC41"),  # Green
+        (54, "#A7D763"),  # Green-
+        (44, "#F6D645"),  # Bright yellow (improved)
+        (25, "#D77A2E"),  # Orange
+        (0,  "#C63733"),  # Red
     ]
 
     for threshold, color in COLORS:
         if v >= threshold:
             return color
     return COLORS[-1][1]
-
-    r, g, b = PALETTE[-1][1]
-    return f"rgb({r},{g},{b})"
 
 
 def _pro_show99(x) -> int:
