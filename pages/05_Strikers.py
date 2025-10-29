@@ -118,24 +118,84 @@ def position_filter(pos):
 ROLES = {
     'Target Man CF': {
         'desc': "Aerial outlet, duel dominance, occupy CBs, attack crosses & second balls.",
-        'metrics': {'Aerial duels per 90': 3, 'Aerial duels won, %': 4}
+        'metrics': {
+            'Aerial duels per 90': 3,
+            'Aerial duels won, %': 4,
+            'Head goals per 90': 2
+        },
     },
+
     'Goal Threat CF': {
         'desc': "High shot & xG volume, box presence, consistent SoT and finishing.",
-        'metrics': {'Non-penalty goals per 90': 3,'Shots per 90': 1.5,'xG per 90': 3,
-                    'Touches in box per 90': 1,'Shots on target, %': 0.5}
+        'metrics': {
+            'Non-penalty goals per 90': 3,
+            'Shots per 90': 1.5,
+            'xG per 90': 3,
+            'Touches in box per 90': 1,
+            'Shots on target, %': 0.5,
+        },
     },
+
     'Link-Up CF': {
         'desc': "Combine & create; link play; progress & deliver to the penalty area.",
-        'metrics': {'Passes per 90': 2, 'Passes to penalty area per 90': 1.5,
-                    'Deep completions per 90': 1, 'Smart passes per 90': 1.5,
-                    'Accurate passes, %': 1.5, 'Key passes per 90': 1,
-                    'Dribbles per 90': 2, 'Successful dribbles, %': 1,
-                    'Progressive runs per 90': 2, 'xA per 90': 3}
+        'metrics': {
+            'Passes per 90': 2,
+            'Passes to penalty area per 90': 1.5,
+            'Deep completions per 90': 1,
+            'Smart passes per 90': 1.5,
+            'Accurate passes, %': 1.5,
+            'Key passes per 90': 1,
+            'Dribbles per 90': 2,
+            'Successful dribbles, %': 1,
+            'Progressive runs per 90': 2,
+            'xA per 90': 3,
+        },
     },
+
+    # ✅ NEW — slightly more physical link-up threat
+    'Modern Target Man': {
+        'desc': "Target profile with ball retention, layoffs & box arrivals — not static.",
+        'metrics': {
+            'Aerial duels per 90': 3,
+            'Aerial duels won, %': 3,
+            'Dribbles 90': 2,
+            'xG per 90': 3,
+            'Non-penalty goals per 90': 2,
+            'xA per 90': 1,
+        },
+    },
+
+    # ✅ NEW — mobile understudy to False 9 (runner between lines)
+    'False 9 Runner': {
+        'desc': "Drops then attacks depth; dribbles, progressive carries & box timing.",
+        'metrics': {
+            'Progressive runs per 90': 3,
+            'Dribbles per 90': 3,
+            'Successful dribbles, %': 2,
+        },
+    },
+
+    # ✅ NEW — creator-led False 9 (passing + box link)
+    'False 9 Passer': {
+        'desc': "Drops to knit play & feed others: chance creation + delivery.",
+        'metrics': {
+            'Passes per 90': 3,
+            'Accurate passes, %': 2,
+            'Smart passes per 90': 2,
+            'Deep completions per 90': 2,
+            'Passes to penalty area per 90': 3,
+            'xA per 90': 3,
+        },
+    },
+
     'All In': {
         'desc': "Balanced scorer-creator blend across xG/xA, dribbling, and end product.",
-        'metrics': {'xA per 90': 2, 'Dribbles per 90': 2, 'xG per 90': 3, 'Non-penalty goals per 90': 3}
+        'metrics': {
+            'xA per 90': 2,
+            'Dribbles per 90': 2,
+            'xG per 90': 3,
+            'Non-penalty goals per 90': 3,
+        },
     },
 }
 
