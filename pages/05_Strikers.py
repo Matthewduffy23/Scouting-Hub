@@ -638,7 +638,61 @@ TWEMOJI_SPECIAL = {
 
 # Expanded country-name -> ISO-2 code map (many African additions + aliases)
 COUNTRY_TO_CC = {
-    # ... (keep your COUNTRY_TO_CC dict exactly as you have it)
+    # UK home nations (kept as before)
+    "united kingdom":"gb","great britain":"gb","northern ireland":"nir","england":"eng","scotland":"sct","wales":"wls",
+
+    # Europe (existing + a few extras for completeness)
+    "ireland":"ie","republic of ireland":"ie","spain":"es","france":"fr","germany":"de","italy":"it","portugal":"pt",
+    "netherlands":"nl","belgium":"be","austria":"at","switzerland":"ch","denmark":"dk","sweden":"se","norway":"no",
+    "finland":"fi","iceland":"is","poland":"pl","czech republic":"cz","czechia":"cz","slovakia":"sk","slovenia":"si",
+    "croatia":"hr","serbia":"rs","bosnia and herzegovina":"ba","bosnia":"ba","montenegro":"me","kosovo":"xk","albania":"al",
+    "greece":"gr","hungary":"hu","romania":"ro","bulgaria":"bg","russia":"ru","ukraine":"ua","georgia":"ge",
+    "kazakhstan":"kz","azerbaijan":"az","armenia":"am","turkey":"tr","cyprus":"cy","luxembourg":"lu","andorra":"ad",
+    "monaco":"mc","san marino":"sm","malta":"mt","moldova":"md","north macedonia":"mk","macedonia":"mk","estonia":"ee",
+    "latvia":"lv","lithuania":"lt",
+
+    # Middle East & Asia (existing)
+    "qatar":"qa","saudi arabia":"sa","uae":"ae","united arab emirates":"ae","israel":"il","japan":"jp","korea":"kr",
+    "south korea":"kr","korea republic":"kr","china":"cn",
+
+    # Africa — big expansion
+    "algeria":"dz","angola":"ao","benin":"bj","botswana":"bw","burkina faso":"bf","burundi":"bi","cabo verde":"cv",
+    "cape verde":"cv","cameroon":"cm","central african republic":"cf","car":"cf","chad":"td","comoros":"km",
+    "congo":"cg","republic of the congo":"cg","congo brazzaville":"cg",
+    "dr congo":"cd","drc":"cd","democratic republic of the congo":"cd","congo kinshasa":"cd",
+    "djibouti":"dj","egypt":"eg","equatorial guinea":"gq","eritrea":"er","eswatini":"sz","swaziland":"sz",
+    "ethiopia":"et","gabon":"ga","gambia":"gm","ghana":"gh","guinea":"gn","guinea-bissau":"gw","guinea bissau":"gw",
+    "ivory coast":"ci","cote d'ivoire":"ci","cote divoire":"ci","cote d ivoire":"ci","côte d’ivoire":"ci","côte d'ivoire":"ci",
+    "kenya":"ke","lesotho":"ls","liberia":"lr","libya":"ly","madagascar":"mg","malawi":"mw","mali":"ml","mauritania":"mr",
+    "mauritius":"mu","morocco":"ma","mozambique":"mz","namibia":"na","niger":"ne","nigeria":"ng","rwanda":"rw",
+    "sao tome and principe":"st","sao tome":"st","são tomé and príncipe":"st","são tomé":"st","sao tome & principe":"st",
+    "senegal":"sn","seychelles":"sc","sierra leone":"sl","somalia":"so","south africa":"za","south sudan":"ss","sudan":"sd",
+    "tanzania":"tz","united republic of tanzania":"tz","togo":"tg","tunisia":"tn","uganda":"ug","zambia":"zm","zimbabwe":"zw",
+    "western sahara":"eh","réunion":"re","reunion":"re","mayotte":"yt",
+
+    # North Africa already above; also include common Arabic/French variants (normalized by _norm)
+    "maroc":"ma","algerie":"dz","tunis":"tn","egypte":"eg","cameroun":"cm","cote d’ivoire":"ci","cote-d-ivoire":"ci",
+
+    # Horn/variants
+    "somaliland":"so","ethiopie":"et",
+
+    # Southern Africa variants
+    "eswatini (swaziland)":"sz","swaziland (eswatini)":"sz",
+
+    # West/Central variants
+    "congo-brazzaville":"cg","congo-kinshasa":"cd","gbissau":"gw",
+
+    # Americas (existing)
+    "brazil":"br","argentina":"ar","uruguay":"uy","chile":"cl","colombia":"co","peru":"pe","ecuador":"ec","paraguay":"py",
+    "bolivia":"bo","mexico":"mx","canada":"ca","united states":"us","usa":"us",
+
+    # Oceania (existing)
+    "australia":"au","new zealand":"nz",
+
+    # Extras sometimes seen in datasets
+    "palestine":"ps","state of palestine":"ps",
+    "hong kong":"hk","macau":"mo","macao":"mo",
+    "curacao":"cw","curaçao":"cw","cape verde islands":"cv",
 }
 def _norm(s: str) -> str:
     if not s: return ""
@@ -685,7 +739,56 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     # ---- CSS ----
     st.markdown("""
     <style>
-    /* (keep your CSS exactly as-is) */
+    html, body, .block-container *{
+      -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; text-rendering:optimizeLegibility;
+      font-feature-settings:"liga","kern","tnum"; font-variant-numeric:tabular-nums;
+    }
+    :root { --bg:#0c0e13; --card:#141823; --soft:#1e2533; }
+
+    .pro-wrap{ display:flex; justify-content:center; }
+    .pro-card{
+      position:relative; width:min(420px,96%); display:grid; grid-template-columns:96px 1fr 48px; gap:12px; align-items:start;
+      background:var(--card); border:1px solid rgba(255,255,255,.06); border-radius:20px; padding:16px; margin-bottom:12px;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 6px 24px rgba(0,0,0,.35);
+    }
+
+    .pro-avatar{ width:96px; height:96px; border-radius:12px; border:1px solid #2a3145; overflow:hidden; background:#0b0d12; }
+    .pro-avatar img{ width:100%; height:100%; object-fit:cover; image-rendering:auto; transform:translateZ(0); }
+
+    .flagchip{ display:inline-flex; align-items:center; gap:6px; background:transparent; border:none; padding:0; height:auto;}
+    .flagchip img{ width:26px; height:18px; border-radius:2px; display:block; }
+
+    .chip{ background:transparent; color:#a6a6a6; border:none; padding:0; border-radius:0; font-size:15px; line-height:18px; opacity:.92; }
+    .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:2px 0; }
+    .leftrow1{ margin-top:6px; } .leftrow-foot{ margin-top:2px; } .leftrow-contract{ margin-top:10px; }
+
+    .pill{ padding:2px 6px; min-width:36px; border-radius:6px; font-weight:700; font-size:18px; line-height:1; color:#0b0d12; text-align:center; display:inline-block; box-shadow:none; }
+
+    .name{ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px; letter-spacing:.2px; line-height:1.15; }
+    .sub{ color:#a8b3cf; font-size:15px; opacity:.9; }
+
+    .posrow{ margin-top:13.5px; }
+    .postext{ font-weight:600; font-size:14.5px; letter-spacing:.2px; margin-right:11px; }
+
+    .rank{ position:absolute; top:10.5px; right:14px; color:#b7bfe1; font-weight:800; font-size:18px; text-align:right; pointer-events:none; }
+
+    .teamline{ color:#dbe3ff; font-size:14px; font-weight:600; margin-top:6.5px; letter-spacing:.05px; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .tl-wrap{ position:relative; }
+    .tl-has-crest{ padding-left:24px; }     /* reserve space only when crest exists */
+    .crest-icon{ height:1.35em; width:auto; object-fit:contain; image-rendering:auto; }
+    .crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
+
+    /* Individual metrics — restore compact layout */
+    .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
+    .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
+    .m-row{ display:flex; justify-content:space-between; align-items:center; padding:8px 8px; border-radius:10px; }
+    .m-label{ color:#c9d3f2; font-size:15.5px; letter-spacing:.1px; flex:1 1 auto; }
+    .m-badge{ flex:0 0 auto; min-width:44px; text-align:center; padding:2px 10px; border-radius:8px; font-weight:700; font-size:18.5px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); box-shadow:none; }
+    .metrics-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
+    @media (min-width: 720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr);} }
+
+    /* Filter row */
+    .filter-label{ color:#cbd3ef; font-weight:700; font-size:13px; letter-spacing:.02em; margin-bottom:4px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -696,12 +799,12 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         index=0, key="pro_age_filter", label_visibility="visible"
     )
 
-    # ---- Player search (NEW) ----
+    # ---- Player search (ADDED; everything else unchanged) ----
     search_text = st.text_input(
         "Search player(s)",
         value="",
-        key="pro_player_search",
-        help="Type a name or comma-separate multiple (e.g., Haaland, Alvarez). Partial, case-insensitive."
+        key="pro_player_search_cf",
+        help="Type a name or comma-separate multiple (e.g., Haaland, Alvarez). Partial & case-insensitive."
     ).strip()
 
     df_filtered = df_view.copy()
@@ -718,10 +821,10 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         except Exception:
             pass
 
-    # ---- Apply player search filter (NEW) ----
+    # ---- Apply player search filter (ADDED) ----
     if search_text:
         terms = [t.strip().lower() for t in search_text.split(",") if t.strip()]
-        if "Player" in df_filtered.columns and terms:
+        if terms and "Player" in df_filtered.columns:
             pser = df_filtered["Player"].astype(str).str.lower()
             mask = False
             for t in terms:
@@ -739,11 +842,14 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         return
 
     # =========================
-    # Sort controls (dynamic from ROLES) + All In (default)
+    # NEW — sort controls (ONLY roles + All In; default = All In)
     # =========================
-    ROLE_SCORE_COLS = [f"{name} Score" for name in ROLES.keys()
-                       if f"{name} Score" in df_view.columns]
-    sort_candidates = [all_col] + ROLE_SCORE_COLS
+    ROLE_SCORE_COLS = [
+        "Goal Threat CF Score",
+        "Link-Up CF Score",
+        "Target Man CF Score",
+    ]
+    sort_candidates = [all_col] + [c for c in ROLE_SCORE_COLS if c in df_view.columns]
 
     sort_by = st.selectbox(
         "Order by",
@@ -761,47 +867,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     )
     asc = (sort_dir_label == "Low → High")
 
-    # ---- Advanced (hidden): choose & ORDER exactly 3 CF role pills ----
-    role_labels = [name for name in ROLES.keys() if f"{name} Score" in df_view.columns]
-
-    # Default pills = your current three, unchanged
-    default_labels = ["Goal Threat CF", "Link-Up CF", "Target Man CF"]
-    default_labels = [lbl for lbl in default_labels if lbl in role_labels]
-    for lbl in role_labels:
-        if len(default_labels) >= 3: break
-        if lbl not in default_labels:
-            default_labels.append(lbl)
-
-    with st.expander("Advanced: choose & order role pills (optional)", expanded=False):
-        sel_for_order = st.multiselect(
-            "Pick the 3 role pills to show",
-            options=role_labels,
-            default=default_labels[:3],
-            key="cf_pill_select"
-        )
-
-        # Enforce exactly 3; pad if needed
-        if len(sel_for_order) != 3:
-            st.warning("Please pick exactly 3 roles — auto-filling to 3.")
-            sel_for_order = (sel_for_order + [x for x in role_labels if x not in sel_for_order])[:3]
-
-        # Order controls
-        o1 = st.selectbox("1st pill", sel_for_order, index=0, key="cf_pill_order1")
-        remaining2 = [x for x in sel_for_order if x != o1]
-        o2 = st.selectbox("2nd pill", remaining2, index=0, key="cf_pill_order2")
-        remaining3 = [x for x in remaining2 if x != o2]
-        o3 = remaining3[0] if remaining3 else o2  # safety
-        st.write("3rd pill:", f"**{o3}**")
-
-        selected_labels = [o1, o2, o3]
-
-    # If user didn’t open Advanced, fall back to defaults
-    if "cf_pill_select" not in st.session_state:
-        selected_labels = default_labels[:3]
-
-    # Map label -> score column
-    label_to_col = {lbl: f"{lbl} Score" for lbl in role_labels}
-
     # Numeric helper column for robust sorting
     _sort_col = "__sort_val"
     df_filtered[_sort_col] = pd.to_numeric(df_filtered.get(sort_by, pd.Series(index=df_filtered.index)), errors="coerce")
@@ -814,6 +879,9 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         .head(top_n)
         .reset_index(drop=True)
     )
+    # =========================
+    # END NEW
+    # =========================
 
     for i,row in ranked.iterrows():
         player = str(row.get("Player","")) or ""
@@ -831,6 +899,12 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         birth = row.get("Birth country","") if "Birth country" in row else ""
         foot = _get_foot(row) or "—"
 
+        # role scores
+        gt_i=_pro_show99(row.get("Goal Threat CF Score",0))
+        lu_i=_pro_show99(row.get("Link-Up CF Score",0))
+        tm_i=_pro_show99(row.get("Target Man CF Score",0))
+        gt_txt=_fmt2(gt_i); lu_txt=_fmt2(lu_i); tm_txt=_fmt2(tm_i)
+
         # positions
         import re as _re
         codes=[c for c in _re.split(r"[,/; ]+", pos.strip().upper()) if c]
@@ -840,20 +914,25 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         # left meta
         flag=_flag_html(birth)
         contract_txt=f"{cyr}" if cyr>0 else "—"
+        rank_txt=_fmt2(i+1)
 
-        # --- Dynamic pills (3, ordered) ---
-        pill_rows = []
-        for lbl in selected_labels:
-            col = label_to_col.get(lbl, f"{lbl} Score")
-            val = _pro_show99(row.get(col, 0))
-            txt = _fmt2(val)
-            pill_rows.append(
-                f"<div class='row' style='align-items:center;'>"
-                f"<span class='pill' style='background:{_pro_rating_color(val)}'>{txt}</span>"
-                f"<span class='sub'>{lbl}</span>"
+        # keys & avatar
+        key_id = f"{_norm(player)}|{_norm(team)}"
+        default_avatar="https://i.redd.it/43axcjdu59nd1.jpeg"
+        avatar_url=st.session_state.get("photo_map", {}).get(key_id, default_avatar)
+
+        # crest (stored per club), positioned absolute so text doesn’t move
+        crest_store_key = f"{_norm(team)}|{_norm(league)}"
+        crest_url = st.session_state.get("crest_map", {}).get(crest_store_key, "")
+        if crest_url:
+            teamline_html = (
+                f"<div class='teamline tl-wrap tl-has-crest'>"
+                f"<img class='crest-icon crest-abs' src='{crest_url}' alt=''>"
+                f"<span class='teamtext'>{team} · {league}</span>"
                 f"</div>"
             )
-        pills_html = "".join(pill_rows)
+        else:
+            teamline_html = f"<div class='teamline'>{team} · {league}</div>"
 
         # card
         st.markdown(f"""
@@ -861,7 +940,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
           <div class='pro-card'>
             <div class='leftcol'>
               <div class='pro-avatar'>
-                <img src="{st.session_state.get('photo_map', {}).get(f"{_norm(player)}|{_norm(team)}", "https://i.redd.it/43axcjdu59nd1.jpeg")}" srcset="{st.session_state.get('photo_map', {}).get(f"{_norm(player)}|{_norm(team)}", "https://i.redd.it/43axcjdu59nd1.jpeg")} 1x, {st.session_state.get('photo_map', {}).get(f"{_norm(player)}|{_norm(team)}", "https://i.redd.it/43axcjdu59nd1.jpeg")} 2x" alt="{player}" loading="lazy" />
+                <img src="{avatar_url}" srcset="{avatar_url} 1x, {avatar_url} 2x" alt="{player}" loading="lazy" />
               </div>
               <div class='row leftrow1'>{flag}<span class='chip'>{age_txt}</span></div>
               <div class='row leftrow-foot'><span class='chip'>{foot}</span></div>
@@ -869,13 +948,11 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
             </div>
             <div>
               <div class='name'>{player}</div>
-              {pills_html}
+              <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(gt_i)}'>{gt_txt}</span><span class='sub'>Goal Threat CF</span></div>
+              <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(lu_i)}'>{lu_txt}</span><span class='sub'>Link-Up CF</span></div>
+              <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(tm_i)}'>{tm_txt}</span><span class='sub'>Target Man CF</span></div>
               <div class='row posrow'>{pos_html}</div>
-              {(
-                f"<div class='teamline tl-wrap tl-has-crest'><img class='crest-icon crest-abs' src='{st.session_state.get('crest_map', {}).get(f"{_norm(team)}|{_norm(league)}", "")}' alt=''><span class='teamtext'>{team} · {league}</span></div>"
-                if st.session_state.get('crest_map', {}).get(f"{_norm(team)}|{_norm(league)}", "")
-                else f"<div class='teamline'>{team} · {league}</div>"
-              )}
+              {teamline_html}
             </div>
             <div class='rank'>#{_fmt2(i+1)}</div>
           </div>
@@ -938,7 +1015,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
             )
 
             # --- Player image override (per-player keys) ---
-            key_id = f"{_norm(player)}|{_norm(team)}"
             img_key = f"imgurl_{i}_{key_id}"
             default_url = st.session_state.get("photo_map", {}).get(key_id, "")
             uploaded_file = st.file_uploader("Upload player image (PNG/JPG)", type=["png","jpg","jpeg"], key=f"upload_{i}_{key_id}")
@@ -986,7 +1062,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                     except Exception: st.experimental_rerun()
 
             # --- Club crest override (per-player widget keys; stored per-club) ---
-            crest_store_key = f"{_norm(team)}|{_norm(league)}"
             crest_widget_ns = f"{crest_store_key}|{key_id}"
             crest_default = st.session_state.get("crest_map", {}).get(crest_store_key, "")
             crest_upload = st.file_uploader("Upload club crest (SVG/PNG/JPG)", type=["svg","png","jpg","jpeg"], key=f"crest_upload_{i}_{crest_widget_ns}")
@@ -1034,6 +1109,7 @@ with tabs[4]:
     st.subheader("Pro Layout — Top Tiles")
     render_pro_layout(df_f, top_n=top_n)
 # ----------------- END PRO LAYOUT TAB -----------------
+
 
 
 
