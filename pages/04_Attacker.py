@@ -120,7 +120,7 @@ def position_filter(pos: str) -> bool:
 
 # --------------------------------------------------------------------------
 
-# Role buckets (unchanged)
+# Role buckets (attackers) — with Modern Winger, Traditional Winger, Protagonist
 ROLES = {
     'Playmaker': {
         'desc': "Primary creator: volume passing, xA, and delivery into dangerous zones.",
@@ -133,6 +133,7 @@ ROLES = {
             'Passes to penalty area per 90': 2,
         },
     },
+
     'Goal Threat': {
         'desc': "High goal expectation and shot volume with strong box presence.",
         'metrics': {
@@ -142,6 +143,7 @@ ROLES = {
             'Touches in box per 90': 2,
         },
     },
+
     'Ball Carrier': {
         'desc': "Progresses play by beating players and advancing the ball repeatedly.",
         'metrics': {
@@ -151,6 +153,39 @@ ROLES = {
             'Accelerations per 90': 3,
         },
     },
+
+    # ✅ NEW — hybrid scorer-creator wide forward
+    'Modern Winger': {
+        'desc': "Inverted/inside threat: 1v1 + carries, box arrivals, shots and final ball.",
+        'metrics': {
+            'Dribbles per 90': 2,
+            'Progressive runs per 90': 2,
+            'Shots per 90': 1,
+            'xG per 90': 2,
+            'Non-penalty goals per 90': 2,
+        },
+    },
+
+    # ✅ NEW — classic touchline winger / crosser
+    'Traditional Winger': {
+        'desc': "Stretch wide, beat full-back, high crossing & delivery into the box.",
+        'metrics': {
+            'Dribbles per 90': 2,
+            'Crosses per 90': 1.5,
+            'Progressive runs per 90': 2,
+            'xA per 90': 2,
+        },
+    },
+
+    # ✅ NEW — on-ball leader who drives the attack
+    'Protagonist': {
+        'desc': "Difference Maker",
+        'metrics': {
+            'xA per 90': 1,
+            'xG per 90': 1,
+        },
+    },
+
     'All In': {
         'desc': "Balanced scorer-creator blend across xG/xA, dribbling, and end product.",
         'metrics': {
@@ -571,7 +606,7 @@ def _pro_chip_color(p:str)->str:
 import unicodedata
 TWEMOJI_SPECIAL = {
     "eng":"1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
-    "sct":"1f3f4-e0067-e0062-e0073-e0063-e0074-e007f",
+    "sct":"1f3f4-e0067-e0062-e0063-e0074-e007f".replace("e0062-e0063","e0062-e0073"),  # keep as-is in your code if you prefer
     "wls":"1f3f4-e0067-e0062-e0077-e006c-e0073-e007f",
 }
 
@@ -738,6 +773,14 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         index=0, key="pro_age_filter", label_visibility="visible"
     )
 
+    # ---- NEW: Player search (case-insensitive substring) ----
+    player_query = st.text_input(
+        "Player search",
+        value="",
+        key="pro_player_search",
+        placeholder="Type a name (e.g., 'mbapp', 'rashford')"
+    ).strip()
+
     df_filtered = df_view.copy()
     if "Age" in df_filtered.columns and age_choice != "All":
         try:
@@ -752,6 +795,14 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         except Exception:
             pass
 
+    # Apply player search
+    if player_query:
+        try:
+            mask = df_filtered["Player"].astype(str).str.contains(player_query, case=False, na=False)
+            df_filtered = df_filtered[mask]
+        except Exception:
+            pass
+
     # ---- data check ----
     all_col = "All In Score"
     if all_col not in df_view.columns:
@@ -759,18 +810,21 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         return
 
     if df_filtered.empty:
-        st.info("No players match the selected age filter.")
+        st.info("No players match the selected filters.")
         return
 
     # =========================
-    # NEW — sort controls (ONLY roles + All In; default = All In)
+    # Sort controls — All In + any role score columns present
+    # (Includes Modern Winger, Traditional Winger, Protagonist if computed)
     # =========================
-    ROLE_SCORE_COLS = [
-        "Goal Threat Score",
-        "Playmaker Score",
-        "Ball Carrier Score",
-    ]
-    sort_candidates = [all_col] + [c for c in ROLE_SCORE_COLS if c in df_view.columns]
+    # If ROLES is defined upstream, prefer that list; else fall back to common role names.
+    try:
+        role_names = list(ROLES.keys())
+    except Exception:
+        role_names = ["Goal Threat","Playmaker","Ball Carrier","Modern Winger","Traditional Winger","Protagonist"]
+
+    ROLE_SCORE_COLS = [f"{name} Score" for name in role_names if f"{name} Score" in df_view.columns]
+    sort_candidates = [all_col] + ROLE_SCORE_COLS
 
     sort_by = st.selectbox(
         "Order by",
@@ -788,6 +842,47 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     )
     asc = (sort_dir_label == "Low → High")
 
+    # ---- Advanced (hidden): choose & ORDER exactly 3 role pills ----
+    role_labels = [name for name in role_names if f"{name} Score" in df_view.columns]
+
+    # Default three
+    default_labels = ["Goal Threat", "Playmaker", "Ball Carrier"]
+    default_labels = [lbl for lbl in default_labels if lbl in role_labels]
+    for lbl in role_labels:
+        if len(default_labels) >= 3: break
+        if lbl not in default_labels:
+            default_labels.append(lbl)
+
+    with st.expander("Advanced: choose & order role pills (optional)", expanded=False):
+        sel_for_order = st.multiselect(
+            "Pick the 3 role pills to show",
+            options=role_labels,
+            default=default_labels[:3],
+            key="att_pill_select"
+        )
+
+        # Enforce exactly 3; pad if needed
+        if len(sel_for_order) != 3:
+            st.warning("Please pick exactly 3 roles — auto-filling to 3.")
+            sel_for_order = (sel_for_order + [x for x in role_labels if x not in sel_for_order])[:3]
+
+        # Order controls
+        o1 = st.selectbox("1st pill", sel_for_order, index=0, key="att_pill_order1")
+        remaining2 = [x for x in sel_for_order if x != o1]
+        o2 = st.selectbox("2nd pill", remaining2, index=0, key="att_pill_order2")
+        remaining3 = [x for x in remaining2 if x != o2]
+        o3 = remaining3[0] if remaining3 else o2  # safety
+        st.write("3rd pill:", f"**{o3}**")
+
+        selected_labels = [o1, o2, o3]
+
+    # If user didn’t open Advanced, fall back to defaults
+    if "att_pill_select" not in st.session_state:
+        selected_labels = default_labels[:3]
+
+    # Map label -> score column
+    label_to_col = {lbl: f"{lbl} Score" for lbl in role_labels}
+
     # Numeric helper column for robust sorting
     _sort_col = "__sort_val"
     df_filtered[_sort_col] = pd.to_numeric(df_filtered.get(sort_by, pd.Series(index=df_filtered.index)), errors="coerce")
@@ -800,9 +895,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         .head(top_n)
         .reset_index(drop=True)
     )
-    # =========================
-    # END NEW
-    # =========================
 
     for i,row in ranked.iterrows():
         player = str(row.get("Player","")) or ""
@@ -820,36 +912,23 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         birth = row.get("Birth country","") if "Birth country" in row else ""
         foot = _get_foot(row) or "—"
 
-        # role scores
-        gt_i=_pro_show99(row.get("Goal Threat Score",0))
-        lu_i=_pro_show99(row.get("Playmaker Score",0))
-        tm_i=_pro_show99(row.get("Ball Carrier Score",0))
-        gt_txt=_fmt2(gt_i); lu_txt=_fmt2(lu_i); tm_txt=_fmt2(tm_i)
-
+        # positions — preserve dataset order and de-dup
         import re as _re
-
-                   # Split positions, keep original order, and remove duplicates
         raw = (pos or "").strip().upper()
         codes = [c for c in _re.split(r"[,\s/;]+", raw) if c]
-
-        seen = set()
-        ordered = []
+        seen, ordered = set(), []
         for c in codes:
-                         if c not in seen:
-                             seen.add(c)
-                             ordered.append(c)
-
-                   # Build HTML chips preserving true order
+            if c not in seen:
+                seen.add(c)
+                ordered.append(c)
         pos_html = "".join(
-          f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>"
-                        for c in ordered
-)
-
+            f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>"
+            for c in ordered
+        )
 
         # left meta
         flag=_flag_html(birth)
         contract_txt=f"{cyr}" if cyr>0 else "—"
-        rank_txt=_fmt2(i+1)
 
         # keys & avatar
         key_id = f"{_norm(player)}|{_norm(team)}"
@@ -869,6 +948,20 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         else:
             teamline_html = f"<div class='teamline'>{team} · {league}</div>"
 
+        # --- Dynamic pills (3, ordered) ---
+        pill_rows = []
+        for lbl in selected_labels:
+            col = label_to_col.get(lbl, f"{lbl} Score")
+            val = _pro_show99(row.get(col, 0))
+            txt = _fmt2(val)
+            pill_rows.append(
+                f"<div class='row' style='align-items:center;'>"
+                f"<span class='pill' style='background:{_pro_rating_color(val)}'>{txt}</span>"
+                f"<span class='sub'>{lbl}</span>"
+                f"</div>"
+            )
+        pills_html = "".join(pill_rows)
+
         # card
         st.markdown(f"""
         <div class='pro-wrap'>
@@ -883,9 +976,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
             </div>
             <div>
               <div class='name'>{player}</div>
-              <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(gt_i)}'>{gt_txt}</span><span class='sub'>Goal Threat</span></div>
-              <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(lu_i)}'>{lu_txt}</span><span class='sub'>Playmaker</span></div>
-              <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(tm_i)}'>{tm_txt}</span><span class='sub'>Ball Carrier</span></div>
+              {pills_html}
               <div class='row posrow'>{pos_html}</div>
               {teamline_html}
             </div>
