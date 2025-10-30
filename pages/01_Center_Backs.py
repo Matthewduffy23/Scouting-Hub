@@ -740,6 +740,9 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         index=0, key="pro_age_filter", label_visibility="visible"
     )
 
+    # 🔎 NEW: search bar (player / team / league)
+    search_q = st.text_input("🔎 Search player / team / league", "", key="cb_search_bar")
+
     df_filtered = df_view.copy()
     if "Age" in df_filtered.columns and age_choice != "All":
         try:
@@ -753,6 +756,20 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
             elif age_choice == "U30": df_filtered = df_filtered[df_filtered["Age_num"] <= 30]
         except Exception:
             pass
+
+    # Apply search (case-insensitive, contains on any of the three fields)
+    if search_q:
+        s = str(search_q).strip().lower()
+        mask = pd.Series(True, index=df_filtered.index)
+        for col in ("Player","Team","League"):
+            if col in df_filtered.columns:
+                mask &= df_filtered[col].astype(str).str.lower().str.contains(s, na=False)
+        # If you want OR matching instead of AND, replace the block above with:
+        # mask = False
+        # for col in ("Player","Team","League"):
+        #     if col in df_filtered.columns:
+        #         mask |= df_filtered[col].astype(str).str.lower().str.contains(s, na=False)
+        df_filtered = df_filtered[mask]
 
     # ---- data check ----
     all_col = "All In Score"
@@ -771,6 +788,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         "Ball Playing CB Score",
         "Wide CB Score",
         "Box Defender Score",
+        "PL Profile Score",     # 👈 added
     ]
     sort_candidates = [all_col] + [c for c in ROLE_SCORE_COLS if c in df_view.columns]
 
@@ -1034,7 +1052,6 @@ with tabs[4]:
     st.subheader("Pro Layout — Top Tiles")
     render_pro_layout(df_f, top_n=top_n)
 # ----------------- END PRO LAYOUT TAB -----------------
-
 
 # ----------------- END CENTER BACK BLOCK -----------------
 
