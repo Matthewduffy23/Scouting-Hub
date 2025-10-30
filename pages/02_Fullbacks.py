@@ -430,9 +430,29 @@ if df_f.empty:
     st.warning("No players after filters. Loosen filters.")
     st.stop()
 
+# ---------- DERIVED METRIC: Pass Ratio (compute BEFORE percentiles) ----------
+# Progressive passing tendency = Progressive passes per 90 / Passes per 90
+pp90 = pd.to_numeric(df_f.get("Progressive passes per 90"), errors="coerce")
+p90  = pd.to_numeric(df_f.get("Passes per 90"), errors="coerce")
+
+with np.errstate(divide="ignore", invalid="ignore"):
+    pass_ratio = np.where(p90 > 0, pp90 / p90, np.nan)
+
+# Clip to 0–1 so it behaves like a rate
+df_f["Pass Ratio"] = np.clip(pass_ratio, 0, 1.0)
+# ---------------------------------------------------------------------------
+
+
 # ----------------- PERCENTILES FOR TABLES (per league) -----------------
 for feat in FEATURES:
     df_f[f"{feat} Percentile"] = df_f.groupby("League")[feat].transform(lambda x: x.rank(pct=True) * 100.0)
+
+# Percentiles for Pass Ratio so roles can weight it like any other metric
+df_f["Pass Ratio Percentile"] = (
+    df_f.groupby("League")["Pass Ratio"]
+        .transform(lambda x: x.rank(pct=True) * 100.0)
+)
+
 
 # ---------- DERIVED METRIC: Pass Ratio ----------
 # Progressive passing tendency = Progressive passes per 90 / Passes per 90
