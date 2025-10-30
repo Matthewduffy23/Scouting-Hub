@@ -563,13 +563,27 @@ for role, role_def in ROLES.items():
         st.dataframe(top_table(filtered_view(df_f, value_max=v_max), role, top_n), use_container_width=True)
         st.divider()
 
-# ----------------- PRO LAYOUT TAB (tiles) -----------------
+## ----------------- PRO LAYOUT TAB (tiles) — FULLBACKS -----------------
+import re as _re
+import unicodedata
+import pandas as pd
+import numpy as np
+import streamlit as st
+
+# ----------------- helpers (EXACTLY as provided) -----------------
 def _pro_rating_color(v: float) -> str:
     v = float(v)
+
     COLORS = [
-        (85, "#2E6114"), (75, "#5C9E2E"), (66, "#7FBC41"),
-        (55, "#A7D763"), (41, "#F6D645"), (25, "#D77A2E"), (0,  "#C63733"),
+        (85, "#2E6114"),  # Deep green
+        (75, "#5C9E2E"),  # Green+
+        (66, "#7FBC41"),  # Green
+        (55, "#A7D763"),  # Green-
+        (41, "#F6D645"),  # Bright yellow (improved)
+        (25, "#D77A2E"),  # Orange
+        (0,  "#C63733"),  # Red
     ]
+
     for threshold, color in COLORS:
         if v >= threshold:
             return color
@@ -577,6 +591,7 @@ def _pro_rating_color(v: float) -> str:
 
 def _pro_show99(x) -> int:
     try:
+        # floor instead of round to avoid “mystery 99s”
         return max(0, min(99, int(float(x))))
     except Exception:
         return 0
@@ -593,12 +608,13 @@ _POS_COLORS = {
 def _pro_chip_color(p:str)->str:
     return _POS_COLORS.get(str(p).strip().upper(),"#2d3550")
 
-import unicodedata, re as _re
 TWEMOJI_SPECIAL = {
     "eng":"1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
     "sct":"1f3f4-e0067-e0062-e0073-e0063-e0074-e007f",
     "wls":"1f3f4-e0067-e0062-e0077-e006c-e0073-e007f",
 }
+
+# Expanded country-name -> ISO-2 code map (kept EXACT)
 COUNTRY_TO_CC = {
     "united kingdom":"gb","great britain":"gb","northern ireland":"nir","england":"eng","scotland":"sct","wales":"wls",
     "ireland":"ie","republic of ireland":"ie","spain":"es","france":"fr","germany":"de","italy":"it","portugal":"pt",
@@ -657,6 +673,7 @@ def _flag_html(country_name: str) -> str:
         return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
     return f"<span class='chip'>{cc.upper()}</span>"
 
+# --- SAFE foot extractor ---
 def _get_foot(row) -> str:
     for col in ("Foot","Preferred foot","Preferred Foot"):
         if col in row.index:
@@ -666,109 +683,180 @@ def _get_foot(row) -> str:
                 if _pd.isna(val): continue
             except Exception:
                 pass
-            s=str(val).strip()
-            if s and s.lower() not in {"nan","none","null"}: return s
+            if isinstance(val,str):
+                s=val.strip()
+                if s and s.lower() not in {"nan","none","null"}: return s
+            else:
+                s=str(val).strip()
+                if s and s.lower() not in {"nan","none","null"}: return s
     return ""
 
-def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
-    # ---- CSS ----
+# ----------------- FULLBACK VERSION -----------------
+# Toggle-able pill set (default three are FB roles):
+#   - Build Up FB
+#   - Attacking FB
+#   - Defensive FB
+# Optional toggles to swap in:
+#   - Wide Creator
+#   - Wide Carrier
+#   - PL Profile  (included when columns exist)
+
+# Label → (column_name, pretty_label)
+_FB_ROLE_MAP = [
+    ("Build Up FB Score", "Build Up FB"),
+    ("Attacking FB Score", "Attacking FB"),
+    ("Defensive FB Score", "Defensive FB"),
+    ("Wide Creator Score", "Wide Creator"),
+    ("Wide Carrier Score", "Wide Carrier"),
+    ("PL Profile Score", "PL Profile"),
+]
+
+# Helper to filter to existing columns
+_def_cols_fb = [c for c,_ in _FB_ROLE_MAP]
+
+def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
+    # ---- CSS (EXACTLY same as CM) ----
     st.markdown("""
     <style>
     html, body, .block-container *{
-      -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+      -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; text-rendering:optimizeLegibility;
       font-feature-settings:"liga","kern","tnum"; font-variant-numeric:tabular-nums;
     }
     :root { --bg:#0c0e13; --card:#141823; --soft:#1e2533; }
+
     .pro-wrap{ display:flex; justify-content:center; }
-    .pro-card{ position:relative; width:min(420px,96%); display:grid; grid-template-columns:96px 1fr 48px; gap:12px; align-items:start;
+    .pro-card{
+      position:relative; width:min(420px,96%); display:grid; grid-template-columns:96px 1fr 48px; gap:12px; align-items:start;
       background:var(--card); border:1px solid rgba(255,255,255,.06); border-radius:20px; padding:16px; margin-bottom:12px;
       box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 6px 24px rgba(0,0,0,.35);
     }
+
     .pro-avatar{ width:96px; height:96px; border-radius:12px; border:1px solid #2a3145; overflow:hidden; background:#0b0d12; }
-    .pro-avatar img{ width:100%; height:100%; object-fit:cover; }
-    .flagchip img{ width:26px; height:18px; border-radius:2px; }
-    .chip{ color:#a6a6a6; font-size:15px; opacity:.92; }
-    .pill{ padding:2px 6px; min-width:36px; border-radius:6px; font-weight:700; font-size:18px; color:#0b0d12; }
+    .pro-avatar img{ width:100%; height:100%; object-fit:cover; image-rendering:auto; transform:translateZ(0); }
+
+    .flagchip{ display:inline-flex; align-items:center; gap:6px; background:transparent; border:none; padding:0; height:auto;}
+    .flagchip img{ width:26px; height:18px; border-radius:2px; display:block; }
+
+    .chip{ background:transparent; color:#a6a6a6; border:none; padding:0; border-radius:0; font-size:15px; line-height:18px; opacity:.92; }
+    .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:2px 0; }
+    .leftrow1{ margin-top:6px; } .leftrow-foot{ margin-top:2px; } .leftrow-contract{ margin-top:10px; }
+
+    .pill{ padding:2px 6px; min-width:36px; border-radius:6px; font-weight:700; font-size:18px; line-height:1; color:#0b0d12; text-align:center; display:inline-block; box-shadow:none; }
+
     .name{ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px; letter-spacing:.2px; line-height:1.15; }
-    .rank{ position:absolute; top:10.5px; right:14px; color:#b7bfe1; font-weight:800; font-size:18px; }
-    .teamline{ color:#dbe3ff; font-size:14px; font-weight:600; margin-top:6.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .sub{ color:#a8b3cf; font-size:15px; opacity:.9; }
+
+    .posrow{ margin-top:13.5px; }
+    .postext{ font-weight:600; font-size:14.5px; letter-spacing:.2px; margin-right:11px; }
+
+    .rank{ position:absolute; top:10.5px; right:14px; color:#b7bfe1; font-weight:800; font-size:18px; text-align:right; pointer-events:none; }
+
+    .teamline{ color:#dbe3ff; font-size:14px; font-weight:600; margin-top:6.5px; letter-spacing:.05px; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .tl-wrap{ position:relative; }
+    .tl-has-crest{ padding-left:24px; }
+    .crest-icon{ height:1.35em; width:auto; object-fit:contain; image-rendering:auto; }
+    .crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
+
+    /* Individual metrics — compact layout */
     .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
-    .m-title{ color:#e8ecff; font-weight:800; margin:4px 0 10px 0; }
+    .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
     .m-row{ display:flex; justify-content:space-between; align-items:center; padding:8px 8px; border-radius:10px; }
-    .m-label{ color:#c9d3f2; font-size:15.5px; flex:1 1 auto; }
-    .m-badge{ min-width:44px; text-align:center; padding:2px 10px; border-radius:8px; font-weight:700; font-size:18.5px; color:#0b0d12; }
+    .m-label{ color:#c9d3f2; font-size:15.5px; letter-spacing:.1px; flex:1 1 auto; }
+    .m-badge{ flex:0 0 auto; min-width:44px; text-align:center; padding:2px 10px; border-radius:8px; font-weight:700; font-size:18.5px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); box-shadow:none; }
     .metrics-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
-    @media (min-width:720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr);} }
+    @media (min-width: 720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr);} }
+
+    .filter-label{ color:#cbd3ef; font-weight:700; font-size:13px; letter-spacing:.02em; margin-bottom:4px; }
     </style>
     """, unsafe_allow_html=True)
 
-    # ==============================
-    # FILTERS: Age, Role (for sorting), Search
-    # ==============================
-    c1, c2, c3 = st.columns([1, 1, 2])
+    # ---- Filters: Age buckets + Search (EXACT pattern) ----
+    c1, c2, c3 = st.columns([1, 1.4, 2])
     with c1:
         age_choice = st.selectbox(
             "Age",
             ["All","U18","U20","U21","U22","U23","U25","U30"],
-            index=0, key="pro_age_filter"
+            index=0, key="pro_age_filter_fb", label_visibility="visible"
         )
     with c2:
-        # Gather all available role score columns
-        role_cols = [c for c in df_view.columns if c.endswith("Score")]
-        # Prefer All In Score as default if present
-        default_idx = role_cols.index("All In Score") if "All In Score" in role_cols and role_cols else 0
-        role_choice = st.selectbox(
-            "Role (sort by)",
-            options=sorted(role_cols),
-            index=default_idx,
-            key="pro_role_filter"
-        )
+        # Role (sort by) — include All In and any FB role scores present
+        ROLE_SCORE_COLS = [col for col,_ in _FB_ROLE_MAP if col in df_view.columns]
+        sort_candidates = ["All In Score"] + ROLE_SCORE_COLS
+        sort_by = st.selectbox("Role (sort by)", options=sort_candidates, index=0, key="pro_sort_by_fb")
     with c3:
-        search_term = st.text_input("🔍 Search player / team / league", "", key="pro_search_box").strip().lower()
+        # 🔎 Search across Player/Team/League
+        search_q = st.text_input("🔎 Search player / team / league", "", key="fb_global_search")
 
-    # --- base copy
+    # ---- Order toggle
+    sort_dir_label = st.radio(
+        "Order",
+        options=["High → Low", "Low → High"],
+        index=0,
+        key="pro_sort_dir_fb",
+        horizontal=True
+    )
+    asc = (sort_dir_label == "Low → High")
+
+    # ---- Pill toggle (choose 3 from FB set) ----
+    available = [(col, label) for col, label in _FB_ROLE_MAP if col in df_view.columns]
+    if not available:
+        st.info("No fullback role score columns found in the dataframe.")
+        return
+    labels = [label for _,label in available]
+    label_to_col = {label: col for col,label in available}
+
+    default_labels = ["Build Up FB","Attacking FB","Defensive FB"]
+    default_labels = [lbl for lbl in default_labels if lbl in labels]
+    for lbl in labels:
+        if len(default_labels) >= 3: break
+        if lbl not in default_labels: default_labels.append(lbl)
+
+    selected_labels = st.multiselect(
+        "Displayed role pills (pick 3)",
+        options=labels,
+        default=default_labels[:3],
+        key="fb_pill_select"
+    )
+    if len(selected_labels) != 3:
+        st.warning("Please select exactly 3 pills — showing the first three available.")
+        selected_labels = (selected_labels + [lbl for lbl in labels if lbl not in selected_labels])[:3]
+
+    # ---- Apply age & search filters ----
     df_filtered = df_view.copy()
-
-    # --- Age filter
     if "Age" in df_filtered.columns and age_choice != "All":
-        df_filtered["Age_num"] = pd.to_numeric(df_filtered["Age"], errors="coerce")
-        cutoff = int(age_choice.replace("U", "")) if "U" in age_choice else None
-        if cutoff:
-            df_filtered = df_filtered[df_filtered["Age_num"] <= cutoff]
+        try:
+            df_filtered["Age_num"] = pd.to_numeric(df_filtered["Age"], errors="coerce")
+            if   age_choice == "U18": df_filtered = df_filtered[df_filtered["Age_num"] <= 18]
+            elif age_choice == "U20": df_filtered = df_filtered[df_filtered["Age_num"] <= 20]
+            elif age_choice == "U21": df_filtered = df_filtered[df_filtered["Age_num"] <= 21]
+            elif age_choice == "U22": df_filtered = df_filtered[df_filtered["Age_num"] <= 22]
+            elif age_choice == "U23": df_filtered = df_filtered[df_filtered["Age_num"] <= 23]
+            elif age_choice == "U25": df_filtered = df_filtered[df_filtered["Age_num"] <= 25]
+            elif age_choice == "U30": df_filtered = df_filtered[df_filtered["Age_num"] <= 30]
+        except Exception:
+            pass
 
-    # --- Search filter (player OR team OR league)
-    if search_term:
-        mask = (
-            df_filtered["Player"].astype(str).str.lower().str.contains(search_term, na=False) |
-            df_filtered["Team"].astype(str).str.lower().str.contains(search_term, na=False) |
-            df_filtered["League"].astype(str).str.lower().str.contains(search_term, na=False)
-        )
-        df_filtered = df_filtered[mask]
+    if search_q:
+        s = str(search_q).strip().lower()
+        for col in ("Player","Team","League"):
+            if col in df_filtered.columns:
+                mask = df_filtered[col].astype(str).str.lower().str.contains(s, na=False)
+                df_filtered = df_filtered[mask | (~mask if col != "Player" else False)]  # cumulative filter
+        # The above keeps rows matching any of Player/Team/League
 
-    # Data checks
+    # ---- data check ----
     all_col = "All In Score"
     if all_col not in df_view.columns:
         st.info("Pro Layout needs the role scores. Make sure the table section above ran first.")
         return
+
     if df_filtered.empty:
-        st.info("No players match your filters.")
+        st.info("No players match the selected filters.")
         return
 
-    # ==============================
-    # SORTING CONTROLS
-    # ==============================
-    sort_dir_label = st.radio(
-        "Order",
-        ["High → Low", "Low → High"],
-        index=0, horizontal=True, key="pro_sort_dir"
-    )
-    asc = (sort_dir_label == "Low → High")
-
+    # ---- Sorting
     _sort_col = "__sort_val"
-    # robust numeric conversion of chosen role
-    df_filtered[_sort_col] = pd.to_numeric(df_filtered.get(role_choice, pd.Series(index=df_filtered.index)), errors="coerce")
-
-    # Tie-break on All In Score (desc) to keep consistent feel
+    df_filtered[_sort_col] = pd.to_numeric(df_filtered.get(sort_by, pd.Series(index=df_filtered.index)), errors="coerce")
     ranked = (
         df_filtered
         .sort_values([_sort_col, all_col], ascending=[asc, False], na_position="last")
@@ -777,87 +865,266 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         .reset_index(drop=True)
     )
 
-    # ==============================
-    # DISPLAY PLAYER TILES
-    # ==============================
-    # Also show three core FB roles as pills on each card if present
-    CORE_PILLS = ["Build Up FB Score", "Attacking FB Score", "Defensive FB Score"]
-
-    for i, row in ranked.iterrows():
-        player = str(row.get("Player",""))
-        team = str(row.get("Team",""))
-        league = str(row.get("League",""))
-        pos = str(row.get("Position",""))
+    # ========================= RENDER CARDS =========================
+    for i,row in ranked.iterrows():
+        player = str(row.get("Player","")) or ""
+        team = str(row.get("Team","")) or ""
+        league = str(row.get("League","")) or ""
+        pos = str(row.get("Position","")) or ""
         # Age text
         try:
             age_val = int(row.get("Age")) if not pd.isna(row.get("Age", None)) else int(row.get("Age_num", 0))
         except Exception:
             age_val = 0
         age_txt = f"{age_val}y.o." if age_val>0 else "—"
-
         cy = pd.to_datetime(row.get("Contract expires"), errors="coerce")
-        cyr = int(cy.year) if pd.notna(cy) else "—"
-        birth = row.get("Birth country","")
+        cyr = int(cy.year) if pd.notna(cy) else 0
+        birth = row.get("Birth country","") if "Birth country" in row else ""
         foot = _get_foot(row) or "—"
 
-        # Selected role score for the big pill
-        sel_val = _pro_show99(row.get(role_choice, 0))
-        sel_txt = _fmt2(sel_val)
+        # ---- role pills (driven by selection) ----
+        pill_triplet = []
+        for lbl in selected_labels:
+            col = label_to_col.get(lbl, "")
+            val = _pro_show99(row.get(col, 0))
+            pill_triplet.append((lbl, val, _fmt2(val)))
 
-        # Build core pills (only those present)
-        pill_html = ""
-        for col in CORE_PILLS:
-            if col in row.index:
-                v = _pro_show99(row.get(col, 0))
-                pill_html += (
-                    f"<div class='row' style='align-items:center;'>"
-                    f"<span class='pill' style='background:{_pro_rating_color(v)}'>{_fmt2(v)}</span>"
-                    f"<span class='chip'>{col.replace(' Score','')}</span>"
-                    f"</div>"
-                )
+        # ---- positions — preserve dataset order & de-dupe ----
+        raw = (pos or "").strip().upper()
+        codes = [c for c in _re.split(r"[,\s/;]+", raw) if c]
+        seen = set(); ordered = []
+        for c in codes:
+            if c not in seen:
+                seen.add(c)
+                ordered.append(c)
+        pos_html = "".join(
+            f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>"
+            for c in ordered
+        )
 
-        # Positions (color chips)
-        codes=[c for c in _re.split(r"[,/; ]+", pos.strip().upper()) if c]
-        if "CF" in codes: codes=["CF"]+[c for c in codes if c!="CF"]
-        pos_html="".join(f"<span class='chip' style='color:{_pro_chip_color(c)}'>{c}</span>" for c in dict.fromkeys(codes))
-
-        # Flag + image
+        # left meta
         flag=_flag_html(birth)
+        contract_txt=f"{cyr}" if cyr>0 else "—"
+
+        # keys & avatar
         key_id = f"{_norm(player)}|{_norm(team)}"
         default_avatar="https://i.redd.it/43axcjdu59nd1.jpeg"
         avatar_url=st.session_state.get("photo_map", {}).get(key_id, default_avatar)
 
-        # Team line (plain; your crest mapping block can be re-added if you like)
-        teamline_html = f"<div class='teamline'>{team} · {league}</div>"
+        # crest (stored per club)
+        crest_store_key = f"{_norm(team)}|{_norm(league)}"
+        crest_url = st.session_state.get("crest_map", {}).get(crest_store_key, "")
+        if crest_url:
+            teamline_html = (
+                f"<div class='teamline tl-wrap tl-has-crest'>"
+                f"<img class='crest-icon crest-abs' src='{crest_url}' alt=''>"
+                f"<span class='teamtext'>{team} · {league}</span>"
+                f"</div>"
+            )
+        else:
+            teamline_html = f"<div class='teamline'>{team} · {league}</div>"
 
-        # Card
+        # card (layout same; three pills dynamic)
+        _subtitle_map = {
+            "Build Up FB":"Build Up FB",
+            "Attacking FB":"Attacking FB",
+            "Defensive FB":"Defensive FB",
+            "Wide Creator":"Wide Creator",
+            "Wide Carrier":"Wide Carrier",
+            "PL Profile":"PL Profile",
+        }
+
+        while len(pill_triplet) < 3:
+            pill_triplet.append(("—", 0, "00"))
+        pill_triplet = pill_triplet[:3]
+        (l1,v1,t1),(l2,v2,t2),(l3,v3,t3) = pill_triplet
+
         st.markdown(f"""
         <div class='pro-wrap'>
           <div class='pro-card'>
-            <div class='pro-avatar'>
-              <img src="{avatar_url}" alt="{player}" loading="lazy" />
+            <div class='leftcol'>
+              <div class='pro-avatar'>
+                <img src="{avatar_url}" srcset="{avatar_url} 1x, {avatar_url} 2x" alt="{player}" loading="lazy" />
+              </div>
+              <div class='row leftrow1'>{flag}<span class='chip'>{age_txt}</span></div>
+              <div class='row leftrow-foot'><span class='chip'>{foot}</span></div>
+              <div class='row leftrow-contract'><span class='chip'>{contract_txt}</span></div>
             </div>
             <div>
               <div class='name'>{player}</div>
-              <div class='row' style='align-items:center;'>
-                <span class='pill' style='background:{_pro_rating_color(sel_val)}'>{sel_txt}</span>
-                <span class='chip'>{role_choice.replace(" Score","")}</span>
-              </div>
-              {pill_html}
-              <div class='row' style='margin-top:8px;'>{pos_html}</div>
+              <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(v1)}'>{t1}</span><span class='sub'>{_subtitle_map.get(l1,l1)}</span></div>
+              <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(v2)}'>{t2}</span><span class='sub'>{_subtitle_map.get(l2,l2)}</span></div>
+              <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(v3)}'>{t3}</span><span class='sub'>{_subtitle_map.get(l3,l3)}</span></div>
+              <div class='row posrow'>{pos_html}</div>
               {teamline_html}
-              <div class='row' style='gap:8px; margin-top:8px;'>{flag}<span class='chip'>{age_txt}</span><span class='chip'>{foot}</span><span class='chip'>{cyr}</span></div>
             </div>
             <div class='rank'>#{_fmt2(i+1)}</div>
           </div>
         </div>
         """, unsafe_allow_html=True)
 
+        # ----- Expander: FB individual metrics (ATT/DEF/POS) -----
+        with st.expander("Individual Metrics", expanded=False):
+            def _pct(m):
+                col=f"{m} Percentile"
+                return float(row[col]) if col in row and not pd.isna(row[col]) else 0.0
+
+            ATT=[("Crosses","Crosses per 90"),
+                 ("Crossing Accuracy %","Accurate crosses, %"),
+                 ("Goals: Non-Penalty","Non-penalty goals per 90"),
+                 ("xG","xG per 90"),
+                 ("Expected Assists","xA per 90"),
+                 ("Offensive Duels","Offensive duels per 90"),
+                 ("Offensive Duel Success %","Offensive duels won, %"),
+                 ("Progressive Runs","Progressive runs per 90"),
+                 ("Shots","Shots per 90"),
+                 ("Shooting Accuracy %","Shots on target, %"),
+                 ("Touches in Opposition Box","Touches in box per 90")]
+
+            DEF=[("Aerial Duels","Aerial duels per 90"),
+                 ("Aerial Duel Success %","Aerial duels won, %"),
+                 ("Defensive Duels","Defensive duels per 90"),
+                 ("Defensive Duel Success %","Defensive duels won, %"),
+                 ("Shots Blocked","Shots blocked per 90"),
+                 ("PAdj. Interceptions","PAdj Interceptions")]
+
+            POS=[("Accelerations","Accelerations per 90"),
+                 ("Deep Completions","Deep completions per 90"),
+                 ("Dribbles","Dribbles per 90"),
+                 ("Dribbling Success %","Successful dribbles, %"),
+                 ("Forward Passes","Forward passes per 90"),
+                 ("Forward Passing %","Accurate forward passes, %"),
+                 ("Key passes","Key passes per 90"),
+                 ("Long Passes","Long passes per 90"),
+                 ("Long Passing %","Accurate long passes, %"),
+                 ("Passes","Passes per 90"),
+                 ("Passing %","Accurate passes, %"),
+                 ("Passes to Final 3rd","Passes to final third per 90"),
+                 ("Passes to Final 3rd %","Accurate passes to final third, %"),
+                 ("Passes to Penalty Area","Passes to penalty area per 90"),
+                 ("Pass to Penalty Area %","Accurate passes to penalty area, %"),
+                 ("Progessive Passes","Progressive passes per 90"),
+                 ("Progessive Passing %","Accurate progressive passes, %"),
+                 ("Smart Passes","Smart passes per 90")]
+
+            def _sec_html(title, pairs):
+                rows=[]
+                for lab,met in pairs:
+                    p=_pro_show99(_pct(met)); ptxt=_fmt2(p)
+                    rows.append(
+                        f"<div class='m-row'>"
+                        f"<div class='m-label'>{lab}</div>"
+                        f"<div class='m-badge' style='background:{_pro_rating_color(p)}'>{ptxt}</div>"
+                        f"</div>"
+                    )
+                return f"<div class='m-sec'><div class='m-title'>{title}</div>{''.join(rows)}</div>"
+
+            st.markdown(
+                "<div class='metrics-grid'>"
+                + _sec_html("ATTACKING", ATT)
+                + _sec_html("DEFENSIVE", DEF)
+                + _sec_html("POSSESSION", POS)
+                + "</div>",
+                unsafe_allow_html=True
+            )
+
+            # --- Player image override (unique keys) ---
+            img_key = f"imgurl_{i}_{key_id}"
+            default_url = st.session_state.get("photo_map", {}).get(key_id, "")
+            uploaded_file = st.file_uploader("Upload player image (PNG/JPG)", type=["png","jpg","jpeg"], key=f"upload_{i}_{key_id}")
+            _ = st.text_input("Custom image URL (override avatar — e.g., https://images.fotmob.com/image_resources/playerimages/1199383.png)", value=default_url, key=img_key)
+
+            col_a, col_b = st.columns([1, 3])
+            with col_a:
+                if st.button("Apply to this player", key=f"apply_{i}_{key_id}"):
+                    if uploaded_file is not None:
+                        try:
+                            import base64, imghdr, io
+                            data = uploaded_file.getvalue()
+                            try:
+                                from PIL import Image
+                                Image.open(io.BytesIO(data))
+                            except Exception:
+                                pass
+                            kind = imghdr.what(None, h=data)
+                            if kind in ("jpeg","jpg"): mime="image/jpeg"
+                            elif kind=="png": mime="image/png"
+                            else: mime = uploaded_file.type if getattr(uploaded_file,"type","").startswith("image/") else "image/png"
+                            b64 = base64.b64encode(data).decode("ascii")
+                            st.session_state.setdefault("photo_map", {})[key_id] = f"data:{mime};base64,{b64}"
+                            st.success("Uploaded image saved!")
+                            try: st.rerun()
+                            except Exception: st.experimental_rerun()
+                        except Exception as e:
+                            st.error(f"Couldn't process the uploaded image: {e}")
+                    else:
+                        val = (st.session_state.get(img_key, "") or "").strip()
+                        if not val:
+                            st.error("Please upload an image or paste an image URL.")
+                        elif not (val.startswith("http://") or val.startswith("https://") or val.startswith("data:image/")):
+                            st.error("Image URL must start with http://, https://, or data:image/…")
+                        else:
+                            st.session_state.setdefault("photo_map", {})[key_id] = val
+                            st.success("Saved!")
+                            try: st.rerun()
+                            except Exception: st.experimental_rerun()
+            with col_b:
+                if st.button("Clear override", key=f"clear_{i}_{key_id}"):
+                    st.session_state.setdefault("photo_map", {}).pop(key_id, None)
+                    st.info("Cleared.")
+                    try: st.rerun()
+                    except Exception: st.experimental_rerun()
+
+            # --- Club crest override (unique widget keys) ---
+            crest_widget_ns = f"{crest_store_key}|{key_id}|{i}"
+            crest_default = st.session_state.get("crest_map", {}).get(crest_store_key, "")
+            crest_upload = st.file_uploader("Upload club crest (SVG/PNG/JPG)", type=["svg","png","jpg","jpeg"], key=f"crest_upload_{crest_widget_ns}")
+            _ = st.text_input("Custom crest URL (e.g., https://…/club.svg or .png)", value=crest_default, key=f"crest_url_{crest_widget_ns}")
+            col_c, col_d = st.columns([1, 3])
+            with col_c:
+                if st.button("Apply crest", key=f"apply_crest_{crest_widget_ns}"):
+                    if crest_upload is not None:
+                        try:
+                            import base64, os
+                            data = crest_upload.getvalue()
+                            mime = crest_upload.type or ""
+                            if not mime.startswith("image/"):
+                                ext = os.path.splitext(crest_upload.name or "")[1].lower()
+                                if ext == ".svg": mime = "image/svg+xml"
+                                elif ext == ".png": mime = "image/png"
+                                elif ext in (".jpg",".jpeg"): mime = "image/jpeg"
+                                else: mime = "image/png"
+                            b64 = base64.b64encode(data).decode("ascii")
+                            st.session_state.setdefault("crest_map", {})[crest_store_key] = f"data:{mime};base64,{b64}"
+                            st.success("Crest saved!")
+                            try: st.rerun()
+                            except Exception: st.experimental_rerun()
+                        except Exception as e:
+                            st.error(f"Couldn't process crest: {e}")
+                    else:
+                        val = (st.session_state.get(f"crest_url_{crest_widget_ns}", "") or "").strip()
+                        if not val:
+                            st.error("Upload a crest or paste a crest URL.")
+                        elif not (val.startswith("http://") or val.startswith("https://") or val.startswith("data:image/")):
+                            st.error("Crest URL must start with http://, https://, or data:image/…")
+                        else:
+                            st.session_state.setdefault("crest_map", {})[crest_store_key] = val
+                            st.success("Crest URL saved!")
+                            try: st.rerun()
+                            except Exception: st.experimental_rerun()
+            with col_d:
+                if st.button("Clear crest", key=f"clear_crest_{crest_widget_ns}"):
+                    st.session_state.setdefault("crest_map", {}).pop(crest_store_key, None)
+                    st.info("Crest cleared.")
+                    try: st.rerun()
+                    except Exception: st.experimental_rerun()
+
+# ---- TAB HOOK (identical pattern) ----
 with tabs[4]:
-    st.subheader("Pro Layout — Top Tiles")
-    # you already computed all role scores into df_f; just pass df_f
-    render_pro_layout(df_f, top_n=top_n)
-# ----------------- END PRO LAYOUT TAB -----------------
+    st.subheader("Pro Layout — Top Fullbacks (Tiles)")
+    render_pro_layout_fb(df_f, top_n=top_n)
+# ----------------- END PRO LAYOUT TAB — FULLBACKS -----------------
+
 
 
 
