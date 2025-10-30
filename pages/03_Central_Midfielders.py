@@ -1871,11 +1871,22 @@ else:
             per_row += 1
         return y - row_gap
 
-    # roles row — slightly squarer corners
-    def roles_row_tight(fig, rs: dict, y, *, fs=10.6):
-        if not isinstance(rs, dict) or not rs: return y
-        rs = {k: v for k, v in rs.items() if k.strip().lower() != "all in"}
-        if not rs: return y
+    # roles row — slightly squarer corners (now with hide/filter options)
+    def roles_row_tight(fig, rs: dict, y, *, fs=10.6, max_roles=6, min_score=0, hidden_roles=None):
+        if not isinstance(rs, dict) or not rs:
+            return y
+
+        hidden = {h.strip().lower() for h in (hidden_roles or set())}
+
+        # drop All In, enforce score floor, and exclude hidden roles
+        rs = {
+            k: v for k, v in rs.items()
+            if k.strip().lower() != "all in"
+            and (k.strip().lower() not in hidden)
+            and pd.notna(v) and float(v) >= float(min_score)
+        }
+        if not rs:
+            return y
 
         x0 = x = CHIP_X0
         row_gap = 0.041
@@ -1883,7 +1894,7 @@ else:
         pad_x = 0.006
         pad_y = 0.003
 
-        for r, v in sorted(rs.items(), key=lambda kv: -kv[1])[:12]:
+        for r, v in sorted(rs.items(), key=lambda kv: -kv[1])[:int(max_roles)]:
             text_w = _text_width_frac(fig, r, fontsize=fs, weight="800")
             text_h = _text_height_frac(fig, "Hg", fontsize=fs, weight="800")
             role_w = text_w + pad_x*2
@@ -2088,7 +2099,15 @@ else:
     y = chip_row_exact(fig, weaknesses or [], y, CHIP_R_BG, fs=10.1, max_per_row=5)
     y = chip_row_exact(fig, styles or [],     y, CHIP_B_BG, fs=10.1, max_per_row=5)
     y -= 0.015
-    y = roles_row_tight(fig, role_scores if isinstance(role_scores, dict) else {}, y, fs=10.6)
+    y = roles_row_tight(
+        fig,
+        role_scores if isinstance(role_scores, dict) else {},
+        y,
+        fs=10.6,
+        max_roles=6,                   # keep at most 6 visible
+        min_score=0,                   # floor if you want it
+        hidden_roles={"Modern 6", "Ball Winner", "PL Profile", "Box to Box"}  # << hidden
+    )
 
     # ----------------- metric groups -----------------
     ATTACKING = []
@@ -2166,6 +2185,7 @@ else:
                        mime="image/png")
 
 # ============================ END — WIDER PANELS, SMALLER CENTER GAP, EXTRA TOP-LEFT PADDING ============================
+
 
 # ============================ (F) THREE-PANEL PERCENTILE BOARD — Uniform rows + visible gridlines (numbers centered; custom % at 0/100) ============================
 from io import BytesIO
