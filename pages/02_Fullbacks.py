@@ -155,16 +155,16 @@ ROLES = {
         'metrics': {
             'Passes per 90': 2, 'Accurate passes, %': 1.5, 'Forward passes per 90': 2,
             'Accurate forward passes, %': 2, 'Progressive passes per 90': 2.5, 'Progressive runs per 90': 2,
-            'Dribbles per 90': 2, 'Deep completions per 90': 1, 'Passes to final third per 90': 2,
-            'Smart passes per 90': 1, 'xA per 90': 1,
+            'Dribbles per 90': 2, 'Passes to final third per 90': 2,
+            'xA per 90': 1,
         }
     },
     'Attacking FB': {
         'metrics': {
-            'Crosses per 90': 2, 'Accurate crosses, %': 1, 'Dribbles per 90': 3.5,
-            'Accelerations per 90': 2, 'Successful dribbles, %': 1,
+            'Crosses per 90': 2, 'Dribbles per 90': 3.5,
+            'Accelerations per 90': 1, 'Successful dribbles, %': 1,
             'Touches in box per 90': 2, 'Progressive runs per 90': 3,
-            'Passes to penalty area per 90': 2.5, 'xA per 90': 3,
+            'Passes to penalty area per 90': 2, 'xA per 90': 3,
         }
     },
     'Defensive FB': {
@@ -173,6 +173,36 @@ ROLES = {
             'PAdj Interceptions': 3, 'Shots blocked per 90': 1, 'Defensive duels won, %': 3.5,
         }
     },
+
+    # ===== NEW ROLES (inserted here) =====
+    'Wide Creator': {
+        'metrics': {
+            'xA per 90': 3,
+            'Crosses per 90': 3,
+            'Accurate crosses, %': 1,
+        }
+    },
+    'Wide Carrier': {
+        'metrics': {
+            'Dribbles per 90': 3,
+            'Successful dribbles, %': 1,
+            'Progressive runs per 90': 3,
+            'Accelerations per 90': 1,
+        }
+    },
+    'PL Profile': {
+        'metrics': {
+            'Defensive duels per 90': 2.5,
+            'Defensive duels won, %': 2,
+            'Aerial duels won, %': 1,
+            'Progressive runs per 90': 2,
+            'xA per 90': 1,
+            'Dribbles per 90': 2,
+            'Pass Ratio': 2.5,   # ✅ NEW — progressive / total passing tendency
+        }
+    },
+    # ===== END NEW ROLES =====
+
     'All In': {
         'metrics': {
             'Progressive passes per 90': 2, 'xA per 90': 2, 'PAdj Interceptions': 2,
@@ -272,6 +302,20 @@ with st.sidebar:
     min_age, max_age = st.slider(
         "Age", age_min_data, age_max_data, (def_age_lo, def_age_hi), key=f"fb_minmax_age_{selected_file}"
     )
+
+    # ---------- DERIVED METRIC: Pass Ratio ----------
+    # Progressive passing tendency = Progressive passes per 90 / Passes per 90
+    pp90 = pd.to_numeric(df_f.get("Progressive passes per 90"), errors="coerce")
+    p90  = pd.to_numeric(df_f.get("Passes per 90"), errors="coerce")
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        pass_ratio = np.where(p90 > 0, pp90 / p90, np.nan)
+
+    # Optional: clip to sensible bounds
+    pass_ratio = np.clip(pass_ratio, 0, 1.0)  # 0–100% share; relax/remove if you want >1 allowed
+
+    df_f["Pass Ratio"] = pass_ratio
+
 
     # Role toggle (drives position_filter)
     st.subheader("Fullback roles to include")
@@ -403,6 +447,12 @@ if df_f.empty:
 # ----------------- PERCENTILES FOR TABLES (per league) -----------------
 for feat in FEATURES:
     df_f[f"{feat} Percentile"] = df_f.groupby("League")[feat].transform(lambda x: x.rank(pct=True) * 100.0)
+
+# Percentile for derived Pass Ratio (not in FEATURES on purpose)
+if "Pass Ratio" in df_f.columns:
+    df_f["Pass Ratio Percentile"] = (
+        df_f.groupby("League")["Pass Ratio"].transform(lambda x: x.rank(pct=True) * 100.0)
+    )
 
 # ----------------- ROLE SCORING (tables) -----------------
 def compute_weighted_role_score(df_in: pd.DataFrame, metrics: dict, beta: float, league_weighting: bool) -> pd.Series:
