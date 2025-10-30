@@ -182,7 +182,7 @@ ROLES = {
             'Aerial duels won, %': 3,
             'Shots blocked per 90': 1,
             'PAdj Interceptions': 1,
-            'Pass Ratio': 2,            # progressive / total passing tendency (needs percentile computed)
+            'Pass Ratio': 3,            # progressive / total passing tendency (needs percentile computed)
         }
     },
 
