@@ -453,21 +453,6 @@ df_f["Pass Ratio Percentile"] = (
         .transform(lambda x: x.rank(pct=True) * 100.0)
 )
 
-
-# ---------- DERIVED METRIC: Pass Ratio ----------
-# Progressive passing tendency = Progressive passes per 90 / Passes per 90
-pp90 = pd.to_numeric(df_f.get("Progressive passes per 90"), errors="coerce")
-p90  = pd.to_numeric(df_f.get("Passes per 90"), errors="coerce")
-
-with np.errstate(divide="ignore", invalid="ignore"):
-    pass_ratio = np.where(p90 > 0, pp90 / p90, np.nan)
-
-# Optional: clip to sensible bounds (0–1 = 0–100%)
-pass_ratio = np.clip(pass_ratio, 0, 1.0)
-
-df_f["Pass Ratio"] = pass_ratio
-# -------------------------------------------------
-
 if df_f.empty:
     st.warning("No players after filters. Loosen filters.")
     st.stop()
