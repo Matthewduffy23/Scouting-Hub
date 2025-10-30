@@ -303,20 +303,6 @@ with st.sidebar:
         "Age", age_min_data, age_max_data, (def_age_lo, def_age_hi), key=f"fb_minmax_age_{selected_file}"
     )
 
-    # ---------- DERIVED METRIC: Pass Ratio ----------
-    # Progressive passing tendency = Progressive passes per 90 / Passes per 90
-    pp90 = pd.to_numeric(df_f.get("Progressive passes per 90"), errors="coerce")
-    p90  = pd.to_numeric(df_f.get("Passes per 90"), errors="coerce")
-
-    with np.errstate(divide="ignore", invalid="ignore"):
-        pass_ratio = np.where(p90 > 0, pp90 / p90, np.nan)
-
-    # Optional: clip to sensible bounds
-    pass_ratio = np.clip(pass_ratio, 0, 1.0)  # 0–100% share; relax/remove if you want >1 allowed
-
-    df_f["Pass Ratio"] = pass_ratio
-
-
     # Role toggle (drives position_filter)
     st.subheader("Fullback roles to include")
     role_choice = st.radio(
@@ -448,11 +434,23 @@ if df_f.empty:
 for feat in FEATURES:
     df_f[f"{feat} Percentile"] = df_f.groupby("League")[feat].transform(lambda x: x.rank(pct=True) * 100.0)
 
-# Percentile for derived Pass Ratio (not in FEATURES on purpose)
-if "Pass Ratio" in df_f.columns:
-    df_f["Pass Ratio Percentile"] = (
-        df_f.groupby("League")["Pass Ratio"].transform(lambda x: x.rank(pct=True) * 100.0)
-    )
+# ---------- DERIVED METRIC: Pass Ratio ----------
+# Progressive passing tendency = Progressive passes per 90 / Passes per 90
+pp90 = pd.to_numeric(df_f.get("Progressive passes per 90"), errors="coerce")
+p90  = pd.to_numeric(df_f.get("Passes per 90"), errors="coerce")
+
+with np.errstate(divide="ignore", invalid="ignore"):
+    pass_ratio = np.where(p90 > 0, pp90 / p90, np.nan)
+
+# Optional: clip to sensible bounds (0–1 = 0–100%)
+pass_ratio = np.clip(pass_ratio, 0, 1.0)
+
+df_f["Pass Ratio"] = pass_ratio
+# -------------------------------------------------
+
+if df_f.empty:
+    st.warning("No players after filters. Loosen filters.")
+    st.stop()
 
 # ----------------- ROLE SCORING (tables) -----------------
 def compute_weighted_role_score(df_in: pd.DataFrame, metrics: dict, beta: float, league_weighting: bool) -> pd.Series:
