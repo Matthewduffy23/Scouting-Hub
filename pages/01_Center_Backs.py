@@ -174,6 +174,18 @@ ROLES = {
             'Defensive duels won, %': 4,
         }
     },
+
+    # ✅ NEW — PL Profile (includes Pass Ratio)
+    'PL Profile': {
+        'metrics': {
+            'Defensive duels won, %': 2,
+            'Aerial duels won, %': 3,
+            'Shots blocked per 90': 1,
+            'PAdj Interceptions': 1,
+            'Pass Ratio': 2,            # progressive / total passing tendency (needs percentile computed)
+        }
+    },
+
     'All In': {
         'metrics': {
             'Progressive passes per 90': 2,
@@ -391,9 +403,27 @@ if df_f.empty:
     st.warning("No players after filters. Loosen filters.")
     st.stop()
 
+# ---- DERIVED METRIC: Pass Ratio (progressive passes / total passes) ----
+pp90 = pd.to_numeric(df_f.get("Progressive passes per 90", pd.Series(index=df_f.index)), errors="coerce")
+p90  = pd.to_numeric(df_f.get("Passes per 90",              pd.Series(index=df_f.index)), errors="coerce")
+
+with np.errstate(divide="ignore", invalid="ignore"):
+    pass_ratio = np.where(p90 > 0, pp90 / p90, np.nan)
+
+# Keep as a 0..1 rate so percentiles behave nicely
+df_f["Pass Ratio"] = np.clip(pass_ratio, 0, 1.0)
+
+
 # ----------------- PERCENTILES FOR TABLES (per league) -----------------
 for feat in FEATURES:
     df_f[f"{feat} Percentile"] = df_f.groupby("League")[feat].transform(lambda x: x.rank(pct=True) * 100.0)
+
+# Percentile for Pass Ratio (so roles can weight it)
+df_f["Pass Ratio Percentile"] = (
+    df_f.groupby("League")["Pass Ratio"]
+        .transform(lambda x: x.rank(pct=True) * 100.0)
+)
+
 
 # ----------------- ROLE SCORING (tables) -----------------
 def compute_weighted_role_score(df_in: pd.DataFrame, metrics: dict, beta: float, league_weighting: bool) -> pd.Series:
