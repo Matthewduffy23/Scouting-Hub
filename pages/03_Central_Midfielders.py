@@ -153,13 +153,13 @@ def position_filter(pos):
 ROLES = {
     "Deep Playmaker CM": {
         "metrics": {
-            "Passes per 90": 2,
-            "Accurate passes, %": 2,
-            "Forward passes per 90": 2.5,
-            "Accurate forward passes, %": 2.5,
+            "Passes per 90": 1,
+            "Accurate passes, %": 1,
+            "Forward passes per 90": 2,
+            "Accurate forward passes, %": 1.5,
             "Progressive passes per 90": 3,
             "Passes to final third per 90": 2.5,
-            "Accurate long passes, %": 2,
+            "Accurate long passes, %": 1,
         }
     },
     "Advanced Playmaker CM": {
