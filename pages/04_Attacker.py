@@ -2200,7 +2200,6 @@ else:
         ("Passes to Penalty Area", "Passes to penalty area per 90"),
         ("Passes to Penalty Area %", "Accurate passes to penalty area, %"),
         ("Progessive Passes", "Progressive passes per 90"),
-        ("Progressive Runs", "Progressive runs per 90"),
         ("Smart Passes", "Smart passes per 90"),
     ]:
         POSSESSION.append((lab, float(np.nan_to_num(pct_of(met), nan=0.0)), val_of(met)[1]))
