@@ -791,45 +791,66 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     .filter-label{ color:#cbd3ef; font-weight:700; font-size:13px; letter-spacing:.02em; margin-bottom:4px; }
     </style>
     """, unsafe_allow_html=True)
+    
+        # ---- Filters: Age buckets ----
+        age_choice = st.selectbox(
+            "Age",
+            ["All", "U18", "U20", "U21", "U22", "U23", "U25", "U30"],
+            index=0,
+            key="pro_age_filter",
+            label_visibility="visible"
+        )
 
-    # ---- Filters: Age buckets ----
-    age_choice = st.selectbox(
-        "Age",
-        ["All","U18","U20","U21","U22","U23","U25","U30"],
-        index=0, key="pro_age_filter", label_visibility="visible"
-    )
+        # ---- Player search (non-destructive filter) ----
+        search_text = st.text_input(
+            "Search player(s)",
+            value="",
+            key="pro_player_search_cf",
+            help="Type a name or comma-separate multiple (e.g., Haaland, Alvarez). Partial & case-insensitive."
+        ).strip()
 
-    # ---- Player search (non-destructive filter) ----
-    search_text = st.text_input(
-        "Search player(s)",
-        value="",
-        key="pro_player_search_cf",
-        help="Type a name or comma-separate multiple (e.g., Haaland, Alvarez). Partial & case-insensitive."
-    ).strip()
+        # ---- Team search (non-destructive filter) ----
+        team_search_text = st.text_input(
+            "Search team(s)",
+            value="",
+            key="pro_team_search_cf",
+            help="Type a team name or comma-separate multiple (e.g., Barcelona, Inter). Partial & case-insensitive."
+        ).strip()
 
-    df_filtered = df_view.copy()
-    if "Age" in df_filtered.columns and age_choice != "All":
-        try:
-            df_filtered["Age_num"] = pd.to_numeric(df_filtered["Age"], errors="coerce")
-            if   age_choice == "U18": df_filtered = df_filtered[df_filtered["Age_num"] <= 18]
-            elif age_choice == "U20": df_filtered = df_filtered[df_filtered["Age_num"] <= 20]
-            elif age_choice == "U21": df_filtered = df_filtered[df_filtered["Age_num"] <= 21]
-            elif age_choice == "U22": df_filtered = df_filtered[df_filtered["Age_num"] <= 22]
-            elif age_choice == "U23": df_filtered = df_filtered[df_filtered["Age_num"] <= 23]
-            elif age_choice == "U25": df_filtered = df_filtered[df_filtered["Age_num"] <= 25]
-            elif age_choice == "U30": df_filtered = df_filtered[df_filtered["Age_num"] <= 30]
-        except Exception:
-            pass
+        df_filtered = df_view.copy()
+        if "Age" in df_filtered.columns and age_choice != "All":
+            try:
+                df_filtered["Age_num"] = pd.to_numeric(df_filtered["Age"], errors="coerce")
+                if   age_choice == "U18": df_filtered = df_filtered[df_filtered["Age_num"] <= 18]
+                elif age_choice == "U20": df_filtered = df_filtered[df_filtered["Age_num"] <= 20]
+                elif age_choice == "U21": df_filtered = df_filtered[df_filtered["Age_num"] <= 21]
+                elif age_choice == "U22": df_filtered = df_filtered[df_filtered["Age_num"] <= 22]
+                elif age_choice == "U23": df_filtered = df_filtered[df_filtered["Age_num"] <= 23]
+                elif age_choice == "U25": df_filtered = df_filtered[df_filtered["Age_num"] <= 25]
+                elif age_choice == "U30": df_filtered = df_filtered[df_filtered["Age_num"] <= 30]
+            except Exception:
+                pass
 
-    # Apply player search
-    if search_text:
-        terms = [t.strip().lower() for t in search_text.split(",") if t.strip()]
-        if terms and "Player" in df_filtered.columns:
-            pser = df_filtered["Player"].astype(str).str.lower()
-            mask = False
-            for t in terms:
-                mask = mask | pser.str.contains(t, na=False)
-            df_filtered = df_filtered[mask]
+        # Apply player search
+        if search_text:
+            terms = [t.strip().lower() for t in search_text.split(",") if t.strip()]
+            if terms and "Player" in df_filtered.columns:
+                pser = df_filtered["Player"].astype(str).str.lower()
+                mask = False
+                for t in terms:
+                    mask = mask | pser.str.contains(t, na=False)
+                df_filtered = df_filtered[mask]
+
+        # Apply team search
+        if team_search_text:
+            team_terms = [t.strip().lower() for t in team_search_text.split(",") if t.strip()]
+            if team_terms and "Team" in df_filtered.columns:
+                tser = df_filtered["Team"].astype(str).str.lower()
+                tmask = False
+                for t in team_terms:
+                    tmask = tmask | tser.str.contains(t, na=False)
+                df_filtered = df_filtered[tmask]
+    
 
     # ---- data check ----
     all_col = "All In Score"
