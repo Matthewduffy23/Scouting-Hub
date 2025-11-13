@@ -1165,9 +1165,9 @@ with tab_cb:
     render_template_players_used("CB", tmpl_src)
     render_tiles_and_featureZ(ranked, pool, tag)
 
-# ======================== SECTION B (standalone, below everything) — FIXED ========================
+# ======================== SECTION B (standalone, below everything) — PLAYER or TEAM AVG ========================
 st.markdown("---")
-st.header("Section B — CF vs Team Averages & Rank Radar (fixed)")
+st.header("Section B — CF vs Team Averages & Rank Radar")
 
 import numpy as _np
 import pandas as _pd
@@ -1176,7 +1176,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 
 def render_section_b():
-    # ---- Features used for CF calculations ----
+    # ---- CF features used ----
     features = [
         'Touches in box per 90', 'xG per 90',
         'Dribbles per 90', 'Progressive runs per 90',
@@ -1184,22 +1184,20 @@ def render_section_b():
         'Passes per 90', 'Non-penalty goals per 90', 'Accurate passes, %'
     ]
 
-    # ---- Choose league and scope dataframe ----
+    # ---- League picker ----
     leagues = sorted([str(x) for x in df.get("League", _pd.Series(dtype=object)).dropna().unique()])
     if not leagues:
         st.info("No leagues found in the dataset.")
         return
-
     colA, colB, colC = st.columns([1.3, 1.6, 1.6])
     with colA:
-        included_league = st.selectbox("League", leagues, key="secB_league")
+        included_league = st.selectbox("League", leagues, key="secB2_league")
 
     league_df = df[df["League"].astype(str) == included_league].copy()
     if league_df.empty:
         st.info("Selected league has no rows in the dataset.")
         return
 
-    # Ensure required feature columns exist
     missing_feats = [c for c in features if c not in league_df.columns]
     if missing_feats:
         st.warning(f"Section B needs these columns which are missing: {missing_feats}")
@@ -1210,54 +1208,38 @@ def render_section_b():
         st.info("Selected league has no rows with all required CF feature values.")
         return
 
-    # Numeric coercions (only when present)
-    for c in ["Minutes played", "Age", "Market value", "Goals"]:
+    # Numeric coercions for filters
+    for c in ["Minutes played", "Age", "Goals"]:
         if c in league_df.columns:
             league_df[c] = _pd.to_numeric(league_df[c], errors="coerce")
 
-    # ======================== Filters (team, minutes, age, value, search) ========================
+    # ======================== Filters (team, minutes, age, search) ========================
     flt_col1, flt_col2, flt_col3 = st.columns([1.6, 1.6, 1.6])
 
-    # Team filter (multiselect)
+    # Team filter
     teams_in_league = sorted(league_df.get("Team", _pd.Series(dtype=object)).dropna().astype(str).unique())
     if not teams_in_league:
         st.info("No teams found for this league.")
         return
-
     with flt_col1:
         teams_selected = st.multiselect(
             "Filter teams (optional)",
             options=teams_in_league,
             default=teams_in_league,
-            key="secB_teams"
+            key="secB2_teams"
         )
 
-    # Minutes / Age sliders
+    # Minutes / Age
     age_series = _pd.to_numeric(league_df.get("Age", _pd.Series(dtype=float)), errors="coerce")
     age_min_data = int(_np.nanmin(age_series)) if _np.isfinite(_np.nanmin(age_series)) else 14
     age_max_data = int(_np.nanmax(age_series)) if _np.isfinite(_np.nanmax(age_series)) else 50
     with flt_col2:
-        min_minutes, max_minutes = st.slider("Minutes played", 0, 6000, (1000, 6000), key="secB_min_slider")
-        min_age, max_age = st.slider("Age", age_min_data, age_max_data, (16, 50), key="secB_age_slider")
+        min_minutes, max_minutes = st.slider("Minutes played", 0, 6000, (1000, 6000), key="secB2_min_slider")
+        min_age, max_age = st.slider("Age", age_min_data, age_max_data, (16, 50), key="secB2_age_slider")
 
-    # Market value (€, millions toggle)
-    mv_series = _pd.to_numeric(league_df.get("Market value", _pd.Series(dtype=float)), errors="coerce")
-    mv_cap = int(_np.nanmax(mv_series)) if _np.isfinite(_np.nanmax(mv_series)) else 50_000_000
+    # Quick search
     with flt_col3:
-        use_millions = st.checkbox("Adjust value in millions", True, key="secB_mv_units")
-        if use_millions:
-            mv_max_m = max(1, (mv_cap // 1_000_000) or 1)
-            mv_min_m, mv_max_m = st.slider("Market value (M€)", 0, mv_max_m, (0, min(mv_max_m, 10)), key="secB_mv_slider_m")
-            mv_min, mv_max = mv_min_m * 1_000_000, mv_max_m * 1_000_000
-        else:
-            mv_min, mv_max = st.slider("Market value (€)", 0, max(1, mv_cap), (0, min(mv_cap, 10_000_000)), step=100_000, key="secB_mv_slider_e")
-
-    # Ranking behavior + quick search
-    col_inc, col_search = st.columns([1.0, 2.2])
-    with col_inc:
-        include_players_team = st.checkbox("Include player's own team in ranking", False, key="secB_include_team")
-    with col_search:
-        search_player = st.text_input("Quick player search (optional)", "", key="secB_player_q")
+        search_player = st.text_input("Quick player search (optional)", "", key="secB2_player_q")
 
     # ======================== Build CF subset (with filters) ========================
     pos_col = league_df.get("Position")
@@ -1270,22 +1252,14 @@ def render_section_b():
         st.info("No CFs in this league after initial position filter.")
         return
 
-    # Apply filters safely (only if columns exist)
     if "Team" in df_cf.columns and teams_selected:
         df_cf = df_cf[df_cf["Team"].astype(str).isin(teams_selected)]
-
     if "Minutes played" in df_cf.columns:
         df_cf = df_cf[df_cf["Minutes played"].between(min_minutes, max_minutes)]
-
     if "Age" in df_cf.columns:
         df_cf = df_cf[df_cf["Age"].between(min_age, max_age)]
-
-    if "Market value" in df_cf.columns:
-        df_cf = df_cf[df_cf["Market value"].between(mv_min, mv_max)]
-
     if "Goals" in df_cf.columns:
         df_cf = df_cf[df_cf["Goals"].between(0, 6000)]
-
     if search_player.strip() and "Player" in df_cf.columns:
         s = search_player.strip().lower()
         df_cf = df_cf[df_cf["Player"].astype(str).str.lower().str.contains(s, na=False)]
@@ -1294,26 +1268,30 @@ def render_section_b():
         st.info("No CFs match the current Section B filters.")
         return
 
-    # Choose target team & player (from filtered CF pool)
-    colT, colP = st.columns([1.6, 1.6])
+    # ======================== Baseline choice: specific player OR team CF average ========================
+    colT, colP = st.columns([1.8, 2.2])
     teams_in_pool = sorted(df_cf.get("Team", _pd.Series(dtype=object)).dropna().astype(str).unique())
-    if not teams_in_pool:
-        st.info("No teams available after filtering.")
-        return
-
     with colT:
-        target_team = st.selectbox("Target team", teams_in_pool, key="secB_team")
+        target_team = st.selectbox("Target team", teams_in_pool, key="secB2_team")
 
-    team_cf_players = []
-    if "Player" in df_cf.columns and "Team" in df_cf.columns:
-        team_cf_players = sorted(df_cf.loc[df_cf["Team"].astype(str) == target_team, "Player"].dropna().astype(str).unique())
+    # baseline mode
+    mode = st.radio(
+        "Baseline to rank",
+        ["Specific player", "Team CF average"],
+        horizontal=True,
+        key="secB2_mode"
+    )
 
-    with colP:
-        target_player = st.selectbox("Target player (CF)", team_cf_players, key="secB_player") if team_cf_players else ""
-
-    if not target_player:
-        st.info("No eligible CFs for the selected filters/team. Adjust filters above.")
-        return
+    target_player = ""
+    if mode == "Specific player":
+        team_cf_players = []
+        if "Player" in df_cf.columns and "Team" in df_cf.columns:
+            team_cf_players = sorted(df_cf.loc[df_cf["Team"].astype(str) == target_team, "Player"].dropna().astype(str).unique())
+        with colP:
+            target_player = st.selectbox("Target player (CF)", team_cf_players, key="secB2_player") if team_cf_players else ""
+        if not target_player:
+            st.info("No eligible CF selected. Pick a player or switch to 'Team CF average'.")
+            return
 
     # ======================== Metric calculations for CFs ========================
     def _mk_cf_metrics(frame: _pd.DataFrame) -> _pd.DataFrame:
@@ -1328,26 +1306,45 @@ def render_section_b():
 
     df_cf = _mk_cf_metrics(df_cf)
 
-    # ======================== Team CF averages (league scope after filters) ========================
+    # ======================== Team CF averages (filtered scope) ========================
     needed_cols = ["Opportunities","Ball Carrying","Aerial Requirement","Passing Volume","Goal Output","Retention"]
     team_cf_agg = df_cf.groupby('Team')[needed_cols].mean(numeric_only=True).reset_index()
 
     with st.expander("📊 Team CF averages (filtered scope)", expanded=False):
-        sort_col = st.selectbox(
-            "Sort by", ["Team"] + needed_cols,
-            index=0, key="secB_sort_team_cf"
-        )
-        asc = st.checkbox("Ascending", False, key="secB_sort_asc_team_cf")
+        sort_col = st.selectbox("Sort by", ["Team"] + needed_cols, index=0, key="secB2_sort_team_cf")
+        asc = st.checkbox("Ascending", False, key="secB2_sort_asc_team_cf")
         st.dataframe(team_cf_agg.sort_values(sort_col, ascending=asc), use_container_width=True)
 
-    # ======================== Player vs other teams' CF averages ========================
-    player_row = df_cf[df_cf["Player"].astype(str) == target_player].copy()
-    if player_row.empty:
-        st.warning("Selected player isn’t in the filtered CF set (minutes/age/value/goals). Adjust filters.")
-        return
+    # ======================== Build baseline values ========================
+    # For each metric:
+    #   - If "Specific player": take that player's metric.
+    #   - If "Team CF average": take target team's average from team_cf_agg.
+    baseline_label = target_player if mode == "Specific player" else f"{target_team} (team CF avg)"
+    player_team_for_exclusion = target_team  # used when excluding own team from ranking
 
-    player_team = str(player_row["Team"].iloc[0]) if "Team" in player_row.columns else "—"
+    if mode == "Specific player":
+        player_row = df_cf[(df_cf["Team"].astype(str) == target_team) & (df_cf["Player"].astype(str) == target_player)].head(1)
+        if player_row.empty:
+            st.info("Selected player is not in the filtered CF set.")
+            return
+        baseline_vals = {m: float(player_row[m].iloc[0]) for m in needed_cols}
+    else:
+        team_row = team_cf_agg[team_cf_agg["Team"].astype(str) == target_team].head(1)
+        if team_row.empty:
+            st.info("No team CF average available for the selected team (after filters).")
+            return
+        baseline_vals = {m: float(team_row[m].iloc[0]) for m in needed_cols}
 
+    # ======================== Options for ranking ========================
+    row_opts_1, row_opts_2 = st.columns([1.0, 2.2])
+    with row_opts_1:
+        include_players_team = st.checkbox(
+            "Include target team in ranking table",
+            value=(mode == "Team CF average"),  # default include when using team avg
+            key="secB2_include_team"
+        )
+
+    # ======================== Compute ranks & percentiles ========================
     metric_to_teamcol = {
         "Opportunities":      "Opportunities",
         "Ball Carrying":      "Ball Carrying",
@@ -1358,31 +1355,44 @@ def render_section_b():
     }
 
     rows = []
+    per_metric_tables = {}  # for dropdown tables
+
     for metric, col in metric_to_teamcol.items():
         temp = team_cf_agg[["Team", col]].copy()
-        if not include_players_team:
-            temp = temp[temp["Team"] != player_team].copy()
 
-        player_value = float(player_row[metric].iloc[0])
-        pseudo = _pd.DataFrame({"Team": [target_player], col: [player_value]})
+        # Exclude own team if required (when baseline is a player from this team or its team average)
+        if not include_players_team:
+            temp = temp[temp["Team"].astype(str) != player_team_for_exclusion]
+
+        # Append baseline as a pseudo team named baseline_label
+        pseudo = _pd.DataFrame({"Team": [baseline_label], col: [baseline_vals[metric]]})
         temp = _pd.concat([temp, pseudo], ignore_index=True)
         temp = temp.drop_duplicates(subset="Team", keep="last")
         temp = temp.sort_values(by=col, ascending=False, kind="mergesort").reset_index(drop=True)
 
-        # compute rank + percentile
-        rank = int(temp.index[temp["Team"] == target_player][0]) + 1
+        # Compute Rank column
+        temp.insert(0, "Rank", _np.arange(1, len(temp) + 1))
+        # Snapshot for UI
+        per_metric_tables[metric] = temp.copy()
+
+        # Extract baseline rank / percentile
+        mask = temp["Team"] == baseline_label
+        rank = int(temp.loc[mask, "Rank"].iloc[0])
         total = int(temp.shape[0])
         pct = int(round((1 - (rank - 1) / max(1, (total - 1))) * 100))
-        rows.append((metric, rank, total, pct, player_value))
+        rows.append((metric, rank, total, pct, baseline_vals[metric]))
 
+    # Summary table
+    subject = target_player if mode == "Specific player" else target_team
     st.subheader(
-        f"📈 Ranks for {target_player} vs other teams’ CF averages "
-        f"{'(incl. own team)' if include_players_team else f'(excl. {player_team})'}"
+        f"📈 Ranks for {baseline_label} vs other teams’ CF averages "
+        f"{'(incl. own team)' if include_players_team else f'(excl. {player_team_for_exclusion})'}"
     )
-    rank_df = _pd.DataFrame(rows, columns=["Metric","Rank","Total teams","Percentile","Player value"])
+    rank_df = _pd.DataFrame(rows, columns=["Metric","Rank","Total teams","Percentile","Value"])
     st.dataframe(rank_df, use_container_width=True)
 
-    # ======================== Polar “radar” bars from percentiles ========================
+    # ======================== Per-metric descending tables (dropdowns) ========================
+    st.markdown("### Per-metric descending tables")
     label_map = {
         "Opportunities": "Opportunities",
         "Ball Carrying": "Carrying Outlet",
@@ -1391,6 +1401,20 @@ def render_section_b():
         "Goal Output": "Goal Output",
         "Retention": "Retention",
     }
+    for metric in metric_to_teamcol.keys():
+        nice = label_map.get(metric, metric)
+        with st.expander(f"▼ {nice} — descending teams (ranked)"):
+            temp = per_metric_tables[metric].copy()
+            # Move baseline row to the top (preview) + full table below
+            base_row = temp[temp["Team"] == baseline_label]
+            other_rows = temp[temp["Team"] != baseline_label]
+            if not base_row.empty:
+                st.write("**Your baseline row:**")
+                st.dataframe(base_row, use_container_width=True)
+            st.write("**Full ranking:**")
+            st.dataframe(other_rows, use_container_width=True)
+
+    # ======================== Radar (polar bars) from percentiles ========================
     metrics_plot = [label_map[m] for m in metric_to_teamcol.keys()]
     percentiles = [int(r[3]) for r in rows]
 
@@ -1431,17 +1455,17 @@ def render_section_b():
     buf = _io.BytesIO()
     fig.savefig(buf, format="png", dpi=300, bbox_inches='tight', facecolor=fig.get_facecolor())
     buf.seek(0)
-    safe_name = str(target_player).replace(" ", "_")
+    safe_name = str(subject).replace(" ", "_")
     st.download_button(
         "⬇️ Download Section B Radar",
         data=buf.getvalue(),
         file_name=f"SectionB_{safe_name}.png",
         mime="image/png",
-        key=f"secB_dl_{safe_name}"
+        key=f"secB2_dl_{safe_name}"
     )
     plt.close(fig)
 
-# Call Section B (won’t crash the page even if inputs are missing)
+# Render Section B
 render_section_b()
 
 
