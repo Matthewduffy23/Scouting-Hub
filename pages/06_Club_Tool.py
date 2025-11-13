@@ -1165,7 +1165,7 @@ with tab_cb:
     render_template_players_used("CB", tmpl_src)
     render_tiles_and_featureZ(ranked, pool, tag)
 
-# ======================== SECTION B (v2 — FIXED) ========================
+# ======================== SECTION B (v2 — FULL, TITLES OFF, FULL LABELS) ========================
 st.markdown("---")
 st.header("Section B — League Comparison Radar & Tables")
 
@@ -1186,7 +1186,8 @@ def _pct_from_rank(rank:int, total:int) -> int:
         return 100
     return int(round((1 - (rank - 1) / (total - 1)) * 100))
 
-def _polar_bars(metrics_labels, percentiles, title=""):
+def _polar_bars(metrics_labels, percentiles):
+    # Bars only, no numeric labels, no figure title
     color_scale = ["#be2a3e", "#e25f48", "#f88f4d", "#f4d166", "#90b960", "#4b9b5f", "#22763f"]
     cmap = LinearSegmentedColormap.from_list("custom_scale", color_scale)
     normalized = [max(0, min(100, p))/100 for p in percentiles]
@@ -1211,14 +1212,11 @@ def _polar_bars(metrics_labels, percentiles, title=""):
         ax.bar(angles[i], percentiles[i], width=bar_width, color=bar_colors[i],
                edgecolor='white', linewidth=1.4, zorder=2)
 
-    # metric labels only
+    # metric labels (full names)
     label_radius = 135
     for i, lab in enumerate(metrics_labels):
         ax.text(angles[i], label_radius, lab.upper(), ha='center', va='center',
                 fontsize=10, weight='bold', color='white')
-
-    if title:
-        fig.text(0.5, 0.98, title, ha="center", va="top", color="white", fontsize=14, weight="bold")
 
     ax.set_xticks([]); ax.set_yticks([]); ax.spines['polar'].set_visible(False); ax.grid(False)
     return fig
@@ -1229,7 +1227,7 @@ def _download_df_button(df_to_dl: _pd.DataFrame, fname: str, label: str):
     st.download_button(label, buf.getvalue(), file_name=fname, mime="text/csv")
 
 
-# ---------- role configs (same metrics you’ve been using) ----------
+# ---------- role configs (FULL LABELS) ----------
 def _cfg(role_key: str):
     if role_key == "cb":
         require = ['Aerial duels per 90','Defensive duels per 90','Passes per 90','Forward passes per 90',
@@ -1245,8 +1243,14 @@ def _cfg(role_key: str):
             out["Aerial Volume"]= _pd.to_numeric(out['Aerial duels per 90'],errors="coerce")
             return out
         agg_cols=["Pass Volume","Pass Verticality","Progression Volume","Defensive Volume","Positional Demand","Aerial Volume"]
-        label_map={"Pass Volume":"Pass Volume","Pass Verticality":"Pass Verticality","Progression Volume":"Progression",
-                   "Defensive Volume":"Defensive","Positional Demand":"Positional Demand","Aerial Volume":"Aerial"}
+        label_map={
+            "Pass Volume":"Pass Volume",
+            "Pass Verticality":"Pass Verticality",
+            "Progression Volume":"Progression Volume",
+            "Defensive Volume":"Defensive Volume",
+            "Positional Demand":"Positional Demand",
+            "Aerial Volume":"Aerial Volume"
+        }
         return dict(pos_filter=pos_ok, require_cols=require, compute_metrics=compute, agg_cols=agg_cols, label_map=label_map, title="Center Backs")
 
     if role_key == "fb":
@@ -1271,8 +1275,15 @@ def _cfg(role_key: str):
             out["Retention"]= _pd.to_numeric(out['Accurate passes, %'],errors="coerce")
             return out
         agg_cols=["Pass Volume","Pass Verticality","Progression Volume","Ball Carrying","Attacking Contribution","Defensive Volume","Retention"]
-        label_map={"Pass Volume":"Pass Volume","Pass Verticality":"Pass Verticality","Progression Volume":"Progression",
-                   "Ball Carrying":"Ball Carrying","Attacking Contribution":"Attacking","Defensive Volume":"Defensive","Retention":"Retention"}
+        label_map={
+            "Pass Volume":"Pass Volume",
+            "Pass Verticality":"Pass Verticality",
+            "Progression Volume":"Progression Volume",
+            "Ball Carrying":"Ball Carrying",
+            "Attacking Contribution":"Attacking Contribution",
+            "Defensive Volume":"Defensive Volume",
+            "Retention":"Retention"
+        }
         return dict(pos_filter=pos_ok, require_cols=require, compute_metrics=compute, agg_cols=agg_cols, label_map=label_map, title="Fullbacks")
 
     if role_key == "cm":
@@ -1289,8 +1300,14 @@ def _cfg(role_key: str):
             out["Retention"]= _pd.to_numeric(out['Accurate passes, %'],errors="coerce")
             return out
         agg_cols=["Pass Volume","Pass Verticality","Progression Volume","Defensive Volume","Interception Volume","Retention"]
-        label_map={"Pass Volume":"Pass Volume","Pass Verticality":"Pass Verticality","Progression Volume":"Progression",
-                   "Defensive Volume":"Defensive","Interception Volume":"Interceptions","Retention":"Retention"}
+        label_map={
+            "Pass Volume":"Pass Volume",
+            "Pass Verticality":"Pass Verticality",
+            "Progression Volume":"Progression Volume",
+            "Defensive Volume":"Defensive Volume",
+            "Interception Volume":"Interception Volume",
+            "Retention":"Retention"
+        }
         return dict(pos_filter=pos_ok, require_cols=require, compute_metrics=compute, agg_cols=agg_cols, label_map=label_map, title="Central Midfielders")
 
     if role_key == "attack":
@@ -1312,8 +1329,14 @@ def _cfg(role_key: str):
             out["Ball Carrying"]= 0.6*_pd.to_numeric(out['Dribbles per 90'],errors="coerce")+0.4*_pd.to_numeric(out['Progressive runs per 90'],errors="coerce")
             return out
         agg_cols=["Retention Style","Goal Threat","Creativity Threat","Passing Volume","Deeper Playmaking","Ball Carrying"]
-        label_map={"Retention Style":"Retention Style","Goal Threat":"Goal Threat","Creativity Threat":"Creativity",
-                   "Passing Volume":"Pass Volume","Deeper Playmaking":"Deep Playmaking","Ball Carrying":"Ball Carrying"}
+        label_map={
+            "Retention Style":"Retention Style",
+            "Goal Threat":"Goal Threat",
+            "Creativity Threat":"Creativity Threat",
+            "Passing Volume":"Passing Volume",
+            "Deeper Playmaking":"Deeper Playmaking",
+            "Ball Carrying":"Ball Carrying"
+        }
         return dict(pos_filter=pos_ok, require_cols=require, compute_metrics=compute, agg_cols=agg_cols, label_map=label_map, title="Attackers")
 
     if role_key == "cf":
@@ -1330,8 +1353,14 @@ def _cfg(role_key: str):
             out["Retention"]= _pd.to_numeric(out['Accurate passes, %'],errors="coerce")
             return out
         agg_cols=["Opportunities","Ball Carrying","Aerial Requirement","Passing Volume","Goal Output","Retention"]
-        label_map={"Opportunities":"Opportunities","Ball Carrying":"Carrying Outlet","Aerial Requirement":"Aerial Volume",
-                   "Passing Volume":"Pass Volume","Goal Output":"Goal Output","Retention":"Retention"}
+        label_map={
+            "Opportunities":"Opportunities",
+            "Ball Carrying":"Carrying Outlet",
+            "Aerial Requirement":"Aerial Volume",
+            "Passing Volume":"Passing Volume",
+            "Goal Output":"Goal Output",
+            "Retention":"Retention"
+        }
         return dict(pos_filter=pos_ok, require_cols=require, compute_metrics=compute, agg_cols=agg_cols, label_map=label_map, title="Strikers")
 
 
@@ -1403,14 +1432,11 @@ def _sectionB_for_role(role_key: str):
         if target_team not in agg["Team"].values:
             st.info("Target team has no eligible players in filtered set.")
             return
-        # vector of team avg
         target_vals = agg.set_index("Team").loc[target_team, cfg["agg_cols"]].to_dict()
         label_subject = f"{target_team} AVG"
-        exclude_label = target_team  # real team name to drop from table before adding pseudo (Fix #1)
-        # players used table (Fix #3)
+        exclude_label = target_team  # drop real team before adding pseudo
         team_players_used = pool[pool["Team"].astype(str) == target_team].copy()
     else:
-        # specific player
         players_pool = sorted(pool[pool["Team"].astype(str) == target_team]["Player"].dropna().astype(str).unique())
         if not players_pool:
             st.info("No eligible players on selected team under current filters.")
@@ -1422,10 +1448,10 @@ def _sectionB_for_role(role_key: str):
             return
         target_vals = prow[cfg["agg_cols"]].iloc[0].to_dict()
         label_subject = sel_player
-        exclude_label = str(prow["Team"].iloc[0])  # exclude the player's *team* from the team-average table
-        team_players_used = None  # only show players-used when comparing team averages
+        exclude_label = str(prow["Team"].iloc[0])  # exclude player's team from benchmark table
+        team_players_used = None
 
-    # ---------- right side: show team averages table ----------
+    # ---------- right side: team averages table ----------
     with right:
         st.markdown("**Team role averages (post-filter league scope)**")
         sort_col = st.selectbox("Sort by metric", ["Team"] + cfg["agg_cols"], index=0, key=f"secB_sort_{role_key}")
@@ -1433,18 +1459,11 @@ def _sectionB_for_role(role_key: str):
         st.dataframe(agg.sort_values(sort_col, ascending=asc), use_container_width=True)
         _download_df_button(agg, f"{cfg['title'].replace(' ','_')}_team_averages.csv", "⬇️ Download team averages (CSV)")
 
-    # ---------- ranks & percentiles (Fix #1: prevent N+1 in team-avg mode) ----------
+    # ---------- ranks & percentiles (no N+1) ----------
     rows=[]
     for met in cfg["agg_cols"]:
         temp = agg[["Team",met]].copy()
-
-        if compare_mode == "Team average":
-            # remove the real team row so we don't count it + the pseudo row
-            temp = temp[temp["Team"] != exclude_label].copy()
-        else:
-            # specific player: benchmark vs league teams excluding the player's team
-            temp = temp[temp["Team"] != exclude_label].copy()
-
+        temp = temp[temp["Team"] != exclude_label].copy()  # remove the team we're substituting/excluding
         val = float(target_vals[met])
         pseudo = _pd.DataFrame({"Team":[label_subject], met:[val]})
         temp = _pd.concat([temp, pseudo], ignore_index=True)
@@ -1452,7 +1471,7 @@ def _sectionB_for_role(role_key: str):
         temp = temp.sort_values(by=met, ascending=False, kind="mergesort").reset_index(drop=True)
 
         rk = int(temp.index[temp["Team"]==label_subject][0]) + 1
-        tot = int(temp.shape[0])  # correct total (no N+1)
+        tot = int(temp.shape[0])
         pct = _pct_from_rank(rk, tot)
         rows.append((met, rk, tot, pct, val))
 
@@ -1476,10 +1495,9 @@ def _sectionB_for_role(role_key: str):
     _download_df_button(rank_df, f"{cfg['title'].replace(' ','_')}_rank_summary_{label_subject.replace(' ','_')}.csv",
                         "⬇️ Download ranking summary (CSV)")
 
-    # ---------- players used (Fix #3) ----------
+    # ---------- players used (team-average mode only) ----------
     if team_players_used is not None and not team_players_used.empty:
         st.markdown("### 🧩 Players used for team average (with minutes & in-team ranks)")
-        # in-team ranking per metric
         for c in cfg["agg_cols"]:
             team_players_used[f"Rank in team ({cfg['label_map'].get(c,c)})"] = team_players_used[c].rank(ascending=False, method="dense")
         cols_show = ["Player","Minutes played","Age","Position"] + cfg["agg_cols"] + \
@@ -1490,10 +1508,10 @@ def _sectionB_for_role(role_key: str):
                             f"{cfg['title'].replace(' ','_')}_{target_team.replace(' ','_')}_players_used.csv",
                             "⬇️ Download players used (CSV)")
 
-    # ---------- radar (bars only; no labels) ----------
+    # ---------- radar (bars only; NO title; FULL labels) ----------
     labels = [cfg["label_map"].get(m,m) for m in cfg["agg_cols"]]
     percentiles = [int(x) for x in rank_df["Percentile"].tolist()]
-    fig = _polar_bars(labels, percentiles, title=f"{cfg['title']} — {label_subject}")
+    fig = _polar_bars(labels, percentiles)
     st.pyplot(fig, use_container_width=True)
     buf=_io.BytesIO(); fig.savefig(buf, format="png", dpi=300, bbox_inches='tight', facecolor=fig.get_facecolor()); buf.seek(0)
     st.download_button("⬇️ Download radar", data=buf.getvalue(),
