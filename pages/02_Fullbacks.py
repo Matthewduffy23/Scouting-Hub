@@ -787,7 +787,7 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
         # 🔎 Search across Player/Team/League
         search_q = st.text_input("🔎 Search player / team / league", "", key="fb_global_search")
 
-    # ---- Order toggle
+    # ---- Order toggle ----
     sort_dir_label = st.radio(
         "Order",
         options=["High → Low", "Low → High"],
@@ -838,11 +838,12 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
 
     if search_q:
         s = str(search_q).strip().lower()
-        for col in ("Player","Team","League"):
-            if col in df_filtered.columns:
-                mask = df_filtered[col].astype(str).str.lower().str.contains(s, na=False)
-                df_filtered = df_filtered[mask | (~mask if col != "Player" else False)]  # cumulative filter
-        # The above keeps rows matching any of Player/Team/League
+        cols = [c for c in ("Player","Team","League") if c in df_filtered.columns]
+        if cols:
+            mask_any = False
+            for c in cols:
+                mask_any = mask_any | df_filtered[c].astype(str).str.lower().str.contains(s, na=False)
+            df_filtered = df_filtered[mask_any]
 
     # ---- data check ----
     all_col = "All In Score"
@@ -853,6 +854,7 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
     if df_filtered.empty:
         st.info("No players match the selected filters.")
         return
+
 
     # ---- Sorting
     _sort_col = "__sort_val"
