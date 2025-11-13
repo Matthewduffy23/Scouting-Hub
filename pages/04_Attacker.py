@@ -769,16 +769,26 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     # ---- Filters: Age buckets ----
     age_choice = st.selectbox(
         "Age",
-        ["All","U18","U20","U21","U22","U23","U25","U30"],
-        index=0, key="pro_age_filter", label_visibility="visible"
+        ["All", "U18", "U20", "U21", "U22", "U23", "U25", "U30"],
+        index=0,
+        key="pro_age_filter",
+        label_visibility="visible"
     )
 
-    # ---- Player search (case-insensitive substring) ----
-    player_query = st.text_input(
-        "Player search",
+    # ---- Player search (non-destructive filter) ----
+    search_text = st.text_input(
+        "Search player(s)",
         value="",
-        key="pro_player_search",
-        placeholder="Type a name (e.g., 'mbapp', 'rashford')"
+        key="pro_player_search_cf",
+        help="Type a name or comma-separate multiple (e.g., Haaland, Alvarez). Partial & case-insensitive."
+    ).strip()
+
+    # ---- Team search (non-destructive filter) ----
+    team_search_text = st.text_input(
+        "Search team(s)",
+        value="",
+        key="pro_team_search_cf",
+        help="Type a team name or comma-separate multiple (e.g., Barcelona, Inter). Partial & case-insensitive."
     ).strip()
 
     df_filtered = df_view.copy()
@@ -796,12 +806,24 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
             pass
 
     # Apply player search
-    if player_query:
-        try:
-            mask = df_filtered["Player"].astype(str).str.contains(player_query, case=False, na=False)
+    if search_text:
+        terms = [t.strip().lower() for t in search_text.split(",") if t.strip()]
+        if terms and "Player" in df_filtered.columns:
+            pser = df_filtered["Player"].astype(str).str.lower()
+            mask = False
+            for t in terms:
+                mask = mask | pser.str.contains(t, na=False)
             df_filtered = df_filtered[mask]
-        except Exception:
-            pass
+
+    # Apply team search
+    if team_search_text:
+        team_terms = [t.strip().lower() for t in team_search_text.split(",") if t.strip()]
+        if team_terms and "Team" in df_filtered.columns:
+            tser = df_filtered["Team"].astype(str).str.lower()
+            tmask = False
+            for t in team_terms:
+                tmask = tmask | tser.str.contains(t, na=False)
+            df_filtered = df_filtered[tmask]
 
     # ---- data check ----
     all_col = "All In Score"
@@ -810,9 +832,10 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         return
 
     if df_filtered.empty:
-        st.info("No players match the selected filters.")
+        st.info("No players match the selected filters/search.")
         return
 
+ 
     # =========================
     # Sort controls — All In + any role score columns present
     # (Includes Modern Winger, Traditional Winger, Protagonist if computed)
