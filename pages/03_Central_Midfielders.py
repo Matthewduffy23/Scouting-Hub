@@ -821,6 +821,8 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
     with c2:
         # 🔎 Player search (contains, case-insensitive)
         search_q = st.text_input("Search player (name contains)", "", key="cm_player_search")
+        # 🔎 Team search (contains, case-insensitive)
+        team_search_q = st.text_input("Search team (name contains)", "", key="cm_team_search")
 
     # ---- NEW: Pill toggle (choose exactly 3 from CM set) ----
     # Build choices from columns actually present (includes the 4 new roles if present)
@@ -868,6 +870,11 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
         if "Player" in df_filtered.columns:
             df_filtered = df_filtered[df_filtered["Player"].astype(str).str.lower().str.contains(s, na=False)]
 
+    if team_search_q:
+        t = str(team_search_q).strip().lower()
+        if "Team" in df_filtered.columns:
+            df_filtered = df_filtered[df_filtered["Team"].astype(str).str.lower().str.contains(t, na=False)]
+
     # ---- data check ----
     all_col = "All In Score"
     if all_col not in df_view.columns:
@@ -910,6 +917,7 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
         .head(top_n)
         .reset_index(drop=True)
     )
+
 
     # ========================= RENDER CARDS =========================
     for i,row in ranked.iterrows():
