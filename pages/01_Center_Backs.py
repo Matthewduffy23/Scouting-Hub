@@ -740,7 +740,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         index=0, key="pro_age_filter", label_visibility="visible"
     )
 
-    # 🔎 NEW: search bar (player / team / league)
+    # 🔎 Global search (Player / Team / League)
     search_q = st.text_input("🔎 Search player / team / league", "", key="cb_search_bar")
 
     df_filtered = df_view.copy()
@@ -757,19 +757,15 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         except Exception:
             pass
 
-    # Apply search (case-insensitive, contains on any of the three fields)
+    # Apply search (case-insensitive; match ANY of Player/Team/League)
     if search_q:
         s = str(search_q).strip().lower()
-        mask = pd.Series(True, index=df_filtered.index)
-        for col in ("Player","Team","League"):
-            if col in df_filtered.columns:
-                mask &= df_filtered[col].astype(str).str.lower().str.contains(s, na=False)
-        # If you want OR matching instead of AND, replace the block above with:
-        # mask = False
-        # for col in ("Player","Team","League"):
-        #     if col in df_filtered.columns:
-        #         mask |= df_filtered[col].astype(str).str.lower().str.contains(s, na=False)
-        df_filtered = df_filtered[mask]
+        cols = [c for c in ("Player","Team","League") if c in df_filtered.columns]
+        if cols:
+            mask_any = pd.Series(False, index=df_filtered.index)
+            for c in cols:
+                mask_any = mask_any | df_filtered[c].astype(str).str.lower().str.contains(s, na=False)
+            df_filtered = df_filtered[mask_any]
 
     # ---- data check ----
     all_col = "All In Score"
@@ -778,9 +774,10 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         return
 
     if df_filtered.empty:
-        st.info("No players match the selected age filter.")
+        st.info("No players match the selected filters.")
         return
 
+ 
     # =========================
     # NEW — sort controls (ONLY roles + All In; default = All In)
     # =========================
