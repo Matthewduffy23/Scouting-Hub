@@ -1314,11 +1314,11 @@ def _cfg(role_key: str):
         require=['Accurate passes, %','xG per 90','Non-penalty goals per 90','Touches in box per 90','xA per 90',
                  'Passes to penalty area per 90','Passes per 90','Progressive passes per 90','Passes to final third per 90',
                  'Dribbles per 90','Progressive runs per 90']
-        prefixes=('RWF','LWF','LAMF','RAMF','AMF','RW','LW')
+        prefixes=('RWF','LWF','LAMF','RAMF','AMF')
         def pos_ok(s):
             s=str(s).upper().strip()
             if s in ('RW','LW'): return True
-            return any(s.startswith(px) for px in prefixes)
+            return s.startswith(prefixes)
         def compute(df):
             out=df.copy()
             out["Retention Style"]= _pd.to_numeric(out['Accurate passes, %'],errors="coerce")
@@ -1528,7 +1528,6 @@ with tab_fb:  _sectionB_for_role("fb")
 with tab_cm:  _sectionB_for_role("cm")
 with tab_att: _sectionB_for_role("attack")
 with tab_st:  _sectionB_for_role("cf")
-
 
 
 
