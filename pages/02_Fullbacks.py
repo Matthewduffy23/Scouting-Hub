@@ -243,6 +243,79 @@ LEAGUE_STRENGTHS = {
 'USA 3.':22.55,'Scotland 3.':20.00,'England 6.':16.08,'England 8.':15.69,'England 10.':3.92,
 'Estonia 2.':3
 }
+
+import re
+
+# --- Youth leagues: excluded by default, optional toggle to include ---
+YOUTH_LEAGUES = {
+    "Brazil 3.",
+    "England 7.",
+    "England 8.",
+    "England 9.",
+    "England 10.",
+    "Portugal 3.",
+    "Denmark 3.",
+    "Germany 4.",
+}
+
+# --- Country → Region mapping for league-level region filter ---
+COUNTRY_TO_REGION = {
+    # Europe
+    "England": "Europe", "Spain": "Europe", "Germany": "Europe", "Italy": "Europe",
+    "France": "Europe", "Belgium": "Europe", "Portugal": "Europe", "Netherlands": "Europe",
+    "Croatia": "Europe", "Switzerland": "Europe", "Norway": "Europe", "Sweden": "Europe",
+    "Cyprus": "Europe", "Czech": "Europe", "Greece": "Europe", "Austria": "Europe",
+    "Hungary": "Europe", "Romania": "Europe", "Scotland": "Europe", "Slovenia": "Europe",
+    "Slovakia": "Europe", "Ukraine": "Europe", "Bulgaria": "Europe", "Serbia": "Europe",
+    "Albania": "Europe", "Bosnia": "Europe", "Kosovo": "Europe", "Ireland": "Europe",
+    "Finland": "Europe", "Armenia": "Europe", "Georgia": "Europe", "Poland": "Europe",
+    "Iceland": "Europe", "North Macedonia": "Europe", "Latvia": "Europe",
+    "Montenegro": "Europe", "Denmark": "Europe", "Estonia": "Europe",
+    "Northern Ireland": "Europe", "Wales": "Europe",
+
+    # South America
+    "Brazil": "South America", "Argentina": "South America", "Colombia": "South America",
+    "Ecuador": "South America", "Paraguay": "South America", "Uruguay": "South America",
+    "Chile": "South America", "Bolivia": "South America", "Peru": "South America",
+    "Venezuela": "South America",
+
+    # North America
+    "USA": "North America", "Mexico": "North America", "Costa Rica": "North America",
+    "Canada": "North America",
+
+    # Africa
+    "Morocco": "Africa", "Algeria": "Africa", "Egypt": "Africa", "Nigeria": "Africa",
+    "Tunisia": "Africa", "South Africa": "Africa",
+
+    # Asia (incl. some UEFA/dual countries – choose what fits your model best)
+    "Japan": "Asia", "Korea": "Asia", "Saudi": "Asia",
+    "UAE": "Asia", "Qatar": "Asia", "Uzbekistan": "Asia", "Israel": "Asia",
+    "Turkey": "Asia", "Azerbaijan": "Asia",
+
+    # Oceania / other (you can change this to "Other" if you prefer)
+    "Australia": "Asia",
+}
+
+def extract_country(league_name: str) -> str:
+    """
+    'South Africa 1.'  -> 'South Africa'
+    'England 2.'       -> 'England'
+    'Costa Rica 1.'    -> 'Costa Rica'
+    """
+    s = str(league_name).strip()
+    s = s.rstrip(".")                      # 'South Africa 1.' -> 'South Africa 1'
+    s = re.sub(r"\s+\d+$", "", s)         # drop trailing ' 1', ' 2', etc.
+    return s
+
+def league_region(league_name: str) -> str:
+    """
+    Map league string to one of the high-level regions.
+    Falls back to 'Other' if unknown.
+    """
+    country = extract_country(league_name)
+    return COUNTRY_TO_REGION.get(country, "Other")
+
+
 REQUIRED_BASE = {"Player","Team","League","Age","Position","Minutes played","Market value","Contract expires","Goals"}
 
 # ----------------- WIDGET SAFETY -----------------
@@ -255,10 +328,35 @@ def multiselect_safe(label, *, options, default=None, key=None, **kwargs):
 # ----------------- SIDEBAR FILTERS -----------------
 with st.sidebar:
     st.header("Filters")
+
+    # --- Region filter (default = all regions) ---
+    all_regions = ["Europe", "Africa", "Asia", "North America", "South America"]
+    regions_key = f"fb_regions_{selected_file}"
+    if regions_key not in st.session_state:
+        st.session_state[regions_key] = all_regions
+
+    regions_sel = st.multiselect(
+        "Regions",
+        options=all_regions,
+        default=st.session_state[regions_key],
+        key=regions_key,
+    )
+
+    # --- Youth leagues toggle (excluded by default) ---
+    include_youth_key = f"fb_include_youth_{selected_file}"
+    include_youth = st.checkbox(
+        "Include youth leagues",
+        value=False,
+        key=include_youth_key,
+    )
+
+    st.markdown("---")
+
+    # --- League presets ---
     c1, c2, c3 = st.columns([1, 1, 1])
     use_top5  = c1.checkbox("Top-5 EU", value=False, key=f"fb_top5_{selected_file}")
     use_top20 = c2.checkbox("Top-20 EU", value=False, key=f"fb_top20_{selected_file}")
-    use_efl   = c3.checkbox("EFL", value=False, key=f"fb_efl_{selected_file}")
+    use_efl   = c3.checkbox("EFL",      value=False, key=f"fb_efl_{selected_file}")
 
     # Preset → seed leagues
     seed = set()
@@ -269,12 +367,41 @@ with st.sidebar:
     if use_efl:
         seed |= PRESET_LEAGUES["EFL (England 2–4)"]
 
-    leagues_avail = sorted(pd.Series(df.get("League", pd.Series(dtype=object))).dropna().unique().tolist())
+    # Leagues present in this dataset
+    leagues_in_df = sorted(
+        pd.Series(df.get("League", pd.Series(dtype=object)))
+          .dropna()
+          .unique()
+          .tolist()
+    )
+
+    # Apply region filter
+    if regions_sel:
+        leagues_in_df = [
+            lg for lg in leagues_in_df
+            if league_region(lg) in regions_sel
+        ]
+
+    # Apply youth-league filter
+    if include_youth:
+        leagues_avail = leagues_in_df
+    else:
+        leagues_avail = [lg for lg in leagues_in_df if lg not in YOUTH_LEAGUES]
+
+    # Clamp presets to currently available leagues
     seed = {x for x in seed if x in leagues_avail}
     default_leagues = sorted(seed) if seed else leagues_avail
 
+    # Multiselect with preset + region + youth sensitivity
     ms_key = f"fb_leagues_sel_{selected_file}"
-    preset_sig = (use_top5, use_top20, use_efl, selected_file)
+    preset_sig = (
+        tuple(sorted(regions_sel)),
+        include_youth,
+        use_top5,
+        use_top20,
+        use_efl,
+        selected_file,
+    )
 
     # Seed multiselect defaults (dataset-safe)
     if ms_key not in st.session_state:
@@ -283,7 +410,7 @@ with st.sidebar:
         st.session_state["fb_preset_sig"] = preset_sig
         st.session_state[ms_key] = default_leagues
 
-    leagues_sel = st.multiselect(
+    leagues_sel = multiselect_safe(
         "Leagues (add or prune the presets)",
         options=leagues_avail,
         default=st.session_state[ms_key],
@@ -377,7 +504,6 @@ with st.sidebar:
 
 # Make ROLE_CHOICE available to position_filter()
 ROLE_CHOICE = st.session_state.get("fb_role_choice", "All")
-
 
 # ----------------- VALIDATION -----------------
 missing = [c for c in REQUIRED_BASE if c not in df.columns]
