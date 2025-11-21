@@ -226,8 +226,79 @@ LEAGUE_STRENGTHS = {
 'USA 3.':22.55,'Scotland 3.':20.00,'England 6.':16.08,'England 8.':15.69,'England 10.':3.92,
 'Estonia 2.':3
 
-
 }
+
+import re
+
+# --- Youth leagues: excluded by default, optional toggle to include ---
+YOUTH_LEAGUES = {
+    "Brazil 3.",
+    "England 7.",
+    "England 8.",
+    "England 9.",
+    "England 10.",
+    "Portugal 3.",
+    "Denmark 3.",
+    "Germany 4.",
+}
+
+# --- Country → Region mapping for league-level region filter ---
+COUNTRY_TO_REGION = {
+    # Europe
+    "England": "Europe", "Spain": "Europe", "Germany": "Europe", "Italy": "Europe",
+    "France": "Europe", "Belgium": "Europe", "Portugal": "Europe", "Netherlands": "Europe",
+    "Croatia": "Europe", "Switzerland": "Europe", "Norway": "Europe", "Sweden": "Europe",
+    "Cyprus": "Europe", "Czech": "Europe", "Greece": "Europe", "Austria": "Europe",
+    "Hungary": "Europe", "Romania": "Europe", "Scotland": "Europe", "Slovenia": "Europe",
+    "Slovakia": "Europe", "Ukraine": "Europe", "Bulgaria": "Europe", "Serbia": "Europe",
+    "Albania": "Europe", "Bosnia": "Europe", "Kosovo": "Europe", "Ireland": "Europe",
+    "Finland": "Europe", "Armenia": "Europe", "Georgia": "Europe", "Poland": "Europe",
+    "Iceland": "Europe", "North Macedonia": "Europe", "Latvia": "Europe",
+    "Montenegro": "Europe", "Denmark": "Europe", "Estonia": "Europe",
+    "Northern Ireland": "Europe", "Wales": "Europe",
+
+    # South America
+    "Brazil": "South America", "Argentina": "South America", "Colombia": "South America",
+    "Ecuador": "South America", "Paraguay": "South America", "Uruguay": "South America",
+    "Chile": "South America", "Bolivia": "South America", "Peru": "South America",
+    "Venezuela": "South America",
+
+    # North America
+    "USA": "North America", "Mexico": "North America", "Costa Rica": "North America",
+    "Canada": "North America",
+
+    # Africa
+    "Morocco": "Africa", "Algeria": "Africa", "Egypt": "Africa", "Nigeria": "Africa",
+    "Tunisia": "Africa", "South Africa": "Africa",
+
+    # Asia (incl. some UEFA/dual countries – choose what fits your model best)
+    "Japan": "Asia", "Korea": "Asia", "Saudi": "Asia",
+    "UAE": "Asia", "Qatar": "Asia", "Uzbekistan": "Asia", "Israel": "Asia",
+    "Turkey": "Asia", "Azerbaijan": "Asia",
+
+    # Oceania / other (you can change this to "Other" if you prefer)
+    "Australia": "Asia",
+}
+
+def extract_country(league_name: str) -> str:
+    """
+    'South Africa 1.'  -> 'South Africa'
+    'England 2.'       -> 'England'
+    'Costa Rica 1.'    -> 'Costa Rica'
+    """
+    s = str(league_name).strip()
+    s = s.rstrip(".")                      # 'South Africa 1.' -> 'South Africa 1'
+    s = re.sub(r"\s+\d+$", "", s)         # drop trailing ' 1', ' 2', etc.
+    return s
+
+def league_region(league_name: str) -> str:
+    """
+    Map league string to one of the high-level regions.
+    Falls back to 'Other' if unknown.
+    """
+    country = extract_country(league_name)
+    return COUNTRY_TO_REGION.get(country, "Other")
+
 
 REQUIRED_BASE = {"Player","Team","League","Age","Position","Minutes played","Market value","Contract expires","Goals"}
 
@@ -246,19 +317,66 @@ st.session_state.setdefault(f"cf_sel_metrics_{selected_file}", [])
 
 with st.sidebar:
     st.header("Filters")
+
+    # --------- REGION FILTER (default = all regions) ---------
+    all_regions = ["Europe", "Africa", "Asia", "North America", "South America"]
+    regions_key = f"cf_regions_{selected_file}"
+    if regions_key not in st.session_state:
+        st.session_state[regions_key] = all_regions
+
+    regions_sel = st.multiselect(
+        "Regions",
+        options=all_regions,
+        default=st.session_state[regions_key],
+        key=regions_key,
+    )
+
+    # --------- YOUTH LEAGUES TOGGLE (excluded by default) ---------
+    include_youth_key = f"cf_include_youth_{selected_file}"
+    include_youth = st.checkbox(
+        "Include youth leagues",
+        value=False,
+        key=include_youth_key,
+        help="Brazil 3., England 7–10, Portugal 3., Denmark 3., Germany 4. etc.",
+    )
+
+    st.markdown("---")
+
+    # --------- LEAGUE PRESETS ---------
     c1, c2, c3 = st.columns([1,1,1])
     use_top5  = c1.checkbox("Top-5 EU", value=False, key=f"cf_top5_{selected_file}")
     use_top20 = c2.checkbox("Top-20 EU", value=False, key=f"cf_top20_{selected_file}")
     use_efl   = c3.checkbox("EFL", value=False, key=f"cf_efl_{selected_file}")
 
     # Options from CURRENT dataset only
-    leagues_avail = sorted(pd.Series(df.get("League", pd.Series(dtype=object))).dropna().unique().tolist())
+    leagues_in_df = sorted(
+        pd.Series(df.get("League", pd.Series(dtype=object)))
+          .dropna()
+          .unique()
+          .tolist()
+    )
+
+    # Apply region filter to leagues in dataset
+    if regions_sel:
+        leagues_in_df = [
+            lg for lg in leagues_in_df
+            if league_region(lg) in regions_sel
+        ]
+
+    # Apply youth-league filter
+    if include_youth:
+        leagues_avail = leagues_in_df
+    else:
+        leagues_avail = [lg for lg in leagues_in_df if lg not in YOUTH_LEAGUES]
 
     # Build seed from presets and clamp to what's available
     seed = set()
-    if use_top5:  seed |= PRESET_LEAGUES["Top 5 Europe"]
-    if use_top20: seed |= PRESET_LEAGUES["Top 20 Europe"]
-    if use_efl:   seed |= PRESET_LEAGUES["EFL (England 2–4)"]
+    if use_top5:
+        seed |= PRESET_LEAGUES["Top 5 Europe"]
+    if use_top20:
+        seed |= PRESET_LEAGUES["Top 20 Europe"]
+    if use_efl:
+        seed |= PRESET_LEAGUES["EFL (England 2–4)"]
     seed = {x for x in seed if x in leagues_avail}
 
     # Defaults = presets if any, else everything available
@@ -266,9 +384,16 @@ with st.sidebar:
 
     # ONE source of truth (dataset-scoped)
     ms_key = f"cf_leagues_sel_{selected_file}"
-    preset_sig = (use_top5, use_top20, use_efl, selected_file)
+    preset_sig = (
+        tuple(sorted(regions_sel)),
+        include_youth,
+        use_top5,
+        use_top20,
+        use_efl,
+        selected_file,
+    )
 
-    # Initialize and refresh defaults when presets/dataset change
+    # Initialize and refresh defaults when presets/dataset/regions/youth change
     if ms_key not in st.session_state:
         st.session_state[ms_key] = default_leagues
     if st.session_state.get("cf_preset_sig") != preset_sig:
