@@ -374,7 +374,7 @@ with st.sidebar:
 
     # --- Region filter (default = all regions) ---
     all_regions = ["Europe", "Africa", "Asia", "North America", "South America"]
-    regions_key = f"att_regions_{selected_file}"
+    regions_key = f"cm_regions_{selected_file}"
     if regions_key not in st.session_state:
         st.session_state[regions_key] = all_regions
 
@@ -386,7 +386,7 @@ with st.sidebar:
     )
 
     # --- Youth leagues toggle (excluded by default) ---
-    include_youth_key = f"att_include_youth_{selected_file}"
+    include_youth_key = f"cm_include_youth_{selected_file}"
     include_youth = st.checkbox(
         "Include youth leagues",
         value=False,
@@ -397,9 +397,9 @@ with st.sidebar:
 
     # --- League presets ---
     c1, c2, c3 = st.columns([1, 1, 1])
-    use_top5  = c1.checkbox("Top-5 EU",  value=False, key=f"att_top5_{selected_file}")
-    use_top20 = c2.checkbox("Top-20 EU", value=False, key=f"att_top20_{selected_file}")
-    use_efl   = c3.checkbox("EFL",       value=False, key=f"att_efl_{selected_file}")
+    use_top5  = c1.checkbox("Top-5 EU",  value=False, key=f"cm_top5_{selected_file}")
+    use_top20 = c2.checkbox("Top-20 EU", value=False, key=f"cm_top20_{selected_file}")
+    use_efl   = c3.checkbox("EFL",       value=False, key=f"cm_efl_{selected_file}")
 
     seed = set()
     if use_top5:
@@ -435,7 +435,7 @@ with st.sidebar:
     default_leagues = sorted(seed) if seed else leagues_avail
 
     # --- Multiselect with preset + region + youth sensitivity ---
-    ms_key = f"att_leagues_sel_{selected_file}"
+    ms_key = f"cm_leagues_sel_{selected_file}"
     preset_sig = (
         tuple(sorted(regions_sel)),
         include_youth,
@@ -448,11 +448,11 @@ with st.sidebar:
     if ms_key not in st.session_state:
         st.session_state[ms_key] = default_leagues
 
-    if st.session_state.get("att_preset_sig") != preset_sig:
-        st.session_state["att_preset_sig"] = preset_sig
+    if st.session_state.get("cm_preset_sig") != preset_sig:
+        st.session_state["cm_preset_sig"] = preset_sig
         st.session_state[ms_key] = default_leagues
 
-    leagues_sel = st.multiselect(
+    leagues_sel = multiselect_safe(
         "Leagues (add or prune the presets)",
         options=leagues_avail,
         default=st.session_state[ms_key],
@@ -460,8 +460,7 @@ with st.sidebar:
     )
 
     # keep a simple alias if the rest of your code expects this
-    st.session_state["att_leagues_sel"] = leagues_sel
-
+    st.session_state["cm_leagues_sel"] = leagues_sel
 
     # numeric coercions
     df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
