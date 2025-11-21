@@ -319,7 +319,7 @@ with st.sidebar:
 
     # --- Region filter (default = all regions) ---
     all_regions = ["Europe", "Africa", "Asia", "North America", "South America"]
-    regions_key = f"att_regions_{selected_file}"
+    regions_key = f"cb_regions_{selected_file}"          # <- use cb_ here
     if regions_key not in st.session_state:
         st.session_state[regions_key] = all_regions
 
@@ -331,7 +331,7 @@ with st.sidebar:
     )
 
     # --- Youth leagues toggle (excluded by default) ---
-    include_youth_key = f"att_include_youth_{selected_file}"
+    include_youth_key = f"cb_include_youth_{selected_file}"   # <- cb_
     include_youth = st.checkbox(
         "Include youth leagues",
         value=False,
@@ -342,9 +342,9 @@ with st.sidebar:
 
     # --- League presets ---
     c1, c2, c3 = st.columns([1, 1, 1])
-    use_top5  = c1.checkbox("Top-5 EU",  value=False, key=f"att_top5_{selected_file}")
-    use_top20 = c2.checkbox("Top-20 EU", value=False, key=f"att_top20_{selected_file}")
-    use_efl   = c3.checkbox("EFL",       value=False, key=f"att_efl_{selected_file}")
+    use_top5  = c1.checkbox("Top-5 EU",  value=False, key=f"cb_top5_{selected_file}")
+    use_top20 = c2.checkbox("Top-20 EU", value=False, key=f"cb_top20_{selected_file}")
+    use_efl   = c3.checkbox("EFL",       value=False, key=f"cb_efl_{selected_file}")
 
     seed = set()
     if use_top5:
@@ -380,7 +380,7 @@ with st.sidebar:
     default_leagues = sorted(seed) if seed else leagues_avail
 
     # --- Multiselect with preset + region + youth sensitivity ---
-    ms_key = f"att_leagues_sel_{selected_file}"
+    ms_key = f"cb_leagues_sel_{selected_file}"   # <- cb_
     preset_sig = (
         tuple(sorted(regions_sel)),
         include_youth,
@@ -393,8 +393,8 @@ with st.sidebar:
     if ms_key not in st.session_state:
         st.session_state[ms_key] = default_leagues
 
-    if st.session_state.get("att_preset_sig") != preset_sig:
-        st.session_state["att_preset_sig"] = preset_sig
+    if st.session_state.get("cb_preset_sig") != preset_sig:   # <- cb_
+        st.session_state["cb_preset_sig"] = preset_sig
         st.session_state[ms_key] = default_leagues
 
     leagues_sel = multiselect_safe(
@@ -404,8 +404,8 @@ with st.sidebar:
         key=ms_key,
     )
 
-    # keep a simple alias if the rest of your code expects this
-    st.session_state["att_leagues_sel"] = leagues_sel
+    # alias that the filter section will actually read
+    st.session_state["cb_leagues_sel"] = leagues_sel
 
     # numeric coercions
     df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
@@ -478,6 +478,7 @@ with st.sidebar:
 
     top_n = st.number_input("Top N per table", 5, 200, 50, 5, key=f"cb_topn_{selected_file}")
     round_to = st.selectbox("Round output percentiles to", [0, 1], index=0, key=f"cb_round_to_{selected_file}")
+
 
 # ----------------- VALIDATION -----------------
 missing = [c for c in REQUIRED_BASE if c not in df.columns]
