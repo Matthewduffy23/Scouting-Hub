@@ -397,7 +397,7 @@ with st.sidebar:
         st.session_state["att_preset_sig"] = preset_sig
         st.session_state[ms_key] = default_leagues
 
-    leagues_sel = st.multiselect(
+    leagues_sel = multiselect_safe(
         "Leagues (add or prune the presets)",
         options=leagues_avail,
         default=st.session_state[ms_key],
