@@ -160,7 +160,7 @@ ROLES = {
             'Exits per 90': 1,
         }
     },
-    'All in': {
+    'All In': {  # renamed so the column becomes "All In Score"
         'metrics': {
             'Prevented goals per 90': 3,
             'Save rate, %': 1,
@@ -170,6 +170,7 @@ ROLES = {
         }
     },
 }
+
 
 
 
@@ -1002,15 +1003,17 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 ("Goals Prevented", "Prevented goals per 90"),
                 ("Goals Conceded", "Conceded goals per 90"),
                 ("Save Rate", "Save rate, %"),
-                ("Shots Against", "Shots against per 90")]
-                ("xG Against", "xG against per 90")]
+                ("Shots Against", "Shots against per 90")],
+                ("xG Against", "xG against per 90")],
+            ]
 
             POS = [
                 ("Long Passes", "Long passes per 90"),
                 ("Long Passing  %", "Accurate long passes, %"),
                 ("Passes", "Passes per 90"),
                 ("Passing Accuracy %", "Accurate passes, %"),
-
+            ]
+                
             def _sec_html(title, pairs):
                 rows=[]
                 for lab,met in pairs:
