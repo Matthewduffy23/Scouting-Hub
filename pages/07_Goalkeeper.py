@@ -142,15 +142,17 @@ def position_filter(pos):
 
 # Role buckets
 ROLES = {
-{
     'Shot Stopper GK': {
         'metrics': {
-            'Prevented goals per 90': 3, 'Save rate, %': 1,
+            'Prevented goals per 90': 3,
+            'Save rate, %': 1,
         }
     },
     'Ball Playing GK': {
         'metrics': {
-            'Passes per 90': 1, 'Accurate passes, %': 3, 'Accurate long passes, %': 2,
+            'Passes per 90': 1,
+            'Accurate passes, %': 3,
+            'Accurate long passes, %': 2,
         }
     },
     'Sweeper GK': {
@@ -160,11 +162,13 @@ ROLES = {
     },
     'All in': {
         'metrics': {
-            'Prevented goals per 90': 3, 'Save rate, %': 1, 
-            'Accurate passes, %': 2, 'Accurate long passes, %': 1,
+            'Prevented goals per 90': 3,
+            'Save rate, %': 1,
+            'Accurate passes, %': 2,
+            'Accurate long passes, %': 1,
             'Exits per 90': 2,
         }
-    }
+    },
 }
 
 
