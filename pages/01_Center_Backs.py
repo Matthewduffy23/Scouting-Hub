@@ -3125,6 +3125,269 @@ with st.expander("Scatter settings", expanded=False):
 # ==========================================================================================================
 
 
+# ============================ (Q) FULL FEATURE — CB SCORE CALC + ARCHETYPE MAP ============================
+import numpy as np
+import pandas as pd
+from scipy.stats import rankdata
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+from io import BytesIO
+import uuid
+import streamlit as st
+
+st.markdown("---")
+st.header("🧭 Feature Q — CB Archetype Map (Self-Contained)")
+
+# =====================================================================================
+# 1) CALCULATIONS — Weighted Percentile Scores + Archetypes + Boxing Threat
+# =====================================================================================
+
+st.caption("Feature Q automatically calculates all CB scores, archetypes, and threat flags.")
+
+# --- CONFIG ---
+LEAGUE_FILTER_Q = st.text_input("League filter", "Croatia 1.", key="fq_calc_league")
+
+df_q = df.copy()
+
+# --- Filter valid rows ---
+df_q["Minutes played"] = pd.to_numeric(df_q["Minutes played"], errors="coerce")
+df_q["Age"] = pd.to_numeric(df_q["Age"], errors="coerce")
+
+df_q = df_q[df_q["Minutes played"] >= 500]
+df_q = df_q[df_q["Age"].between(16, 55)]
+df_q = df_q[df_q["League"] == LEAGUE_FILTER_Q]
+
+# Extract primary position
+df_q["Primary Position"] = df_q["Position"].astype(str).str.split(",").str[0].str.strip()
+
+# Only CB roles
+valid_cbs = ("LCB", "RCB", "CB")
+df_q = df_q[df_q["Primary Position"].isin(valid_cbs)]
+
+if df_q.empty:
+    st.warning("No CBs found for this league after filtering.")
+else:
+
+    # ---------------- Metric groups (as provided) ----------------
+    metric_groups = {
+        "def_score": {
+            "Defensive duels per 90": 0.1,
+            "Defensive duels won, %": 0.3,
+            "PAdj Interceptions": 0.2,
+            "Aerial duels won, %": 0.3,
+            "Shots blocked per 90": 0.1,
+        },
+        "poss_score": {
+            "Passes per 90": 0.1,
+            "Forward passes per 90": 0.1,
+            "Progressive passes per 90": 0.25,
+            "Dribbles per 90": 0.1,
+            "Progressive runs per 90": 0.2,
+            "Accurate passes, %": 0.15,
+            "Accurate long passes, %": 0.1,
+        },
+        "carry_score": {
+            "Dribbles per 90": 0.4,
+            "Successful dribbles, %": 0.1,
+            "Progressive runs per 90": 0.3,
+            "Accelerations per 90": 0.2,
+        },
+        "boxing_score": {
+            "xG per 90": 0.3,
+            "Non-penalty goals per 90": 0.4,
+            "Touches in box per 90": 0.3,
+        },
+    }
+
+    # ------------- Weighted percentile scoring function -------------
+    def weighted_percentile_score(df_sub, row, metric_dict):
+        total = 0
+        for metric, weight in metric_dict.items():
+            vals = df_sub[metric].fillna(0)
+            perc = rankdata(vals) / len(vals)
+            idx = df_sub.index.get_loc(row.name)
+            total += perc[idx] * weight
+        return total * 100
+
+    # ------------- Apply scores -------------
+    for score_name, group in metric_groups.items():
+        df_q[score_name] = df_q.apply(lambda r: weighted_percentile_score(df_q, r, group), axis=1)
+
+    # ------------- Archetype classification -------------
+    def classify_archetype(r):
+        if r["def_score"] >= 50 and r["poss_score"] >= 50:
+            return "Complete"
+        elif r["def_score"] >= 50:
+            return "Box-Defender"
+        elif r["poss_score"] >= 50:
+            return "Ball Player"
+        else:
+            return "Limited"
+
+    df_q["Archetype"] = df_q.apply(classify_archetype, axis=1)
+    df_q["Box-to-Box Ball Carrier"] = df_q["carry_score"] >= 70
+
+    # ------------- Boxing Threat (top 20%) -------------
+    th80 = df_q["boxing_score"].quantile(0.80)
+    df_q["Boxing Threat"] = df_q["boxing_score"] >= th80
+
+# =====================================================================================
+# 2) SCATTERPLOT UI / OPTIONS
+# =====================================================================================
+
+if df_q.empty:
+    st.stop()
+
+with st.expander("Feature Q — Plot settings", expanded=False):
+
+    show_labels_q = st.checkbox("Show labels", True)
+    label_only_u23_q = st.checkbox("Label only U23s", False)
+    max_labels_q = st.slider("Max labels", 3, 35, 12)
+    label_size_q = st.slider("Label size", 8, 22, 11)
+
+    x_split_q = st.slider("Possession score split", 0, 100, 50)
+    y_split_q = st.slider("Defensive score split", 0, 100, 50)
+
+    theme_q = st.radio("Theme", ["Dark", "Light"], index=0)
+
+    point_size_q = st.slider("Point size", 40, 260, 160)
+    alpha_q = st.slider("Opacity", 0.2, 1.0, 0.90)
+
+# =====================================================================================
+# 3) PLOT — CB ARCHETYPE MAP
+# =====================================================================================
+
+# Theme colours
+if theme_q == "Light":
+    PAGE_BG_Q = "#ebebeb"; PLOT_BG_Q = "#f3f3f3"
+    GRID_COL_Q = "#d4d4d8"; TXT_COL_Q = "#111827"
+    AXIS_COL_Q = "#374151"; QUAD_BG = "#e5e7eb"
+else:
+    PAGE_BG_Q = "#050811"; PLOT_BG_Q = "#0b1019"
+    GRID_COL_Q = "#3a4050"; TXT_COL_Q = "#e5e7eb"
+    AXIS_COL_Q = "#9ca3af"; QUAD_BG = "#111827"
+
+# Plot
+fig, ax = plt.subplots(figsize=(10, 6), dpi=110)
+fig.patch.set_facecolor(PAGE_BG_Q)
+ax.set_facecolor(PLOT_BG_Q)
+
+ax.set_xlim(-2, 102)
+ax.set_ylim(-2, 102)
+
+ax.set_xlabel("Possession Score", fontsize=14, fontweight="semibold", color=TXT_COL_Q)
+ax.set_ylabel("Defensive Score", fontsize=14, fontweight="semibold", color=TXT_COL_Q)
+
+ax.grid(True, linewidth=0.8, color=GRID_COL_Q)
+
+for s in ax.spines.values():
+    s.set_color(AXIS_COL_Q)
+    s.set_linewidth(1)
+
+# Colors
+ARCH_COL = {
+    "Ball Player": "#3b82f6",
+    "Box-Defender": "#f59e0b",
+    "Complete": "#ef4444",
+    "Limited": "#22c55e",
+}
+
+# Shapes
+SHAPE = {False: "o", True: "s"}
+
+# Plot groups
+for (arch, carrier), grp in df_q.groupby(["Archetype", "Box-to-Box Ball Carrier"]):
+    ax.scatter(
+        grp["poss_score"],
+        grp["def_score"],
+        s=point_size_q,
+        c=ARCH_COL[arch],
+        marker=SHAPE[carrier],
+        alpha=alpha_q,
+        edgecolors="none",
+        zorder=2,
+        label=None,
+    )
+
+# Boxing Threat ring
+bt = df_q[df_q["Boxing Threat"] == True]
+if not bt.empty:
+    ax.scatter(
+        bt["poss_score"],
+        bt["def_score"],
+        s=point_size_q * 1.25,
+        facecolors="none",
+        edgecolors="#f97316",
+        linewidths=2,
+        zorder=3,
+    )
+
+# Quadrant lines
+ax.axvline(x_split_q, color=TXT_COL_Q, linestyle="--", linewidth=1.4)
+ax.axhline(y_split_q, color=TXT_COL_Q, linestyle="--", linewidth=1.4)
+
+# Quadrant labels
+def quad(text, x, y):
+    ax.text(
+        x, y, text, fontsize=13, fontweight="bold",
+        ha="center", va="center", color=TXT_COL_Q,
+        bbox=dict(boxstyle="round,pad=0.4", facecolor=QUAD_BG, edgecolor="none", alpha=0.85),
+    )
+
+quad("LIMITED", 25, 25)
+quad("BOX DEFENDER", 25, 75)
+quad("BALL PLAYER", 75, 25)
+quad("COMPLETE", 75, 75)
+
+# Label top players
+if show_labels_q:
+    cand = df_q.copy()
+    if label_only_u23_q:
+        cand = cand[cand["Age"] < 23]
+
+    cand = cand.assign(_score=cand["def_score"] + cand["poss_score"])
+    cand = cand.sort_values("_score", ascending=False).head(max_labels_q)
+
+    for _, r in cand.iterrows():
+        ax.annotate(
+            r["Player"],
+            (r["poss_score"], r["def_score"]),
+            xytext=(8, 6),
+            textcoords="offset points",
+            fontsize=label_size_q,
+            color=TXT_COL_Q,
+            weight="semibold",
+        )
+
+# Legend
+legend_items = [
+    Line2D([], [], color=ARCH_COL["Ball Player"], marker="o", linestyle="", label="Ball Player"),
+    Line2D([], [], color=ARCH_COL["Box-Defender"], marker="o", linestyle="", label="Box-Defender"),
+    Line2D([], [], color=ARCH_COL["Complete"], marker="o", linestyle="", label="Complete"),
+    Line2D([], [], color=ARCH_COL["Limited"], marker="o", linestyle="", label="Limited"),
+]
+ax.legend(handles=legend_items, frameon=False, fontsize=10, loc="upper right")
+
+st.pyplot(fig)
+
+# Download
+buf = BytesIO()
+fig.savefig(buf, format="png", dpi=150, facecolor=fig.get_facecolor(), bbox_inches="tight")
+buf.seek(0)
+
+st.download_button(
+    "⬇️ Download Feature Q",
+    data=buf.getvalue(),
+    file_name="FeatureQ_CB_Archetype_Map.png",
+    mime="image/png",
+    key=f"dl_fq_{uuid.uuid4().hex}",
+)
+
+plt.close(fig)
+
+# ============================ END FEATURE Q ============================
+
+
 
 # ----------------- (B) COMPARISON RADAR — decile tick values (1dp) + light/dark theme + exact edge + centered/upright outside labels -----------------
 import re
