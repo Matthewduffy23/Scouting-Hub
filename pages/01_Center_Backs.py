@@ -3327,10 +3327,10 @@ ax.text(92, 8, "BALL PLAYER", fontsize=quad_fs, weight="bold", ha="right", bbox=
 
 # Archetype colours
 arch_colors = {
-    "Ball Player": "#3b82f6",
-    "Box-Defender": "#f59e0b",
-    "Complete": "#ef4444",
-    "Limited": "#22c55e",
+    "Ball Player": "#76B7B2",
+    "Box-Defender": "#F28E2B",
+    "Complete": "#4E79A7",
+    "Limited": "#E15759",
 }
 
 # Scatter points: square = carrier True, circle = False; NO RINGS
@@ -3431,7 +3431,7 @@ for txt in legend2.get_texts():
 legend2.get_title().set_color(txt_col)
 
 # LEAVE ENOUGH SPACE FOR LEGENDS AND AXIS LABELS
-fig.subplots_adjust(left=0.06, right=0.68, bottom=0.11, top=1 - top_gap_px / float(h_px))
+fig.subplots_adjust(left=0.06, right=0.82, bottom=0.11, top=1 - top_gap_px / float(h_px))
 
 # RENDER (NO bbox_inches='tight' SO NOTHING GETS CROPPED)
 if render_exact:
