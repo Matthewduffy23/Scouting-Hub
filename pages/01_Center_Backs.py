@@ -3401,7 +3401,7 @@ legend1 = ax.legend(
     title="Archetype",
     title_fontsize=12,
     fontsize=11,
-    bbox_to_anchor=(1.01, 1.00),  # shared x so titles line up
+    bbox_to_anchor=(1.01, 1.00),  # all legends share same x for perfect alignment
     **legend_kwargs,
 )
 ax.add_artist(legend1)
@@ -3409,7 +3409,7 @@ legend1.get_title().set_color(txt_col)
 for txt in legend1.get_texts():
     txt.set_color(txt_col)
 
-# 2) Ball Carrier legend – circle = False, square = True, BOTH FILLED
+# 2) Ball Carrier legend – circle = False, square = True
 carrier_ms = 12
 carrier_lw = 1.4
 legend2 = ax.legend(
@@ -3420,7 +3420,7 @@ legend2 = ax.legend(
             linestyle="None",
             color="none",
             markeredgecolor=txt_col,
-            markerfacecolor="#f1f5f9",   # filled circle
+            markerfacecolor="none",
             markeredgewidth=carrier_lw,
             markersize=carrier_ms,
             label="False",
@@ -3431,7 +3431,7 @@ legend2 = ax.legend(
             linestyle="None",
             color="none",
             markeredgecolor=txt_col,
-            markerfacecolor="#f1f5f9",   # filled square
+            markerfacecolor="none",
             markeredgewidth=carrier_lw,
             markersize=carrier_ms,
             label="True",
@@ -3440,7 +3440,7 @@ legend2 = ax.legend(
     title="Ball Carrier",
     title_fontsize=12,
     fontsize=11,
-    bbox_to_anchor=(1.01, 0.72),  # same x as archetype legend for perfect alignment
+    bbox_to_anchor=(1.01, 0.72),
     **legend_kwargs,
 )
 legend2.get_title().set_color(txt_col)
@@ -3471,6 +3471,7 @@ else:
 
 plt.close(fig)
 # ============================== END FEATURE Q ============================================================
+
 
 
 
