@@ -143,6 +143,12 @@ INVERSE_METRICS = {
     # you can add more here if desired, e.g. 'xG against per 90', 'Shots against per 90'
 }
 
+# Metrics where LOWER = BETTER (for percentiles / role scores / boards)
+GK_LOWER_BETTER = {
+    "Conceded goals per 90",
+}
+
+
 # -------- Position filter (center backs) --------
 CB_PREFIXES = ('GK',)
 def position_filter(pos):
@@ -2010,7 +2016,8 @@ else:
                 v = float(player_row[col].iloc[0])
             else:
                 return np.nan
-        if metric == "Conceded goals per 90":
+        # ✅ use global inversion rule
+        if metric in INVERSE_METRICS:
             return 100.0 - v
         return v
 
@@ -2173,7 +2180,7 @@ else:
     )
     goals = (
         int(ply_one.get("Goals", np.nan))
-        if pd.notna(ply_one.get("Goals"))
+        if pd.notna(ply_one.get("Goals", np.nan))
         else 0
     )
 
@@ -2362,8 +2369,36 @@ else:
 if player_row.empty:
     st.info("Pick a player above.")
 else:
+    # ----- helper: percentile getter using global INVERSE_METRICS -----
+    def pct_of(metric: str) -> float:
+        # use pct_extra if available (pool-based), else fallback to per-league percentile columns
+        if isinstance(pct_extra, dict) and metric in pct_extra and pd.notna(pct_extra[metric]):
+            v = float(pct_extra[metric])
+        else:
+            col = f"{metric} Percentile"
+            if col in player_row.columns and pd.notna(player_row[col].iloc[0]):
+                v = float(player_row[col].iloc[0])
+            else:
+                return np.nan
+        # invert according to global rule
+        if metric in INVERSE_METRICS:
+            return 100.0 - v
+        return v
+
+    def val_of(metric: str):
+        ply_local = player_row.iloc[0]
+        if metric not in ply_local.index or pd.isna(ply_local[metric]):
+            return np.nan, "—"
+        v = float(ply_local[metric])
+        m = metric.lower()
+        if "%" in metric or "percent" in m:
+            return v, f"{int(round(v))}%"
+        if "per 90" in m or "xg" in m or "xa" in m:
+            return v, f"{v:.2f}"
+        return v, f"{v:.2f}"
+
     # ----- assemble sections from your existing calcs -----
-    # NOTE: pct_of() returns 0–100 percentile, with Conceded goals per 90 already inverted (lower = better).
+    # NOTE: pct_of() returns 0–100 percentile, with inverse metrics handled via INVERSE_METRICS.
     GOALKEEPING = []
     for lab, met in [
         ("Exits", "Exits per 90"),
@@ -2678,8 +2713,36 @@ else:
     # Apply foot override (if enabled)
     foot_display = (foot_override_text.strip() if (foot_override_on and foot_override_text and foot_override_text.strip()) else foot)
 
+    # --- helpers: percentile + raw value, with INVERSE_METRICS respected ---
+    def pct_of(metric: str) -> float:
+        # use pool-based pct_extra if present, else fall back to per-league percentile column
+        if isinstance(pct_extra, dict) and metric in pct_extra and pd.notna(pct_extra[metric]):
+            v = float(pct_extra[metric])
+        else:
+            col = f"{metric} Percentile"
+            if col in player_row.columns and pd.notna(player_row[col].iloc[0]):
+                v = float(player_row[col].iloc[0])
+            else:
+                return np.nan
+        # global inversion rule (e.g. "Conceded goals per 90")
+        if metric in INVERSE_METRICS:
+            return 100.0 - v
+        return v
+
+    def val_of(metric: str):
+        ply_local = player_row.iloc[0]
+        if metric not in ply_local.index or pd.isna(ply_local[metric]):
+            return np.nan, "—"
+        v = float(ply_local[metric])
+        m = metric.lower()
+        if "%" in metric or "percent" in m:
+            return v, f"{int(round(v))}%"
+        if "per 90" in m or "xg" in m or "xa" in m:
+            return v, f"{v:.2f}"
+        return v, f"{v:.2f}"
+
     # === sections (GK: Goalkeeping + Possession) ===
-    # Again, pct_of already inverts Conceded goals per 90.
+    # pct_of now inverts any metric in INVERSE_METRICS (e.g. "Conceded goals per 90").
     GOALKEEPING = []
     for lab, met in [
         ("Exits", "Exits per 90"),
