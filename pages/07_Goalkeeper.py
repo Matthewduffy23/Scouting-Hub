@@ -123,7 +123,7 @@ PRESET_LEAGUES = {
 
 FEATURES = [
        'Passes per 90', 'Accurate passes, %', 'Long passes per 90',
-       'Accurate long passes, %', 'Average pass length, m',
+       'Accurate long passes, %',
        'Conceded goals per 90', 'Shots against per 90', 'Save rate, %',
        'xG against per 90', 'Prevented goals', 'Prevented goals per 90',
        'Exits per 90'
