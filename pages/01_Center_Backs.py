@@ -3184,7 +3184,7 @@ with st.expander("Scatter settings", expanded=False):
     point_size = st.slider("Point size", 24, 300, 225, 2, key="fq_pts")
     point_alpha = st.slider("Point opacity", 0.2, 1.0, 0.92, 0.02, key="fq_alpha")
 
-    # TEAM HIGHLIGHT – NOW ALSO USED FOR LABEL FILTERING
+    # TEAM HIGHLIGHT – AND LABEL FILTER
     teams_available_hl = sorted(df[df["League"].isin(leagues_scatter)]["Team"].dropna().unique())
     team_highlight = st.selectbox(
         "Highlight team (labels only shown for this team)",
@@ -3233,7 +3233,7 @@ if pool_sc.empty:
     st.info("No CBs after filtering.")
     st.stop()
 
-# Score definitions
+# Score definitions (as in notebook)
 metric_groups = {
     "def_score": {
         "Defensive duels per 90": 0.1,
@@ -3294,31 +3294,38 @@ fig, ax = plt.subplots(figsize=(w_px / 100, h_px / 100), dpi=100)
 fig.patch.set_facecolor(PAGE_BG)
 ax.set_facecolor(PLOT_BG)
 
+# Axes & labels (explicit so you SEE them)
 ax.set_xlim(0, 100)
 ax.set_ylim(0, 100)
 ax.set_xlabel("Possession Score", fontsize=14, fontweight="semibold", color=txt_col)
 ax.set_ylabel("Defensive Score", fontsize=14, fontweight="semibold", color=txt_col)
 
-# Grid
+ax.xaxis.set_major_locator(MultipleLocator(10))
+ax.yaxis.set_major_locator(MultipleLocator(10))
+for tick in ax.get_xticklabels() + ax.get_yticklabels():
+    tick.set_fontweight("semibold")
+    tick.set_color(txt_col)
+
+# Grid & spines
 ax.grid(True, color=GRID_MAJ, linewidth=0.9)
 for s in ax.spines.values():
-    s.set_color("#666")
+    s.set_color("#666666")
+    s.set_linewidth(0.9)
 
 # Quadrant lines
-line_col = "#000" if theme == "Light" else "#fafafa"
+line_col = "#000000" if theme == "Light" else "#f9fafb"
 ax.axvline(50, color=line_col, linestyle=(0, (4, 4)), lw=2)
 ax.axhline(50, color=line_col, linestyle=(0, (4, 4)), lw=2)
 
-# Quadrant labels
+# Quadrant labels in corners
 quad_fs = 14
-bbox_style = dict(boxstyle="round,pad=0.35", facecolor="#d1d5db", edgecolor="none", alpha=0.90)
-
+bbox_style = dict(boxstyle="round,pad=0.35", facecolor="#d1d5db", edgecolor="none", alpha=0.9)
 ax.text(8, 92, "BOX DEFENDER", fontsize=quad_fs, weight="bold", bbox=bbox_style)
 ax.text(92, 92, "COMPLETE", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
 ax.text(8, 8, "LIMITED", fontsize=quad_fs, weight="bold", bbox=bbox_style)
 ax.text(92, 8, "BALL PLAYER", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
 
-# Colour map
+# Archetype colours
 arch_colors = {
     "Ball Player": "#3b82f6",
     "Box-Defender": "#f59e0b",
@@ -3326,7 +3333,7 @@ arch_colors = {
     "Limited": "#22c55e",
 }
 
-# SCATTER POINTS
+# Scatter points: square = carrier True, circle = False; NO RINGS
 for (arch, carrier), grp in pool_sc.groupby(["Archetype", "Box-to-Box Ball Carrier"]):
     ax.scatter(
         grp["poss_score"],
@@ -3340,7 +3347,7 @@ for (arch, carrier), grp in pool_sc.groupby(["Archetype", "Box-to-Box Ball Carri
         zorder=2,
     )
 
-# TEAM HIGHLIGHT (DOES NOT AFFECT OTHER LABELS ANYMORE)
+# TEAM HIGHLIGHT (visual only, doesn’t remove other points)
 highlight_grp = None
 if team_highlight != "(None)":
     highlight_grp = pool_sc[pool_sc["Team"] == team_highlight]
@@ -3357,16 +3364,13 @@ if team_highlight != "(None)":
             zorder=5,
         )
 
-# LABELS — NOW ONLY TEAM SELECTED
+# LABELS — ONLY THAT TEAM IF SELECTED
 texts = []
 if show_labels:
 
-    if team_highlight != "(None)":
+    if team_highlight != "(None)" and highlight_grp is not None and not highlight_grp.empty:
         label_df = highlight_grp.copy()
     else:
-        label_df = pool_sc.copy()
-
-    if label_df.empty:
         label_df = pool_sc.copy()
 
     if label_only_u23:
@@ -3383,12 +3387,14 @@ if show_labels:
             weight="semibold",
             ha="left",
             va="bottom",
-            zorder=5,
+            zorder=6,
         )
-        t.set_path_effects([pe.withStroke(linewidth=2, foreground="black", alpha=0.9)])
+        t.set_path_effects(
+            [pe.withStroke(linewidth=2, foreground="#000000" if theme == "Light" else "#020617", alpha=0.9)]
+        )
         texts.append(t)
 
-# RIGHT-SIDE LEGENDS (PERMANENT)
+# RIGHT-SIDE LEGENDS (NOW FORCED VISIBLE & COLOURED)
 legend1 = ax.legend(
     handles=[
         Line2D([0], [0], marker="s", color="none", markerfacecolor=arch_colors["Ball Player"], markersize=11, label="Ball Player"),
@@ -3404,11 +3410,14 @@ legend1 = ax.legend(
     frameon=False,
 )
 ax.add_artist(legend1)
+for txt in legend1.get_texts():
+    txt.set_color(txt_col)
+legend1.get_title().set_color(txt_col)
 
-ax.legend(
+legend2 = ax.legend(
     handles=[
         Line2D([0], [0], marker="s", markeredgecolor=txt_col, markerfacecolor="none", markersize=11, label="False"),
-        Line2D([0], [0], marker="s", markeredgecolor=txt_col, markerfacecolor="white", markersize=11, label="True"),
+        Line2D([0], [0], marker="s", markeredgecolor=txt_col, markerfacecolor="#ffffff", markersize=11, label="True"),
     ],
     title="Ball Carrier",
     title_fontsize=12,
@@ -3417,14 +3426,17 @@ ax.legend(
     bbox_to_anchor=(1.02, 0.72),
     frameon=False,
 )
+for txt in legend2.get_texts():
+    txt.set_color(txt_col)
+legend2.get_title().set_color(txt_col)
 
-# FIXED RIGHT-SIDE SPACE
-fig.subplots_adjust(left=0.06, right=0.63, bottom=0.11, top=1 - top_gap_px / h_px)
+# LEAVE ENOUGH SPACE FOR LEGENDS AND AXIS LABELS
+fig.subplots_adjust(left=0.06, right=0.68, bottom=0.11, top=1 - top_gap_px / float(h_px))
 
-# RENDER
+# RENDER (NO bbox_inches='tight' SO NOTHING GETS CROPPED)
 if render_exact:
     buf = BytesIO()
-    fig.savefig(buf, format="png", dpi=100, facecolor=PAGE_BG, bbox_inches="tight")
+    fig.savefig(buf, format="png", dpi=100, facecolor=PAGE_BG)  # no bbox_inches
     buf.seek(0)
     st.image(buf, width=w_px)
     st.download_button(
@@ -3438,6 +3450,7 @@ else:
 
 plt.close(fig)
 # ============================== END FEATURE Q ============================================================
+
 
 
 
