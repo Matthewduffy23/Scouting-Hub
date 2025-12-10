@@ -3320,10 +3320,10 @@ ax.axhline(50, color=line_col, linestyle=(0, (4, 4)), lw=2)
 # Quadrant labels
 quad_fs = 14
 bbox_style = dict(boxstyle="round,pad=0.35", facecolor="#d1d5db", edgecolor="none", alpha=0.9)
-ax.text(4, 96, "BOX DEFENDER", fontsize=quad_fs, weight="bold", bbox=bbox_style)
-ax.text(96, 96, "COMPLETE", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
-ax.text(4, 4, "LIMITED", fontsize=quad_fs, weight="bold", bbox=bbox_style)
-ax.text(96, 4, "BALL PLAYER", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
+ax.text(6, 94, "BOX DEFENDER", fontsize=quad_fs, weight="bold", bbox=bbox_style)
+ax.text(94, 94, "COMPLETE", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
+ax.text(6, 6, "LIMITED", fontsize=quad_fs, weight="bold", bbox=bbox_style)
+ax.text(94, 6, "BALL PLAYER", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
 
 # Archetype colours (your palette)
 arch_colors = {
@@ -3419,7 +3419,7 @@ for txt in legend2.get_texts():
 legend2.get_title().set_color(txt_col)
 
 # SPACE FOR LEGENDS & LABELS
-fig.subplots_adjust(left=0.06, right=0.88, bottom=0.11, top=1.1 - top_gap_px / float(h_px))
+fig.subplots_adjust(left=0.06, right=0.88, bottom=0.11, top=1.08 - top_gap_px / float(h_px))
 
 # RENDER
 if render_exact:
