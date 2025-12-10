@@ -691,7 +691,6 @@ TWEMOJI_SPECIAL = {
 COUNTRY_TO_CC = {
     # UK home nations (kept as before)
     "united kingdom":"gb","great britain":"gb","northern ireland":"nir","england":"eng","scotland":"sct","wales":"wls",
-    ...
 }
 
 def _norm(s: str) -> str:
@@ -3124,7 +3123,7 @@ with st.expander("Scatter settings", expanded=False):
                 import math
                 def nice_step(vmin, vmax, target_ticks=6):
                     span = abs(vmax - vmin)
-                    if span <= 0 or not math.isfinite(span:
+                    if span <= 0 or not math.isfinite(span):
                         return 1.0
                     raw = span / max(target_ticks, 2)
                     power = 10 ** math.floor(math.log10(raw))
