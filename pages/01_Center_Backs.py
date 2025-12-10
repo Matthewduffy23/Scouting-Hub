@@ -3125,7 +3125,7 @@ with st.expander("Scatter settings", expanded=False):
 # ==========================================================================================================
 
 
-# ============================== FEATURE Q — CB ARCHETYPE SCATTER (TEMPLATED) ==============================
+# ============================== FEATURE Q — CB ARCHETYPE SCATTER ==============================
 from scipy.stats import rankdata
 from io import BytesIO
 import uuid
@@ -3140,11 +3140,11 @@ st.markdown("---")
 st.header("🧭 Feature Q — CB Archetype Map")
 
 # ------------------------------------------------------------------
-# 1. SETTINGS UI
+# 1. SETTINGS UI (same style as your generic scatter)
 # ------------------------------------------------------------------
 with st.expander("Scatter settings", expanded=False):
 
-    # Pool: leagues (same preset pattern as other tools)
+    # Pool: leagues (same preset pattern as app)
     leagues_available_sc = sorted(df["League"].dropna().unique().tolist())
     player_league = player_row.iloc[0]["League"] if not player_row.empty else None
     preset_sc = st.selectbox(
@@ -3193,7 +3193,10 @@ with st.expander("Scatter settings", expanded=False):
     # Team highlight (within selected leagues)
     teams_available_hl = sorted(df[df["League"].isin(leagues_scatter)]["Team"].dropna().unique().tolist())
     team_highlight = st.selectbox(
-        "Highlight team (within selected leagues)", ["(None)"] + teams_available_hl, index=0, key="fq_team_hl"
+        "Highlight team (within selected leagues)",
+        ["(None)"] + teams_available_hl,
+        index=0,
+        key="fq_team_hl",
     )
 
     # Theme
@@ -3203,7 +3206,7 @@ with st.expander("Scatter settings", expanded=False):
     GRID_MAJ = "#d7d7d7" if theme == "Light" else "#3a4050"
     txt_col = "#111111" if theme == "Light" else "#f9fafb"
 
-    # Canvas & top gap (no main title)
+    # Canvas & gap
     canvas_preset = st.selectbox(
         "Canvas size (px)",
         ["1280×720", "1600×900", "1920×820", "1920×1080"],
@@ -3237,7 +3240,7 @@ pool_sc = pool_sc[
 if pool_sc.empty:
     st.info("No centre-backs in scatter pool after filters.")
 else:
-    # Metric groups (exactly your calc snippet)
+    # Metric groups (exactly as your notebook)
     metric_groups = {
         "def_score": {
             "Defensive duels per 90": 0.1,
@@ -3278,8 +3281,11 @@ else:
         return total * 100
 
     for score_name, group in metric_groups.items():
-        pool_sc[score_name] = pool_sc.apply(lambda r: weighted_percentile_score(pool_sc, r, group), axis=1)
+        pool_sc[score_name] = pool_sc.apply(
+            lambda r: weighted_percentile_score(pool_sc, r, group), axis=1
+        )
 
+    # Archetype classification
     def classify(row):
         if row["def_score"] >= 50 and row["poss_score"] >= 50:
             return "Complete"
@@ -3297,7 +3303,7 @@ else:
     pool_sc["Boxing Threat"] = pool_sc["boxing_score"] >= threshold_80th
 
     # ------------------------------------------------------------------
-    # 3. DRAW SCATTER — fixed 0–100 axes, quadrants, legends
+    # 3. DRAW SCATTER — 0–100 axes, quadrants, legends, labels
     # ------------------------------------------------------------------
     x_metric = "poss_score"
     y_metric = "def_score"
@@ -3312,6 +3318,7 @@ else:
     ax.set_xlabel("Possession Score", fontsize=14, fontweight="semibold", color=txt_col)
     ax.set_ylabel("Defensive Score", fontsize=14, fontweight="semibold", color=txt_col)
 
+    # Grid & spines
     ax.grid(True, which="major", linewidth=0.9, color=GRID_MAJ)
     for s in ax.spines.values():
         s.set_linewidth(0.9)
@@ -3332,7 +3339,7 @@ else:
         "Limited": "#22c55e",
     }
 
-    # Scatter: shape by ball-carrier flag
+    # Scatter: square marker if carrier True, circle if False
     for (arch, is_carrier), grp in pool_sc.groupby(["Archetype", "Box-to-Box Ball Carrier"]):
         col = arch_colors.get(arch, "#9ca3af")
         marker = "s" if bool(is_carrier) else "o"
@@ -3361,7 +3368,7 @@ else:
             zorder=3,
         )
 
-    # Team highlight on top
+    # Team highlight
     if team_highlight != "(None)":
         hl = pool_sc[pool_sc["Team"] == team_highlight]
         if not hl.empty:
@@ -3382,30 +3389,26 @@ else:
     ax.axvline(50, color=line_col, linestyle=(0, (4, 4)), linewidth=2.0, zorder=1)
     ax.axhline(50, color=line_col, linestyle=(0, (4, 4)), linewidth=2.0, zorder=1)
 
-    # Quadrant labels — bigger, near corners, light grey background
-    def quad_label(text, x, y):
-        ax.text(
-            x,
-            y,
-            text,
-            ha="center",
-            va="center",
-            fontsize=26,              # 2× bigger
-            fontweight="semibold",
-            color="#111111",
-            bbox=dict(
-                boxstyle="round,pad=0.4",
-                facecolor="#e5e5e5",   # light grey always
-                edgecolor="none",
-                alpha=0.95,
-            ),
-            zorder=5,
-        )
-
-    quad_label("BOX DEFENDER", 15, 90)   # top-left corner-ish
-    quad_label("COMPLETE",     85, 90)   # top-right
-    quad_label("LIMITED",      15, 10)   # bottom-left
-    quad_label("BALL PLAYER",  85, 10)   # bottom-right
+    # Quadrant labels — smaller, inside quadrants, light grey background
+    quad_fontsize = 18
+    bbox_style = dict(
+        boxstyle="round,pad=0.35",
+        facecolor="#d1d5db",
+        edgecolor="none",
+        alpha=0.9,
+    )
+    ax.text(25, 92, "BOX DEFENDER",
+            fontsize=quad_fontsize, fontweight="bold",
+            ha="center", va="center", bbox=bbox_style, zorder=20)
+    ax.text(75, 92, "COMPLETE",
+            fontsize=quad_fontsize, fontweight="bold",
+            ha="center", va="center", bbox=bbox_style, zorder=20)
+    ax.text(25, 8, "LIMITED",
+            fontsize=quad_fontsize, fontweight="bold",
+            ha="center", va="center", bbox=bbox_style, zorder=20)
+    ax.text(75, 8, "BALL PLAYER",
+            fontsize=quad_fontsize, fontweight="bold",
+            ha="center", va="center", bbox=bbox_style, zorder=20)
 
     # Player labels
     texts = []
@@ -3449,45 +3452,47 @@ else:
             )
             texts.append(t)
 
-    # Legends
-    # Archetype legend (squares, title "Archetype")
-    arch_handles = [
-        Line2D(
-            [], [],
-            marker="s", linestyle="", markersize=9,
-            color=arch_colors[a],
-            label=a,
-        )
-        for a in ["Ball Player", "Box-Defender", "Complete", "Limited"]
-        if a in pool_sc["Archetype"].unique()
+    # Legends on the right (like Huddersfield example)
+    # Archetype legend — coloured squares
+    legend_elements_arche = [
+        Line2D([0], [0], marker="s", color="none", markerfacecolor=arch_colors["Ball Player"],
+               markersize=11, label="Ball Player"),
+        Line2D([0], [0], marker="s", color="none", markerfacecolor=arch_colors["Box-Defender"],
+               markersize=11, label="Box-Defender"),
+        Line2D([0], [0], marker="s", color="none", markerfacecolor=arch_colors["Complete"],
+               markersize=11, label="Complete"),
+        Line2D([0], [0], marker="s", color="none", markerfacecolor=arch_colors["Limited"],
+               markersize=11, label="Limited"),
     ]
-    leg1 = ax.legend(
-        handles=arch_handles,
+    legend1 = ax.legend(
+        handles=legend_elements_arche,
         title="Archetype",
+        title_fontsize=12,
+        fontsize=11,
         loc="upper left",
         bbox_to_anchor=(1.02, 1.0),
         frameon=False,
-        fontsize=10,
-        title_fontsize=11,
     )
-    ax.add_artist(leg1)
+    ax.add_artist(legend1)
 
-    # Ball Carrier legend (title "Ball Carrier", False / True)
-    carrier_handles = [
-        Line2D([], [], marker="o", linestyle="", markersize=8, color=txt_col, label="False"),
-        Line2D([], [], marker="s", linestyle="", markersize=8, color=txt_col, label="True"),
+    # Ball Carrier legend — hollow vs filled white squares
+    legend_elements_bc = [
+        Line2D([0], [0], marker="s", markeredgecolor=txt_col, markerfacecolor="none",
+               markersize=11, label="False"),
+        Line2D([0], [0], marker="s", markeredgecolor=txt_col, markerfacecolor="#f9fafb",
+               markersize=11, label="True"),
     ]
     ax.legend(
-        handles=carrier_handles,
+        handles=legend_elements_bc,
         title="Ball Carrier",
+        title_fontsize=12,
+        fontsize=11,
         loc="upper left",
-        bbox_to_anchor=(1.02, 0.62),
+        bbox_to_anchor=(1.02, 0.70),
         frameon=False,
-        fontsize=9,
-        title_fontsize=10,
     )
 
-    # Layout – top gap only (no title)
+    # Layout — leave room on the right for legends, add top gap (no main title)
     top_frac = 1.0 - (top_gap_px / float(h_px))
     fig.subplots_adjust(left=0.075, right=0.80, bottom=0.105, top=top_frac)
 
@@ -3509,6 +3514,7 @@ else:
 
     plt.close(fig)
 # ============================== END FEATURE Q ============================================================
+
 
 
 
