@@ -3389,26 +3389,30 @@ else:
     ax.axvline(50, color=line_col, linestyle=(0, (4, 4)), linewidth=2.0, zorder=1)
     ax.axhline(50, color=line_col, linestyle=(0, (4, 4)), linewidth=2.0, zorder=1)
 
-    # Quadrant labels — smaller, inside quadrants, light grey background
-    quad_fontsize = 18
+    # Quadrant labels — now in corners, font size 16, light-grey background
+    quad_fontsize = 16
     bbox_style = dict(
         boxstyle="round,pad=0.35",
         facecolor="#d1d5db",
         edgecolor="none",
-        alpha=0.9,
+        alpha=0.90,
     )
-    ax.text(25, 92, "BOX DEFENDER",
+    ax.text(8, 92, "BOX DEFENDER",
             fontsize=quad_fontsize, fontweight="bold",
-            ha="center", va="center", bbox=bbox_style, zorder=20)
-    ax.text(75, 92, "COMPLETE",
+            ha="left", va="center",
+            bbox=bbox_style, zorder=20)
+    ax.text(92, 92, "COMPLETE",
             fontsize=quad_fontsize, fontweight="bold",
-            ha="center", va="center", bbox=bbox_style, zorder=20)
-    ax.text(25, 8, "LIMITED",
+            ha="right", va="center",
+            bbox=bbox_style, zorder=20)
+    ax.text(8, 8, "LIMITED",
             fontsize=quad_fontsize, fontweight="bold",
-            ha="center", va="center", bbox=bbox_style, zorder=20)
-    ax.text(75, 8, "BALL PLAYER",
+            ha="left", va="center",
+            bbox=bbox_style, zorder=20)
+    ax.text(92, 8, "BALL PLAYER",
             fontsize=quad_fontsize, fontweight="bold",
-            ha="center", va="center", bbox=bbox_style, zorder=20)
+            ha="right", va="center",
+            bbox=bbox_style, zorder=20)
 
     # Player labels
     texts = []
@@ -3470,7 +3474,7 @@ else:
         title_fontsize=12,
         fontsize=11,
         loc="upper left",
-        bbox_to_anchor=(1.02, 1.0),
+        bbox_to_anchor=(1.00, 1.00),
         frameon=False,
     )
     ax.add_artist(legend1)
@@ -3479,7 +3483,7 @@ else:
     legend_elements_bc = [
         Line2D([0], [0], marker="s", markeredgecolor=txt_col, markerfacecolor="none",
                markersize=11, label="False"),
-        Line2D([0], [0], marker="s", markeredgecolor=txt_col, markerfacecolor="#f9fafb",
+        Line2D([0], [0], marker="s", markeredgecolor=txt_col, markerfacecolor="#ffffff",
                markersize=11, label="True"),
     ]
     ax.legend(
@@ -3488,13 +3492,13 @@ else:
         title_fontsize=12,
         fontsize=11,
         loc="upper left",
-        bbox_to_anchor=(1.02, 0.70),
+        bbox_to_anchor=(1.00, 0.72),
         frameon=False,
     )
 
     # Layout — leave room on the right for legends, add top gap (no main title)
     top_frac = 1.0 - (top_gap_px / float(h_px))
-    fig.subplots_adjust(left=0.075, right=0.80, bottom=0.105, top=top_frac)
+    fig.subplots_adjust(left=0.075, right=0.70, bottom=0.105, top=top_frac)
 
     # Render & download
     if render_exact:
@@ -3514,6 +3518,7 @@ else:
 
     plt.close(fig)
 # ============================== END FEATURE Q ============================================================
+
 
 
 
