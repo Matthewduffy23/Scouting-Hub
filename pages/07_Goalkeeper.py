@@ -952,13 +952,14 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         with st.expander("Individual Metrics", expanded=False):
 
             def _pct(m):
+                """
+                Percentile helper for Individual Metrics.
+                df_f percentiles already handle INVERSE_METRICS,
+                so we do NOT invert anything again here.
+                """
                 col = f"{m} Percentile"
                 if col in row and not pd.isna(row[col]):
-                    base = float(row[col])
-                    # Invert for conceded goals (lower is better)
-                    if m == "Conceded goals per 90":
-                        return 100.0 - base
-                    return base
+                    return float(row[col])
                 return 0.0
 
             GK = [
@@ -1478,7 +1479,8 @@ def percentiles_for_player_in_pool(pool_df: pd.DataFrame, ply_row: pd.Series) ->
         if m not in pool_df.columns or pd.isna(ply_row[m]):
             continue
         series = pool_df[m]
-        invert = (m == "Conceded goals per 90")  # lower is better
+        # Use INVERSE_METRICS for raw-value inversion (lower is better)
+        invert = (m in INVERSE_METRICS)
         pct_map[m] = _percentile_value(ply_row[m], series, invert=invert)
     return pct_map
 
@@ -1687,16 +1689,15 @@ pct_extra = {}
 if isinstance(pool_df, pd.DataFrame) and not pool_df.empty:
     for m in EXTRA_METRICS:
         if m in df.columns and m in pool_df.columns and pd.notna(ply.get(m)):
-            invert = (m == "Conceded goals per 90")
+            invert = (m in INVERSE_METRICS)  # use INVERSE_METRICS here for raw values
             pct_extra[m] = percentile_in_series(ply[m], pool_df[m], invert=invert)
+
 for m in EXTRA_METRICS:
     if m not in pct_extra or pd.isna(pct_extra[m]):
         col = f"{m} Percentile"
         if col in player_row.columns and pd.notna(player_row[col].iloc[0]):
-            val = float(player_row[col].iloc[0])
-            if m == "Conceded goals per 90":
-                val = 100.0 - val
-            pct_extra[m] = val
+            # df_f percentiles already applied INVERSE_METRICS — do NOT invert again
+            pct_extra[m] = float(player_row[col].iloc[0])
 
 # Enforce style-only vs. strength/weakness-only via STYLE_MAP:
 strengths, weaknesses, styles = [], [], []
@@ -1748,9 +1749,8 @@ def table_style_role_scores_from_row(row):
         for m, w in rd["metrics"].items():
             pct_col = f"{m} Percentile"
             if pct_col in row.index and pd.notna(row[pct_col]):
+                # df_f already used INVERSE_METRICS; no extra inversion here
                 val = float(row[pct_col])
-                if m == "Conceded goals per 90":
-                    val = 100.0 - val
                 metric_score += val * w
         metric_score /= total_w
         if use_league_weighting:
