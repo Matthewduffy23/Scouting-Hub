@@ -3125,50 +3125,120 @@ with st.expander("Scatter settings", expanded=False):
 # ==========================================================================================================
 
 
-# ============================ (Q) FULL FEATURE — CB SCORE CALC + ARCHETYPE MAP ============================
-import numpy as np
-import pandas as pd
+# ============================== FEATURE Q — CB ARCHETYPE SCATTER (TEMPLATED) ==============================
 from scipy.stats import rankdata
-import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
 from io import BytesIO
 import uuid
-import streamlit as st
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+from matplotlib.ticker import MultipleLocator
+from matplotlib import patheffects as pe
 
 st.markdown("---")
-st.header("🧭 Feature Q — CB Archetype Map (Self-Contained)")
+st.header("🧭 Feature Q — CB Archetype Map")
 
-# =====================================================================================
-# 1) CALCULATIONS — Weighted Percentile Scores + Archetypes + Boxing Threat
-# =====================================================================================
+# ------------------------------------------------------------------
+# 1. SETTINGS UI (kept in same style as your generic scatter)
+# ------------------------------------------------------------------
+with st.expander("Scatter settings", expanded=False):
 
-st.caption("Feature Q automatically calculates all CB scores, archetypes, and threat flags.")
+    # Pool: leagues (use same preset pattern as your other tools)
+    leagues_available_sc = sorted(df["League"].dropna().unique().tolist())
+    player_league = player_row.iloc[0]["League"] if not player_row.empty else None
+    preset_sc = st.selectbox(
+        "League preset",
+        ["Player's league", "Top 5 Europe", "Top 20 Europe", "EFL (England 2–4)", "Custom"],
+        index=0,
+        key="fq_preset",
+    )
+    preset_map_sc = {
+        "Player's league": {player_league} if player_league else set(),
+        "Top 5 Europe": set(PRESET_LEAGUES.get("Top 5 Europe", [])),
+        "Top 20 Europe": set(PRESET_LEAGUES.get("Top 20 Europe", [])),
+        "EFL (England 2–4)": set(PRESET_LEAGUES.get("EFL (England 2–4)", [])),
+        "Custom": set(),
+    }
+    add_leagues_sc = st.multiselect(
+        "Add leagues",
+        leagues_available_sc,
+        default=[],
+        key="fq_add_leagues",
+    )
+    leagues_scatter = sorted(preset_map_sc.get(preset_sc, set()) | set(add_leagues_sc))
+    if not leagues_scatter and player_league:
+        leagues_scatter = [player_league]
 
-# --- CONFIG ---
-LEAGUE_FILTER_Q = st.text_input("League filter", "Croatia 1.", key="fq_calc_league")
+    # Filters
+    df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
+    df["Age"] = pd.to_numeric(df["Age"], errors="coerce")
 
-df_q = df.copy()
+    min_minutes_s, max_minutes_s = st.slider("Minutes filter", 0, 5000, (500, 5000), key="fq_min")
+    age_min_bound = int(np.nanmin(df["Age"])) if df["Age"].notna().any() else 14
+    age_max_bound = int(np.nanmax(df["Age"])) if df["Age"].notna().any() else 45
+    min_age_s, max_age_s = st.slider("Age filter", age_min_bound, age_max_bound, (16, 40), key="fq_age")
+    min_strength_s, max_strength_s = st.slider("League quality (strength)", 0, 101, (0, 101), key="fq_ls")
 
-# --- Filter valid rows ---
-df_q["Minutes played"] = pd.to_numeric(df_q["Minutes played"], errors="coerce")
-df_q["Age"] = pd.to_numeric(df_q["Age"], errors="coerce")
+    # Labels
+    show_labels = st.toggle("Show player labels", value=True, key="fq_labels_all")
+    label_only_u23 = st.checkbox("Label only U23 players", value=False, key="fq_lbl_u23")
+    allow_overlap = st.toggle("Allow overlapping labels (not recommended)", value=False, key="fq_overlap")
+    label_size = st.slider("Label size", 8, 20, 13, 1, key="fq_lbl_sz")
 
-df_q = df_q[df_q["Minutes played"] >= 500]
-df_q = df_q[df_q["Age"].between(16, 55)]
-df_q = df_q[df_q["League"] == LEAGUE_FILTER_Q]
+    # Points
+    point_alpha = st.slider("Point opacity", 0.2, 1.0, 0.92, 0.02, key="fq_alpha")
+    point_size = st.slider("Point size", 24, 300, 230, 2, key="fq_pts")
 
-# Extract primary position
-df_q["Primary Position"] = df_q["Position"].astype(str).str.split(",").str[0].str.strip()
+    # Team highlight (within selected leagues)
+    teams_available_hl = sorted(df[df["League"].isin(leagues_scatter)]["Team"].dropna().unique().tolist())
+    team_highlight = st.selectbox(
+        "Highlight team (within selected leagues)", ["(None)"] + teams_available_hl, index=0, key="fq_team_hl"
+    )
 
-# Only CB roles
-valid_cbs = ("LCB", "RCB", "CB")
-df_q = df_q[df_q["Primary Position"].isin(valid_cbs)]
+    # Theme
+    theme = st.radio("Theme", ["Dark", "Light"], index=0, horizontal=True, key="fq_theme")
+    PAGE_BG = "#ebebeb" if theme == "Light" else "#050811"
+    PLOT_BG = "#f3f3f3" if theme == "Light" else "#0b1019"
+    GRID_MAJ = "#d7d7d7" if theme == "Light" else "#3a4050"
+    txt_col = "#111111" if theme == "Light" else "#f9fafb"
 
-if df_q.empty:
-    st.warning("No CBs found for this league after filtering.")
+    # Canvas & title
+    canvas_preset = st.selectbox("Canvas size (px)", ["1280×720", "1600×900", "1920×820", "1920×1080"], index=1, key="fq_canvas")
+    w_px, h_px = map(int, canvas_preset.replace("×", "x").replace(" ", "").split("x"))
+
+    show_title = st.checkbox("Show custom title", value=True, key="fq_show_title")
+    custom_title = st.text_input("Custom title", "Centre-Back Possession vs Defensive Score", key="fq_title")
+
+    # Fixed top gap (same idea as your template)
+    top_gap_px = st.slider("Top blank gap (px)", 0, 240, 90, 5, key="fq_topgap")
+
+    render_exact = st.checkbox("Render exact pixels (PNG)", value=True, key="fq_exact")
+
+# ------------------------------------------------------------------
+# 2. BUILD CB POOL + CALCULATE SCORES (weighted percentiles)
+# ------------------------------------------------------------------
+
+# --- copy base df so we never mangle the original ---
+pool_sc = df[df["League"].isin(leagues_scatter)].copy()
+
+# Position filter to CBs only (using first-listed position)
+pool_sc["Primary Position"] = pool_sc["Position"].astype(str).str.split(",").str[0].str.strip()
+pool_sc = pool_sc[pool_sc["Primary Position"].isin(["LCB", "RCB", "CB"])]
+
+# Minutes / Age / League strength filters (within the chosen leagues)
+pool_sc["League Strength"] = pool_sc["League"].map(LEAGUE_STRENGTHS).fillna(0.0)
+pool_sc = pool_sc[
+    pool_sc["Minutes played"].between(min_minutes_s, max_minutes_s)
+    & pool_sc["Age"].between(min_age_s, max_age_s)
+    & pool_sc["League Strength"].between(float(min_strength_s), float(max_strength_s))
+]
+
+# Early exit
+if pool_sc.empty:
+    st.info("No centre-backs in scatter pool after filters.")
 else:
-
-    # ---------------- Metric groups (as provided) ----------------
+    # --- metric groups as per your calc snippet ---
     metric_groups = {
         "def_score": {
             "Defensive duels per 90": 0.1,
@@ -3199,193 +3269,251 @@ else:
         },
     }
 
-    # ------------- Weighted percentile scoring function -------------
-    def weighted_percentile_score(df_sub, row, metric_dict):
+    # weighted percentile scorer (exactly your logic)
+    def weighted_percentile_score(df_subset, row, metric_dict):
         total = 0
         for metric, weight in metric_dict.items():
-            vals = df_sub[metric].fillna(0)
-            perc = rankdata(vals) / len(vals)
-            idx = df_sub.index.get_loc(row.name)
-            total += perc[idx] * weight
+            vals = df_subset[metric].fillna(0)
+            percentiles = rankdata(vals) / len(vals)
+            player_idx = df_subset.index.get_loc(row.name)
+            score = percentiles[player_idx]
+            total += score * weight
         return total * 100
 
-    # ------------- Apply scores -------------
+    # apply scores within the CB pool
     for score_name, group in metric_groups.items():
-        df_q[score_name] = df_q.apply(lambda r: weighted_percentile_score(df_q, r, group), axis=1)
+        pool_sc[score_name] = pool_sc.apply(lambda r: weighted_percentile_score(pool_sc, r, group), axis=1)
 
-    # ------------- Archetype classification -------------
-    def classify_archetype(r):
-        if r["def_score"] >= 50 and r["poss_score"] >= 50:
+    # archetypes (same thresholds as your snippet)
+    def classify(row):
+        if row["def_score"] >= 50 and row["poss_score"] >= 50:
             return "Complete"
-        elif r["def_score"] >= 50:
+        elif row["def_score"] >= 50:
             return "Box-Defender"
-        elif r["poss_score"] >= 50:
+        elif row["poss_score"] >= 50:
             return "Ball Player"
         else:
             return "Limited"
 
-    df_q["Archetype"] = df_q.apply(classify_archetype, axis=1)
-    df_q["Box-to-Box Ball Carrier"] = df_q["carry_score"] >= 70
+    pool_sc["Archetype"] = pool_sc.apply(classify, axis=1)
+    pool_sc["Box-to-Box Ball Carrier"] = pool_sc["carry_score"] >= 70
 
-    # ------------- Boxing Threat (top 20%) -------------
-    th80 = df_q["boxing_score"].quantile(0.80)
-    df_q["Boxing Threat"] = df_q["boxing_score"] >= th80
+    # boxing threat (top 20% in this pool)
+    threshold_80th = pool_sc["boxing_score"].quantile(0.80)
+    pool_sc["Boxing Threat"] = pool_sc["boxing_score"] >= threshold_80th
 
-# =====================================================================================
-# 2) SCATTERPLOT UI / OPTIONS
-# =====================================================================================
+    # ------------------------------------------------------------------
+    # 3. DRAW SCATTER — fixed 0–100 axes, quadrants, archetype colours
+    # ------------------------------------------------------------------
+    x_metric = "poss_score"
+    y_metric = "def_score"
 
-if df_q.empty:
-    st.stop()
+    fig, ax = plt.subplots(figsize=(w_px / 100, h_px / 100), dpi=100)
+    fig.patch.set_facecolor(PAGE_BG)
+    ax.set_facecolor(PLOT_BG)
 
-with st.expander("Feature Q — Plot settings", expanded=False):
+    # axes 0–100
+    ax.set_xlim(0, 100)
+    ax.set_ylim(0, 100)
 
-    show_labels_q = st.checkbox("Show labels", True)
-    label_only_u23_q = st.checkbox("Label only U23s", False)
-    max_labels_q = st.slider("Max labels", 3, 35, 12)
-    label_size_q = st.slider("Label size", 8, 22, 11)
+    ax.set_xlabel("Possession Score", fontsize=14, fontweight="semibold", color=txt_col)
+    ax.set_ylabel("Defensive Score", fontsize=14, fontweight="semibold", color=txt_col)
 
-    x_split_q = st.slider("Possession score split", 0, 100, 50)
-    y_split_q = st.slider("Defensive score split", 0, 100, 50)
+    # grid & spines
+    ax.grid(True, which="major", linewidth=0.9, color=GRID_MAJ)
+    for s in ax.spines.values():
+        s.set_linewidth(0.9)
+        s.set_color("#9ca3af" if theme == "Light" else "#6b7280")
 
-    theme_q = st.radio("Theme", ["Dark", "Light"], index=0)
+    # ticks every 10
+    ax.xaxis.set_major_locator(MultipleLocator(10))
+    ax.yaxis.set_major_locator(MultipleLocator(10))
+    for tick in ax.get_xticklabels() + ax.get_yticklabels():
+        tick.set_fontweight("semibold"); tick.set_color(txt_col)
 
-    point_size_q = st.slider("Point size", 40, 260, 160)
-    alpha_q = st.slider("Opacity", 0.2, 1.0, 0.90)
+    # palette by archetype
+    arch_colors = {
+        "Ball Player":   "#3b82f6",  # blue
+        "Box-Defender":  "#f59e0b",  # orange
+        "Complete":      "#ef4444",  # red
+        "Limited":       "#22c55e",  # green
+    }
 
-# =====================================================================================
-# 3) PLOT — CB ARCHETYPE MAP
-# =====================================================================================
-
-# Theme colours
-if theme_q == "Light":
-    PAGE_BG_Q = "#ebebeb"; PLOT_BG_Q = "#f3f3f3"
-    GRID_COL_Q = "#d4d4d8"; TXT_COL_Q = "#111827"
-    AXIS_COL_Q = "#374151"; QUAD_BG = "#e5e7eb"
-else:
-    PAGE_BG_Q = "#050811"; PLOT_BG_Q = "#0b1019"
-    GRID_COL_Q = "#3a4050"; TXT_COL_Q = "#e5e7eb"
-    AXIS_COL_Q = "#9ca3af"; QUAD_BG = "#111827"
-
-# Plot
-fig, ax = plt.subplots(figsize=(10, 6), dpi=110)
-fig.patch.set_facecolor(PAGE_BG_Q)
-ax.set_facecolor(PLOT_BG_Q)
-
-ax.set_xlim(-2, 102)
-ax.set_ylim(-2, 102)
-
-ax.set_xlabel("Possession Score", fontsize=14, fontweight="semibold", color=TXT_COL_Q)
-ax.set_ylabel("Defensive Score", fontsize=14, fontweight="semibold", color=TXT_COL_Q)
-
-ax.grid(True, linewidth=0.8, color=GRID_COL_Q)
-
-for s in ax.spines.values():
-    s.set_color(AXIS_COL_Q)
-    s.set_linewidth(1)
-
-# Colors
-ARCH_COL = {
-    "Ball Player": "#3b82f6",
-    "Box-Defender": "#f59e0b",
-    "Complete": "#ef4444",
-    "Limited": "#22c55e",
-}
-
-# Shapes
-SHAPE = {False: "o", True: "s"}
-
-# Plot groups
-for (arch, carrier), grp in df_q.groupby(["Archetype", "Box-to-Box Ball Carrier"]):
-    ax.scatter(
-        grp["poss_score"],
-        grp["def_score"],
-        s=point_size_q,
-        c=ARCH_COL[arch],
-        marker=SHAPE[carrier],
-        alpha=alpha_q,
-        edgecolors="none",
-        zorder=2,
-        label=None,
-    )
-
-# Boxing Threat ring
-bt = df_q[df_q["Boxing Threat"] == True]
-if not bt.empty:
-    ax.scatter(
-        bt["poss_score"],
-        bt["def_score"],
-        s=point_size_q * 1.25,
-        facecolors="none",
-        edgecolors="#f97316",
-        linewidths=2,
-        zorder=3,
-    )
-
-# Quadrant lines
-ax.axvline(x_split_q, color=TXT_COL_Q, linestyle="--", linewidth=1.4)
-ax.axhline(y_split_q, color=TXT_COL_Q, linestyle="--", linewidth=1.4)
-
-# Quadrant labels
-def quad(text, x, y):
-    ax.text(
-        x, y, text, fontsize=13, fontweight="bold",
-        ha="center", va="center", color=TXT_COL_Q,
-        bbox=dict(boxstyle="round,pad=0.4", facecolor=QUAD_BG, edgecolor="none", alpha=0.85),
-    )
-
-quad("LIMITED", 25, 25)
-quad("BOX DEFENDER", 25, 75)
-quad("BALL PLAYER", 75, 25)
-quad("COMPLETE", 75, 75)
-
-# Label top players
-if show_labels_q:
-    cand = df_q.copy()
-    if label_only_u23_q:
-        cand = cand[cand["Age"] < 23]
-
-    cand = cand.assign(_score=cand["def_score"] + cand["poss_score"])
-    cand = cand.sort_values("_score", ascending=False).head(max_labels_q)
-
-    for _, r in cand.iterrows():
-        ax.annotate(
-            r["Player"],
-            (r["poss_score"], r["def_score"]),
-            xytext=(8, 6),
-            textcoords="offset points",
-            fontsize=label_size_q,
-            color=TXT_COL_Q,
-            weight="semibold",
+    # plot by (archetype, carrier)
+    for (arch, is_carrier), grp in pool_sc.groupby(["Archetype", "Box-to-Box Ball Carrier"]):
+        col = arch_colors.get(arch, "#9ca3af")
+        marker = "s" if bool(is_carrier) else "o"
+        ax.scatter(
+            grp[x_metric],
+            grp[y_metric],
+            s=point_size,
+            c=col,
+            alpha=float(point_alpha),
+            marker=marker,
+            edgecolors="none",
+            linewidths=0.0,
+            zorder=2,
         )
 
-# Legend
-legend_items = [
-    Line2D([], [], color=ARCH_COL["Ball Player"], marker="o", linestyle="", label="Ball Player"),
-    Line2D([], [], color=ARCH_COL["Box-Defender"], marker="o", linestyle="", label="Box-Defender"),
-    Line2D([], [], color=ARCH_COL["Complete"], marker="o", linestyle="", label="Complete"),
-    Line2D([], [], color=ARCH_COL["Limited"], marker="o", linestyle="", label="Limited"),
-]
-ax.legend(handles=legend_items, frameon=False, fontsize=10, loc="upper right")
+    # boxing threat ring overlay
+    threat = pool_sc[pool_sc["Boxing Threat"]]
+    if not threat.empty:
+        ax.scatter(
+            threat[x_metric],
+            threat[y_metric],
+            s=point_size * 1.25,
+            facecolors="none",
+            edgecolors="#fbbf24",
+            linewidths=1.8,
+            zorder=3,
+        )
 
-st.pyplot(fig)
+    # team highlight on top
+    if team_highlight != "(None)":
+        hl = pool_sc[pool_sc["Team"] == team_highlight]
+        if not hl.empty:
+            ax.scatter(
+                hl[x_metric],
+                hl[y_metric],
+                s=point_size,
+                c="#f59e0b",
+                alpha=1.0,
+                edgecolors="white",
+                linewidths=1.6,
+                marker="o",
+                zorder=4,
+            )
 
-# Download
-buf = BytesIO()
-fig.savefig(buf, format="png", dpi=150, facecolor=fig.get_facecolor(), bbox_inches="tight")
-buf.seek(0)
+    # 50/50 quadrant lines (dashed, white-ish)
+    line_col = "#000000" if theme == "Light" else "#f9fafb"
+    ax.axvline(50, color=line_col, linestyle=(0, (4, 4)), linewidth=2.0, zorder=1)
+    ax.axhline(50, color=line_col, linestyle=(0, (4, 4)), linewidth=2.0, zorder=1)
 
-st.download_button(
-    "⬇️ Download Feature Q",
-    data=buf.getvalue(),
-    file_name="FeatureQ_CB_Archetype_Map.png",
-    mime="image/png",
-    key=f"dl_fq_{uuid.uuid4().hex}",
-)
+    # quadrant labels (like Tableau layout)
+    def quad_label(text, x, y):
+        ax.text(
+            x, y, text,
+            ha="center", va="center",
+            fontsize=13, fontweight="semibold",
+            color=txt_col,
+            bbox=dict(boxstyle="round,pad=0.45",
+                      facecolor="#e5e5e5" if theme == "Light" else "#111827",
+                      edgecolor="none", alpha=0.9),
+            zorder=5,
+        )
 
-plt.close(fig)
+    quad_label("BOX DEFENDER", 25, 80)
+    quad_label("COMPLETE",     75, 80)
+    quad_label("LIMITED",      25, 10)
+    quad_label("BALL PLAYER",  75, 10)
 
-# ============================ END FEATURE Q ============================
+    # labels
+    texts = []
+    if show_labels:
+        candidates = pool_sc.copy()
+        if label_only_u23:
+            candidates = candidates[candidates["Age"] < 23]
+
+        # sort by total score so best players more likely labelled
+        candidates = candidates.assign(_score=candidates["def_score"] + candidates["poss_score"])
+        candidates = candidates.sort_values("_score", ascending=False)
+
+        x_tol = (ax.get_xlim()[1] - ax.get_xlim()[0]) * 0.035
+        y_tol = (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.035
+        placed = []
+
+        for _, r in candidates.iterrows():
+            px, py = float(r[x_metric]), float(r[y_metric])
+            if not allow_overlap and any(abs(px - qx) < x_tol and abs(py - qy) < y_tol for (qx, qy) in placed):
+                continue
+            placed.append((px, py))
+            t = ax.annotate(
+                r["Player"],
+                (px, py),
+                xytext=(10, 12),
+                textcoords="offset points",
+                fontsize=label_size,
+                fontweight="semibold",
+                color=txt_col,
+                ha="left",
+                va="bottom",
+                zorder=6,
+            )
+            t.set_path_effects(
+                [pe.withStroke(linewidth=2.0,
+                               foreground=("#ffffff" if theme == "Light" else "#1e293b"),
+                               alpha=0.9)]
+            )
+            texts.append(t)
+
+    # legends
+    arch_handles = [
+        Line2D([], [], marker="o", linestyle="", markersize=8,
+               color=arch_colors[a], label=a)
+        for a in ["Ball Player", "Box-Defender", "Complete", "Limited"]
+        if a in pool_sc["Archetype"].unique()
+    ]
+    carrier_handles = [
+        Line2D([], [], marker="o", linestyle="", markersize=8,
+               color=txt_col, label="Ball Carrier: False"),
+        Line2D([], [], marker="s", linestyle="", markersize=8,
+               color=txt_col, label="Ball Carrier: True"),
+    ]
+
+    leg1 = ax.legend(
+        handles=arch_handles,
+        title="Archetype",
+        loc="upper left",
+        bbox_to_anchor=(1.01, 1.0),
+        frameon=False,
+        fontsize=10,
+        title_fontsize=11,
+    )
+    ax.add_artist(leg1)
+    ax.legend(
+        handles=carrier_handles,
+        title="Box-to-Box\nBall Carrier",
+        loc="upper left",
+        bbox_to_anchor=(1.01, 0.60),
+        frameon=False,
+        fontsize=9,
+        title_fontsize=10,
+    )
+
+    # layout: fixed top gap like your other plots
+    top_frac = 1.0 - (top_gap_px / float(h_px))
+    fig.subplots_adjust(left=0.075, right=0.80, bottom=0.105, top=top_frac)
+
+    # optional title
+    if show_title and custom_title.strip():
+        title_col = "#111111" if theme == "Light" else "#f5f5f5"
+        y_gap_pos = top_frac + (1 - top_frac) * 0.44
+        fig.text(
+            0.5, y_gap_pos, custom_title.strip(),
+            ha="center", va="center",
+            color=title_col,
+            fontsize=24,
+            fontweight="semibold",
+        )
+
+    # render
+    if render_exact:
+        buf = BytesIO()
+        fig.savefig(buf, format="png", dpi=100, facecolor=fig.get_facecolor(), bbox_inches="tight")
+        buf.seek(0)
+        st.image(buf, width=w_px)
+        st.download_button(
+            "⬇️ Download Feature Q (PNG)",
+            data=buf.getvalue(),
+            file_name=f"feature_q_cb_archetypes_{uuid.uuid4().hex[:6]}.png",
+            mime="image/png",
+            key=f"download_feature_q_{uuid.uuid4().hex}",
+        )
+    else:
+        st.pyplot(fig, use_container_width=False)
+
+    plt.close(fig)
+# ============================== END FEATURE Q ============================================================
 
 
 
