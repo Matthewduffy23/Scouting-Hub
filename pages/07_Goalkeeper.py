@@ -2008,18 +2008,22 @@ else:
         return y - row_gap
 
     def pct_of(metric: str) -> float:
+        """
+        Percentile for metric:
+
+        - If pct_extra has a value (pool-based), use it as-is.
+        - Else, fall back to df_f's `{metric} Percentile`, which already
+          applied INVERSE_METRICS when it was created.
+        - ❗ Do NOT invert again here, or inverse metrics get double-flipped.
+        """
         if isinstance(pct_extra, dict) and metric in pct_extra and pd.notna(pct_extra[metric]):
-            v = float(pct_extra[metric])
-        else:
-            col = f"{metric} Percentile"
-            if col in player_row.columns and pd.notna(player_row[col].iloc[0]):
-                v = float(player_row[col].iloc[0])
-            else:
-                return np.nan
-        # ✅ use global inversion rule
-        if metric in INVERSE_METRICS:
-            return 100.0 - v
-        return v
+            return float(pct_extra[metric])
+
+        col = f"{metric} Percentile"
+        if col in player_row.columns and pd.notna(player_row[col].iloc[0]):
+            return float(player_row[col].iloc[0])
+
+        return np.nan
 
     def val_of(metric: str):
         ply_local = player_row.iloc[0]
@@ -2369,21 +2373,24 @@ else:
 if player_row.empty:
     st.info("Pick a player above.")
 else:
-    # ----- helper: percentile getter using global INVERSE_METRICS -----
+    # ----- helper: percentile getter (NO extra inversion; df_f already applied INVERSE_METRICS) -----
     def pct_of(metric: str) -> float:
-        # use pct_extra if available (pool-based), else fallback to per-league percentile columns
+        """
+        Percentile for metric:
+
+        - If pct_extra has a value (pool-based), use it as-is.
+        - Else, fall back to df_f's `{metric} Percentile`, which already
+          applied INVERSE_METRICS when it was created.
+        - Do NOT invert again here, or inverse metrics get double-flipped.
+        """
         if isinstance(pct_extra, dict) and metric in pct_extra and pd.notna(pct_extra[metric]):
-            v = float(pct_extra[metric])
-        else:
-            col = f"{metric} Percentile"
-            if col in player_row.columns and pd.notna(player_row[col].iloc[0]):
-                v = float(player_row[col].iloc[0])
-            else:
-                return np.nan
-        # invert according to global rule
-        if metric in INVERSE_METRICS:
-            return 100.0 - v
-        return v
+            return float(pct_extra[metric])
+
+        col = f"{metric} Percentile"
+        if col in player_row.columns and pd.notna(player_row[col].iloc[0]):
+            return float(player_row[col].iloc[0])
+
+        return np.nan
 
     def val_of(metric: str):
         ply_local = player_row.iloc[0]
@@ -2398,7 +2405,7 @@ else:
         return v, f"{v:.2f}"
 
     # ----- assemble sections from your existing calcs -----
-    # NOTE: pct_of() returns 0–100 percentile, with inverse metrics handled via INVERSE_METRICS.
+    # NOTE: pct_of() returns 0–100 percentile, with inverse metrics already handled upstream.
     GOALKEEPING = []
     for lab, met in [
         ("Exits", "Exits per 90"),
@@ -2713,21 +2720,24 @@ else:
     # Apply foot override (if enabled)
     foot_display = (foot_override_text.strip() if (foot_override_on and foot_override_text and foot_override_text.strip()) else foot)
 
-    # --- helpers: percentile + raw value, with INVERSE_METRICS respected ---
+    # --- helpers: percentile + raw value (NO extra inversion; df_f already used INVERSE_METRICS) ---
     def pct_of(metric: str) -> float:
-        # use pool-based pct_extra if present, else fall back to per-league percentile column
+        """
+        Percentile for metric:
+
+        - If pct_extra has a value (pool-based), use it directly.
+        - Else, use the per-league `{metric} Percentile` column from df_f.
+        - Do NOT invert again here; INVERSE_METRICS was applied when the
+          percentile columns were created.
+        """
         if isinstance(pct_extra, dict) and metric in pct_extra and pd.notna(pct_extra[metric]):
-            v = float(pct_extra[metric])
-        else:
-            col = f"{metric} Percentile"
-            if col in player_row.columns and pd.notna(player_row[col].iloc[0]):
-                v = float(player_row[col].iloc[0])
-            else:
-                return np.nan
-        # global inversion rule (e.g. "Conceded goals per 90")
-        if metric in INVERSE_METRICS:
-            return 100.0 - v
-        return v
+            return float(pct_extra[metric])
+
+        col = f"{metric} Percentile"
+        if col in player_row.columns and pd.notna(player_row[col].iloc[0]):
+            return float(player_row[col].iloc[0])
+
+        return np.nan
 
     def val_of(metric: str):
         ply_local = player_row.iloc[0]
@@ -2742,7 +2752,7 @@ else:
         return v, f"{v:.2f}"
 
     # === sections (GK: Goalkeeping + Possession) ===
-    # pct_of now inverts any metric in INVERSE_METRICS (e.g. "Conceded goals per 90").
+    # pct_of now just reads oriented percentiles (higher is always better).
     GOALKEEPING = []
     for lab, met in [
         ("Exits", "Exits per 90"),
@@ -3505,10 +3515,10 @@ else:
                         # Percentiles for A & B vs pool (0–100 scale)
                         pool_pct = pool[radar_metrics].rank(pct=True) * 100.0
 
-                        # Invert Conceded goals per 90 so lower conceded = higher percentile
-                        if "Conceded goals per 90" in radar_metrics:
-                            col = "Conceded goals per 90"
-                            pool_pct[col] = 100.0 - pool_pct[col]
+                        # ✅ Apply global inversion rule: any metric in INVERSE_METRICS gets flipped (lower = better)
+                        for m in radar_metrics:
+                            if m in INVERSE_METRICS:
+                                pool_pct[m] = 100.0 - pool_pct[m]
 
                         def pct_for(name: str) -> np.ndarray:
                             idx = pool[pool["Player"] == name].index
@@ -3641,7 +3651,7 @@ else:
                         st.caption(
                             "Ring labels show the **actual dataset values** at each decile (0–100th), rounded to **1 decimal place**. "
                             "Axis labels are centered on their metric angle, auto-flipped upright, and placed outside the 100 ring. "
-                            "For `Conceded goals per 90`, the radar percentile is inverted so fewer conceded = higher value."
+                            "Any metric in `INVERSE_METRICS` (e.g. `Conceded goals per 90`) has its percentile inverted so lower raw values = higher radar score."
                         )
                         st.pyplot(fig_r, use_container_width=True)
 # ----------------- END Radar -----------------
