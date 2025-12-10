@@ -3300,7 +3300,7 @@ else:
     pool_sc["Box-to-Box Ball Carrier"] = pool_sc["carry_score"] >= 70
 
     threshold_80th = pool_sc["boxing_score"].quantile(0.80)
-    pool_sc["Boxing Threat"] = pool_sc["boxing_score"] >= threshold_80th
+    pool_sc["Boxing Threat"] = pool_sc["boxing_score"] >= threshold_80th  # kept for data, not visual rings
 
     # ------------------------------------------------------------------
     # 3. DRAW SCATTER — 0–100 axes, quadrants, legends, labels
@@ -3339,7 +3339,7 @@ else:
         "Limited": "#22c55e",
     }
 
-    # Scatter: square marker if carrier True, circle if False
+    # Scatter: square marker if carrier True, circle if False (NO RINGS)
     for (arch, is_carrier), grp in pool_sc.groupby(["Archetype", "Box-to-Box Ball Carrier"]):
         col = arch_colors.get(arch, "#9ca3af")
         marker = "s" if bool(is_carrier) else "o"
@@ -3355,33 +3355,21 @@ else:
             zorder=2,
         )
 
-    # Boxing Threat ring overlay
-    threat = pool_sc[pool_sc["Boxing Threat"]]
-    if not threat.empty:
-        ax.scatter(
-            threat[x_metric],
-            threat[y_metric],
-            s=point_size * 1.25,
-            facecolors="none",
-            edgecolors="#fbbf24",
-            linewidths=1.8,
-            zorder=3,
-        )
-
-    # Team highlight
+    # TEAM HIGHLIGHT — purely visual, does NOT affect label-selection logic
+    highlighted_team = None
     if team_highlight != "(None)":
-        hl = pool_sc[pool_sc["Team"] == team_highlight]
-        if not hl.empty:
+        highlighted_team = pool_sc[pool_sc["Team"] == team_highlight]
+        if not highlighted_team.empty:
             ax.scatter(
-                hl[x_metric],
-                hl[y_metric],
-                s=point_size,
+                highlighted_team[x_metric],
+                highlighted_team[y_metric],
+                s=point_size * 1.15,
                 c="#f59e0b",
+                marker="s",
                 alpha=1.0,
-                edgecolors="white",
-                linewidths=1.6,
-                marker="o",
-                zorder=4,
+                edgecolors="none",
+                linewidths=0,
+                zorder=5,
             )
 
     # 50/50 quadrant lines
@@ -3389,7 +3377,7 @@ else:
     ax.axvline(50, color=line_col, linestyle=(0, (4, 4)), linewidth=2.0, zorder=1)
     ax.axhline(50, color=line_col, linestyle=(0, (4, 4)), linewidth=2.0, zorder=1)
 
-    # Quadrant labels — now in corners, font size 16, light-grey background
+    # Quadrant labels — corners, font size 16, light-grey background
     quad_fontsize = 16
     bbox_style = dict(
         boxstyle="round,pad=0.35",
@@ -3414,7 +3402,7 @@ else:
             ha="right", va="center",
             bbox=bbox_style, zorder=20)
 
-    # Player labels
+    # Player labels (for whole pool, not just highlighted team)
     texts = []
     if show_labels:
         candidates = pool_sc.copy()
@@ -3496,9 +3484,10 @@ else:
         frameon=False,
     )
 
-    # Layout — leave room on the right for legends, add top gap (no main title)
+    # Layout — leave plenty of room on the right for legends,
+    # and add top gap (no main suptitle)
     top_frac = 1.0 - (top_gap_px / float(h_px))
-    fig.subplots_adjust(left=0.075, right=0.70, bottom=0.105, top=top_frac)
+    fig.subplots_adjust(left=0.06, right=0.63, bottom=0.11, top=top_frac)
 
     # Render & download
     if render_exact:
@@ -3518,6 +3507,7 @@ else:
 
     plt.close(fig)
 # ============================== END FEATURE Q ============================================================
+
 
 
 
