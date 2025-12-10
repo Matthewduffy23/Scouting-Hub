@@ -529,12 +529,6 @@ for feat in FEATURES:
             lambda x: x.rank(pct=True) * 100.0
         )
 
-# Percentile for Pass Ratio (so roles can weight it)
-df_f["Pass Ratio Percentile"] = (
-    df_f.groupby("League")["Pass Ratio"]
-        .transform(lambda x: x.rank(pct=True) * 100.0)
-)
-
 
 # ----------------- ROLE SCORING (tables) -----------------
 def compute_weighted_role_score(df_in: pd.DataFrame, metrics: dict, beta: float, league_weighting: bool) -> pd.Series:
