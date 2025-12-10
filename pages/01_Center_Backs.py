@@ -3419,7 +3419,7 @@ for txt in legend2.get_texts():
 legend2.get_title().set_color(txt_col)
 
 # SPACE FOR LEGENDS & LABELS
-fig.subplots_adjust(left=0.06, right=0.86, bottom=0.11, top=1 - top_gap_px / float(h_px))
+fig.subplots_adjust(left=0.06, right=0.90, bottom=0.11, top=1 - top_gap_px / float(h_px))
 
 # RENDER
 if render_exact:
