@@ -3172,7 +3172,6 @@ with st.expander("Scatter settings", expanded=False):
     df["Age"] = pd.to_numeric(df["Age"], errors="coerce")
     min_minutes_s, max_minutes_s = st.slider("Minutes", 0, 5000, (500, 5000), key="fq_min")
     min_age_s, max_age_s = st.slider("Age", 14, 45, (16, 40), key="fq_age")
-
     min_strength_s, max_strength_s = st.slider("League Strength", 0, 101, (0, 101), key="fq_ls")
 
     # Labels
@@ -3184,7 +3183,7 @@ with st.expander("Scatter settings", expanded=False):
     point_size = st.slider("Point size", 24, 300, 225, 2, key="fq_pts")
     point_alpha = st.slider("Point opacity", 0.2, 1.0, 0.92, 0.02, key="fq_alpha")
 
-    # TEAM HIGHLIGHT – AND LABEL FILTER
+    # TEAM HIGHLIGHT – USED ONLY FOR LABEL FILTER
     teams_available_hl = sorted(df[df["League"].isin(leagues_scatter)]["Team"].dropna().unique())
     team_highlight = st.selectbox(
         "Highlight team (labels only shown for this team)",
@@ -3193,12 +3192,15 @@ with st.expander("Scatter settings", expanded=False):
         key="fq_team",
     )
 
-    # Theme
+    # Theme toggle (kept for future but background fixed dark)
     theme = st.radio("Theme", ["Dark", "Light"], index=0, horizontal=True, key="fq_theme")
-    PAGE_BG = "#ebebeb" if theme == "Light" else "#050811"
-    PLOT_BG = "#f3f3f3" if theme == "Light" else "#0b1019"
-    GRID_MAJ = "#d7d7d7" if theme == "Light" else "#3a4050"
-    txt_col = "#111111" if theme == "Light" else "#f1f5f9"
+
+    # === FIXED DARK BACKGROUND FOR PAGE & PLOT ===
+    BASE_BG = "#0a0f1c"
+    PAGE_BG = BASE_BG          # page background
+    PLOT_BG = BASE_BG          # plot background
+    GRID_MAJ = "#3a4050"
+    txt_col = "#f1f5f9"        # light text on dark bg
 
     # Canvas
     canvas_preset = st.selectbox(
@@ -3233,7 +3235,6 @@ if pool_sc.empty:
     st.info("No CBs after filtering.")
     st.stop()
 
-# Score definitions (as in notebook)
 metric_groups = {
     "def_score": {
         "Defensive duels per 90": 0.1,
@@ -3313,7 +3314,7 @@ for s in ax.spines.values():
     s.set_linewidth(0.9)
 
 # Quadrant lines
-line_col = "#000000" if theme == "Light" else "#f9fafb"
+line_col = "#f9fafb"
 ax.axvline(50, color=line_col, linestyle=(0, (4, 4)), lw=2)
 ax.axhline(50, color=line_col, linestyle=(0, (4, 4)), lw=2)
 
@@ -3325,7 +3326,7 @@ ax.text(94, 94, "COMPLETE", fontsize=quad_fs, weight="bold", ha="right", bbox=bb
 ax.text(6, 6, "LIMITED", fontsize=quad_fs, weight="bold", bbox=bbox_style)
 ax.text(94, 6, "BALL PLAYER", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
 
-# Archetype colours (your palette)
+# Archetype colours
 arch_colors = {
     "Ball Player": "#76B7B2",
     "Box-Defender": "#F28E2B",
@@ -3347,7 +3348,7 @@ for (arch, carrier), grp in pool_sc.groupby(["Archetype", "Box-to-Box Ball Carri
         zorder=2,
     )
 
-# TEAM SELECTION: *NO* VISUAL CHANGE TO POINTS, JUST USED FOR LABEL FILTER
+# TEAM SELECTION: ONLY CONTROLS WHICH PLAYERS ARE LABELLED
 highlight_grp = None
 if team_highlight != "(None)":
     highlight_grp = pool_sc[pool_sc["Team"] == team_highlight]
@@ -3355,7 +3356,6 @@ if team_highlight != "(None)":
 # LABELS — ONLY THAT TEAM IF SELECTED
 texts = []
 if show_labels:
-
     if team_highlight != "(None)" and highlight_grp is not None and not highlight_grp.empty:
         label_df = highlight_grp.copy()
     else:
@@ -3378,17 +3378,24 @@ if show_labels:
             zorder=6,
         )
         t.set_path_effects(
-            [pe.withStroke(linewidth=2, foreground="#000000" if theme == "Light" else "#020617", alpha=0.9)]
+            [pe.withStroke(linewidth=2, foreground="#020617", alpha=0.9)]
         )
         texts.append(t)
 
+# ------------------------------------------------------------------
 # RIGHT-SIDE LEGENDS
+# 1) Archetype legend: labels visually aligned under title using padding controls
+# ------------------------------------------------------------------
 legend1 = ax.legend(
     handles=[
-        Line2D([0], [0], marker="s", color="none", markerfacecolor=arch_colors["Ball Player"], markersize=11, label="Ball Player"),
-        Line2D([0], [0], marker="s", color="none", markerfacecolor=arch_colors["Box-Defender"], markersize=11, label="Box-Defender"),
-        Line2D([0], [0], marker="s", color="none", markerfacecolor=arch_colors["Complete"], markersize=11, label="Complete"),
-        Line2D([0], [0], marker="s", color="none", markerfacecolor=arch_colors["Limited"], markersize=11, label="Limited"),
+        Line2D([0], [0], marker="s", linestyle="None", color="none",
+               markerfacecolor=arch_colors["Ball Player"], markersize=11, label="Ball Player"),
+        Line2D([0], [0], marker="s", linestyle="None", color="none",
+               markerfacecolor=arch_colors["Box-Defender"], markersize=11, label="Box-Defender"),
+        Line2D([0], [0], marker="s", linestyle="None", color="none",
+               markerfacecolor=arch_colors["Complete"], markersize=11, label="Complete"),
+        Line2D([0], [0], marker="s", linestyle="None", color="none",
+               markerfacecolor=arch_colors["Limited"], markersize=11, label="Limited"),
     ],
     title="Archetype",
     title_fontsize=12,
@@ -3396,16 +3403,39 @@ legend1 = ax.legend(
     loc="upper left",
     bbox_to_anchor=(1.0, 1.00),
     frameon=False,
+    handlelength=0.8,   # keeps markers compact so labels sit under title
+    handletextpad=0.25, # small gap between square + text
+    borderpad=0.2,
+    labelspacing=0.3,
 )
 ax.add_artist(legend1)
 for txt in legend1.get_texts():
     txt.set_color(txt_col)
 legend1.get_title().set_color(txt_col)
 
+# 2) Ball Carrier legend: circle = False, square = True, NO line through markers
 legend2 = ax.legend(
     handles=[
-        Line2D([0], [0], marker="s", markeredgecolor=txt_col, markerfacecolor="none", markersize=11, label="False"),
-        Line2D([0], [0], marker="s", markeredgecolor=txt_col, markerfacecolor="#ffffff", markersize=11, label="True"),
+        Line2D(
+            [0], [0],
+            marker="o",              # circle for False
+            linestyle="None",        # no line
+            color="none",
+            markeredgecolor=txt_col,
+            markerfacecolor="none",
+            markersize=11,
+            label="False",
+        ),
+        Line2D(
+            [0], [0],
+            marker="s",              # square for True
+            linestyle="None",        # no line
+            color="none",
+            markeredgecolor=txt_col,
+            markerfacecolor="none",
+            markersize=11,
+            label="True",
+        ),
     ],
     title="Ball Carrier",
     title_fontsize=12,
@@ -3413,15 +3443,23 @@ legend2 = ax.legend(
     loc="upper left",
     bbox_to_anchor=(1.0, 0.72),
     frameon=False,
+    handlelength=0.8,
+    handletextpad=0.25,
+    borderpad=0.2,
+    labelspacing=0.3,
 )
 for txt in legend2.get_texts():
     txt.set_color(txt_col)
 legend2.get_title().set_color(txt_col)
 
-# SPACE FOR LEGENDS & LABELS
+# ------------------------------------------------------------------
+# LAYOUT — SPACE FOR LEGENDS & TOP GAP
+# ------------------------------------------------------------------
 fig.subplots_adjust(left=0.06, right=0.88, bottom=0.11, top=1.08 - top_gap_px / float(h_px))
 
+# ------------------------------------------------------------------
 # RENDER
+# ------------------------------------------------------------------
 if render_exact:
     buf = BytesIO()
     fig.savefig(buf, format="png", dpi=100, facecolor=PAGE_BG)
