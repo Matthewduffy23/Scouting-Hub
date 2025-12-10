@@ -3320,10 +3320,10 @@ ax.axhline(50, color=line_col, linestyle=(0, (4, 4)), lw=2)
 # Quadrant labels
 quad_fs = 14
 bbox_style = dict(boxstyle="round,pad=0.35", facecolor="#d1d5db", edgecolor="none", alpha=0.9)
-ax.text(8, 92, "BOX DEFENDER", fontsize=quad_fs, weight="bold", bbox=bbox_style)
-ax.text(92, 92, "COMPLETE", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
-ax.text(8, 8, "LIMITED", fontsize=quad_fs, weight="bold", bbox=bbox_style)
-ax.text(92, 8, "BALL PLAYER", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
+ax.text(4, 98, "BOX DEFENDER", fontsize=quad_fs, weight="bold", bbox=bbox_style)
+ax.text(96, 96, "COMPLETE", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
+ax.text(4, 2, "LIMITED", fontsize=quad_fs, weight="bold", bbox=bbox_style)
+ax.text(98, 4, "BALL PLAYER", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
 
 # Archetype colours (your palette)
 arch_colors = {
@@ -3394,7 +3394,7 @@ legend1 = ax.legend(
     title_fontsize=12,
     fontsize=11,
     loc="upper left",
-    bbox_to_anchor=(1.02, 1.00),
+    bbox_to_anchor=(1.0, 1.00),
     frameon=False,
 )
 ax.add_artist(legend1)
@@ -3411,7 +3411,7 @@ legend2 = ax.legend(
     title_fontsize=12,
     fontsize=11,
     loc="upper left",
-    bbox_to_anchor=(1.02, 0.72),
+    bbox_to_anchor=(1.0, 0.72),
     frameon=False,
 )
 for txt in legend2.get_texts():
