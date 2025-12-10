@@ -3196,11 +3196,10 @@ with st.expander("Scatter settings", expanded=False):
     theme = st.radio("Theme", ["Dark", "Light"], index=0, horizontal=True, key="fq_theme")
 
     # === FIXED DARK BACKGROUND FOR PAGE & PLOT ===
-    BASE_BG = "#0a0f1c"
-    PAGE_BG = BASE_BG          # page background
-    PLOT_BG = BASE_BG          # plot background
+    PAGE_BG = "#0a0f1c"
+    PLOT_BG = "#0a0f1c"
     GRID_MAJ = "#3a4050"
-    txt_col = "#f1f5f9"        # light text on dark bg
+    txt_col = "#f1f5f9"
 
     # Canvas
     canvas_preset = st.selectbox(
@@ -3299,6 +3298,7 @@ ax.set_facecolor(PLOT_BG)
 ax.set_xlim(0, 100)
 ax.set_ylim(0, 100)
 ax.set_xlabel("Possession Score", fontsize=14, fontweight="semibold", color=txt_col)
+ax.xaxis.labelpad = 14   # <<< moved axis label downward slightly
 ax.set_ylabel("Defensive Score", fontsize=14, fontweight="semibold", color=txt_col)
 
 ax.xaxis.set_major_locator(MultipleLocator(10))
@@ -3334,7 +3334,7 @@ arch_colors = {
     "Limited": "#E15759",
 }
 
-# Scatter points: square = carrier True, circle = False; NO RINGS
+# Scatter points: square = carrier True, circle = False
 for (arch, carrier), grp in pool_sc.groupby(["Archetype", "Box-to-Box Ball Carrier"]):
     ax.scatter(
         grp["poss_score"],
@@ -3348,18 +3348,11 @@ for (arch, carrier), grp in pool_sc.groupby(["Archetype", "Box-to-Box Ball Carri
         zorder=2,
     )
 
-# TEAM SELECTION: ONLY CONTROLS WHICH PLAYERS ARE LABELLED
-highlight_grp = None
-if team_highlight != "(None)":
-    highlight_grp = pool_sc[pool_sc["Team"] == team_highlight]
-
-# LABELS — ONLY THAT TEAM IF SELECTED
+# Label handling
+highlight_grp = pool_sc[pool_sc["Team"] == team_highlight] if team_highlight != "(None)" else None
 texts = []
 if show_labels:
-    if team_highlight != "(None)" and highlight_grp is not None and not highlight_grp.empty:
-        label_df = highlight_grp.copy()
-    else:
-        label_df = pool_sc.copy()
+    label_df = highlight_grp if highlight_grp is not None and not highlight_grp.empty else pool_sc
 
     if label_only_u23:
         label_df = label_df[label_df["Age"] < 23]
@@ -3377,80 +3370,60 @@ if show_labels:
             va="bottom",
             zorder=6,
         )
-        t.set_path_effects(
-            [pe.withStroke(linewidth=2, foreground="#020617", alpha=0.9)]
-        )
+        t.set_path_effects([pe.withStroke(linewidth=2, foreground="#020617", alpha=0.9)])
         texts.append(t)
 
 # ------------------------------------------------------------------
-# RIGHT-SIDE LEGENDS
-# 1) Archetype legend: labels visually aligned under title using padding controls
+# PERFECTLY ALIGNED RIGHT-SIDE LEGENDS
 # ------------------------------------------------------------------
 legend1 = ax.legend(
     handles=[
         Line2D([0], [0], marker="s", linestyle="None", color="none",
-               markerfacecolor=arch_colors["Ball Player"], markersize=11, label="Ball Player"),
+               markerfacecolor=arch_colors["Ball Player"], markersize=12, label="Ball Player"),
         Line2D([0], [0], marker="s", linestyle="None", color="none",
-               markerfacecolor=arch_colors["Box-Defender"], markersize=11, label="Box-Defender"),
+               markerfacecolor=arch_colors["Box-Defender"], markersize=12, label="Box-Defender"),
         Line2D([0], [0], marker="s", linestyle="None", color="none",
-               markerfacecolor=arch_colors["Complete"], markersize=11, label="Complete"),
+               markerfacecolor=arch_colors["Complete"], markersize=12, label="Complete"),
         Line2D([0], [0], marker="s", linestyle="None", color="none",
-               markerfacecolor=arch_colors["Limited"], markersize=11, label="Limited"),
+               markerfacecolor=arch_colors["Limited"], markersize=12, label="Limited"),
     ],
     title="Archetype",
     title_fontsize=12,
     fontsize=11,
     loc="upper left",
-    bbox_to_anchor=(1.0, 1.00),
-    frameon=False,
-    handlelength=0.8,   # keeps markers compact so labels sit under title
-    handletextpad=0.25, # small gap between square + text
-    borderpad=0.2,
-    labelspacing=0.3,
-)
-ax.add_artist(legend1)
-for txt in legend1.get_texts():
-    txt.set_color(txt_col)
-legend1.get_title().set_color(txt_col)
-
-# 2) Ball Carrier legend: circle = False, square = True, NO line through markers
-legend2 = ax.legend(
-    handles=[
-        Line2D(
-            [0], [0],
-            marker="o",              # circle for False
-            linestyle="None",        # no line
-            color="none",
-            markeredgecolor=txt_col,
-            markerfacecolor="none",
-            markersize=11,
-            label="False",
-        ),
-        Line2D(
-            [0], [0],
-            marker="s",              # square for True
-            linestyle="None",        # no line
-            color="none",
-            markeredgecolor=txt_col,
-            markerfacecolor="none",
-            markersize=11,
-            label="True",
-        ),
-    ],
-    title="Ball Carrier",
-    title_fontsize=12,
-    fontsize=11,
-    loc="upper left",
-    bbox_to_anchor=(1.0, 0.72),
+    bbox_to_anchor=(1.00, 1.00),
     frameon=False,
     handlelength=0.8,
     handletextpad=0.25,
     borderpad=0.2,
     labelspacing=0.3,
 )
+ax.add_artist(legend1)
+legend1.get_title().set_color(txt_col)
+for txt in legend1.get_texts():
+    txt.set_color(txt_col)
+
+legend2 = ax.legend(
+    handles=[
+        Line2D([0], [0], marker="o", linestyle="None",
+               markeredgecolor=txt_col, markerfacecolor="none", markersize=12, label="False"),
+        Line2D([0], [0], marker="s", linestyle="None",
+               markeredgecolor=txt_col, markerfacecolor="none", markersize=12, label="True"),
+    ],
+    title="Ball Carrier",
+    title_fontsize=12,
+    fontsize=11,
+    loc="upper left",
+    bbox_to_anchor=(1.00, 0.72),
+    frameon=False,
+    handlelength=0.8,
+    handletextpad=0.25,
+    borderpad=0.2,
+    labelspacing=0.3,
+)
+legend2.get_title().set_color(txt_col)
 for txt in legend2.get_texts():
     txt.set_color(txt_col)
-legend2.get_title().set_color(txt_col)
 
 # ------------------------------------------------------------------
 # LAYOUT — SPACE FOR LEGENDS & TOP GAP
