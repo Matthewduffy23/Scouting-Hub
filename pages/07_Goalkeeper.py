@@ -280,7 +280,7 @@ def league_region(league_name: str) -> str:
     return COUNTRY_TO_REGION.get(country, "Other")
 
 
-REQUIRED_BASE = {"Player","Team","League","Age","Position","Minutes played","Market value","Contract expires","Goals"}
+REQUIRED_BASE = {"Player","Team","League","Age","Position","Minutes played","Market value","Contract expires"}
 
 # ----------------- WIDGET SAFETY -----------------
 def multiselect_safe(label, *, options, default=None, key=None, **kwargs):
