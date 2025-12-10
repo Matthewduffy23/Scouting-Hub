@@ -3294,7 +3294,7 @@ fig, ax = plt.subplots(figsize=(w_px / 100, h_px / 100), dpi=100)
 fig.patch.set_facecolor(PAGE_BG)
 ax.set_facecolor(PLOT_BG)
 
-# Axes & labels (explicit so you SEE them)
+# Axes & labels
 ax.set_xlim(0, 100)
 ax.set_ylim(0, 100)
 ax.set_xlabel("Possession Score", fontsize=14, fontweight="semibold", color=txt_col)
@@ -3317,7 +3317,7 @@ line_col = "#000000" if theme == "Light" else "#f9fafb"
 ax.axvline(50, color=line_col, linestyle=(0, (4, 4)), lw=2)
 ax.axhline(50, color=line_col, linestyle=(0, (4, 4)), lw=2)
 
-# Quadrant labels in corners
+# Quadrant labels
 quad_fs = 14
 bbox_style = dict(boxstyle="round,pad=0.35", facecolor="#d1d5db", edgecolor="none", alpha=0.9)
 ax.text(8, 92, "BOX DEFENDER", fontsize=quad_fs, weight="bold", bbox=bbox_style)
@@ -3325,7 +3325,7 @@ ax.text(92, 92, "COMPLETE", fontsize=quad_fs, weight="bold", ha="right", bbox=bb
 ax.text(8, 8, "LIMITED", fontsize=quad_fs, weight="bold", bbox=bbox_style)
 ax.text(92, 8, "BALL PLAYER", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
 
-# Archetype colours
+# Archetype colours (your palette)
 arch_colors = {
     "Ball Player": "#76B7B2",
     "Box-Defender": "#F28E2B",
@@ -3347,22 +3347,10 @@ for (arch, carrier), grp in pool_sc.groupby(["Archetype", "Box-to-Box Ball Carri
         zorder=2,
     )
 
-# TEAM HIGHLIGHT (visual only, doesn’t remove other points)
+# TEAM SELECTION: *NO* VISUAL CHANGE TO POINTS, JUST USED FOR LABEL FILTER
 highlight_grp = None
 if team_highlight != "(None)":
     highlight_grp = pool_sc[pool_sc["Team"] == team_highlight]
-    if not highlight_grp.empty:
-        ax.scatter(
-            highlight_grp["poss_score"],
-            highlight_grp["def_score"],
-            s=point_size * 1.2,
-            c="#fbbf24",
-            alpha=1.0,
-            marker="s",
-            edgecolors="none",
-            linewidth=0,
-            zorder=5,
-        )
 
 # LABELS — ONLY THAT TEAM IF SELECTED
 texts = []
@@ -3394,7 +3382,7 @@ if show_labels:
         )
         texts.append(t)
 
-# RIGHT-SIDE LEGENDS (NOW FORCED VISIBLE & COLOURED)
+# RIGHT-SIDE LEGENDS
 legend1 = ax.legend(
     handles=[
         Line2D([0], [0], marker="s", color="none", markerfacecolor=arch_colors["Ball Player"], markersize=11, label="Ball Player"),
@@ -3430,13 +3418,13 @@ for txt in legend2.get_texts():
     txt.set_color(txt_col)
 legend2.get_title().set_color(txt_col)
 
-# LEAVE ENOUGH SPACE FOR LEGENDS AND AXIS LABELS
-fig.subplots_adjust(left=0.06, right=0.82, bottom=0.11, top=1 - top_gap_px / float(h_px))
+# SPACE FOR LEGENDS & LABELS
+fig.subplots_adjust(left=0.06, right=0.86, bottom=0.11, top=1 - top_gap_px / float(h_px))
 
-# RENDER (NO bbox_inches='tight' SO NOTHING GETS CROPPED)
+# RENDER
 if render_exact:
     buf = BytesIO()
-    fig.savefig(buf, format="png", dpi=100, facecolor=PAGE_BG)  # no bbox_inches
+    fig.savefig(buf, format="png", dpi=100, facecolor=PAGE_BG)
     buf.seek(0)
     st.image(buf, width=w_px)
     st.download_button(
@@ -3450,7 +3438,6 @@ else:
 
 plt.close(fig)
 # ============================== END FEATURE Q ============================================================
-
 
 
 
