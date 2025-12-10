@@ -3298,7 +3298,7 @@ ax.set_facecolor(PLOT_BG)
 ax.set_xlim(0, 100)
 ax.set_ylim(0, 100)
 ax.set_xlabel("Possession Score", fontsize=14, fontweight="semibold", color=txt_col)
-ax.xaxis.labelpad = 14   # <<< moved axis label downward slightly
+ax.xaxis.labelpad = 14  # slightly lower x-label
 ax.set_ylabel("Defensive Score", fontsize=14, fontweight="semibold", color=txt_col)
 
 ax.xaxis.set_major_locator(MultipleLocator(10))
@@ -3353,7 +3353,6 @@ highlight_grp = pool_sc[pool_sc["Team"] == team_highlight] if team_highlight != 
 texts = []
 if show_labels:
     label_df = highlight_grp if highlight_grp is not None and not highlight_grp.empty else pool_sc
-
     if label_only_u23:
         label_df = label_df[label_df["Age"] < 23]
 
@@ -3374,8 +3373,20 @@ if show_labels:
         texts.append(t)
 
 # ------------------------------------------------------------------
-# PERFECTLY ALIGNED RIGHT-SIDE LEGENDS
+# CLEAN, ALIGNED RIGHT-SIDE LEGENDS
 # ------------------------------------------------------------------
+# Common layout parms for neat alignment
+legend_kwargs = dict(
+    loc="upper left",
+    frameon=False,
+    handlelength=1.0,
+    handletextpad=0.35,
+    borderpad=0.2,
+    labelspacing=0.35,
+    borderaxespad=0.0,
+)
+
+# 1) Archetype legend
 legend1 = ax.legend(
     handles=[
         Line2D([0], [0], marker="s", linestyle="None", color="none",
@@ -3390,36 +3401,47 @@ legend1 = ax.legend(
     title="Archetype",
     title_fontsize=12,
     fontsize=11,
-    loc="upper left",
-    bbox_to_anchor=(1.00, 1.00),
-    frameon=False,
-    handlelength=0.8,
-    handletextpad=0.25,
-    borderpad=0.2,
-    labelspacing=0.3,
+    bbox_to_anchor=(1.01, 1.00),  # all legends share same x for perfect alignment
+    **legend_kwargs,
 )
 ax.add_artist(legend1)
 legend1.get_title().set_color(txt_col)
 for txt in legend1.get_texts():
     txt.set_color(txt_col)
 
+# 2) Ball Carrier legend – circle = False, square = True
+carrier_ms = 12
+carrier_lw = 1.4
 legend2 = ax.legend(
     handles=[
-        Line2D([0], [0], marker="o", linestyle="None",
-               markeredgecolor=txt_col, markerfacecolor="none", markersize=12, label="False"),
-        Line2D([0], [0], marker="s", linestyle="None",
-               markeredgecolor=txt_col, markerfacecolor="none", markersize=12, label="True"),
+        Line2D(
+            [0], [0],
+            marker="o",
+            linestyle="None",
+            color="none",
+            markeredgecolor=txt_col,
+            markerfacecolor="none",
+            markeredgewidth=carrier_lw,
+            markersize=carrier_ms,
+            label="False",
+        ),
+        Line2D(
+            [0], [0],
+            marker="s",
+            linestyle="None",
+            color="none",
+            markeredgecolor=txt_col,
+            markerfacecolor="none",
+            markeredgewidth=carrier_lw,
+            markersize=carrier_ms,
+            label="True",
+        ),
     ],
     title="Ball Carrier",
     title_fontsize=12,
     fontsize=11,
-    loc="upper left",
-    bbox_to_anchor=(1.00, 0.72),
-    frameon=False,
-    handlelength=0.8,
-    handletextpad=0.25,
-    borderpad=0.2,
-    labelspacing=0.3,
+    bbox_to_anchor=(1.01, 0.72),
+    **legend_kwargs,
 )
 legend2.get_title().set_color(txt_col)
 for txt in legend2.get_texts():
@@ -3449,6 +3471,7 @@ else:
 
 plt.close(fig)
 # ============================== END FEATURE Q ============================================================
+
 
 
 
