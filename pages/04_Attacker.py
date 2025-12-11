@@ -3507,9 +3507,9 @@ ax.text(96, 6, "FINAL ACTION", fontsize=quad_fs, weight="bold", ha="right", bbox
 
 # Archetype colours
 arch_colors = {
-    "Ball Player": "#76B7B2",
-    "Box-Defender": "#F28E2B",
-    "Complete": "#4E79A7",
+    "Final-Action": "#76B7B2",
+    "Facilitator": "#F28E2B",
+    "Multi-Threat": "#4E79A7",
     "Limited": "#E15759",
 }
 
