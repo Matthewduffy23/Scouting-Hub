@@ -1533,6 +1533,310 @@ with tab_att: _sectionB_for_role("attack")
 with tab_st:  _sectionB_for_role("cf")
 
 
+# ============================== FEATURE R — SQUAD PROFILE ==============================
+from io import BytesIO
+import uuid
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.ticker import MultipleLocator
+from matplotlib import patheffects as pe
+
+st.markdown("---")
+st.header("📊 Feature R — Squad Profile")
+
+# --------------------------------------------------------------------------------------
+# CONFIG
+# --------------------------------------------------------------------------------------
+# Adjust this to match your contract column name
+CONTRACT_COL = "Contract expires"   # e.g. "Contract Until", "Contract End", "Contract Year"
+
+# --------------------------------------------------------------------------------------
+# SETTINGS PANEL
+# --------------------------------------------------------------------------------------
+with st.expander("Squad Profile settings", expanded=False):
+
+    # --- Squad selection ---
+    teams_available = sorted(df["Team"].dropna().unique())
+    default_team = None
+    if "Team" in df.columns and not player_row.empty:
+        default_team = player_row.iloc[0].get("Team", None)
+
+    default_idx = 0
+    if default_team in teams_available:
+        default_idx = teams_available.index(default_team)
+
+    squad_team = st.selectbox(
+        "Squad (team)",
+        options=teams_available,
+        index=default_idx,
+        key="sq_team",
+    )
+
+    # --- Axis filters ---
+    df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
+    df["Age"] = pd.to_numeric(df["Age"], errors="coerce")
+
+    min_minutes_s, max_minutes_s = st.slider(
+        "Minutes range (for axis & filter)",
+        0, 5000,
+        (0, int(np.nanmax(df["Minutes played"].fillna(0)).clip(0, 4500))),
+        step=100,
+        key="sq_min",
+    )
+
+    min_age_s, max_age_s = st.slider(
+        "Age range (for axis & filter)",
+        14, 45,
+        (16, 38),
+        key="sq_age",
+    )
+
+    # --- Minutes bands (horizontal lines) ---
+    st.markdown("**Minutes bands (horizontal dashed lines)**")
+    squad_line = st.slider(
+        "Squad Player line (minutes)",
+        0, 5000, 500, step=100, key="sq_line_squad",
+    )
+    important_line = st.slider(
+        "Important Player line (minutes)",
+        0, 5000, 1000, step=100, key="sq_line_important",
+    )
+    crucial_line = st.slider(
+        "Crucial Player line (minutes)",
+        0, 5000, 2000, step=100, key="sq_line_crucial",
+    )
+
+    # Ensure lines are ordered (lowest to highest for drawing)
+    band_lines = sorted(
+        [("Squad Player", squad_line),
+         ("Important Player", important_line),
+         ("Crucial Player", crucial_line)],
+        key=lambda x: x[1],
+    )
+
+    # --- Labels & points ---
+    show_labels = st.toggle("Show labels", value=True, key="sq_show_labels")
+    label_size = st.slider("Label size", 8, 20, 12, 1, key="sq_lblsize")
+    point_size = st.slider("Point size", 24, 300, 225, 2, key="sq_pts")
+    point_alpha = st.slider("Point opacity", 0.2, 1.0, 0.92, 0.02, key="sq_alpha")
+
+    # Highlighting – labels shown only for this team (squad), so we just keep toggle
+    highlight_selected_only = st.checkbox(
+        "Emphasise selected player on top of contract highlight",
+        value=True,
+        key="sq_high_sel",
+    )
+
+    # --- Theme & canvas (same style as Feature Q) ---
+    PAGE_BG = "#0a0f1c"
+    PLOT_BG = "#0a0f1c"
+    GRID_MAJ = "#3a4050"
+    txt_col = "#f1f5f9"
+
+    canvas_preset = st.selectbox(
+        "Canvas size",
+        ["1280×720", "1600×900", "1920×820", "1920×1080"],
+        index=1,
+        key="sq_canvas",
+    )
+    w_px, h_px = map(int, canvas_preset.replace("×", "x").split("x"))
+
+    top_gap_px = st.slider("Top gap (px)", 0, 240, 80, 5, key="sq_gap")
+    render_exact = st.checkbox("Render exact pixels (PNG)", value=True, key="sq_exact")
+
+# --------------------------------------------------------------------------------------
+# FILTER SQUAD
+# --------------------------------------------------------------------------------------
+squad = df[df["Team"] == squad_team].copy()
+if squad.empty:
+    st.info("No players found for this squad.")
+    st.stop()
+
+squad["Minutes played"] = pd.to_numeric(squad["Minutes played"], errors="coerce")
+squad["Age"] = pd.to_numeric(squad["Age"], errors="coerce")
+
+squad = squad[
+    squad["Minutes played"].between(min_minutes_s, max_minutes_s)
+    & squad["Age"].between(min_age_s, max_age_s)
+]
+
+if squad.empty:
+    st.info("No players after applying filters.")
+    st.stop()
+
+# --------------------------------------------------------------------------------------
+# CONTRACT HIGHLIGHT  (auto red if contract <= 2026)
+# --------------------------------------------------------------------------------------
+contract_year = None
+if CONTRACT_COL in squad.columns:
+    # Try to extract a year like 2026 from strings such as '2026-06-30' or '2026'
+    contract_year = (
+        squad[CONTRACT_COL]
+        .astype(str)
+        .str.extract(r"(\d{4})")[0]
+        .astype(float)
+    )
+else:
+    # Fallback: all NaN -> no auto highlight
+    contract_year = pd.Series(np.nan, index=squad.index)
+
+squad["ContractYear"] = contract_year
+squad["AutoRed"] = squad["ContractYear"].le(2026)
+
+# Selected player name (if present in this squad)
+selected_player_name = player_row.iloc[0]["Player"] if not player_row.empty else None
+squad["Selected"] = selected_player_name and (squad["Player"] == selected_player_name)
+
+# Final red flag: contract <= 2026 OR selected player
+squad["IsRed"] = squad["AutoRed"] | squad["Selected"]
+
+# --------------------------------------------------------------------------------------
+# SCATTER: X = Age, Y = Minutes played
+# --------------------------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(w_px / 100, h_px / 100), dpi=100)
+fig.patch.set_facecolor(PAGE_BG)
+ax.set_facecolor(PLOT_BG)
+
+# Axis limits
+ax.set_xlim(min_age_s, max_age_s)
+ax.set_ylim(min_minutes_s, max_minutes_s)
+
+ax.set_xlabel("Age", fontsize=16, fontweight="semibold", color=txt_col)
+ax.xaxis.labelpad = 14
+ax.set_ylabel("Minutes Played", fontsize=16, fontweight="semibold", color=txt_col)
+
+ax.xaxis.set_major_locator(MultipleLocator(1))
+ax.yaxis.set_major_locator(MultipleLocator(500))
+
+for tick in ax.get_xticklabels() + ax.get_yticklabels():
+    tick.set_fontweight("semibold")
+    tick.set_color(txt_col)
+    tick.set_fontsize(14)
+
+# Grid & spines
+ax.grid(True, color=GRID_MAJ, linewidth=0.6)
+for s in ax.spines.values():
+    s.set_color("#e5e7eb")
+    s.set_linewidth(1.1)
+
+# --------------------------------------------------------------------------------------
+# AGE BANDS (vertical dashed lines + titles YOUTH / ASCENT / PRIME / EXPERIENCED / OLD)
+# --------------------------------------------------------------------------------------
+line_col = "#FFFFFF"
+age_lines = [21, 25, 29, 33]  # same feel as Huddersfield plot
+for al in age_lines:
+    if min_age_s <= al <= max_age_s:
+        ax.axvline(al, color=line_col, linestyle=(0, (4, 4)), lw=1.5)
+
+# Age-band titles at the top of the axis (in axes coords for consistent layout)
+age_band_labels = ["YOUTH", "ASCENT", "PRIME", "EXPERIENCED", "OLD"]
+age_band_x = [0.11, 0.30, 0.50, 0.73, 0.93]  # fractions across the axis
+
+for x_frac, label in zip(age_band_x, age_band_labels):
+    ax.text(
+        x_frac,
+        1.04,
+        label,
+        transform=ax.transAxes,
+        fontsize=20,
+        fontweight="bold",
+        color=txt_col,
+        ha="center",
+        va="bottom",
+    )
+
+# --------------------------------------------------------------------------------------
+# MINUTES BANDS (horizontal dashed lines + labels)
+# --------------------------------------------------------------------------------------
+for name, y_val in band_lines:
+    if min_minutes_s <= y_val <= max_minutes_s:
+        ax.axhline(y_val, color=line_col, linestyle=(0, (4, 4)), lw=1.5)
+        # Label near the left edge of the plot
+        ax.text(
+            min_age_s + 0.2,
+            y_val + (max_minutes_s - min_minutes_s) * 0.01,
+            name,
+            fontsize=14,
+            fontweight="bold",
+            color="#020617",
+            bbox=dict(
+                boxstyle="round,pad=0.35",
+                facecolor="#e5e7eb",
+                edgecolor="none",
+                alpha=0.95,
+            ),
+            va="bottom",
+        )
+
+# --------------------------------------------------------------------------------------
+# POINTS
+# --------------------------------------------------------------------------------------
+effective_point_size = point_size * 1.1
+for is_red, grp in squad.groupby("IsRed"):
+    ax.scatter(
+        grp["Age"],
+        grp["Minutes played"],
+        s=effective_point_size,
+        c="#ef4444" if is_red else "#e5e7eb",
+        alpha=point_alpha,
+        edgecolors="none",
+        linewidth=0,
+        zorder=3 if is_red else 2,
+    )
+
+# --------------------------------------------------------------------------------------
+# LABELS
+# --------------------------------------------------------------------------------------
+if show_labels:
+    for _, r in squad.iterrows():
+        # Slightly higher z-order for red / selected labels
+        z = 6 if r["IsRed"] else 5
+        t = ax.annotate(
+            r["Player"],
+            (r["Age"], r["Minutes played"]),
+            xytext=(10, 10),
+            textcoords="offset points",
+            fontsize=label_size,
+            color=txt_col,
+            weight="semibold",
+            ha="left",
+            va="bottom",
+            zorder=z,
+        )
+        t.set_path_effects([
+            pe.withStroke(linewidth=2, foreground="#020617", alpha=0.9)
+        ])
+
+# --------------------------------------------------------------------------------------
+# LAYOUT
+# --------------------------------------------------------------------------------------
+fig.subplots_adjust(
+    left=0.06,
+    right=0.98,
+    bottom=0.11,
+    top=1.02 - top_gap_px / float(h_px),
+)
+
+# --------------------------------------------------------------------------------------
+# RENDER
+# --------------------------------------------------------------------------------------
+if render_exact:
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=100, facecolor=PAGE_BG)
+    buf.seek(0)
+    st.image(buf, width=w_px)
+    st.download_button(
+        "⬇️ Download Squad Profile (PNG)",
+        data=buf.getvalue(),
+        file_name=f"squad_profile_{uuid.uuid4().hex[:6]}.png",
+        mime="image/png",
+    )
+else:
+    st.pyplot(fig)
+
+plt.close(fig)
+# ============================== END FEATURE R ==========================================
 
 
 
