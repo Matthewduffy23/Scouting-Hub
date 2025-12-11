@@ -3847,15 +3847,15 @@ ax.axhline(50, color=line_col, linestyle=(0, (4, 4)), lw=1.5)
 # Quadrant labels (as you specified: TL Shot Stopper, TR Complete, BL Limited, BR Ball Player)
 quad_fs = 16
 bbox_style = dict(boxstyle="round,pad=0.35", facecolor="#d1d5db", edgecolor="none", alpha=0.9)
-ax.text(6, 94, "SHOT STOPPER", fontsize=quad_fs, weight="bold", bbox=bbox_style)
+ax.text(6, 94, "BALL PLAYER", fontsize=quad_fs, weight="bold", bbox=bbox_style)
 ax.text(94, 94, "COMPLETE", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
 ax.text(6, 6, "LIMITED", fontsize=quad_fs, weight="bold", bbox=bbox_style)
-ax.text(96, 6, "BALL PLAYER", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
+ax.text(96, 6, "SHOT STOPPER", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
 
 # Archetype colours
 arch_colors = {
-    "Shot Stopper": "#F28E2B",
-    "Ball Player": "#76B7B2",
+    "Shot Stopper": "#76B7B2",
+    "Ball Player": "#F28E2B",
     "Complete": "#4E79A7",
     "Limited": "#E15759",
 }
