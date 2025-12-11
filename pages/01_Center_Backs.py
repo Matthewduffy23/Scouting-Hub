@@ -3317,7 +3317,7 @@ for tick in ax.get_xticklabels() + ax.get_yticklabels():
     tick.set_fontsize(14)  # explicit tick size
 
 # Grid & spines
-ax.grid(True, color=GRID_MAJ, linewidth=1.1)
+ax.grid(True, color=GRID_MAJ, linewidth=0.6)
 for s in ax.spines.values():
     s.set_color("#e5e7eb")
     s.set_linewidth(1.1)
