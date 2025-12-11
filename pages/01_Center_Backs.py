@@ -2197,7 +2197,6 @@ else:
         ("Passes to Final 3rd %", "Accurate passes to final third, %"),
         ("Progessive Passes", "Progressive passes per 90"),
         ("Progessive Passing %", "Accurate progressive passes, %"),
-        ("Progressive Runs", "Progressive runs per 90"),
     ]:
         POSSESSION.append((lab, float(np.nan_to_num(pct_of(met), nan=0.0)), val_of(met)[1]))
 
