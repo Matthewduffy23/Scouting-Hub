@@ -3900,7 +3900,7 @@ if show_labels:
 for _, r in label_df.iterrows():
     t = ax.annotate(
         r["Player"],
-        (r["poss_score"], r["gk_score"]),
+        (r["gk_score"], r["poss_score"]),
         xytext=(10, 12),
         textcoords="offset points",
         fontsize=label_size + 2,
@@ -3913,6 +3913,7 @@ for _, r in label_df.iterrows():
     t.set_path_effects([
         pe.withStroke(linewidth=2, foreground="#020617", alpha=0.9)
     ])
+
 
 
         t.set_path_effects([pe.withStroke(linewidth=2, foreground="#020617", alpha=0.9)])
