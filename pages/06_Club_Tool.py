@@ -1549,7 +1549,7 @@ st.header("📊 Feature R — Squad Profile")
 # CONFIG
 # --------------------------------------------------------------------------------------
 # Adjust this to match your contract column name
-CONTRACT_COL = "Contract Until"   # e.g. "Contract Until", "Contract End", "Contract Year"
+CONTRACT_COL = "Contract expires"   # e.g. "Contract Until", "Contract End", "Contract Year"
 
 # --------------------------------------------------------------------------------------
 # SETTINGS PANEL
