@@ -3696,7 +3696,12 @@ with st.expander("Scatter settings", expanded=False):
         "Custom": set(),
     }
 
-    add_leagues_sc = st.multiselect("Add leagues", leagues_available_sc, default=[], key="fq_add_gk")
+    add_leagues_sc = st.multiselect(
+        "Add leagues",
+        leagues_available_sc,
+        default=[],
+        key="fq_add_gk",
+    )
     leagues_scatter = sorted(preset_map_sc[preset_sc] | set(add_leagues_sc))
     if not leagues_scatter and player_league:
         leagues_scatter = [player_league]
@@ -3723,7 +3728,9 @@ with st.expander("Scatter settings", expanded=False):
     point_alpha = st.slider("Point opacity", 0.2, 1.0, 0.92, 0.02, key="fq_alpha_gk")
 
     # TEAM HIGHLIGHT – USED ONLY FOR LABEL FILTER
-    teams_available_hl = sorted(df[df["League"].isin(leagues_scatter)]["Team"].dropna().unique())
+    teams_available_hl = sorted(
+        df[df["League"].isin(leagues_scatter)]["Team"].dropna().unique()
+    )
     team_highlight = st.selectbox(
         "Highlight team (labels only shown for this team)",
         ["(None)"] + teams_available_hl,
@@ -3756,7 +3763,9 @@ with st.expander("Scatter settings", expanded=False):
 # GK FILTER + SCORE CALCULATION
 # ------------------------------------------------------------------
 pool_sc = df[df["League"].isin(leagues_scatter)].copy()
-pool_sc["Primary Position"] = pool_sc["Position"].astype(str).str.split(",").str[0].str.strip()
+pool_sc["Primary Position"] = (
+    pool_sc["Position"].astype(str).str.split(",").str[0].str.strip()
+)
 pool_sc = pool_sc[pool_sc["Primary Position"].isin(["GK"])]
 
 pool_sc["Minutes played"] = pd.to_numeric(pool_sc["Minutes played"], errors="coerce")
@@ -3809,10 +3818,10 @@ def classify(r):
     return "Limited"
 
 pool_sc["Archetype"] = pool_sc.apply(classify, axis=1)
-pool_sc["Sweeper GK"] = pool_sc["sweeper_score"] >= 70  # like Ball Carrier flag
+pool_sc["Sweeper GK"] = pool_sc["sweeper_score"] >= 70  # Sweeper flag
 
 # ------------------------------------------------------------------
-# SCATTER GRAPH  (X = Goalkeeping, Y = Possession)
+# SCATTER GRAPH (X = Goalkeeping, Y = Possession)
 # ------------------------------------------------------------------
 fig, ax = plt.subplots(figsize=(w_px / 100, h_px / 100), dpi=100)
 fig.patch.set_facecolor(PAGE_BG)
@@ -3843,7 +3852,7 @@ line_col = "#FFFFFF"
 ax.axvline(50, color=line_col, linestyle=(0, (4, 4)), lw=1.5)
 ax.axhline(50, color=line_col, linestyle=(0, (4, 4)), lw=1.5)
 
-# Quadrant labels
+# Quadrant labels  (TL Ball Player, TR Complete, BL Limited, BR Shot Stopper)
 quad_fs = 16
 bbox_style = dict(boxstyle="round,pad=0.35", facecolor="#d1d5db", edgecolor="none", alpha=0.9)
 ax.text(6, 94, "BALL PLAYER", fontsize=quad_fs, weight="bold", bbox=bbox_style)
@@ -3875,7 +3884,7 @@ for (arch, sweeper), grp in pool_sc.groupby(["Archetype", "Sweeper GK"]):
     )
 
 # ------------------------------------------------------------------
-# LABEL HANDLING (labels clipped to axes)
+# LABEL HANDLING (labels clipped inside axes)
 # ------------------------------------------------------------------
 highlight_grp = pool_sc[pool_sc["Team"] == team_highlight] if team_highlight != "(None)" else None
 texts = []
@@ -3907,12 +3916,15 @@ if show_labels:
             weight="semibold",
             ha="left",
             va="bottom",
-            clip_on=True,  # keep label drawing inside axes
             zorder=6,
         )
+        # outline for readability
         t.set_path_effects([
             pe.withStroke(linewidth=2, foreground="#020617", alpha=0.9)
         ])
+        # clip labels to axes so they don't leave the chart
+        t.set_clip_path(ax.patch)
+
         texts.append(t)
 
 # ------------------------------------------------------------------
@@ -4022,6 +4034,7 @@ else:
 
 plt.close(fig)
 # ============================== END FEATURE Q ============================================================
+
 
 
 
