@@ -3633,7 +3633,7 @@ for i, txt in enumerate(legend.get_texts()):
 # ------------------------------------------------------------------
 fig.subplots_adjust(
     left=0.06,
-    right=0.86,
+    right=0.86.5,
     bottom=0.11,
     top=1.02 - top_gap_px / float(h_px),
 )
