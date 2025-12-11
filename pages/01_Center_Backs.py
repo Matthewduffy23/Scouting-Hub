@@ -3294,15 +3294,16 @@ fig, ax = plt.subplots(figsize=(w_px / 100, h_px / 100), dpi=100)
 fig.patch.set_facecolor(PAGE_BG)
 ax.set_facecolor(PLOT_BG)
 
-# Axes & labels
+# Axes & labels (2x bigger)
 ax.set_xlim(0, 100)
 ax.set_ylim(0, 100)
-ax.set_xlabel("Possession Score", fontsize=14, fontweight="semibold", color=txt_col)
-ax.xaxis.labelpad = 14  # slightly lower x-label
-ax.set_ylabel("Defensive Score", fontsize=14, fontweight="semibold", color=txt_col)
+ax.set_xlabel("Possession Score", fontsize=28, fontweight="semibold", color=txt_col)
+ax.xaxis.labelpad = 18  # slightly lower x-label
+ax.set_ylabel("Defensive Score", fontsize=28, fontweight="semibold", color=txt_col)
 
 ax.xaxis.set_major_locator(MultipleLocator(10))
 ax.yaxis.set_major_locator(MultipleLocator(10))
+ax.tick_params(axis="both", labelsize=22)
 for tick in ax.get_xticklabels() + ax.get_yticklabels():
     tick.set_fontweight("semibold")
     tick.set_color(txt_col)
@@ -3334,10 +3335,9 @@ arch_colors = {
     "Limited": "#E15759",
 }
 
-# Slightly larger effective point size
-effective_point_size = point_size * 1.2
+# Points: 1x bigger again (vs last version)
+effective_point_size = point_size * 1.4
 
-# Scatter points: square = carrier True, circle = False
 for (arch, carrier), grp in pool_sc.groupby(["Archetype", "Box-to-Box Ball Carrier"]):
     ax.scatter(
         grp["poss_score"],
@@ -3365,7 +3365,7 @@ if show_labels:
             (r["poss_score"], r["def_score"]),
             xytext=(10, 12),
             textcoords="offset points",
-            fontsize=label_size + 1,   # labels 1pt bigger
+            fontsize=label_size + 2,   # a bit larger
             color=txt_col,
             weight="semibold",
             ha="left",
@@ -3376,44 +3376,46 @@ if show_labels:
         texts.append(t)
 
 # ------------------------------------------------------------------
-# CLEAN, ALIGNED RIGHT-SIDE LEGENDS (SLIGHTLY BIGGER)
+# CLEAN, BIGGER, ALIGNED RIGHT-SIDE LEGENDS
 # ------------------------------------------------------------------
 legend_kwargs = dict(
     loc="upper left",
     frameon=False,
-    handlelength=1.1,
-    handletextpad=0.4,
+    handlelength=1.2,
+    handletextpad=0.45,
     borderpad=0.25,
-    labelspacing=0.4,
+    labelspacing=0.45,
     borderaxespad=0.0,
 )
 
-# 1) Archetype legend
+# 1) Archetype legend (2x font size, semi-bold)
 legend1 = ax.legend(
     handles=[
         Line2D([0], [0], marker="s", linestyle="None", color="none",
-               markerfacecolor=arch_colors["Ball Player"], markersize=14, label="Ball Player"),
+               markerfacecolor=arch_colors["Ball Player"], markersize=18, label="Ball Player"),
         Line2D([0], [0], marker="s", linestyle="None", color="none",
-               markerfacecolor=arch_colors["Box-Defender"], markersize=14, label="Box-Defender"),
+               markerfacecolor=arch_colors["Box-Defender"], markersize=18, label="Box-Defender"),
         Line2D([0], [0], marker="s", linestyle="None", color="none",
-               markerfacecolor=arch_colors["Complete"], markersize=14, label="Complete"),
+               markerfacecolor=arch_colors["Complete"], markersize=18, label="Complete"),
         Line2D([0], [0], marker="s", linestyle="None", color="none",
-               markerfacecolor=arch_colors["Limited"], markersize=14, label="Limited"),
+               markerfacecolor=arch_colors["Limited"], markersize=18, label="Limited"),
     ],
     title="Archetype",
-    title_fontsize=13,
-    fontsize=12,
-    bbox_to_anchor=(1.01, 1.00),
+    title_fontsize=26,
+    fontsize=24,
+    bbox_to_anchor=(1.03, 1.00),  # X aligned with Ball Carrier legend
     **legend_kwargs,
 )
 ax.add_artist(legend1)
 legend1.get_title().set_color(txt_col)
+legend1.get_title().set_fontweight("semibold")
 for txt in legend1.get_texts():
     txt.set_color(txt_col)
+    txt.set_fontweight("semibold")
 
-# 2) Ball Carrier legend – circle = False, square = True, filled
-carrier_ms = 14
-carrier_lw = 1.4
+# 2) Ball Carrier legend – circle = False, square = True, filled; same X, 2x font size
+carrier_ms = 18
+carrier_lw = 1.6
 legend2 = ax.legend(
     handles=[
         Line2D(
@@ -3440,14 +3442,16 @@ legend2 = ax.legend(
         ),
     ],
     title="Ball Carrier",
-    title_fontsize=13,
-    fontsize=12,
-    bbox_to_anchor=(1.01, 0.72),  # same x as Archetype => aligned
+    title_fontsize=26,
+    fontsize=24,
+    bbox_to_anchor=(1.03, 0.72),  # same X as Archetype legend
     **legend_kwargs,
 )
 legend2.get_title().set_color(txt_col)
+legend2.get_title().set_fontweight("semibold")
 for txt in legend2.get_texts():
     txt.set_color(txt_col)
+    txt.set_fontweight("semibold")
 
 # ------------------------------------------------------------------
 # LAYOUT — SLIGHTLY BIGGER TOP GAP
@@ -3456,7 +3460,7 @@ fig.subplots_adjust(
     left=0.06,
     right=0.88,
     bottom=0.11,
-    top=1.05 - top_gap_px / float(h_px),   # smaller 'top' => slightly larger gap
+    top=1.0 - top_gap_px / float(h_px),
 )
 
 # ------------------------------------------------------------------
@@ -3478,6 +3482,7 @@ else:
 
 plt.close(fig)
 # ============================== END FEATURE Q ============================================================
+
 
 
 
