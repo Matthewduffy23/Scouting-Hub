@@ -3477,7 +3477,7 @@ ax.set_xlim(0, 100)
 ax.set_ylim(0, 100)
 ax.set_xlabel("Possession Score", fontsize=16, fontweight="semibold", color=txt_col)
 ax.xaxis.labelpad = 14
-ax.set_ylabel("Defensive Score", fontsize=16, fontweight="semibold", color=txt_col)
+ax.set_ylabel("Threat Score", fontsize=16, fontweight="semibold", color=txt_col)
 
 ax.xaxis.set_major_locator(MultipleLocator(10))
 ax.yaxis.set_major_locator(MultipleLocator(10))
@@ -3517,13 +3517,13 @@ arch_colors = {
 effective_point_size = point_size * 1.5
 for (arch, carrier), grp in pool_sc.groupby(["Archetype", "Box-to-Box Ball Carrier"]):
     ax.scatter(
-        grp["Threat_score"],
         grp["poss_score"],
+        grp["Threat_score"],
         s=effective_point_size,
         c=arch_colors[arch],
         alpha=point_alpha,
         marker="s" if carrier else "o",
-        edgecolors="none",
+        edgeedges="none",
         linewidth=0,
         zorder=2,
     )
@@ -3553,7 +3553,7 @@ if show_labels:
     for _, r in label_df.iterrows():
         t = ax.annotate(
             r["Player"],
-            (r["poss_score"], r["def_score"]),
+            (r["poss_score"], r["Threat_score"]),  # <-- FIXED: use Threat_score, not def_score
             xytext=(10, 12),
             textcoords="offset points",
             fontsize=label_size + 2,
@@ -3673,6 +3673,7 @@ else:
 
 plt.close(fig)
 # ============================== END FEATURE Q ============================================================
+
 
 
 # ----------------- (B) COMPARISON RADAR — decile tick values (1dp) + light/dark theme + exact edge + centered/upright outside labels -----------------
