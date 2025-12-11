@@ -3178,7 +3178,7 @@ with st.expander("Scatter settings", expanded=False):
 
     # Labels
     show_labels = st.toggle("Show labels", value=True, key="fq_lab")
-    # NEW: label mode including U23 / U21 / U18 options
+    # label mode including U23 / U21 / U18 options
     label_mode = st.selectbox(
         "Label mode",
         ["Selected player only", "All players", "U23 only", "U21 only", "U18 only"],
@@ -3302,7 +3302,7 @@ fig, ax = plt.subplots(figsize=(w_px / 100, h_px / 100), dpi=100)
 fig.patch.set_facecolor(PAGE_BG)
 ax.set_facecolor(PLOT_BG)
 
-# Axes & labels (axis labels +2 font size)
+# Axes & labels
 ax.set_xlim(0, 100)
 ax.set_ylim(0, 100)
 ax.set_xlabel("Possession Score", fontsize=16, fontweight="semibold", color=txt_col)
@@ -3314,7 +3314,7 @@ ax.yaxis.set_major_locator(MultipleLocator(10))
 for tick in ax.get_xticklabels() + ax.get_yticklabels():
     tick.set_fontweight("semibold")
     tick.set_color(txt_col)
-    tick.set_fontsize(14)  # explicit tick size
+    tick.set_fontsize(14)
 
 # Grid & spines
 ax.grid(True, color=GRID_MAJ, linewidth=0.6)
@@ -3343,10 +3343,8 @@ arch_colors = {
     "Limited": "#E15759",
 }
 
-# Points +1 step bigger again
+# Points
 effective_point_size = point_size * 1.5
-
-# Scatter points: square = carrier True, circle = False
 for (arch, carrier), grp in pool_sc.groupby(["Archetype", "Box-to-Box Ball Carrier"]):
     ax.scatter(
         grp["poss_score"],
@@ -3362,17 +3360,13 @@ for (arch, carrier), grp in pool_sc.groupby(["Archetype", "Box-to-Box Ball Carri
 
 # ------------------------------------------------------------------
 # LABEL HANDLING
-# Default: selected player only; team highlight overrides;
-# label mode can switch to All / U23 / U21 / U18.
 # ------------------------------------------------------------------
 highlight_grp = pool_sc[pool_sc["Team"] == team_highlight] if team_highlight != "(None)" else None
 texts = []
 if show_labels:
     if highlight_grp is not None and not highlight_grp.empty:
-        # Team highlight always takes priority
         label_df = highlight_grp
     else:
-        # Base on label mode
         if label_mode == "Selected player only" and selected_player_name:
             label_df = pool_sc[pool_sc["Player"] == selected_player_name]
         elif label_mode == "All players":
@@ -3403,7 +3397,7 @@ if show_labels:
         texts.append(t)
 
 # ------------------------------------------------------------------
-# CLEAN, ALIGNED RIGHT-SIDE LEGENDS (unchanged styling)
+# CLEAN, PERFECTLY ALIGNED RIGHT-SIDE LEGENDS
 # ------------------------------------------------------------------
 legend_kwargs = dict(
     loc="upper left",
@@ -3413,6 +3407,7 @@ legend_kwargs = dict(
     borderpad=0.25,
     labelspacing=0.4,
     borderaxespad=0.0,
+    bbox_transform=ax.transAxes,   # <--- both legends now in the same axes coordinate system
 )
 
 # 1) Archetype legend
@@ -3430,7 +3425,7 @@ legend1 = ax.legend(
     title="Archetype",
     title_fontsize=15,
     fontsize=14,
-    bbox_to_anchor=(1.01, 1.00),
+    bbox_to_anchor=(1.02, 1.00),   # <--- X = 1.02
     **legend_kwargs,
 )
 ax.add_artist(legend1)
@@ -3440,7 +3435,7 @@ for txt in legend1.get_texts():
     txt.set_color(txt_col)
     txt.set_fontweight("semibold")
 
-# 2) Ball Carrier legend – circle = False, square = True, filled, aligned X with Archetype
+# 2) Ball Carrier legend – same X as Archetype
 carrier_ms = 16
 carrier_lw = 1.4
 legend2 = ax.legend(
@@ -3471,7 +3466,7 @@ legend2 = ax.legend(
     title="Ball Carrier",
     title_fontsize=15,
     fontsize=14,
-    bbox_to_anchor=(1.01, 0.72),
+    bbox_to_anchor=(1.02, 0.72),   # <--- same X = 1.02, lower Y
     **legend_kwargs,
 )
 legend2.get_title().set_color(txt_col)
@@ -3481,7 +3476,7 @@ for txt in legend2.get_texts():
     txt.set_fontweight("semibold")
 
 # ------------------------------------------------------------------
-# LAYOUT — SLIGHTLY BIGGER TOP GAP
+# LAYOUT
 # ------------------------------------------------------------------
 fig.subplots_adjust(
     left=0.06,
@@ -3509,15 +3504,6 @@ else:
 
 plt.close(fig)
 # ============================== END FEATURE Q ============================================================
-
-
-
-
-
-
-
-
-
 
 
 
