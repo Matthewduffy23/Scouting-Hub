@@ -1592,11 +1592,11 @@ with st.expander("Squad Profile settings", expanded=False):
         key="sq_min",
     )
 
-    # Age 14–45, default 16–40
+    # Age 14–45, default 16–38
     min_age_s, max_age_s = st.slider(
         "Age range (for axis & filter)",
         14, 45,
-        (16, 40),
+        (16, 38),
         key="sq_age",
     )
 
@@ -1604,11 +1604,11 @@ with st.expander("Squad Profile settings", expanded=False):
     st.markdown("**Minutes bands (horizontal dashed lines)**")
     important_line = st.slider(
         "Important Player line (minutes)",
-        0, 5000, 1500, step=250, key="sq_line_important",
+        0, 5000, 1000, step=250, key="sq_line_important",
     )
     crucial_line = st.slider(
         "Crucial Player line (minutes)",
-        0, 5000, 2500, step=250, key="sq_line_crucial",
+        0, 5000, 2000, step=250, key="sq_line_crucial",
     )
 
     band_lines = sorted(
@@ -1636,8 +1636,8 @@ with st.expander("Squad Profile settings", expanded=False):
 
     # --- Labels & points (defaults +2) ---
     show_labels = st.toggle("Show labels", value=True, key="sq_show_labels")
-    label_size = st.slider("Label size", 8, 22, 14, 1, key="sq_lblsize")  # +2 vs before
-    point_size = st.slider("Point size", 24, 300, 227, 2, key="sq_pts")   # +2 vs before
+    label_size = st.slider("Label size", 8, 22, 16, 1, key="sq_lblsize")  # +2 vs before
+    point_size = st.slider("Point size", 24, 300, 300, 2, key="sq_pts")   # +2 vs before
     point_alpha = st.slider("Point opacity", 0.2, 1.0, 0.92, 0.02, key="sq_alpha")
 
     # --- Theme & canvas (same style as Feature Q) ---
