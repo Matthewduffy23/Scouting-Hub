@@ -1549,7 +1549,7 @@ st.header("📊 Feature R — Squad Profile")
 # CONFIG
 # --------------------------------------------------------------------------------------
 # Adjust this to match your contract column name
-CONTRACT_COL = "Contract expires"   # e.g. "Contract Until", "Contract End", "Contract Year"
+CONTRACT_COL = "Contract Until"   # e.g. "Contract Until", "Contract End", "Contract Year"
 
 # --------------------------------------------------------------------------------------
 # SETTINGS PANEL
@@ -1559,7 +1559,7 @@ with st.expander("Squad Profile settings", expanded=False):
     # --- Squad selection ---
     teams_available = sorted(df["Team"].dropna().unique())
 
-    # Safely use player_row if it exists, otherwise fall back to None
+    # Safely try to use player_row if it exists, otherwise fall back to None
     default_team = None
     selected_player_name = None
 
@@ -1583,48 +1583,62 @@ with st.expander("Squad Profile settings", expanded=False):
     df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
     df["Age"] = pd.to_numeric(df["Age"], errors="coerce")
 
+    # Default minutes 0–4000
     min_minutes_s, max_minutes_s = st.slider(
         "Minutes range (for axis & filter)",
-        0, 5000,
-        (0, int(np.nanmax(df["Minutes played"].fillna(0)).clip(0, 4500))),
+        0, 4000,
+        (0, 4000),
         step=100,
         key="sq_min",
     )
 
+    # Default age 16–40
     min_age_s, max_age_s = st.slider(
         "Age range (for axis & filter)",
         14, 45,
-        (16, 38),
+        (16, 40),
         key="sq_age",
     )
 
     # --- Minutes bands (horizontal lines) ---
     st.markdown("**Minutes bands (horizontal dashed lines)**")
-    squad_line = st.slider(
-        "Squad Player line (minutes)",
-        0, 5000, 500, step=100, key="sq_line_squad",
-    )
     important_line = st.slider(
         "Important Player line (minutes)",
-        0, 5000, 1000, step=100, key="sq_line_important",
+        0, 4000, 1000, step=100, key="sq_line_important",
     )
     crucial_line = st.slider(
         "Crucial Player line (minutes)",
-        0, 5000, 2000, step=100, key="sq_line_crucial",
+        0, 4000, 2000, step=100, key="sq_line_crucial",
     )
 
     # Ensure lines are ordered (lowest to highest for drawing)
     band_lines = sorted(
-        [("Squad Player", squad_line),
-         ("Important Player", important_line),
+        [("Important Player", important_line),
          ("Crucial Player", crucial_line)],
         key=lambda x: x[1],
     )
 
-    # --- Labels & points ---
+    # --- Contract highlight toggle & custom highlight players ---
+    auto_contract_red = st.checkbox(
+        "Highlight players with contract ≤ 2026 in red",
+        value=True,
+        key="sq_auto_contract",
+    )
+
+    team_players_all = sorted(
+        df[df["Team"] == squad_team]["Player"].dropna().unique().tolist()
+    )
+    custom_red_players = st.multiselect(
+        "Force-highlight specific players in red",
+        options=team_players_all,
+        default=[],
+        key="sq_custom_red",
+    )
+
+    # --- Labels & points (defaults +2) ---
     show_labels = st.toggle("Show labels", value=True, key="sq_show_labels")
-    label_size = st.slider("Label size", 8, 20, 12, 1, key="sq_lblsize")
-    point_size = st.slider("Point size", 24, 300, 225, 2, key="sq_pts")
+    label_size = st.slider("Label size", 8, 20, 14, 1, key="sq_lblsize")  # default +2
+    point_size = st.slider("Point size", 24, 300, 227, 2, key="sq_pts")   # default +2
     point_alpha = st.slider("Point opacity", 0.2, 1.0, 0.92, 0.02, key="sq_alpha")
 
     # --- Theme & canvas (same style as Feature Q) ---
@@ -1665,9 +1679,9 @@ if squad.empty:
     st.stop()
 
 # --------------------------------------------------------------------------------------
-# CONTRACT HIGHLIGHT  (auto red if contract <= 2026)
+# CONTRACT HIGHLIGHT & CUSTOM HIGHLIGHT
 # --------------------------------------------------------------------------------------
-if CONTRACT_COL in squad.columns:
+if auto_contract_red and CONTRACT_COL in squad.columns:
     # Extract year like 2026 from strings such as '2026-06-30' or '2026'
     contract_year = (
         squad[CONTRACT_COL]
@@ -1675,19 +1689,22 @@ if CONTRACT_COL in squad.columns:
         .str.extract(r"(\d{4})")[0]
         .astype(float)
     )
+    squad["ContractYear"] = contract_year
+    squad["AutoRed"] = squad["ContractYear"].le(2026)
 else:
-    contract_year = pd.Series(np.nan, index=squad.index)
-
-squad["ContractYear"] = contract_year
-squad["AutoRed"] = squad["ContractYear"].le(2026)
+    squad["ContractYear"] = np.nan
+    squad["AutoRed"] = False
 
 # Selected player flag (only if name is known)
 squad["Selected"] = False
 if selected_player_name:
     squad["Selected"] = squad["Player"] == selected_player_name
 
-# Final red flag: contract <= 2026 OR selected player
-squad["IsRed"] = squad["AutoRed"] | squad["Selected"]
+# Custom multiple-player red highlight
+squad["CustomRed"] = squad["Player"].isin(custom_red_players)
+
+# Final red flag: contract <= 2026 OR selected player OR custom red
+squad["IsRed"] = squad["AutoRed"] | squad["Selected"] | squad["CustomRed"]
 
 # --------------------------------------------------------------------------------------
 # SCATTER: X = Age, Y = Minutes played
@@ -1722,19 +1739,21 @@ for s in ax.spines.values():
 # AGE BANDS (vertical dashed lines + titles YOUTH / ASCENT / PRIME / EXPERIENCED / OLD)
 # --------------------------------------------------------------------------------------
 line_col = "#FFFFFF"
-age_lines = [21, 25, 29, 33]  # similar feel to the Huddersfield graphic
+age_lines = [21, 25, 29, 33]  # section boundaries
 for al in age_lines:
     if min_age_s <= al <= max_age_s:
         ax.axvline(al, color=line_col, linestyle=(0, (4, 4)), lw=1.5)
 
-# Age-band titles at the top of the axis (axes coordinates for consistency)
+# Compute centers of each age segment and draw titles slightly lower & centered
 age_band_labels = ["YOUTH", "ASCENT", "PRIME", "EXPERIENCED", "OLD"]
-age_band_x = [0.11, 0.30, 0.50, 0.73, 0.93]  # fractions across the axis
+age_edges = [min_age_s] + age_lines + [max_age_s]
+age_centers = [(age_edges[i] + age_edges[i + 1]) / 2 for i in range(len(age_edges) - 1)]
 
-for x_frac, label in zip(age_band_x, age_band_labels):
+for center, label in zip(age_centers, age_band_labels):
+    x_frac = (center - min_age_s) / float(max_age_s - min_age_s) if max_age_s > min_age_s else 0.5
     ax.text(
         x_frac,
-        1.04,
+        1.015,  # slightly lower than before
         label,
         transform=ax.transAxes,
         fontsize=20,
@@ -1784,8 +1803,9 @@ for is_red, grp in squad.groupby("IsRed"):
     )
 
 # --------------------------------------------------------------------------------------
-# LABELS
+# LABELS (smart, non-overlapping where possible)
 # --------------------------------------------------------------------------------------
+texts = []
 if show_labels:
     for _, r in squad.iterrows():
         z = 6 if r["IsRed"] else 5
@@ -1804,6 +1824,20 @@ if show_labels:
         t.set_path_effects([
             pe.withStroke(linewidth=2, foreground="#020617", alpha=0.9)
         ])
+        texts.append(t)
+
+    # Try to use adjustText for smart label placement if available
+    try:
+        from adjustText import adjust_text
+        adjust_text(
+            texts,
+            ax=ax,
+            only_move={"points": "y", "text": "xy"},
+            arrowprops=dict(arrowstyle="-", lw=0.5, color=txt_col, alpha=0.6),
+        )
+    except ImportError:
+        # If adjustText isn't installed, labels stay where they are (still readable with stroke)
+        pass
 
 # --------------------------------------------------------------------------------------
 # LAYOUT
