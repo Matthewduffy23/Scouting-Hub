@@ -3455,10 +3455,13 @@ labels = [
     "Box-Defender",
     "Complete",
     "Limited",
-    "Ball Carrier",  # header row, no marker
+    " ",              # ← tiny spacer row (controls gap!)
+    " ",              # ← tiny spacer row (controls gap!)
+    "Ball Carrier",
     "False",
     "True",
 ]
+
 
 legend = ax.legend(
     handles=handles,
