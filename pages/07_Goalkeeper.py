@@ -3656,3 +3656,369 @@ else:
                         st.pyplot(fig_r, use_container_width=True)
 # ----------------- END Radar -----------------
 
+
+# ============================== FEATURE Q — GK ARCHETYPE SCATTER ==============================
+from scipy.stats import rankdata
+from io import BytesIO
+import uuid
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+from matplotlib.ticker import MultipleLocator
+from matplotlib import patheffects as pe
+
+st.markdown("---")
+st.header("🧭 Feature Q — GK Archetype Map")
+
+# ------------------------------------------------------------------
+# SETTINGS PANEL
+# ------------------------------------------------------------------
+with st.expander("Scatter settings", expanded=False):
+
+    leagues_available_sc = sorted(df["League"].dropna().unique().tolist())
+    player_league = player_row.iloc[0]["League"] if not player_row.empty else None
+    # Selected player name for default labelling
+    selected_player_name = player_row.iloc[0]["Player"] if not player_row.empty else None
+
+    preset_sc = st.selectbox(
+        "League preset",
+        ["Player's league", "Top 5 Europe", "Top 20 Europe", "EFL (England 2–4)", "Custom"],
+        index=0,
+        key="fq_preset_gk",
+    )
+
+    preset_map_sc = {
+        "Player's league": {player_league} if player_league else set(),
+        "Top 5 Europe": set(PRESET_LEAGUES.get("Top 5 Europe", [])),
+        "Top 20 Europe": set(PRESET_LEAGUES.get("Top 20 Europe", [])),
+        "EFL (England 2–4)": set(PRESET_LEAGUES.get("EFL (England 2–4)", [])),
+        "Custom": set(),
+    }
+
+    add_leagues_sc = st.multiselect("Add leagues", leagues_available_sc, default=[], key="fq_add_gk")
+    leagues_scatter = sorted(preset_map_sc[preset_sc] | set(add_leagues_sc))
+    if not leagues_scatter and player_league:
+        leagues_scatter = [player_league]
+
+    # Filters
+    df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
+    df["Age"] = pd.to_numeric(df["Age"], errors="coerce")
+    min_minutes_s, max_minutes_s = st.slider("Minutes", 0, 5000, (500, 5000), key="fq_min_gk")
+    min_age_s, max_age_s = st.slider("Age", 14, 45, (16, 40), key="fq_age_gk")
+    min_strength_s, max_strength_s = st.slider("League Strength", 0, 101, (0, 101), key="fq_ls_gk")
+
+    # Labels
+    show_labels = st.toggle("Show labels", value=True, key="fq_lab_gk")
+    label_mode = st.selectbox(
+        "Label mode",
+        ["Selected player only", "All players", "U23 only", "U21 only", "U18 only"],
+        index=0,
+        key="fq_label_mode_gk",
+    )
+    label_size = st.slider("Label size", 8, 20, 12, 1, key="fq_lblsize_gk")
+
+    # Points
+    point_size = st.slider("Point size", 24, 300, 225, 2, key="fq_pts_gk")
+    point_alpha = st.slider("Point opacity", 0.2, 1.0, 0.92, 0.02, key="fq_alpha_gk")
+
+    # TEAM HIGHLIGHT – USED ONLY FOR LABEL FILTER
+    teams_available_hl = sorted(df[df["League"].isin(leagues_scatter)]["Team"].dropna().unique())
+    team_highlight = st.selectbox(
+        "Highlight team (labels only shown for this team)",
+        ["(None)"] + teams_available_hl,
+        index=0,
+        key="fq_team_gk",
+    )
+
+    # Theme toggle (kept for future but background fixed dark)
+    theme = st.radio("Theme", ["Dark", "Light"], index=0, horizontal=True, key="fq_theme_gk")
+
+    # === FIXED DARK BACKGROUND FOR PAGE & PLOT ===
+    PAGE_BG = "#0a0f1c"
+    PLOT_BG = "#0a0f1c"
+    GRID_MAJ = "#3a4050"
+    txt_col = "#f1f5f9"
+
+    # Canvas
+    canvas_preset = st.selectbox(
+        "Canvas size",
+        ["1280×720", "1600×900", "1920×820", "1920×1080"],
+        index=1,
+        key="fq_canvas_gk",
+    )
+    w_px, h_px = map(int, canvas_preset.replace("×", "x").split("x"))
+
+    top_gap_px = st.slider("Top gap (px)", 0, 240, 80, 5, key="fq_gap_gk")
+    render_exact = st.checkbox("Render exact pixels (PNG)", value=True, key="fq_exact_gk")
+
+# ------------------------------------------------------------------
+# GK FILTER + SCORE CALCULATION
+# ------------------------------------------------------------------
+pool_sc = df[df["League"].isin(leagues_scatter)].copy()
+pool_sc["Primary Position"] = pool_sc["Position"].astype(str).str.split(",").str[0].str.strip()
+pool_sc = pool_sc[pool_sc["Primary Position"].isin(["GK"])]
+
+pool_sc["Minutes played"] = pd.to_numeric(pool_sc["Minutes played"], errors="coerce")
+pool_sc["Age"] = pd.to_numeric(pool_sc["Age"], errors="coerce")
+pool_sc["League Strength"] = pool_sc["League"].map(LEAGUE_STRENGTHS).fillna(0)
+
+pool_sc = pool_sc[
+    pool_sc["Minutes played"].between(min_minutes_s, max_minutes_s)
+    & pool_sc["Age"].between(min_age_s, max_age_s)
+    & pool_sc["League Strength"].between(min_strength_s, max_strength_s)
+]
+
+if pool_sc.empty:
+    st.info("No goalkeepers after filtering.")
+    st.stop()
+
+metric_groups = {
+    "gk_score": {
+        "Prevented goals per 90": 0.8,
+        "Save rate, %": 0.2,
+    },
+    "poss_score": {
+        "Passes per 90": 0.25,
+        "Accurate passes, %": 0.5,
+        "Accurate long passes, %": 0.25,
+    },
+    "sweeper_score": {
+        "Exits per 90": 1.0,
+    },
+}
+
+def weighted_percentile(df_sub, row, mgrp):
+    total = 0
+    for m, w in mgrp.items():
+        vals = df_sub[m].fillna(0)
+        pct = rankdata(vals) / len(vals)
+        total += pct[df_sub.index.get_loc(row.name)] * w
+    return total * 100
+
+for sn, grp in metric_groups.items():
+    pool_sc[sn] = pool_sc.apply(lambda r: weighted_percentile(pool_sc, r, grp), axis=1)
+
+def classify(r):
+    if r["gk_score"] >= 50 and r["poss_score"] >= 50:
+        return "Complete"
+    if r["gk_score"] >= 50:
+        return "Shot Stopper"
+    if r["poss_score"] >= 50:
+        return "Ball Player"
+    return "Limited"
+
+pool_sc["Archetype"] = pool_sc.apply(classify, axis=1)
+pool_sc["Sweeper GK"] = pool_sc["sweeper_score"] >= 70  # like Ball Carrier flag
+
+# ------------------------------------------------------------------
+# SCATTER GRAPH
+#   X = Goalkeeping Score, Y = Possession Score
+# ------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(w_px / 100, h_px / 100), dpi=100)
+fig.patch.set_facecolor(PAGE_BG)
+ax.set_facecolor(PLOT_BG)
+
+# Axes & labels
+ax.set_xlim(0, 100)
+ax.set_ylim(0, 100)
+ax.set_xlabel("Goalkeeping Score", fontsize=16, fontweight="semibold", color=txt_col)
+ax.xaxis.labelpad = 14
+ax.set_ylabel("Possession Score", fontsize=16, fontweight="semibold", color=txt_col)
+
+ax.xaxis.set_major_locator(MultipleLocator(10))
+ax.yaxis.set_major_locator(MultipleLocator(10))
+for tick in ax.get_xticklabels() + ax.get_yticklabels():
+    tick.set_fontweight("semibold")
+    tick.set_color(txt_col)
+    tick.set_fontsize(14)
+
+# Grid & spines
+ax.grid(True, color=GRID_MAJ, linewidth=0.6)
+for s in ax.spines.values():
+    s.set_color("#e5e7eb")
+    s.set_linewidth(1.1)
+
+# Quadrant lines
+line_col = "#FFFFFF"
+ax.axvline(50, color=line_col, linestyle=(0, (4, 4)), lw=1.5)
+ax.axhline(50, color=line_col, linestyle=(0, (4, 4)), lw=1.5)
+
+# Quadrant labels (as you specified: TL Shot Stopper, TR Complete, BL Limited, BR Ball Player)
+quad_fs = 16
+bbox_style = dict(boxstyle="round,pad=0.35", facecolor="#d1d5db", edgecolor="none", alpha=0.9)
+ax.text(6, 94, "SHOT STOPPER", fontsize=quad_fs, weight="bold", bbox=bbox_style)
+ax.text(94, 94, "COMPLETE", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
+ax.text(6, 6, "LIMITED", fontsize=quad_fs, weight="bold", bbox=bbox_style)
+ax.text(96, 6, "BALL PLAYER", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
+
+# Archetype colours
+arch_colors = {
+    "Shot Stopper": "#F28E2B",
+    "Ball Player": "#76B7B2",
+    "Complete": "#4E79A7",
+    "Limited": "#E15759",
+}
+
+# Points
+effective_point_size = point_size * 1.5
+for (arch, sweeper), grp in pool_sc.groupby(["Archetype", "Sweeper GK"]):
+    ax.scatter(
+        grp["gk_score"],
+        grp["poss_score"],
+        s=effective_point_size,
+        c=arch_colors[arch],
+        alpha=point_alpha,
+        marker="s" if sweeper else "o",   # square = Sweeper GK, circle = normal
+        edgecolors="none",
+        linewidth=0,
+        zorder=2,
+    )
+
+# ------------------------------------------------------------------
+# LABEL HANDLING
+# ------------------------------------------------------------------
+highlight_grp = pool_sc[pool_sc["Team"] == team_highlight] if team_highlight != "(None)" else None
+texts = []
+if show_labels:
+    if highlight_grp is not None and not highlight_grp.empty:
+        label_df = highlight_grp
+    else:
+        if label_mode == "Selected player only" and selected_player_name:
+            label_df = pool_sc[pool_sc["Player"] == selected_player_name]
+        elif label_mode == "All players":
+            label_df = pool_sc
+        elif label_mode == "U23 only":
+            label_df = pool_sc[pool_sc["Age"] < 23]
+        elif label_mode == "U21 only":
+            label_df = pool_sc[pool_sc["Age"] < 21]
+        elif label_mode == "U18 only":
+            label_df = pool_sc[pool_sc["Age"] < 18]
+        else:
+            label_df = pool_sc
+
+    for _, r in label_df.iterrows():
+        t = ax.annotate(
+            r["Player"],
+            (r["gk_score"], r["poss_score"]),
+            xytext=(10, 12),
+            textcoords="offset points",
+            fontsize=label_size + 2,
+            color=txt_col,
+            weight="semibold",
+            ha="left",
+            va="bottom",
+            zorder=6,
+        )
+        t.set_path_effects([pe.withStroke(linewidth=2, foreground="#020617", alpha=0.9)])
+        texts.append(t)
+
+# ------------------------------------------------------------------
+# SINGLE, PERFECTLY ALIGNED LEGEND BLOCK
+# ------------------------------------------------------------------
+legend_kwargs = dict(
+    loc="upper left",
+    frameon=False,
+    handlelength=1.1,
+    handletextpad=0.4,
+    borderpad=0.25,
+    labelspacing=0.55,
+    borderaxespad=0.0,
+)
+
+handles = [
+    # Archetypes
+    Line2D([0], [0], marker="s", linestyle="None", color="none",
+           markerfacecolor=arch_colors["Shot Stopper"], markersize=16, label="Shot Stopper"),
+    Line2D([0], [0], marker="s", linestyle="None", color="none",
+           markerfacecolor=arch_colors["Ball Player"], markersize=16, label="Ball Player"),
+    Line2D([0], [0], marker="s", linestyle="None", color="none",
+           markerfacecolor=arch_colors["Complete"], markersize=16, label="Complete"),
+    Line2D([0], [0], marker="s", linestyle="None", color="none",
+           markerfacecolor=arch_colors["Limited"], markersize=16, label="Limited"),
+    # Sweeper GK header row (no marker)
+    Line2D([], [], linestyle="None", color="none", label="Sweeper GK"),
+    # No / Yes markers
+    Line2D(
+        [0], [0],
+        marker="o",
+        linestyle="None",
+        color="none",
+        markeredgecolor=txt_col,
+        markerfacecolor="#f1f5f9",
+        markeredgewidth=1.4,
+        markersize=16,
+        label="No",
+    ),
+    Line2D(
+        [0], [0],
+        marker="s",
+        linestyle="None",
+        color="none",
+        markeredgecolor=txt_col,
+        markerfacecolor="#f1f5f9",
+        markeredgewidth=1.4,
+        markersize=16,
+        label="Yes",
+    ),
+]
+
+labels = [
+    "Shot Stopper",
+    "Ball Player",
+    "Complete",
+    "Limited",
+    "Sweeper GK",  # header row, no marker
+    "No",
+    "Yes",
+]
+
+legend = ax.legend(
+    handles=handles,
+    labels=labels,
+    title="Archetype",
+    title_fontsize=15,
+    fontsize=14,
+    bbox_to_anchor=(1.01, 1.00),
+    **legend_kwargs,
+)
+legend.get_title().set_color(txt_col)
+legend.get_title().set_fontweight("semibold")
+
+for i, txt in enumerate(legend.get_texts()):
+    txt.set_color(txt_col)
+    txt.set_fontweight("semibold")
+    if labels[i] == "Sweeper GK":
+        txt.set_fontstyle("italic")
+
+# ------------------------------------------------------------------
+# LAYOUT
+# ------------------------------------------------------------------
+fig.subplots_adjust(
+    left=0.06,
+    right=0.865,
+    bottom=0.11,
+    top=1.02 - top_gap_px / float(h_px),
+)
+
+# ------------------------------------------------------------------
+# RENDER
+# ------------------------------------------------------------------
+if render_exact:
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=100, facecolor=PAGE_BG)
+    buf.seek(0)
+    st.image(buf, width=w_px)
+    st.download_button(
+        "⬇️ Download Feature Q (PNG)",
+        data=buf.getvalue(),
+        file_name=f"feature_q_gk_{uuid.uuid4().hex[:6]}.png",
+        mime="image/png",
+    )
+else:
+    st.pyplot(fig)
+
+plt.close(fig)
+# ============================== END FEATURE Q ============================================================
+
+
