@@ -3317,15 +3317,15 @@ for tick in ax.get_xticklabels() + ax.get_yticklabels():
     tick.set_fontsize(14)  # explicit tick size
 
 # Grid & spines
-ax.grid(True, color=GRID_MAJ, linewidth=0.9)
+ax.grid(True, color=GRID_MAJ, linewidth=1.1)
 for s in ax.spines.values():
-    s.set_color("#666666")
-    s.set_linewidth(0.9)
+    s.set_color("#e5e7eb")
+    s.set_linewidth(1.1)
 
 # Quadrant lines
-line_col = "#f9fafb"
-ax.axvline(50, color=line_col, linestyle=(0, (4, 4)), lw=1)
-ax.axhline(50, color=line_col, linestyle=(0, (4, 4)), lw=1)
+line_col = "#FFFFFF"
+ax.axvline(50, color=line_col, linestyle=(0, (4, 4)), lw=1.5)
+ax.axhline(50, color=line_col, linestyle=(0, (4, 4)), lw=1.5)
 
 # Quadrant labels
 quad_fs = 16
@@ -3392,7 +3392,7 @@ if show_labels:
             (r["poss_score"], r["def_score"]),
             xytext=(10, 12),
             textcoords="offset points",
-            fontsize=label_size + 1,
+            fontsize=label_size + 2,
             color=txt_col,
             weight="semibold",
             ha="left",
