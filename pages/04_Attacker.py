@@ -3395,11 +3395,11 @@ with st.expander("Scatter settings", expanded=False):
     render_exact = st.checkbox("Render exact pixels (PNG)", value=True, key="fq_exact")
 
 # ------------------------------------------------------------------
-# CB FILTER + SCORE CALCULATION
+# ATT FILTER + SCORE CALCULATION
 # ------------------------------------------------------------------
 pool_sc = df[df["League"].isin(leagues_scatter)].copy()
 pool_sc["Primary Position"] = pool_sc["Position"].astype(str).str.split(",").str[0].str.strip()
-pool_sc = pool_sc[pool_sc["Primary Position"].isin(["LWF", "RWF", "RW","LW", "RAMF", "LAMF", "AMF" ])]
+pool_sc = pool_sc[pool_sc["Primary Position"].isin(["LWF", "RWF", "RW", "LW", "RAMF", "LAMF", "AMF"])]
 
 pool_sc["Minutes played"] = pd.to_numeric(pool_sc["Minutes played"], errors="coerce")
 pool_sc["Age"] = pd.to_numeric(pool_sc["Age"], errors="coerce")
@@ -3412,35 +3412,35 @@ pool_sc = pool_sc[
 ]
 
 if pool_sc.empty:
-    st.info("No CBs after filtering.")
+    st.info("No attackers after filtering.")
     st.stop()
 
 metric_groups = {
-        'Threat_score': {
-            'xG per 90': 0.3,
-            'Non-penalty goals per 90': 0.4,
-            'xA per 90': 0.3,
-        },
-        'poss_score': {
-            'Smart passes per 90': 0.1,
-            'Dribbles per 90': 0.3,
-            'Deep completions per 90': 0.1,
-            'Progressive runs per 90': 0.2,
-            'Passes to penalty area per 90': 0.3
-        },
-        'carry_score': {
-            'Dribbles per 90': 0.4,
-            'Successful dribbles, %': 0.1,
-            'Progressive runs per 90': 0.3,
-            'Accelerations per 90': 0.2
-        },
-        'pass_score': {
-            'xA per 90': 0.3,
-            'Passes per 90': 0.3,
-            'Passes to penalty area per 90': 0.3,
-            'Passes to final third per 90': 0.1
-        }
-    }
+    "Threat_score": {
+        "xG per 90": 0.3,
+        "Non-penalty goals per 90": 0.4,
+        "xA per 90": 0.3,
+    },
+    "poss_score": {
+        "Smart passes per 90": 0.1,
+        "Dribbles per 90": 0.3,
+        "Deep completions per 90": 0.1,
+        "Progressive runs per 90": 0.2,
+        "Passes to penalty area per 90": 0.3,
+    },
+    "carry_score": {
+        "Dribbles per 90": 0.4,
+        "Successful dribbles, %": 0.1,
+        "Progressive runs per 90": 0.3,
+        "Accelerations per 90": 0.2,
+    },
+    "pass_score": {
+        "xA per 90": 0.3,
+        "Passes per 90": 0.3,
+        "Passes to penalty area per 90": 0.3,
+        "Passes to final third per 90": 0.1,
+    },
+}
 
 def weighted_percentile(df_sub, row, mgrp):
     total = 0
@@ -3455,7 +3455,7 @@ for sn, grp in metric_groups.items():
 
 def classify(r):
     if r["Threat_score"] >= 50 and r["poss_score"] >= 50:
-        return "Multi-Threat"
+        return "Multi-threat"
     if r["Threat_score"] >= 50:
         return "Final Action"
     if r["poss_score"] >= 50:
@@ -3505,11 +3505,11 @@ ax.text(94, 94, "MULTI-THREAT", fontsize=quad_fs, weight="bold", ha="right", bbo
 ax.text(6, 6, "LIMITED", fontsize=quad_fs, weight="bold", bbox=bbox_style)
 ax.text(96, 6, "FINAL ACTION", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
 
-# Archetype colours
+# Archetype colours – keys must match classify() outputs EXACTLY
 arch_colors = {
     "Final Action": "#76B7B2",
     "Facilitator": "#F28E2B",
-    "Multi-Threat": "#4E79A7",
+    "Multi-threat": "#4E79A7",
     "Limited": "#E15759",
 }
 
@@ -3569,7 +3569,6 @@ if show_labels:
 # ------------------------------------------------------------------
 # SINGLE, PERFECTLY ALIGNED LEGEND BLOCK
 # ------------------------------------------------------------------
-# Compact spacing so the gap between Archetype and Ball Carrier is small
 legend_kwargs = dict(
     loc="upper left",
     frameon=False,
@@ -3580,10 +3579,6 @@ legend_kwargs = dict(
     borderaxespad=0.0,
 )
 
-# Handles and labels in one legend:
-#   4 archetypes
-#   1 text row "Ball Carrier" (no marker)
-#   2 marker rows: Yes (square), No (circle)
 handles = [
     # Archetypes
     Line2D([0], [0], marker="s", linestyle="None", color="none",
@@ -3591,7 +3586,7 @@ handles = [
     Line2D([0], [0], marker="s", linestyle="None", color="none",
            markerfacecolor=arch_colors["Facilitator"], markersize=16, label="Facilitator"),
     Line2D([0], [0], marker="s", linestyle="None", color="none",
-           markerfacecolor=arch_colors["Multi-Threat"], markersize=16, label="Multi-Threat"),
+           markerfacecolor=arch_colors["Multi-threat"], markersize=16, label="Multi-threat"),
     Line2D([0], [0], marker="s", linestyle="None", color="none",
            markerfacecolor=arch_colors["Limited"], markersize=16, label="Limited"),
     # Ball Carrier header row (no marker)
@@ -3624,7 +3619,7 @@ handles = [
 labels = [
     "Final Action",
     "Facilitator",
-    "Multi-Threat",
+    "Multi-threat",
     "Limited",
     "Ball Carrier",  # header row, no marker
     "No",
@@ -3637,17 +3632,15 @@ legend = ax.legend(
     title="Archetype",
     title_fontsize=15,
     fontsize=14,
-    bbox_to_anchor=(1.01, 1.00),   # X for the whole block
+    bbox_to_anchor=(1.01, 1.00),
     **legend_kwargs,
 )
 legend.get_title().set_color(txt_col)
 legend.get_title().set_fontweight("semibold")
 
-# style all label text
 for i, txt in enumerate(legend.get_texts()):
     txt.set_color(txt_col)
     txt.set_fontweight("semibold")
-    # make the "Ball Carrier" header row stand out slightly
     if labels[i] == "Ball Carrier":
         txt.set_fontstyle("italic")
 
@@ -3672,7 +3665,7 @@ if render_exact:
     st.download_button(
         "⬇️ Download Feature Q (PNG)",
         data=buf.getvalue(),
-        file_name=f"feature_q_cb_{uuid.uuid4().hex[:6]}.png",
+        file_name=f"feature_q_att_{uuid.uuid4().hex[:6]}.png",
         mime="image/png",
     )
 else:
@@ -3680,6 +3673,7 @@ else:
 
 plt.close(fig)
 # ============================== END FEATURE Q ============================================================
+
 
 # ----------------- (B) COMPARISON RADAR — decile tick values (1dp) + light/dark theme + exact edge + centered/upright outside labels -----------------
 import re
