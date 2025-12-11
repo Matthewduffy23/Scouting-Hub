@@ -3309,10 +3309,10 @@ for tick in ax.get_xticklabels() + ax.get_yticklabels():
     tick.set_fontsize(14)  # explicit tick size (+2 vs typical default)
 
 # Grid & spines
-ax.grid(True, color=GRID_MAJ, linewidth=0.9)
+ax.grid(True, color=GRID_MAJ, linewidth=0.7)
 for s in ax.spines.values():
     s.set_color("#666666")
-    s.set_linewidth(0.9)
+    s.set_linewidth(0.7)
 
 # Quadrant lines
 line_col = "#f9fafb"
@@ -3336,7 +3336,7 @@ arch_colors = {
 }
 
 # Points +1 step bigger again
-effective_point_size = point_size * 1.3
+effective_point_size = point_size * 1.5
 
 # Scatter points: square = carrier True, circle = False
 for (arch, carrier), grp in pool_sc.groupby(["Archetype", "Box-to-Box Ball Carrier"]):
@@ -3461,7 +3461,7 @@ fig.subplots_adjust(
     left=0.06,
     right=0.88,
     bottom=0.11,
-    top=1.05 - top_gap_px / float(h_px),
+    top=1.02 - top_gap_px / float(h_px),
 )
 
 # ------------------------------------------------------------------
