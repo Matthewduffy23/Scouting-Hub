@@ -3550,7 +3550,7 @@ handles = [
     Line2D([0], [0], marker="s", linestyle="None", color="none",
            markerfacecolor=arch_colors["Lockdown"], markersize=16, label="Lockdown"),
     Line2D([0], [0], marker="s", linestyle="None", color="none",
-           markerfacecolor=arch_colors["Complete"], markersize=16, label="Complete"),
+           markerfacecolor=arch_colors["Two-Way"], markersize=16, label="Two-Way"),
     Line2D([0], [0], marker="s", linestyle="None", color="none",
            markerfacecolor=arch_colors["Limited"], markersize=16, label="Limited"),
     # Ball Carrier header row (no marker)
