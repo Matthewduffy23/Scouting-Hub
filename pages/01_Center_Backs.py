@@ -3450,23 +3450,12 @@ handles = [
     ),
 ]
 
-legend_kwargs = dict(
-    loc="upper left",
-    frameon=False,
-    handlelength=1.1,
-    handletextpad=0.4,
-    borderpad=0.25,
-    labelspacing=0.20,   # ← tighter vertical spacing
-    borderaxespad=0.0,
-)
-
 labels = [
     "Ball Player",
     "Box-Defender",
     "Complete",
     "Limited",
-    " ",             # ← controls extra gap before Ball Carrier
-    "Ball Carrier",
+    "Ball Carrier",  # header row, no marker
     "False",
     "True",
 ]
