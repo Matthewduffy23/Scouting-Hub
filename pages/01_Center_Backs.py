@@ -3331,7 +3331,7 @@ bbox_style = dict(boxstyle="round,pad=0.35", facecolor="#d1d5db", edgecolor="non
 ax.text(6, 94, "BOX DEFENDER", fontsize=quad_fs, weight="bold", bbox=bbox_style)
 ax.text(94, 94, "COMPLETE", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
 ax.text(6, 6, "LIMITED", fontsize=quad_fs, weight="bold", bbox=bbox_style)
-ax.text(94, 6, "BALL PLAYER", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
+ax.text(96, 6, "BALL PLAYER", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
 
 # Archetype colours
 arch_colors = {
