@@ -3309,18 +3309,18 @@ for tick in ax.get_xticklabels() + ax.get_yticklabels():
     tick.set_fontsize(14)  # explicit tick size (+2 vs typical default)
 
 # Grid & spines
-ax.grid(True, color=GRID_MAJ, linewidth=0.7)
+ax.grid(True, color=GRID_MAJ, linewidth=0.9)
 for s in ax.spines.values():
     s.set_color("#666666")
-    s.set_linewidth(0.7)
+    s.set_linewidth(0.9)
 
 # Quadrant lines
 line_col = "#f9fafb"
-ax.axvline(50, color=line_col, linestyle=(0, (4, 4)), lw=2)
-ax.axhline(50, color=line_col, linestyle=(0, (4, 4)), lw=2)
+ax.axvline(50, color=line_col, linestyle=(0, (4, 4)), lw=1)
+ax.axhline(50, color=line_col, linestyle=(0, (4, 4)), lw=1)
 
 # Quadrant labels
-quad_fs = 14
+quad_fs = 16
 bbox_style = dict(boxstyle="round,pad=0.35", facecolor="#d1d5db", edgecolor="none", alpha=0.9)
 ax.text(6, 94, "BOX DEFENDER", fontsize=quad_fs, weight="bold", bbox=bbox_style)
 ax.text(94, 94, "COMPLETE", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
@@ -3459,7 +3459,7 @@ for txt in legend2.get_texts():
 # ------------------------------------------------------------------
 fig.subplots_adjust(
     left=0.06,
-    right=0.88,
+    right=0.865,
     bottom=0.11,
     top=1.02 - top_gap_px / float(h_px),
 )
