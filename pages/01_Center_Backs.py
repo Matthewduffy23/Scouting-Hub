@@ -3425,7 +3425,7 @@ handles = [
            markerfacecolor=arch_colors["Limited"], markersize=16, label="Limited"),
     # Ball Carrier header row (no marker)
     Line2D([], [], linestyle="None", color="none", label="Ball Carrier"),
-    # Yes / No markers
+    # No / Yes markers
     Line2D(
         [0], [0],
         marker="o",
@@ -3435,7 +3435,7 @@ handles = [
         markerfacecolor="#f1f5f9",
         markeredgewidth=1.4,
         markersize=16,
-        label="Yes",
+        label="No",
     ),
     Line2D(
         [0], [0],
@@ -3446,7 +3446,7 @@ handles = [
         markerfacecolor="#f1f5f9",
         markeredgewidth=1.4,
         markersize=16,
-        label="No",
+        label="Yes",
     ),
 ]
 
@@ -3456,8 +3456,8 @@ labels = [
     "Complete",
     "Limited",
     "Ball Carrier",  # header row, no marker
-    "Yes",
     "No",
+    "Yes",
 ]
 
 legend = ax.legend(
