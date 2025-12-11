@@ -3178,7 +3178,6 @@ with st.expander("Scatter settings", expanded=False):
 
     # Labels
     show_labels = st.toggle("Show labels", value=True, key="fq_lab")
-    # label mode including U23 / U21 / U18 options
     label_mode = st.selectbox(
         "Label mode",
         ["Selected player only", "All players", "U23 only", "U21 only", "U18 only"],
@@ -3397,20 +3396,25 @@ if show_labels:
         texts.append(t)
 
 # ------------------------------------------------------------------
-# SINGLE COMBINED, FULLY ALIGNED LEGEND
+# SINGLE, PERFECTLY ALIGNED LEGEND BLOCK
 # ------------------------------------------------------------------
-labels = [
-    "Ball Player",
-    "Box-Defender",
-    "Complete",
-    "Limited",
-    "Ball Carrier",  # header row (dummy marker)
-    "False",
-    "True",
-]
+# Compact spacing so the gap between Archetype and Ball Carrier is small
+legend_kwargs = dict(
+    loc="upper left",
+    frameon=False,
+    handlelength=1.1,
+    handletextpad=0.4,
+    borderpad=0.25,
+    labelspacing=0.35,
+    borderaxespad=0.0,
+)
 
+# Handles and labels in one legend:
+#   4 archetypes
+#   1 text row "Ball Carrier" (no marker)
+#   2 marker rows: False (circle), True (square)
 handles = [
-    # Archetype rows
+    # Archetypes
     Line2D([0], [0], marker="s", linestyle="None", color="none",
            markerfacecolor=arch_colors["Ball Player"], markersize=16, label="Ball Player"),
     Line2D([0], [0], marker="s", linestyle="None", color="none",
@@ -3419,19 +3423,9 @@ handles = [
            markerfacecolor=arch_colors["Complete"], markersize=16, label="Complete"),
     Line2D([0], [0], marker="s", linestyle="None", color="none",
            markerfacecolor=arch_colors["Limited"], markersize=16, label="Limited"),
-
-    # Header row for Ball Carrier – invisible marker but keeps alignment perfect
-    Line2D(
-        [0], [0],
-        marker="s",
-        linestyle="None",
-        markerfacecolor="none",
-        markeredgecolor="none",
-        markersize=16,
-        label="Ball Carrier",
-    ),
-
-    # Ball Carrier values
+    # Ball Carrier header row (no marker)
+    Line2D([], [], linestyle="None", color="none", label="Ball Carrier"),
+    # False / True markers
     Line2D(
         [0], [0],
         marker="o",
@@ -3456,22 +3450,35 @@ handles = [
     ),
 ]
 
+labels = [
+    "Ball Player",
+    "Box-Defender",
+    "Complete",
+    "Limited",
+    "Ball Carrier",  # header row, no marker
+    "False",
+    "True",
+]
+
 legend = ax.legend(
     handles=handles,
     labels=labels,
-    loc="upper left",
-    bbox_to_anchor=(1.01, 1.0),
-    frameon=False,
-    handlelength=1.1,
-    handletextpad=0.4,
-    borderpad=0.25,
-    labelspacing=0.35,   # tweak this smaller/larger for gap between rows
-    borderaxespad=0.0,
+    title="Archetype",
+    title_fontsize=15,
+    fontsize=14,
+    bbox_to_anchor=(1.01, 1.00),   # X for the whole block
+    **legend_kwargs,
 )
+legend.get_title().set_color(txt_col)
+legend.get_title().set_fontweight("semibold")
 
-for txt in legend.get_texts():
+# style all label text
+for i, txt in enumerate(legend.get_texts()):
     txt.set_color(txt_col)
     txt.set_fontweight("semibold")
+    # make the "Ball Carrier" header row stand out slightly
+    if labels[i] == "Ball Carrier":
+        txt.set_fontstyle("italic")
 
 # ------------------------------------------------------------------
 # LAYOUT
