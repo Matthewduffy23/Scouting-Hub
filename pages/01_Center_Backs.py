@@ -3178,7 +3178,6 @@ with st.expander("Scatter settings", expanded=False):
 
     # Labels
     show_labels = st.toggle("Show labels", value=True, key="fq_lab")
-    # label mode including U23 / U21 / U18 options
     label_mode = st.selectbox(
         "Label mode",
         ["Selected player only", "All players", "U23 only", "U21 only", "U18 only"],
@@ -3407,7 +3406,7 @@ legend_kwargs = dict(
     borderpad=0.25,
     labelspacing=0.4,
     borderaxespad=0.0,
-    bbox_transform=ax.transAxes,   # <--- both legends now in the same axes coordinate system
+    bbox_transform=fig.transFigure,   # <-- figure coords so both legends share same X
 )
 
 # 1) Archetype legend
@@ -3425,7 +3424,7 @@ legend1 = ax.legend(
     title="Archetype",
     title_fontsize=15,
     fontsize=14,
-    bbox_to_anchor=(1.02, 1.00),   # <--- X = 1.02
+    bbox_to_anchor=(0.87, 0.93),   # <-- X position for both legends
     **legend_kwargs,
 )
 ax.add_artist(legend1)
@@ -3435,7 +3434,7 @@ for txt in legend1.get_texts():
     txt.set_color(txt_col)
     txt.set_fontweight("semibold")
 
-# 2) Ball Carrier legend – same X as Archetype
+# 2) Ball Carrier legend – SAME X as Archetype
 carrier_ms = 16
 carrier_lw = 1.4
 legend2 = ax.legend(
@@ -3466,7 +3465,7 @@ legend2 = ax.legend(
     title="Ball Carrier",
     title_fontsize=15,
     fontsize=14,
-    bbox_to_anchor=(1.02, 0.72),   # <--- same X = 1.02, lower Y
+    bbox_to_anchor=(0.87, 0.63),   # <-- same X (=0.87), lower Y
     **legend_kwargs,
 )
 legend2.get_title().set_color(txt_col)
@@ -3504,6 +3503,7 @@ else:
 
 plt.close(fig)
 # ============================== END FEATURE Q ============================================================
+
 
 
 
