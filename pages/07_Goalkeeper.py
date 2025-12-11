@@ -3820,7 +3820,7 @@ fig.patch.set_facecolor(PAGE_BG)
 ax.set_facecolor(PLOT_BG)
 
 # Axes & labels
-ax.set_xlim(0, 100)
+ax.set_xlim(0, 102)
 ax.set_ylim(0, 100)
 ax.set_xlabel("Goalkeeping Score", fontsize=16, fontweight="semibold", color=txt_col)
 ax.xaxis.labelpad = 14
@@ -3996,7 +3996,7 @@ for i, txt in enumerate(legend.get_texts()):
 # ------------------------------------------------------------------
 fig.subplots_adjust(
     left=0.06,
-    right=0.89,
+    right=0.865,
     bottom=0.11,
     top=1.02 - top_gap_px / float(h_px),
 )
