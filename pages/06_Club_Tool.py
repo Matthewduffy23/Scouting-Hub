@@ -1548,8 +1548,8 @@ st.header("📊 Feature R — Squad Profile")
 # --------------------------------------------------------------------------------------
 # CONFIG
 # --------------------------------------------------------------------------------------
-# Adjust this to match your contract column name
-CONTRACT_COL = "Contract Until"   # e.g. "Contract Until", "Contract End", "Contract Year"
+# Match your actual column name
+CONTRACT_COL = "Contract expires"   # <= 2026 -> default red highlight
 
 # --------------------------------------------------------------------------------------
 # SETTINGS PANEL
@@ -1583,16 +1583,16 @@ with st.expander("Squad Profile settings", expanded=False):
     df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
     df["Age"] = pd.to_numeric(df["Age"], errors="coerce")
 
-    # Default minutes 0–4000
+    # Minutes 0–5000, default 0–4000
     min_minutes_s, max_minutes_s = st.slider(
         "Minutes range (for axis & filter)",
-        0, 4000,
+        0, 5000,
         (0, 4000),
-        step=100,
+        step=250,
         key="sq_min",
     )
 
-    # Default age 16–40
+    # Age 14–45, default 16–40
     min_age_s, max_age_s = st.slider(
         "Age range (for axis & filter)",
         14, 45,
@@ -1604,14 +1604,13 @@ with st.expander("Squad Profile settings", expanded=False):
     st.markdown("**Minutes bands (horizontal dashed lines)**")
     important_line = st.slider(
         "Important Player line (minutes)",
-        0, 4000, 1000, step=100, key="sq_line_important",
+        0, 5000, 1500, step=250, key="sq_line_important",
     )
     crucial_line = st.slider(
         "Crucial Player line (minutes)",
-        0, 4000, 2000, step=100, key="sq_line_crucial",
+        0, 5000, 2500, step=250, key="sq_line_crucial",
     )
 
-    # Ensure lines are ordered (lowest to highest for drawing)
     band_lines = sorted(
         [("Important Player", important_line),
          ("Crucial Player", crucial_line)],
@@ -1637,8 +1636,8 @@ with st.expander("Squad Profile settings", expanded=False):
 
     # --- Labels & points (defaults +2) ---
     show_labels = st.toggle("Show labels", value=True, key="sq_show_labels")
-    label_size = st.slider("Label size", 8, 20, 14, 1, key="sq_lblsize")  # default +2
-    point_size = st.slider("Point size", 24, 300, 227, 2, key="sq_pts")   # default +2
+    label_size = st.slider("Label size", 8, 22, 14, 1, key="sq_lblsize")  # +2 vs before
+    point_size = st.slider("Point size", 24, 300, 227, 2, key="sq_pts")   # +2 vs before
     point_alpha = st.slider("Point opacity", 0.2, 1.0, 0.92, 0.02, key="sq_alpha")
 
     # --- Theme & canvas (same style as Feature Q) ---
@@ -1722,7 +1721,7 @@ ax.xaxis.labelpad = 14
 ax.set_ylabel("Minutes Played", fontsize=16, fontweight="semibold", color=txt_col)
 
 ax.xaxis.set_major_locator(MultipleLocator(1))
-ax.yaxis.set_major_locator(MultipleLocator(500))
+ax.yaxis.set_major_locator(MultipleLocator(250))  # every 250 minutes
 
 for tick in ax.get_xticklabels() + ax.get_yticklabels():
     tick.set_fontweight("semibold")
@@ -1736,7 +1735,7 @@ for s in ax.spines.values():
     s.set_linewidth(1.1)
 
 # --------------------------------------------------------------------------------------
-# AGE BANDS (vertical dashed lines + titles YOUTH / ASCENT / PRIME / EXPERIENCED / OLD)
+# AGE BANDS (vertical dashed lines + centered titles)
 # --------------------------------------------------------------------------------------
 line_col = "#FFFFFF"
 age_lines = [21, 25, 29, 33]  # section boundaries
@@ -1753,7 +1752,7 @@ for center, label in zip(age_centers, age_band_labels):
     x_frac = (center - min_age_s) / float(max_age_s - min_age_s) if max_age_s > min_age_s else 0.5
     ax.text(
         x_frac,
-        1.015,  # slightly lower than before
+        1.01,  # slightly down from the very top
         label,
         transform=ax.transAxes,
         fontsize=20,
@@ -1803,41 +1802,59 @@ for is_red, grp in squad.groupby("IsRed"):
     )
 
 # --------------------------------------------------------------------------------------
-# LABELS (smart, non-overlapping where possible)
+# LABELS – simple collision-aware placement
 # --------------------------------------------------------------------------------------
-texts = []
 if show_labels:
-    for _, r in squad.iterrows():
+    # Sort by minutes so lower-minute players place first
+    squad_sorted = squad.sort_values("Minutes played")
+    placed = []  # list of (x, y_label)
+
+    # minimal vertical separation between labels (in minutes)
+    min_y_delta = (max_minutes_s - min_minutes_s) * 0.03  # ~3% of axis
+    age_tol = 0.7  # labels treated as colliding if ages closer than this
+
+    for _, r in squad_sorted.iterrows():
+        x = r["Age"]
+        y = r["Minutes played"]
+        y_label = y
+
+        # push label up until it doesn't collide with previous labels near same age
+        while True:
+            collision = False
+            for (px, py) in placed:
+                if abs(x - px) < age_tol and abs(y_label - py) < min_y_delta:
+                    collision = True
+                    break
+            if not collision:
+                break
+            y_label += min_y_delta
+            if y_label > max_minutes_s:
+                # if we run past top, drop it back down a bit
+                y_label = max_minutes_s - min_y_delta
+                break
+
+        placed.append((x, y_label))
+
         z = 6 if r["IsRed"] else 5
+        # Draw a subtle leader line from point to label if it's moved
+        if y_label != y:
+            ax.plot([x, x], [y, y_label], linestyle="-", linewidth=0.5, color=txt_col, alpha=0.5, zorder=z)
+
         t = ax.annotate(
             r["Player"],
-            (r["Age"], r["Minutes played"]),
-            xytext=(10, 10),
+            xy=(x, y_label),
+            xytext=(0, 0),
             textcoords="offset points",
             fontsize=label_size,
             color=txt_col,
             weight="semibold",
-            ha="left",
+            ha="center",
             va="bottom",
-            zorder=z,
+            zorder=z + 0.1,
         )
         t.set_path_effects([
             pe.withStroke(linewidth=2, foreground="#020617", alpha=0.9)
         ])
-        texts.append(t)
-
-    # Try to use adjustText for smart label placement if available
-    try:
-        from adjustText import adjust_text
-        adjust_text(
-            texts,
-            ax=ax,
-            only_move={"points": "y", "text": "xy"},
-            arrowprops=dict(arrowstyle="-", lw=0.5, color=txt_col, alpha=0.6),
-        )
-    except ImportError:
-        # If adjustText isn't installed, labels stay where they are (still readable with stroke)
-        pass
 
 # --------------------------------------------------------------------------------------
 # LAYOUT
@@ -1868,6 +1885,7 @@ else:
 
 plt.close(fig)
 # ============================== END FEATURE R ==========================================
+
 
 
 
