@@ -3455,7 +3455,7 @@ for sn, grp in metric_groups.items():
 
 def classify(r):
     if r["Threat_score"] >= 50 and r["poss_score"] >= 50:
-        return "Multi-threat"
+        return "Multi-Threat"
     if r["Threat_score"] >= 50:
         return "Final Action"
     if r["poss_score"] >= 50:
@@ -3507,7 +3507,7 @@ ax.text(96, 6, "FINAL ACTION", fontsize=quad_fs, weight="bold", ha="right", bbox
 
 # Archetype colours
 arch_colors = {
-    "Final-Action": "#76B7B2",
+    "Final Action": "#76B7B2",
     "Facilitator": "#F28E2B",
     "Multi-Threat": "#4E79A7",
     "Limited": "#E15759",
