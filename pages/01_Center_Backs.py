@@ -3334,12 +3334,15 @@ arch_colors = {
     "Limited": "#E15759",
 }
 
+# Slightly larger effective point size
+effective_point_size = point_size * 1.2
+
 # Scatter points: square = carrier True, circle = False
 for (arch, carrier), grp in pool_sc.groupby(["Archetype", "Box-to-Box Ball Carrier"]):
     ax.scatter(
         grp["poss_score"],
         grp["def_score"],
-        s=point_size,
+        s=effective_point_size,
         c=arch_colors[arch],
         alpha=point_alpha,
         marker="s" if carrier else "o",
@@ -3362,7 +3365,7 @@ if show_labels:
             (r["poss_score"], r["def_score"]),
             xytext=(10, 12),
             textcoords="offset points",
-            fontsize=label_size,
+            fontsize=label_size + 1,   # labels 1pt bigger
             color=txt_col,
             weight="semibold",
             ha="left",
@@ -3373,16 +3376,15 @@ if show_labels:
         texts.append(t)
 
 # ------------------------------------------------------------------
-# CLEAN, ALIGNED RIGHT-SIDE LEGENDS
+# CLEAN, ALIGNED RIGHT-SIDE LEGENDS (SLIGHTLY BIGGER)
 # ------------------------------------------------------------------
-# Common layout parms for neat alignment
 legend_kwargs = dict(
     loc="upper left",
     frameon=False,
-    handlelength=1.0,
-    handletextpad=0.35,
-    borderpad=0.2,
-    labelspacing=0.35,
+    handlelength=1.1,
+    handletextpad=0.4,
+    borderpad=0.25,
+    labelspacing=0.4,
     borderaxespad=0.0,
 )
 
@@ -3390,18 +3392,18 @@ legend_kwargs = dict(
 legend1 = ax.legend(
     handles=[
         Line2D([0], [0], marker="s", linestyle="None", color="none",
-               markerfacecolor=arch_colors["Ball Player"], markersize=12, label="Ball Player"),
+               markerfacecolor=arch_colors["Ball Player"], markersize=14, label="Ball Player"),
         Line2D([0], [0], marker="s", linestyle="None", color="none",
-               markerfacecolor=arch_colors["Box-Defender"], markersize=12, label="Box-Defender"),
+               markerfacecolor=arch_colors["Box-Defender"], markersize=14, label="Box-Defender"),
         Line2D([0], [0], marker="s", linestyle="None", color="none",
-               markerfacecolor=arch_colors["Complete"], markersize=12, label="Complete"),
+               markerfacecolor=arch_colors["Complete"], markersize=14, label="Complete"),
         Line2D([0], [0], marker="s", linestyle="None", color="none",
-               markerfacecolor=arch_colors["Limited"], markersize=12, label="Limited"),
+               markerfacecolor=arch_colors["Limited"], markersize=14, label="Limited"),
     ],
     title="Archetype",
-    title_fontsize=12,
-    fontsize=11,
-    bbox_to_anchor=(1.01, 1.00),  # all legends share same x for perfect alignment
+    title_fontsize=13,
+    fontsize=12,
+    bbox_to_anchor=(1.01, 1.00),
     **legend_kwargs,
 )
 ax.add_artist(legend1)
@@ -3409,8 +3411,8 @@ legend1.get_title().set_color(txt_col)
 for txt in legend1.get_texts():
     txt.set_color(txt_col)
 
-# 2) Ball Carrier legend – circle = False, square = True
-carrier_ms = 12
+# 2) Ball Carrier legend – circle = False, square = True, filled
+carrier_ms = 14
 carrier_lw = 1.4
 legend2 = ax.legend(
     handles=[
@@ -3420,7 +3422,7 @@ legend2 = ax.legend(
             linestyle="None",
             color="none",
             markeredgecolor=txt_col,
-            markerfacecolor="none",
+            markerfacecolor="#f1f5f9",
             markeredgewidth=carrier_lw,
             markersize=carrier_ms,
             label="False",
@@ -3431,16 +3433,16 @@ legend2 = ax.legend(
             linestyle="None",
             color="none",
             markeredgecolor=txt_col,
-            markerfacecolor="none",
+            markerfacecolor="#f1f5f9",
             markeredgewidth=carrier_lw,
             markersize=carrier_ms,
             label="True",
         ),
     ],
     title="Ball Carrier",
-    title_fontsize=12,
-    fontsize=11,
-    bbox_to_anchor=(1.01, 0.72),
+    title_fontsize=13,
+    fontsize=12,
+    bbox_to_anchor=(1.01, 0.72),  # same x as Archetype => aligned
     **legend_kwargs,
 )
 legend2.get_title().set_color(txt_col)
@@ -3448,9 +3450,14 @@ for txt in legend2.get_texts():
     txt.set_color(txt_col)
 
 # ------------------------------------------------------------------
-# LAYOUT — SPACE FOR LEGENDS & TOP GAP
+# LAYOUT — SLIGHTLY BIGGER TOP GAP
 # ------------------------------------------------------------------
-fig.subplots_adjust(left=0.06, right=0.88, bottom=0.11, top=1.08 - top_gap_px / float(h_px))
+fig.subplots_adjust(
+    left=0.06,
+    right=0.88,
+    bottom=0.11,
+    top=1.05 - top_gap_px / float(h_px),   # smaller 'top' => slightly larger gap
+)
 
 # ------------------------------------------------------------------
 # RENDER
@@ -3471,6 +3478,7 @@ else:
 
 plt.close(fig)
 # ============================== END FEATURE Q ============================================================
+
 
 
 
