@@ -3405,7 +3405,7 @@ legend_kwargs = dict(
     handlelength=1.1,
     handletextpad=0.4,
     borderpad=0.25,
-    labelspacing=0.35,
+    labelspacing=0.55,
     borderaxespad=0.0,
 )
 
