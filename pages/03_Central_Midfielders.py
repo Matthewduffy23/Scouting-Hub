@@ -3572,21 +3572,7 @@ pool_sc["marker"] = pool_sc.apply(choose_marker, axis=1)
 # Points
 effective_point_size = point_size * 1.5
 
-# Determine which players should be highlighted
-highlight_names = set()
-
-if show_labels:
-    if highlight_grp is not None and not highlight_grp.empty:
-        highlight_names = set(highlight_grp["Player"].tolist())
-    else:
-        if label_mode == "Selected player only" and selected_player_name:
-            highlight_names = {selected_player_name}
-
-# Draw points with white outline for highlighted players
 for _, r in pool_sc.iterrows():
-
-    is_highlighted = r["Player"] in highlight_names
-
     ax.scatter(
         r["poss_score"],
         r["def_score"],
@@ -3594,9 +3580,9 @@ for _, r in pool_sc.iterrows():
         c=arch_colors[r["Archetype"]],
         alpha=point_alpha,
         marker=r["marker"],
-        edgecolors="white" if is_highlighted else "none",
-        linewidth=2.2 if is_highlighted else 0,
-        zorder=3 if is_highlighted else 2,
+        edgecolors="none",
+        linewidth=0,
+        zorder=2,
     )
 
 
