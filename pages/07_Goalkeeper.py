@@ -3812,8 +3812,7 @@ pool_sc["Archetype"] = pool_sc.apply(classify, axis=1)
 pool_sc["Sweeper GK"] = pool_sc["sweeper_score"] >= 70  # like Ball Carrier flag
 
 # ------------------------------------------------------------------
-# SCATTER GRAPH
-#   X = Goalkeeping Score, Y = Possession Score
+# SCATTER GRAPH  (X = Goalkeeping, Y = Possession)
 # ------------------------------------------------------------------
 fig, ax = plt.subplots(figsize=(w_px / 100, h_px / 100), dpi=100)
 fig.patch.set_facecolor(PAGE_BG)
@@ -3844,7 +3843,7 @@ line_col = "#FFFFFF"
 ax.axvline(50, color=line_col, linestyle=(0, (4, 4)), lw=1.5)
 ax.axhline(50, color=line_col, linestyle=(0, (4, 4)), lw=1.5)
 
-# Quadrant labels (as you specified: TL Shot Stopper, TR Complete, BL Limited, BR Ball Player)
+# Quadrant labels
 quad_fs = 16
 bbox_style = dict(boxstyle="round,pad=0.35", facecolor="#d1d5db", edgecolor="none", alpha=0.9)
 ax.text(6, 94, "BALL PLAYER", fontsize=quad_fs, weight="bold", bbox=bbox_style)
@@ -3876,7 +3875,7 @@ for (arch, sweeper), grp in pool_sc.groupby(["Archetype", "Sweeper GK"]):
     )
 
 # ------------------------------------------------------------------
-# LABEL HANDLING
+# LABEL HANDLING (labels clipped to axes)
 # ------------------------------------------------------------------
 highlight_grp = pool_sc[pool_sc["Team"] == team_highlight] if team_highlight != "(None)" else None
 texts = []
@@ -3897,26 +3896,23 @@ if show_labels:
         else:
             label_df = pool_sc
 
-for _, r in label_df.iterrows():
-    t = ax.annotate(
-        r["Player"],
-        (r["gk_score"], r["poss_score"]),
-        xytext=(10, 12),
-        textcoords="offset points",
-        fontsize=label_size + 2,
-        color=txt_col,
-        weight="semibold",
-        ha="left",
-        va="bottom",
-        zorder=6,
-    )
-    t.set_path_effects([
-        pe.withStroke(linewidth=2, foreground="#020617", alpha=0.9)
-    ])
-
-
-
-        t.set_path_effects([pe.withStroke(linewidth=2, foreground="#020617", alpha=0.9)])
+    for _, r in label_df.iterrows():
+        t = ax.annotate(
+            r["Player"],
+            (r["gk_score"], r["poss_score"]),
+            xytext=(10, 12),
+            textcoords="offset points",
+            fontsize=label_size + 2,
+            color=txt_col,
+            weight="semibold",
+            ha="left",
+            va="bottom",
+            clip_on=True,  # keep label drawing inside axes
+            zorder=6,
+        )
+        t.set_path_effects([
+            pe.withStroke(linewidth=2, foreground="#020617", alpha=0.9)
+        ])
         texts.append(t)
 
 # ------------------------------------------------------------------
@@ -4026,5 +4022,6 @@ else:
 
 plt.close(fig)
 # ============================== END FEATURE Q ============================================================
+
 
 
