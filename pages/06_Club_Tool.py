@@ -1549,7 +1549,7 @@ st.header("📊 Feature R — Squad Profile")
 # CONFIG
 # --------------------------------------------------------------------------------------
 # Adjust this to match your contract column name
-CONTRACT_COL = "Contract expires"   # e.g. "Contract Until", "Contract End", "Contract Year"
+CONTRACT_COL = "Contract Until"   # e.g. "Contract Until", "Contract End", "Contract Year"
 
 # --------------------------------------------------------------------------------------
 # SETTINGS PANEL
@@ -1558,9 +1558,15 @@ with st.expander("Squad Profile settings", expanded=False):
 
     # --- Squad selection ---
     teams_available = sorted(df["Team"].dropna().unique())
+
+    # Safely use player_row if it exists, otherwise fall back to None
     default_team = None
-    if "Team" in df.columns and not player_row.empty:
-        default_team = player_row.iloc[0].get("Team", None)
+    selected_player_name = None
+
+    player_row_obj = globals().get("player_row", pd.DataFrame())
+    if isinstance(player_row_obj, pd.DataFrame) and not player_row_obj.empty:
+        default_team = player_row_obj.iloc[0].get("Team", None)
+        selected_player_name = player_row_obj.iloc[0].get("Player", None)
 
     default_idx = 0
     if default_team in teams_available:
@@ -1621,13 +1627,6 @@ with st.expander("Squad Profile settings", expanded=False):
     point_size = st.slider("Point size", 24, 300, 225, 2, key="sq_pts")
     point_alpha = st.slider("Point opacity", 0.2, 1.0, 0.92, 0.02, key="sq_alpha")
 
-    # Highlighting – labels shown only for this team (squad), so we just keep toggle
-    highlight_selected_only = st.checkbox(
-        "Emphasise selected player on top of contract highlight",
-        value=True,
-        key="sq_high_sel",
-    )
-
     # --- Theme & canvas (same style as Feature Q) ---
     PAGE_BG = "#0a0f1c"
     PLOT_BG = "#0a0f1c"
@@ -1668,9 +1667,8 @@ if squad.empty:
 # --------------------------------------------------------------------------------------
 # CONTRACT HIGHLIGHT  (auto red if contract <= 2026)
 # --------------------------------------------------------------------------------------
-contract_year = None
 if CONTRACT_COL in squad.columns:
-    # Try to extract a year like 2026 from strings such as '2026-06-30' or '2026'
+    # Extract year like 2026 from strings such as '2026-06-30' or '2026'
     contract_year = (
         squad[CONTRACT_COL]
         .astype(str)
@@ -1678,15 +1676,15 @@ if CONTRACT_COL in squad.columns:
         .astype(float)
     )
 else:
-    # Fallback: all NaN -> no auto highlight
     contract_year = pd.Series(np.nan, index=squad.index)
 
 squad["ContractYear"] = contract_year
 squad["AutoRed"] = squad["ContractYear"].le(2026)
 
-# Selected player name (if present in this squad)
-selected_player_name = player_row.iloc[0]["Player"] if not player_row.empty else None
-squad["Selected"] = selected_player_name and (squad["Player"] == selected_player_name)
+# Selected player flag (only if name is known)
+squad["Selected"] = False
+if selected_player_name:
+    squad["Selected"] = squad["Player"] == selected_player_name
 
 # Final red flag: contract <= 2026 OR selected player
 squad["IsRed"] = squad["AutoRed"] | squad["Selected"]
@@ -1724,12 +1722,12 @@ for s in ax.spines.values():
 # AGE BANDS (vertical dashed lines + titles YOUTH / ASCENT / PRIME / EXPERIENCED / OLD)
 # --------------------------------------------------------------------------------------
 line_col = "#FFFFFF"
-age_lines = [21, 25, 29, 33]  # same feel as Huddersfield plot
+age_lines = [21, 25, 29, 33]  # similar feel to the Huddersfield graphic
 for al in age_lines:
     if min_age_s <= al <= max_age_s:
         ax.axvline(al, color=line_col, linestyle=(0, (4, 4)), lw=1.5)
 
-# Age-band titles at the top of the axis (in axes coords for consistent layout)
+# Age-band titles at the top of the axis (axes coordinates for consistency)
 age_band_labels = ["YOUTH", "ASCENT", "PRIME", "EXPERIENCED", "OLD"]
 age_band_x = [0.11, 0.30, 0.50, 0.73, 0.93]  # fractions across the axis
 
@@ -1790,7 +1788,6 @@ for is_red, grp in squad.groupby("IsRed"):
 # --------------------------------------------------------------------------------------
 if show_labels:
     for _, r in squad.iterrows():
-        # Slightly higher z-order for red / selected labels
         z = 6 if r["IsRed"] else 5
         t = ax.annotate(
             r["Player"],
@@ -1837,6 +1834,7 @@ else:
 
 plt.close(fig)
 # ============================== END FEATURE R ==========================================
+
 
 
 
