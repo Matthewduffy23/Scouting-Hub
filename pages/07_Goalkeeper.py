@@ -3898,19 +3898,22 @@ if show_labels:
             label_df = pool_sc
 
     for _, r in label_df.iterrows():
-t = ax.annotate(
-    r["Player"],
-    (r["poss_score"], r["gk_score"]),
-    xytext=(10, 12),
-    textcoords="offset points",
-    fontsize=label_size + 2,
-    color=txt_col,
-    weight="semibold",
-    ha="left",
-    va="bottom",
-    clip_on=True,     # <-- prevents labels outside the axes
-    zorder=6,
-)
+        t = ax.annotate(
+            r["Player"],
+            (r["poss_score"], r["gk_score"]),
+            xytext=(10, 12),
+            textcoords="offset points",
+            fontsize=label_size + 2,
+            color=txt_col,
+            weight="semibold",
+            ha="left",
+            va="bottom",
+            clip_on=True,     # prevents labels going outside chart
+            zorder=6,
+        )
+        t.set_path_effects([
+            pe.withStroke(linewidth=2, foreground="#020617", alpha=0.9)
+        ])
 
         t.set_path_effects([pe.withStroke(linewidth=2, foreground="#020617", alpha=0.9)])
         texts.append(t)
