@@ -3359,6 +3359,7 @@ with st.expander("Scatter settings", expanded=False):
 
     leagues_available_sc = sorted(df["League"].dropna().unique().tolist())
     player_league = player_row.iloc[0]["League"] if not player_row.empty else None
+    # Selected player name for default labelling
     selected_player_name = player_row.iloc[0]["Player"] if not player_row.empty else None
 
     preset_sc = st.selectbox(
@@ -3402,7 +3403,7 @@ with st.expander("Scatter settings", expanded=False):
     point_size = st.slider("Point size", 24, 300, 225, 2, key="fq_pts")
     point_alpha = st.slider("Point opacity", 0.2, 1.0, 0.92, 0.02, key="fq_alpha")
 
-    # TEAM HIGHLIGHT
+    # TEAM HIGHLIGHT – USED ONLY FOR LABEL FILTER
     teams_available_hl = sorted(df[df["League"].isin(leagues_scatter)]["Team"].dropna().unique())
     team_highlight = st.selectbox(
         "Highlight team (labels only shown for this team)",
@@ -3411,7 +3412,10 @@ with st.expander("Scatter settings", expanded=False):
         key="fq_team",
     )
 
-    # FIXED DARK THEME
+    # Theme toggle (kept for future but background fixed dark)
+    theme = st.radio("Theme", ["Dark", "Light"], index=0, horizontal=True, key="fq_theme")
+
+    # === FIXED DARK BACKGROUND FOR PAGE & PLOT ===
     PAGE_BG = "#0a0f1c"
     PLOT_BG = "#0a0f1c"
     GRID_MAJ = "#3a4050"
@@ -3500,8 +3504,10 @@ def classify(r):
     return "Limited"
 
 pool_sc["Archetype"] = pool_sc.apply(classify, axis=1)
-pool_sc["Ball Carrier"] = pool_sc["carry_score"] >= 70
-pool_sc["Box Threat"] = pool_sc["boxing_score"] >= 80
+
+# FLAGS
+pool_sc["Ball Carrier"] = pool_sc["carry_score"] >= 70      # square
+pool_sc["Box Threat"] = pool_sc["boxing_score"] >= 80       # diamond
 
 # ------------------------------------------------------------------
 # SCATTER GRAPH
@@ -3514,13 +3520,14 @@ ax.set_facecolor(PLOT_BG)
 ax.set_xlim(0, 100)
 ax.set_ylim(0, 100)
 ax.set_xlabel("Possession Score", fontsize=16, fontweight="semibold", color=txt_col)
+ax.xaxis.labelpad = 14
 ax.set_ylabel("Defensive Score", fontsize=16, fontweight="semibold", color=txt_col)
 
 ax.xaxis.set_major_locator(MultipleLocator(10))
 ax.yaxis.set_major_locator(MultipleLocator(10))
 for tick in ax.get_xticklabels() + ax.get_yticklabels():
-    tick.set_color(txt_col)
     tick.set_fontweight("semibold")
+    tick.set_color(txt_col)
     tick.set_fontsize(14)
 
 # Grid & spines
@@ -3529,10 +3536,14 @@ for s in ax.spines.values():
     s.set_color("#e5e7eb")
     s.set_linewidth(1.1)
 
+# 50/50 quadrant lines (RESTORED)
+line_col = "#FFFFFF"
+ax.axvline(50, color=line_col, linestyle=(0, (4, 4)), lw=1.5)
+ax.axhline(50, color=line_col, linestyle=(0, (4, 4)), lw=1.5)
+
 # Quadrant labels
 quad_fs = 16
 bbox_style = dict(boxstyle="round,pad=0.35", facecolor="#d1d5db", edgecolor="none", alpha=0.9)
-
 ax.text(6, 94, "DESTROYER", fontsize=quad_fs, weight="bold", bbox=bbox_style)
 ax.text(94, 94, "ALL ACTION", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
 ax.text(6, 6, "LIMITED", fontsize=quad_fs, weight="bold", bbox=bbox_style)
@@ -3547,33 +3558,20 @@ arch_colors = {
 }
 
 # ------------------------------------------------------------------
-# MARKER PRIORITY LOGIC (DIAMOND > SQUARE > CIRCLE)
+# MARKER PRIORITY (DIAMOND > SQUARE > CIRCLE)
 # ------------------------------------------------------------------
 def choose_marker(row):
     if row["Box Threat"]:
-        return "D"     # diamond
+        return "D"       # diamond
     if row["Ball Carrier"]:
-        return "s"     # square
-    return "o"         # circle
+        return "s"       # square
+    return "o"           # circle
 
 pool_sc["marker"] = pool_sc.apply(choose_marker, axis=1)
 
-# ------------------------------------------------------------------
-# PLOT SCATTER POINTS
-# ------------------------------------------------------------------
+# Points
 effective_point_size = point_size * 1.5
 
-for arch, grp in pool_sc.groupby("Archetype"):
-    ax.scatter(
-        grp["poss_score"],
-        grp["def_score"],
-        s=effective_point_size,
-        c=arch_colors[arch],
-        alpha=point_alpha,
-        marker=None,  # overridden below
-    )
-
-# Replot markers individually so shapes vary
 for _, r in pool_sc.iterrows():
     ax.scatter(
         r["poss_score"],
@@ -3584,14 +3582,13 @@ for _, r in pool_sc.iterrows():
         marker=r["marker"],
         edgecolors="none",
         linewidth=0,
-        zorder=3,
+        zorder=2,
     )
 
 # ------------------------------------------------------------------
 # LABEL HANDLING
 # ------------------------------------------------------------------
 highlight_grp = pool_sc[pool_sc["Team"] == team_highlight] if team_highlight != "(None)" else None
-
 if show_labels:
     if highlight_grp is not None and not highlight_grp.empty:
         label_df = highlight_grp
@@ -3625,9 +3622,8 @@ if show_labels:
         t.set_path_effects([pe.withStroke(linewidth=2, foreground="#020617", alpha=0.9)])
 
 # ------------------------------------------------------------------
-# LEGEND — OPTION A (Archetype → Ball Carrier → Box Threat)
+# SINGLE, PERFECTLY ALIGNED LEGEND BLOCK
 # ------------------------------------------------------------------
-
 legend_kwargs = dict(
     loc="upper left",
     frameon=False,
@@ -3638,8 +3634,8 @@ legend_kwargs = dict(
     borderaxespad=0.0,
 )
 
-# Part 1 — Archetype block
-handles_arch = [
+handles = [
+    # Archetypes
     Line2D([0], [0], marker="s", linestyle="None", color="none",
            markerfacecolor=arch_colors["Playmaker"], markersize=16, label="Playmaker"),
     Line2D([0], [0], marker="s", linestyle="None", color="none",
@@ -3647,66 +3643,67 @@ handles_arch = [
     Line2D([0], [0], marker="s", linestyle="None", color="none",
            markerfacecolor=arch_colors["All Action"], markersize=16, label="All Action"),
     Line2D([0], [0], marker="s", linestyle="None", color="none",
-           markerfacecolor=arch_colors["Limited"], markersize=16, label="Limited")
+           markerfacecolor=arch_colors["Limited"], markersize=16, label="Limited"),
+
+    # Ball Carrier header row (no marker)
+    Line2D([], [], linestyle="None", color="none", label="Ball Carrier"),
+    # Ball Carrier Yes (square)
+    Line2D(
+        [0], [0],
+        marker="s",
+        linestyle="None",
+        color="none",
+        markeredgecolor=txt_col,
+        markerfacecolor="#f1f5f9",
+        markeredgewidth=1.4,
+        markersize=16,
+        label="Yes",
+    ),
+
+    # Pen-Box Threat header row (no marker)
+    Line2D([], [], linestyle="None", color="none", label="Pen-Box Threat"),
+    # Pen-Box Threat Yes (diamond)
+    Line2D(
+        [0], [0],
+        marker="D",
+        linestyle="None",
+        color="none",
+        markeredgecolor=txt_col,
+        markerfacecolor="#f1f5f9",
+        markeredgewidth=1.4,
+        markersize=16,
+        label="Yes",
+    ),
 ]
 
-legend1 = ax.legend(
-    handles=handles_arch,
+labels = [
+    "Playmaker",
+    "Destroyer",
+    "All Action",
+    "Limited",
+    "Ball Carrier",
+    "Yes",
+    "Pen-Box Threat",
+    "Yes",
+]
+
+legend = ax.legend(
+    handles=handles,
+    labels=labels,
     title="Archetype",
     title_fontsize=15,
     fontsize=14,
     bbox_to_anchor=(1.01, 1.00),
     **legend_kwargs,
 )
-legend1.get_title().set_color(txt_col)
-legend1.get_title().set_fontweight("semibold")
-for txt in legend1.get_texts():
+legend.get_title().set_color(txt_col)
+legend.get_title().set_fontweight("semibold")
+
+for i, txt in enumerate(legend.get_texts()):
     txt.set_color(txt_col)
     txt.set_fontweight("semibold")
-ax.add_artist(legend1)
-
-# Part 2 — Ball Carrier block
-handles_carrier = [
-    Line2D([0], [0], marker="s", linestyle="None", color="none",
-           markerfacecolor="#f1f5f9", markeredgecolor=txt_col, markeredgewidth=1.4,
-           markersize=16, label="Yes"),
-]
-
-legend2 = ax.legend(
-    handles=handles_carrier,
-    title="Ball Carrier",
-    title_fontsize=15,
-    fontsize=14,
-    bbox_to_anchor=(1.01, 0.70),
-    **legend_kwargs,
-)
-legend2.get_title().set_color(txt_col)
-legend2.get_title().set_fontweight("semibold")
-for txt in legend2.get_texts():
-    txt.set_color(txt_col)
-    txt.set_fontweight("semibold")
-ax.add_artist(legend2)
-
-# Part 3 — Box Threat block
-handles_threat = [
-    Line2D([0], [0], marker="D", linestyle="None", color="none",
-           markerfacecolor="#f1f5f9", markeredgecolor=txt_col, markeredgewidth=1.4,
-           markersize=16, label="Yes"),
-]
-
-legend3 = ax.legend(
-    handles=handles_threat,
-    title="Pen-Box Threat",
-    title_fontsize=15,
-    fontsize=14,
-    bbox_to_anchor=(1.01, 0.48),
-    **legend_kwargs,
-)
-legend3.get_title().set_color(txt_col)
-legend3.get_title().set_fontweight("semibold")
-for txt in legend3.get_texts():
-    txt.set_color(txt_col)
-    txt.set_fontweight("semibold")
+    if labels[i] in ["Ball Carrier", "Pen-Box Threat"]:
+        txt.set_fontstyle("italic")
 
 # ------------------------------------------------------------------
 # LAYOUT
@@ -3737,6 +3734,7 @@ else:
 
 plt.close(fig)
 # ============================== END FEATURE Q ============================================================
+
 
 
 
