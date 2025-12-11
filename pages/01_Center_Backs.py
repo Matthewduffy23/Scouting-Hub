@@ -3412,7 +3412,7 @@ legend_kwargs = dict(
 # Handles and labels in one legend:
 #   4 archetypes
 #   1 text row "Ball Carrier" (no marker)
-#   2 marker rows: False (circle), True (square)
+#   2 marker rows: Yes (square), No (circle)
 handles = [
     # Archetypes
     Line2D([0], [0], marker="s", linestyle="None", color="none",
@@ -3425,7 +3425,7 @@ handles = [
            markerfacecolor=arch_colors["Limited"], markersize=16, label="Limited"),
     # Ball Carrier header row (no marker)
     Line2D([], [], linestyle="None", color="none", label="Ball Carrier"),
-    # False / True markers
+    # Yes / No markers
     Line2D(
         [0], [0],
         marker="o",
@@ -3435,7 +3435,7 @@ handles = [
         markerfacecolor="#f1f5f9",
         markeredgewidth=1.4,
         markersize=16,
-        label="False",
+        label="Yes",
     ),
     Line2D(
         [0], [0],
@@ -3446,7 +3446,7 @@ handles = [
         markerfacecolor="#f1f5f9",
         markeredgewidth=1.4,
         markersize=16,
-        label="True",
+        label="No",
     ),
 ]
 
@@ -3456,8 +3456,8 @@ labels = [
     "Complete",
     "Limited",
     "Ball Carrier",  # header row, no marker
-    "False",
-    "True",
+    "Yes",
+    "No",
 ]
 
 legend = ax.legend(
