@@ -3338,7 +3338,7 @@ with st.expander("Scatter settings", expanded=False):
 # ==========================================================================================================
 
 
-# ============================== FEATURE Q — CB ARCHETYPE SCATTER ==============================
+# ============================== FEATURE Q — CM ARCHETYPE SCATTER ==============================
 from scipy.stats import rankdata
 from io import BytesIO
 import uuid
@@ -3359,7 +3359,6 @@ with st.expander("Scatter settings", expanded=False):
 
     leagues_available_sc = sorted(df["League"].dropna().unique().tolist())
     player_league = player_row.iloc[0]["League"] if not player_row.empty else None
-    # Selected player name for default labelling
     selected_player_name = player_row.iloc[0]["Player"] if not player_row.empty else None
 
     preset_sc = st.selectbox(
@@ -3403,7 +3402,7 @@ with st.expander("Scatter settings", expanded=False):
     point_size = st.slider("Point size", 24, 300, 225, 2, key="fq_pts")
     point_alpha = st.slider("Point opacity", 0.2, 1.0, 0.92, 0.02, key="fq_alpha")
 
-    # TEAM HIGHLIGHT – USED ONLY FOR LABEL FILTER
+    # TEAM HIGHLIGHT
     teams_available_hl = sorted(df[df["League"].isin(leagues_scatter)]["Team"].dropna().unique())
     team_highlight = st.selectbox(
         "Highlight team (labels only shown for this team)",
@@ -3412,10 +3411,7 @@ with st.expander("Scatter settings", expanded=False):
         key="fq_team",
     )
 
-    # Theme toggle (kept for future but background fixed dark)
-    theme = st.radio("Theme", ["Dark", "Light"], index=0, horizontal=True, key="fq_theme")
-
-    # === FIXED DARK BACKGROUND FOR PAGE & PLOT ===
+    # FIXED DARK THEME
     PAGE_BG = "#0a0f1c"
     PLOT_BG = "#0a0f1c"
     GRID_MAJ = "#3a4050"
@@ -3434,11 +3430,11 @@ with st.expander("Scatter settings", expanded=False):
     render_exact = st.checkbox("Render exact pixels (PNG)", value=True, key="fq_exact")
 
 # ------------------------------------------------------------------
-# CB FILTER + SCORE CALCULATION
+# CM FILTER + SCORE CALCULATION
 # ------------------------------------------------------------------
 pool_sc = df[df["League"].isin(leagues_scatter)].copy()
 pool_sc["Primary Position"] = pool_sc["Position"].astype(str).str.split(",").str[0].str.strip()
-pool_sc = pool_sc[pool_sc["Primary Position"].isin(["LCMF", "RCMF", "DMF","RDMF", "LDMF"])]
+pool_sc = pool_sc[pool_sc["Primary Position"].isin(["LCMF", "RCMF", "DMF", "RDMF", "LDMF"])]
 
 pool_sc["Minutes played"] = pd.to_numeric(pool_sc["Minutes played"], errors="coerce")
 pool_sc["Age"] = pd.to_numeric(pool_sc["Age"], errors="coerce")
@@ -3451,37 +3447,37 @@ pool_sc = pool_sc[
 ]
 
 if pool_sc.empty:
-    st.info("No CBs after filtering.")
+    st.info("No CMs after filtering.")
     st.stop()
 
 metric_groups = {
-        'def_score': {
-            'Defensive duels per 90': 0.4,
-            'Defensive duels won, %': 0.3,
-            'PAdj Interceptions': 0.2,
-            'Shots blocked per 90': 0.1
-        },
-        'poss_score': {
-            'Passes per 90': 0.2,
-            'Accurate passes, %': 0.1,
-            'Forward passes per 90': 0.2,
-            'Progressive passes per 90': 0.2,
-            'xA per 90': 0.1,
-            'Key passes per 90': 0.1,
-            'Passes to penalty area per 90': 0.1
-        },
-        'carry_score': {
-            'Dribbles per 90': 0.4,
-            'Successful dribbles, %': 0.1,
-            'Progressive runs per 90': 0.3,
-            'Accelerations per 90': 0.2
-        },
-        'boxing_score': {
-            'xG per 90': 0.3,
-            'Non-penalty goals per 90': 0.4,
-            'Touches in box per 90': 0.3
-        }
+    'def_score': {
+        'Defensive duels per 90': 0.4,
+        'Defensive duels won, %': 0.3,
+        'PAdj Interceptions': 0.2,
+        'Shots blocked per 90': 0.1
+    },
+    'poss_score': {
+        'Passes per 90': 0.2,
+        'Accurate passes, %': 0.1,
+        'Forward passes per 90': 0.2,
+        'Progressive passes per 90': 0.2,
+        'xA per 90': 0.1,
+        'Key passes per 90': 0.1,
+        'Passes to penalty area per 90': 0.1
+    },
+    'carry_score': {
+        'Dribbles per 90': 0.4,
+        'Successful dribbles, %': 0.1,
+        'Progressive runs per 90': 0.3,
+        'Accelerations per 90': 0.2
+    },
+    'boxing_score': {
+        'xG per 90': 0.3,
+        'Non-penalty goals per 90': 0.4,
+        'Touches in box per 90': 0.3
     }
+}
 
 def weighted_percentile(df_sub, row, mgrp):
     total = 0
@@ -3500,11 +3496,12 @@ def classify(r):
     if r["def_score"] >= 50:
         return "Destroyer"
     if r["poss_score"] >= 50:
-        return "Playmker"
+        return "Playmaker"
     return "Limited"
 
 pool_sc["Archetype"] = pool_sc.apply(classify, axis=1)
-pool_sc["Box-to-Box Ball Carrier"] = pool_sc["boxing_score"] >= 80
+pool_sc["Ball Carrier"] = pool_sc["carry_score"] >= 70
+pool_sc["Box Threat"] = pool_sc["boxing_score"] >= 80
 
 # ------------------------------------------------------------------
 # SCATTER GRAPH
@@ -3517,14 +3514,13 @@ ax.set_facecolor(PLOT_BG)
 ax.set_xlim(0, 100)
 ax.set_ylim(0, 100)
 ax.set_xlabel("Possession Score", fontsize=16, fontweight="semibold", color=txt_col)
-ax.xaxis.labelpad = 14
 ax.set_ylabel("Defensive Score", fontsize=16, fontweight="semibold", color=txt_col)
 
 ax.xaxis.set_major_locator(MultipleLocator(10))
 ax.yaxis.set_major_locator(MultipleLocator(10))
 for tick in ax.get_xticklabels() + ax.get_yticklabels():
-    tick.set_fontweight("semibold")
     tick.set_color(txt_col)
+    tick.set_fontweight("semibold")
     tick.set_fontsize(14)
 
 # Grid & spines
@@ -3533,14 +3529,10 @@ for s in ax.spines.values():
     s.set_color("#e5e7eb")
     s.set_linewidth(1.1)
 
-# Quadrant lines
-line_col = "#FFFFFF"
-ax.axvline(50, color=line_col, linestyle=(0, (4, 4)), lw=1.5)
-ax.axhline(50, color=line_col, linestyle=(0, (4, 4)), lw=1.5)
-
 # Quadrant labels
 quad_fs = 16
 bbox_style = dict(boxstyle="round,pad=0.35", facecolor="#d1d5db", edgecolor="none", alpha=0.9)
+
 ax.text(6, 94, "DESTROYER", fontsize=quad_fs, weight="bold", bbox=bbox_style)
 ax.text(94, 94, "ALL ACTION", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
 ax.text(6, 6, "LIMITED", fontsize=quad_fs, weight="bold", bbox=bbox_style)
@@ -3554,26 +3546,52 @@ arch_colors = {
     "Limited": "#E15759",
 }
 
-# Points
+# ------------------------------------------------------------------
+# MARKER PRIORITY LOGIC (DIAMOND > SQUARE > CIRCLE)
+# ------------------------------------------------------------------
+def choose_marker(row):
+    if row["Box Threat"]:
+        return "D"     # diamond
+    if row["Ball Carrier"]:
+        return "s"     # square
+    return "o"         # circle
+
+pool_sc["marker"] = pool_sc.apply(choose_marker, axis=1)
+
+# ------------------------------------------------------------------
+# PLOT SCATTER POINTS
+# ------------------------------------------------------------------
 effective_point_size = point_size * 1.5
-for (arch, carrier), grp in pool_sc.groupby(["Archetype", "Box-to-Box Ball Carrier"]):
+
+for arch, grp in pool_sc.groupby("Archetype"):
     ax.scatter(
         grp["poss_score"],
         grp["def_score"],
         s=effective_point_size,
         c=arch_colors[arch],
         alpha=point_alpha,
-        marker="s" if carrier else "o",
+        marker=None,  # overridden below
+    )
+
+# Replot markers individually so shapes vary
+for _, r in pool_sc.iterrows():
+    ax.scatter(
+        r["poss_score"],
+        r["def_score"],
+        s=effective_point_size,
+        c=arch_colors[r["Archetype"]],
+        alpha=point_alpha,
+        marker=r["marker"],
         edgecolors="none",
         linewidth=0,
-        zorder=2,
+        zorder=3,
     )
 
 # ------------------------------------------------------------------
 # LABEL HANDLING
 # ------------------------------------------------------------------
 highlight_grp = pool_sc[pool_sc["Team"] == team_highlight] if team_highlight != "(None)" else None
-texts = []
+
 if show_labels:
     if highlight_grp is not None and not highlight_grp.empty:
         label_df = highlight_grp
@@ -3605,12 +3623,11 @@ if show_labels:
             zorder=6,
         )
         t.set_path_effects([pe.withStroke(linewidth=2, foreground="#020617", alpha=0.9)])
-        texts.append(t)
 
 # ------------------------------------------------------------------
-# SINGLE, PERFECTLY ALIGNED LEGEND BLOCK
+# LEGEND — OPTION A (Archetype → Ball Carrier → Box Threat)
 # ------------------------------------------------------------------
-# Compact spacing so the gap between Archetype and Ball Carrier is small
+
 legend_kwargs = dict(
     loc="upper left",
     frameon=False,
@@ -3621,12 +3638,8 @@ legend_kwargs = dict(
     borderaxespad=0.0,
 )
 
-# Handles and labels in one legend:
-#   4 archetypes
-#   1 text row "Ball Carrier" (no marker)
-#   2 marker rows: Yes (square), No (circle)
-handles = [
-    # Archetypes
+# Part 1 — Archetype block
+handles_arch = [
     Line2D([0], [0], marker="s", linestyle="None", color="none",
            markerfacecolor=arch_colors["Playmaker"], markersize=16, label="Playmaker"),
     Line2D([0], [0], marker="s", linestyle="None", color="none",
@@ -3634,63 +3647,66 @@ handles = [
     Line2D([0], [0], marker="s", linestyle="None", color="none",
            markerfacecolor=arch_colors["All Action"], markersize=16, label="All Action"),
     Line2D([0], [0], marker="s", linestyle="None", color="none",
-           markerfacecolor=arch_colors["Limited"], markersize=16, label="Limited"),
-    # Ball Carrier header row (no marker)
-    Line2D([], [], linestyle="None", color="none", label="Ball Carrier"),
-    # No / Yes markers
-    Line2D(
-        [0], [0],
-        marker="o",
-        linestyle="None",
-        color="none",
-        markeredgecolor=txt_col,
-        markerfacecolor="#f1f5f9",
-        markeredgewidth=1.4,
-        markersize=16,
-        label="No",
-    ),
-    Line2D(
-        [0], [0],
-        marker="s",
-        linestyle="None",
-        color="none",
-        markeredgecolor=txt_col,
-        markerfacecolor="#f1f5f9",
-        markeredgewidth=1.4,
-        markersize=16,
-        label="Yes",
-    ),
+           markerfacecolor=arch_colors["Limited"], markersize=16, label="Limited")
 ]
 
-labels = [
-    "Playmaker",
-    "Destroyer",
-    "All Action",
-    "Limited",
-    "Pen-Box Threat",  # header row, no marker
-    "No",
-    "Yes",
-]
-
-legend = ax.legend(
-    handles=handles,
-    labels=labels,
+legend1 = ax.legend(
+    handles=handles_arch,
     title="Archetype",
     title_fontsize=15,
     fontsize=14,
-    bbox_to_anchor=(1.01, 1.00),   # X for the whole block
+    bbox_to_anchor=(1.01, 1.00),
     **legend_kwargs,
 )
-legend.get_title().set_color(txt_col)
-legend.get_title().set_fontweight("semibold")
-
-# style all label text
-for i, txt in enumerate(legend.get_texts()):
+legend1.get_title().set_color(txt_col)
+legend1.get_title().set_fontweight("semibold")
+for txt in legend1.get_texts():
     txt.set_color(txt_col)
     txt.set_fontweight("semibold")
-    # make the "Ball Carrier" header row stand out slightly
-    if labels[i] == "Ball Carrier":
-        txt.set_fontstyle("italic")
+ax.add_artist(legend1)
+
+# Part 2 — Ball Carrier block
+handles_carrier = [
+    Line2D([0], [0], marker="s", linestyle="None", color="none",
+           markerfacecolor="#f1f5f9", markeredgecolor=txt_col, markeredgewidth=1.4,
+           markersize=16, label="Yes"),
+]
+
+legend2 = ax.legend(
+    handles=handles_carrier,
+    title="Ball Carrier",
+    title_fontsize=15,
+    fontsize=14,
+    bbox_to_anchor=(1.01, 0.70),
+    **legend_kwargs,
+)
+legend2.get_title().set_color(txt_col)
+legend2.get_title().set_fontweight("semibold")
+for txt in legend2.get_texts():
+    txt.set_color(txt_col)
+    txt.set_fontweight("semibold")
+ax.add_artist(legend2)
+
+# Part 3 — Box Threat block
+handles_threat = [
+    Line2D([0], [0], marker="D", linestyle="None", color="none",
+           markerfacecolor="#f1f5f9", markeredgecolor=txt_col, markeredgewidth=1.4,
+           markersize=16, label="Yes"),
+]
+
+legend3 = ax.legend(
+    handles=handles_threat,
+    title="Pen-Box Threat",
+    title_fontsize=15,
+    fontsize=14,
+    bbox_to_anchor=(1.01, 0.48),
+    **legend_kwargs,
+)
+legend3.get_title().set_color(txt_col)
+legend3.get_title().set_fontweight("semibold")
+for txt in legend3.get_texts():
+    txt.set_color(txt_col)
+    txt.set_fontweight("semibold")
 
 # ------------------------------------------------------------------
 # LAYOUT
@@ -3713,7 +3729,7 @@ if render_exact:
     st.download_button(
         "⬇️ Download Feature Q (PNG)",
         data=buf.getvalue(),
-        file_name=f"feature_q_cb_{uuid.uuid4().hex[:6]}.png",
+        file_name=f"feature_q_cm_{uuid.uuid4().hex[:6]}.png",
         mime="image/png",
     )
 else:
