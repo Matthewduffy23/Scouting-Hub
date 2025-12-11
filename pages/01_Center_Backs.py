@@ -3396,83 +3396,89 @@ if show_labels:
         texts.append(t)
 
 # ------------------------------------------------------------------
-# CLEAN, PERFECTLY ALIGNED RIGHT-SIDE LEGENDS
+# SINGLE, PERFECTLY ALIGNED LEGEND BLOCK
 # ------------------------------------------------------------------
+# Compact spacing so the gap between Archetype and Ball Carrier is small
 legend_kwargs = dict(
     loc="upper left",
     frameon=False,
     handlelength=1.1,
     handletextpad=0.4,
     borderpad=0.25,
-    labelspacing=0.4,
+    labelspacing=0.35,
     borderaxespad=0.0,
-    bbox_transform=fig.transFigure,   # <-- figure coords so both legends share same X
 )
 
-# 1) Archetype legend
-legend1 = ax.legend(
-    handles=[
-        Line2D([0], [0], marker="s", linestyle="None", color="none",
-               markerfacecolor=arch_colors["Ball Player"], markersize=16, label="Ball Player"),
-        Line2D([0], [0], marker="s", linestyle="None", color="none",
-               markerfacecolor=arch_colors["Box-Defender"], markersize=16, label="Box-Defender"),
-        Line2D([0], [0], marker="s", linestyle="None", color="none",
-               markerfacecolor=arch_colors["Complete"], markersize=16, label="Complete"),
-        Line2D([0], [0], marker="s", linestyle="None", color="none",
-               markerfacecolor=arch_colors["Limited"], markersize=16, label="Limited"),
-    ],
+# Handles and labels in one legend:
+#   4 archetypes
+#   1 text row "Ball Carrier" (no marker)
+#   2 marker rows: False (circle), True (square)
+handles = [
+    # Archetypes
+    Line2D([0], [0], marker="s", linestyle="None", color="none",
+           markerfacecolor=arch_colors["Ball Player"], markersize=16, label="Ball Player"),
+    Line2D([0], [0], marker="s", linestyle="None", color="none",
+           markerfacecolor=arch_colors["Box-Defender"], markersize=16, label="Box-Defender"),
+    Line2D([0], [0], marker="s", linestyle="None", color="none",
+           markerfacecolor=arch_colors["Complete"], markersize=16, label="Complete"),
+    Line2D([0], [0], marker="s", linestyle="None", color="none",
+           markerfacecolor=arch_colors["Limited"], markersize=16, label="Limited"),
+    # Ball Carrier header row (no marker)
+    Line2D([], [], linestyle="None", color="none", label="Ball Carrier"),
+    # False / True markers
+    Line2D(
+        [0], [0],
+        marker="o",
+        linestyle="None",
+        color="none",
+        markeredgecolor=txt_col,
+        markerfacecolor="#f1f5f9",
+        markeredgewidth=1.4,
+        markersize=16,
+        label="False",
+    ),
+    Line2D(
+        [0], [0],
+        marker="s",
+        linestyle="None",
+        color="none",
+        markeredgecolor=txt_col,
+        markerfacecolor="#f1f5f9",
+        markeredgewidth=1.4,
+        markersize=16,
+        label="True",
+    ),
+]
+
+labels = [
+    "Ball Player",
+    "Box-Defender",
+    "Complete",
+    "Limited",
+    "Ball Carrier",  # header row, no marker
+    "False",
+    "True",
+]
+
+legend = ax.legend(
+    handles=handles,
+    labels=labels,
     title="Archetype",
     title_fontsize=15,
     fontsize=14,
-    bbox_to_anchor=(0.87, 0.93),   # <-- X position for both legends
+    bbox_to_anchor=(1.01, 1.00),   # X for the whole block
     **legend_kwargs,
 )
-ax.add_artist(legend1)
-legend1.get_title().set_color(txt_col)
-legend1.get_title().set_fontweight("semibold")
-for txt in legend1.get_texts():
-    txt.set_color(txt_col)
-    txt.set_fontweight("semibold")
+legend.get_title().set_color(txt_col)
+legend.get_title().set_fontweight("semibold")
 
-# 2) Ball Carrier legend – SAME X as Archetype
-carrier_ms = 16
-carrier_lw = 1.4
-legend2 = ax.legend(
-    handles=[
-        Line2D(
-            [0], [0],
-            marker="o",
-            linestyle="None",
-            color="none",
-            markeredgecolor=txt_col,
-            markerfacecolor="#f1f5f9",
-            markeredgewidth=carrier_lw,
-            markersize=carrier_ms,
-            label="False",
-        ),
-        Line2D(
-            [0], [0],
-            marker="s",
-            linestyle="None",
-            color="none",
-            markeredgecolor=txt_col,
-            markerfacecolor="#f1f5f9",
-            markeredgewidth=carrier_lw,
-            markersize=carrier_ms,
-            label="True",
-        ),
-    ],
-    title="Ball Carrier",
-    title_fontsize=15,
-    fontsize=14,
-    bbox_to_anchor=(0.87, 0.63),   # <-- same X (=0.87), lower Y
-    **legend_kwargs,
-)
-legend2.get_title().set_color(txt_col)
-legend2.get_title().set_fontweight("semibold")
-for txt in legend2.get_texts():
+# style all label text
+for i, txt in enumerate(legend.get_texts()):
     txt.set_color(txt_col)
     txt.set_fontweight("semibold")
+    # make the "Ball Carrier" header row stand out slightly
+    if labels[i] == "Ball Carrier":
+        txt.set_fontstyle("italic")
 
 # ------------------------------------------------------------------
 # LAYOUT
@@ -3503,6 +3509,7 @@ else:
 
 plt.close(fig)
 # ============================== END FEATURE Q ============================================================
+
 
 
 
