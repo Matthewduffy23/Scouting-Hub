@@ -3327,7 +3327,7 @@ with st.expander("Scatter settings", expanded=False):
         "League preset",
         ["Player's league", "Top 5 Europe", "Top 20 Europe", "EFL (England 2–4)", "Custom"],
         index=0,
-        key="fq_preset",
+        key="fq_preset_att",
     )
 
     preset_map_sc = {
@@ -3338,7 +3338,7 @@ with st.expander("Scatter settings", expanded=False):
         "Custom": set(),
     }
 
-    add_leagues_sc = st.multiselect("Add leagues", leagues_available_sc, default=[], key="fq_add")
+    add_leagues_sc = st.multiselect("Add leagues", leagues_available_sc, default=[], key="fq_add_att")
     leagues_scatter = sorted(preset_map_sc[preset_sc] | set(add_leagues_sc))
     if not leagues_scatter and player_league:
         leagues_scatter = [player_league]
@@ -3346,23 +3346,23 @@ with st.expander("Scatter settings", expanded=False):
     # Filters
     df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
     df["Age"] = pd.to_numeric(df["Age"], errors="coerce")
-    min_minutes_s, max_minutes_s = st.slider("Minutes", 0, 5000, (500, 5000), key="fq_min")
-    min_age_s, max_age_s = st.slider("Age", 14, 45, (16, 40), key="fq_age")
-    min_strength_s, max_strength_s = st.slider("League Strength", 0, 101, (0, 101), key="fq_ls")
+    min_minutes_s, max_minutes_s = st.slider("Minutes", 0, 5000, (500, 5000), key="fq_min_att")
+    min_age_s, max_age_s = st.slider("Age", 14, 45, (16, 40), key="fq_age_att")
+    min_strength_s, max_strength_s = st.slider("League Strength", 0, 101, (0, 101), key="fq_ls_att")
 
     # Labels
-    show_labels = st.toggle("Show labels", value=True, key="fq_lab")
+    show_labels = st.toggle("Show labels", value=True, key="fq_lab_att")
     label_mode = st.selectbox(
         "Label mode",
         ["Selected player only", "All players", "U23 only", "U21 only", "U18 only"],
         index=0,
-        key="fq_label_mode",
+        key="fq_label_mode_att",
     )
-    label_size = st.slider("Label size", 8, 20, 12, 1, key="fq_lblsize")
+    label_size = st.slider("Label size", 8, 20, 12, 1, key="fq_lblsize_att")
 
     # Points
-    point_size = st.slider("Point size", 24, 300, 225, 2, key="fq_pts")
-    point_alpha = st.slider("Point opacity", 0.2, 1.0, 0.92, 0.02, key="fq_alpha")
+    point_size = st.slider("Point size", 24, 300, 225, 2, key="fq_pts_att")
+    point_alpha = st.slider("Point opacity", 0.2, 1.0, 0.92, 0.02, key="fq_alpha_att")
 
     # TEAM HIGHLIGHT – USED ONLY FOR LABEL FILTER
     teams_available_hl = sorted(df[df["League"].isin(leagues_scatter)]["Team"].dropna().unique())
@@ -3370,11 +3370,11 @@ with st.expander("Scatter settings", expanded=False):
         "Highlight team (labels only shown for this team)",
         ["(None)"] + teams_available_hl,
         index=0,
-        key="fq_team",
+        key="fq_team_att",
     )
 
     # Theme toggle (kept for future but background fixed dark)
-    theme = st.radio("Theme", ["Dark", "Light"], index=0, horizontal=True, key="fq_theme")
+    theme = st.radio("Theme", ["Dark", "Light"], index=0, horizontal=True, key="fq_theme_att")
 
     # === FIXED DARK BACKGROUND FOR PAGE & PLOT ===
     PAGE_BG = "#0a0f1c"
@@ -3387,12 +3387,12 @@ with st.expander("Scatter settings", expanded=False):
         "Canvas size",
         ["1280×720", "1600×900", "1920×820", "1920×1080"],
         index=1,
-        key="fq_canvas",
+        key="fq_canvas_att",
     )
     w_px, h_px = map(int, canvas_preset.replace("×", "x").split("x"))
 
-    top_gap_px = st.slider("Top gap (px)", 0, 240, 80, 5, key="fq_gap")
-    render_exact = st.checkbox("Render exact pixels (PNG)", value=True, key="fq_exact")
+    top_gap_px = st.slider("Top gap (px)", 0, 240, 80, 5, key="fq_gap_att")
+    render_exact = st.checkbox("Render exact pixels (PNG)", value=True, key="fq_exact_att")
 
 # ------------------------------------------------------------------
 # ATT FILTER + SCORE CALCULATION
@@ -3455,7 +3455,7 @@ for sn, grp in metric_groups.items():
 
 def classify(r):
     if r["Threat_score"] >= 50 and r["poss_score"] >= 50:
-        return "Multi-threat"
+        return "Multi-Threat"
     if r["Threat_score"] >= 50:
         return "Final Action"
     if r["poss_score"] >= 50:
@@ -3466,7 +3466,7 @@ pool_sc["Archetype"] = pool_sc.apply(classify, axis=1)
 pool_sc["Box-to-Box Ball Carrier"] = pool_sc["carry_score"] >= 70
 
 # ------------------------------------------------------------------
-# SCATTER GRAPH
+# SCATTER GRAPH  (X = Threat_score, Y = poss_score)
 # ------------------------------------------------------------------
 fig, ax = plt.subplots(figsize=(w_px / 100, h_px / 100), dpi=100)
 fig.patch.set_facecolor(PAGE_BG)
@@ -3475,9 +3475,9 @@ ax.set_facecolor(PLOT_BG)
 # Axes & labels
 ax.set_xlim(0, 100)
 ax.set_ylim(0, 100)
-ax.set_xlabel("Possession Score", fontsize=16, fontweight="semibold", color=txt_col)
+ax.set_xlabel("Threat Score", fontsize=16, fontweight="semibold", color=txt_col)
 ax.xaxis.labelpad = 14
-ax.set_ylabel("Threat Score", fontsize=16, fontweight="semibold", color=txt_col)
+ax.set_ylabel("Possession Score", fontsize=16, fontweight="semibold", color=txt_col)
 
 ax.xaxis.set_major_locator(MultipleLocator(10))
 ax.yaxis.set_major_locator(MultipleLocator(10))
@@ -3492,44 +3492,44 @@ for s in ax.spines.values():
     s.set_color("#e5e7eb")
     s.set_linewidth(1.1)
 
-# Quadrant lines
+# Quadrant lines (Threat 50 / Possession 50)
 line_col = "#FFFFFF"
 ax.axvline(50, color=line_col, linestyle=(0, (4, 4)), lw=1.5)
 ax.axhline(50, color=line_col, linestyle=(0, (4, 4)), lw=1.5)
 
-# Quadrant labels
+# Quadrant labels (now logically mapped to Threat vs Possession)
 quad_fs = 16
 bbox_style = dict(boxstyle="round,pad=0.35", facecolor="#d1d5db", edgecolor="none", alpha=0.9)
-ax.text(6, 94, "FACILITATOR", fontsize=quad_fs, weight="bold", bbox=bbox_style)
-ax.text(94, 94, "MULTI-THREAT", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
-ax.text(6, 6, "LIMITED", fontsize=quad_fs, weight="bold", bbox=bbox_style)
-ax.text(96, 6, "FINAL ACTION", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
+ax.text(6, 94, "FACILITATOR", fontsize=quad_fs, weight="bold", bbox=bbox_style)          # low Threat, high Poss
+ax.text(94, 94, "MULTI-THREAT", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)  # high Threat, high Poss
+ax.text(6, 6, "LIMITED", fontsize=quad_fs, weight="bold", bbox=bbox_style)               # low Threat, low Poss
+ax.text(96, 6, "FINAL ACTION", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)   # high Threat, low Poss
 
-# Archetype colours – keys must match classify() outputs EXACTLY
+# Archetype colours (keys match classify output!)
 arch_colors = {
     "Final Action": "#76B7B2",
     "Facilitator": "#F28E2B",
-    "Multi-threat": "#4E79A7",
+    "Multi-Threat": "#4E79A7",
     "Limited": "#E15759",
 }
 
-# Points
+# Points (X=Threat_score, Y=poss_score)
 effective_point_size = point_size * 1.5
 for (arch, carrier), grp in pool_sc.groupby(["Archetype", "Box-to-Box Ball Carrier"]):
     ax.scatter(
-        grp["poss_score"],
         grp["Threat_score"],
+        grp["poss_score"],
         s=effective_point_size,
         c=arch_colors[arch],
         alpha=point_alpha,
         marker="s" if carrier else "o",
-        edgeedges="none",
+        edgecolors="none",
         linewidth=0,
         zorder=2,
     )
 
 # ------------------------------------------------------------------
-# LABEL HANDLING
+# LABEL HANDLING  (coords = Threat_score, poss_score)
 # ------------------------------------------------------------------
 highlight_grp = pool_sc[pool_sc["Team"] == team_highlight] if team_highlight != "(None)" else None
 texts = []
@@ -3553,7 +3553,7 @@ if show_labels:
     for _, r in label_df.iterrows():
         t = ax.annotate(
             r["Player"],
-            (r["poss_score"], r["Threat_score"]),  # <-- FIXED: use Threat_score, not def_score
+            (r["Threat_score"], r["poss_score"]),
             xytext=(10, 12),
             textcoords="offset points",
             fontsize=label_size + 2,
@@ -3586,12 +3586,12 @@ handles = [
     Line2D([0], [0], marker="s", linestyle="None", color="none",
            markerfacecolor=arch_colors["Facilitator"], markersize=16, label="Facilitator"),
     Line2D([0], [0], marker="s", linestyle="None", color="none",
-           markerfacecolor=arch_colors["Multi-threat"], markersize=16, label="Multi-threat"),
+           markerfacecolor=arch_colors["Multi-Threat"], markersize=16, label="Multi-Threat"),
     Line2D([0], [0], marker="s", linestyle="None", color="none",
            markerfacecolor=arch_colors["Limited"], markersize=16, label="Limited"),
     # Ball Carrier header row (no marker)
     Line2D([], [], linestyle="None", color="none", label="Ball Carrier"),
-    # No / Yes markers
+    # No / Yes markers for carrier
     Line2D(
         [0], [0],
         marker="o",
@@ -3619,7 +3619,7 @@ handles = [
 labels = [
     "Final Action",
     "Facilitator",
-    "Multi-threat",
+    "Multi-Threat",
     "Limited",
     "Ball Carrier",  # header row, no marker
     "No",
@@ -3673,6 +3673,7 @@ else:
 
 plt.close(fig)
 # ============================== END FEATURE Q ============================================================
+
 
 
 
