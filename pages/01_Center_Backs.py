@@ -3146,6 +3146,8 @@ with st.expander("Scatter settings", expanded=False):
 
     leagues_available_sc = sorted(df["League"].dropna().unique().tolist())
     player_league = player_row.iloc[0]["League"] if not player_row.empty else None
+    # Selected player name for default labelling
+    selected_player_name = player_row.iloc[0]["Player"] if not player_row.empty else None
 
     preset_sc = st.selectbox(
         "League preset",
@@ -3176,7 +3178,13 @@ with st.expander("Scatter settings", expanded=False):
 
     # Labels
     show_labels = st.toggle("Show labels", value=True, key="fq_lab")
-    label_only_u23 = st.checkbox("Label only U23", value=False, key="fq_u23")
+    # NEW: label mode including U23 / U21 / U18 options
+    label_mode = st.selectbox(
+        "Label mode",
+        ["Selected player only", "All players", "U23 only", "U21 only", "U18 only"],
+        index=0,
+        key="fq_label_mode",
+    )
     label_size = st.slider("Label size", 8, 20, 12, 1, key="fq_lblsize")
 
     # Points
@@ -3306,7 +3314,7 @@ ax.yaxis.set_major_locator(MultipleLocator(10))
 for tick in ax.get_xticklabels() + ax.get_yticklabels():
     tick.set_fontweight("semibold")
     tick.set_color(txt_col)
-    tick.set_fontsize(14)  # explicit tick size (+2 vs typical default)
+    tick.set_fontsize(14)  # explicit tick size
 
 # Grid & spines
 ax.grid(True, color=GRID_MAJ, linewidth=0.9)
@@ -3352,13 +3360,31 @@ for (arch, carrier), grp in pool_sc.groupby(["Archetype", "Box-to-Box Ball Carri
         zorder=2,
     )
 
-# Label handling (+1 font size already in your code)
+# ------------------------------------------------------------------
+# LABEL HANDLING
+# Default: selected player only; team highlight overrides;
+# label mode can switch to All / U23 / U21 / U18.
+# ------------------------------------------------------------------
 highlight_grp = pool_sc[pool_sc["Team"] == team_highlight] if team_highlight != "(None)" else None
 texts = []
 if show_labels:
-    label_df = highlight_grp if highlight_grp is not None and not highlight_grp.empty else pool_sc
-    if label_only_u23:
-        label_df = label_df[label_df["Age"] < 23]
+    if highlight_grp is not None and not highlight_grp.empty:
+        # Team highlight always takes priority
+        label_df = highlight_grp
+    else:
+        # Base on label mode
+        if label_mode == "Selected player only" and selected_player_name:
+            label_df = pool_sc[pool_sc["Player"] == selected_player_name]
+        elif label_mode == "All players":
+            label_df = pool_sc
+        elif label_mode == "U23 only":
+            label_df = pool_sc[pool_sc["Age"] < 23]
+        elif label_mode == "U21 only":
+            label_df = pool_sc[pool_sc["Age"] < 21]
+        elif label_mode == "U18 only":
+            label_df = pool_sc[pool_sc["Age"] < 18]
+        else:
+            label_df = pool_sc
 
     for _, r in label_df.iterrows():
         t = ax.annotate(
@@ -3377,7 +3403,7 @@ if show_labels:
         texts.append(t)
 
 # ------------------------------------------------------------------
-# CLEAN, ALIGNED RIGHT-SIDE LEGENDS (titles +2, labels +2, shapes +2)
+# CLEAN, ALIGNED RIGHT-SIDE LEGENDS (unchanged styling)
 # ------------------------------------------------------------------
 legend_kwargs = dict(
     loc="upper left",
@@ -3402,8 +3428,8 @@ legend1 = ax.legend(
                markerfacecolor=arch_colors["Limited"], markersize=16, label="Limited"),
     ],
     title="Archetype",
-    title_fontsize=15,   # +2
-    fontsize=14,         # +2
+    title_fontsize=15,
+    fontsize=14,
     bbox_to_anchor=(1.01, 1.00),
     **legend_kwargs,
 )
@@ -3443,9 +3469,9 @@ legend2 = ax.legend(
         ),
     ],
     title="Ball Carrier",
-    title_fontsize=15,   # +2
-    fontsize=14,         # +2
-    bbox_to_anchor=(1.01, 0.72),  # same X as Archetype => aligned
+    title_fontsize=15,
+    fontsize=14,
+    bbox_to_anchor=(1.01, 0.72),
     **legend_kwargs,
 )
 legend2.get_title().set_color(txt_col)
