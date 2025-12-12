@@ -1165,40 +1165,56 @@ def make_ranking_image(
             zorder=4,
         )
 
-    # ---------- FOOTER SUMMARY (light grey) ----------
+    # ---------------- FOOTER SUMMARY + BRAND LOGO ----------------
+    # Footer is positioned in *data coordinates* so it hugs the card edges consistently.
+
+    # small divider line above footer
+    footer_top_y = 0.46
+    ax.plot([0.03, 0.97], [footer_top_y, footer_top_y],
+            color="#E8E8E8", linewidth=0.9, zorder=2)
+
+    # Two lines, tighter spacing, aligned with left edge of the content block
     footer_line1 = (
-        "Impact Score blends six sub-indices "
-        "(Aerial, Ground, Retention, Carrying, Playmaking, Positioning)"
+        "Impact Score = mean of six sub-indices (Aerial, Ground, Retention, Carrying, Playmaking, Positioning)"
     )
     footer_line2 = (
-        "and adjusts for minutes played, team context and league quality "
-        "(if league weighting is enabled)."
+        "Then adjusted for minutes played + team context vs league, and optional league-quality weighting; rescaled 0–100."
     )
 
+    footer_x = 0.03
+    footer_y1 = 0.33
+    footer_y2 = 0.18
+
     ax.text(
-        0.03, 0.095,
+        footer_x, footer_y1,
         footer_line1,
-        transform=ax.transAxes,
-        fontsize=7.5, color="#9A9A9A",
+        fontsize=8.4, color="#9B9B9B",
         ha="left", va="bottom",
         zorder=5,
     )
     ax.text(
-        0.03, 0.05,
+        footer_x, footer_y2,
         footer_line2,
-        transform=ax.transAxes,
-        fontsize=7.5, color="#9A9A9A",
+        fontsize=8.4, color="#9B9B9B",
         ha="left", va="bottom",
         zorder=5,
     )
 
-    fig.tight_layout(pad=0.35)
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=220,
-                bbox_inches="tight", facecolor="#FFFFFF")
-    plt.close(fig)
-    buf.seek(0)
-    return buf.getvalue()
+    # Bottom-right logo (PitchBook) — placed cleanly and not touching edges
+    brand_url = "https://image.pitchbook.com/1xOUzrEhnsKrJbNbN8Asf3LND2u1605464042293_200x200"
+    brand_img = load_remote_png(brand_url)
+    if brand_img is not None:
+        # put it in the bottom-right corner using axes coords
+        logo = OffsetImage(brand_img, zoom=0.18)  # tweak if you want bigger/smaller
+        ab = AnnotationBbox(
+            logo,
+            (0.965, 0.065),          # bottom-right
+            xycoords=ax.transAxes,
+            frameon=False,
+            box_alignment=(1, 0),    # anchor at bottom-right
+            zorder=6,
+        )
+        ax.add_artist(ab)
 
 
 # ---------------------------------------------------------
