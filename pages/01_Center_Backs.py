@@ -1125,11 +1125,11 @@ def make_ranking_image(
     footer_lines = _footer_lines_for_metric(metric_col, use_league_quality)[:3]
 
     # move divider up (more gap between row 10 and divider; no clash)
-    divider_y = 0.52
+    divider_y = 0.60
     ax.plot([footer_x_left, footer_x_right], [divider_y]*2, color="#E8E8E8", lw=0.9, zorder=2)
 
     # move footer up + increase line spacing (less congested)
-    first_line_y = 0.40
+    first_line_y = 0.60
     line_gap = 0.16  # bigger spacing than before
     for j, line in enumerate(footer_lines):
         ax.text(
