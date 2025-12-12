@@ -579,6 +579,19 @@ from matplotlib.patches import Rectangle
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 
 # ---------------------------------------------------------
+# 0) REMOTE PNG LOADER (logos + special flags)
+# ---------------------------------------------------------
+
+@st.cache_data(show_spinner=False)
+def load_remote_png(url: str):
+    try:
+        r = requests.get(url, timeout=6)
+        r.raise_for_status()
+        return plt.imread(io.BytesIO(r.content))
+    except Exception:
+        return None
+
+# ---------------------------------------------------------
 # 1) ENSURE IMPACT / BUCKET SCORES EXIST
 # ---------------------------------------------------------
 
@@ -594,36 +607,30 @@ def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataF
     def pct(m: str) -> str:
         return f"{m} Percentile"
 
-    # Bucket scores
     df_f["Aerial Score"] = (
         0.30 * df_f[pct("Aerial duels per 90")] +
         0.70 * df_f[pct("Aerial duels won, %")]
     )
-
     df_f["Ground Score"] = (
         0.30 * df_f[pct("Defensive duels per 90")] +
         0.70 * df_f[pct("Defensive duels won, %")]
     )
-
     df_f["Retention Score"] = (
         0.25 * df_f[pct("Accurate passes, %")] +
         0.25 * df_f[pct("Accurate forward passes, %")] +
         0.25 * df_f[pct("Accurate progressive passes, %")] +
         0.25 * df_f[pct("Accurate long passes, %")]
     )
-
     df_f["Carrying Score"] = (
         0.40 * df_f[pct("Dribbles per 90")] +
         0.20 * df_f[pct("Successful dribbles, %")] +
         0.40 * df_f[pct("Progressive runs per 90")]
     )
-
     df_f["Playmaking Score"] = (
         0.50 * df_f[pct("Progressive passes per 90")] +
         0.25 * df_f[pct("Forward passes per 90")] +
         0.25 * df_f[pct("Passes to final third per 90")]
     )
-
     df_f["Positioning Score"] = (
         0.70 * df_f[pct("PAdj Interceptions")] +
         0.30 * df_f[pct("Shots blocked per 90")]
@@ -635,11 +642,9 @@ def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataF
     ]
     df_f["Base CB Score"] = df_f[sub_scores].mean(axis=1)
 
-    # Minutes factor (0.90–1.10)
     minutes_pct = df_f.groupby("League")["Minutes played"].rank(pct=True)
     df_f["Minutes Factor"] = 0.90 + 0.20 * minutes_pct
 
-    # Team context factor (0.90–1.10)
     league_avg = df_f.groupby("League")["Base CB Score"].transform("mean")
     team_avg = df_f.groupby(["League", "Team"])["Base CB Score"].transform("mean")
 
@@ -650,14 +655,12 @@ def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataF
     df_f["Team Context Factor"] = np.clip(raw_team_factor, 0.90, 1.10)
     df_f["Team Context Factor"] = df_f["Team Context Factor"].fillna(1.0)
 
-    # Impact before league quality
     df_f["Raw Impact No League"] = (
         df_f["Base CB Score"] *
         df_f["Minutes Factor"] *
         df_f["Team Context Factor"]
     )
 
-    # League factor powered by beta slider
     ls_norm = df_f["League Strength"].fillna(50.0).astype(float) / 100.0
     ls_norm = np.clip(ls_norm, 0.30, 1.00)
 
@@ -677,7 +680,6 @@ def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataF
     df_f["Impact Score (no league)"] = scale_0_100(df_f["Raw Impact No League"]).astype(float)
 
     return df_f
-
 
 df_f = ensure_cb_impact_metrics(df_f, selected_file)
 
@@ -742,13 +744,20 @@ def top_generic(df_in: pd.DataFrame, column: str, head_n: int, round_to: int = 0
     return out
 
 # ---------------------------------------------------------
-# 3) FLAG HELPER – Twemoji PNG instead of emoji squares
+# 3) FLAGS (Twemoji) + UK HOME NATIONS FIX
+#    - England/Scotland/Wales use Twemoji "subdivision flag" tag sequences
+#    - Northern Ireland uses a direct PNG (Ulster Banner) instead of GB
 # ---------------------------------------------------------
 
 _CC_MAP = {
-    "england": "gb", "scotland": "gb", "wales": "gb",
-    "northern ireland": "gb", "united kingdom": "gb", "great britain": "gb",
+    # Home nations (NOT GB)
+    "england": "FLAG_ENG",
+    "scotland": "FLAG_SCT",
+    "wales": "FLAG_WLS",
+    "northern ireland": "FLAG_NIR",
+    "north ireland": "FLAG_NIR",
 
+    # Countries (ISO2)
     "spain": "es", "france": "fr", "germany": "de", "italy": "it",
     "portugal": "pt", "netherlands": "nl", "belgium": "be", "austria": "at",
     "switzerland": "ch", "denmark": "dk", "sweden": "se", "norway": "no",
@@ -775,6 +784,22 @@ _CC_MAP = {
     "egypt": "eg", "south africa": "za",
 }
 
+# Twemoji "subdivision flags" (tag sequences)
+# England: 🏴 (eng) -> 1f3f4-e0067-e0062-e0065-e006e-e0067-e007f
+# Scotland: 🏴 (sct) -> 1f3f4-e0067-e0062-e0073-e0063-e0074-e007f
+# Wales: 🏴 (wls) -> 1f3f4-e0067-e0062-e0077-e006c-e0073-e007f
+_TWEMOJI_SPECIAL = {
+    "FLAG_ENG": "1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
+    "FLAG_SCT": "1f3f4-e0067-e0062-e0073-e0063-e0074-e007f",
+    "FLAG_WLS": "1f3f4-e0067-e0062-e0077-e006c-e0073-e007f",
+}
+
+# Northern Ireland: use a direct PNG (Ulster Banner) instead of GB
+# (If you prefer a different NI graphic, swap this URL.)
+_SPECIAL_FLAG_URLS = {
+    "FLAG_NIR": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Ulster_banner.svg/200px-Ulster_banner.svg.png"
+}
+
 def _norm_country(name: str) -> str:
     return unicodedata.normalize("NFKD", str(name)).encode("ascii", "ignore").decode("ascii").strip().lower()
 
@@ -785,11 +810,8 @@ def _twemoji_code_from_cc(cc: str) -> str:
     return f"{cp1:x}-{cp2:x}"
 
 @st.cache_data(show_spinner=False)
-def load_flag_image_for_cc(cc: str):
-    if not cc or len(cc) != 2:
-        return None
+def load_twemoji_png_by_code(code: str):
     try:
-        code = _twemoji_code_from_cc(cc)
         url = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/{code}.png"
         r = requests.get(url, timeout=4)
         r.raise_for_status()
@@ -800,8 +822,21 @@ def load_flag_image_for_cc(cc: str):
 def birth_country_flag_image(birth_country: str | None):
     if not birth_country:
         return None
-    cc = _CC_MAP.get(_norm_country(birth_country))
-    return load_flag_image_for_cc(cc) if cc else None
+    key = _CC_MAP.get(_norm_country(birth_country))
+    if not key:
+        return None
+
+    # Special cases (ENG/SCT/WLS via Twemoji tag sequence; NIR via Wikimedia)
+    if key in _TWEMOJI_SPECIAL:
+        return load_twemoji_png_by_code(_TWEMOJI_SPECIAL[key])
+    if key in _SPECIAL_FLAG_URLS:
+        return load_remote_png(_SPECIAL_FLAG_URLS[key])
+
+    # Standard country flags
+    if isinstance(key, str) and len(key) == 2:
+        return load_twemoji_png_by_code(_twemoji_code_from_cc(key))
+
+    return None
 
 # ---------------------------------------------------------
 # 4) CREST / BADGE PIPELINE
@@ -936,7 +971,6 @@ def load_playmaker_badge_soft(team: str):
 
 def get_team_badge(row: pd.Series):
     team = str(row.get("Team", "")).strip()
-
     img = load_local_badge(team)
     if img is not None:
         return img
@@ -946,47 +980,44 @@ def get_team_badge(row: pd.Series):
     img = load_playmaker_badge_soft(team)
     if img is not None:
         return img
-
     birth = row.get("Birth country") or row.get("Birth Country") or row.get("Nationality")
     return birth_country_flag_image(birth)
 
 # ---------------------------------------------------------
-# 5) CIES-STYLE RANKING IMAGE (WITH THE TWO CHANGES)
-#    - Perfect circle rank markers (not ovals)
-#    - Footer is metric-aware + roomy + aligned (flag-left to score-right)
+# 5) RANKING IMAGE (FOOTER SPACING + MOVED UP, DIVIDER MOVED UP)
 # ---------------------------------------------------------
 
 def _footer_lines_for_metric(metric_col: str, use_league_quality: bool) -> list[str]:
     m = (metric_col or "").lower()
 
+    if "playmaking score" in m:
+        return [
+            "Playmaking Score: forward passing impact & progression.",
+            "Blends progressive passes/90 (50%) + forward passes/90 (25%) + final-third passes/90 (25%).",
+            "Percentile-based within the pool, then rescaled to 0–100.",
+        ]
     if "aerial score" in m:
         return [
-            "Aerial Score: how strong a CB is in the air.",
-            "Blends aerial duels volume (30%) + aerial win rate (70%).",
+            "Aerial Score: strength in aerial duels.",
+            "Blends aerial duels/90 (30%) + aerial win% (70%).",
             "Percentile-based within the pool, then rescaled to 0–100.",
         ]
     if "ground score" in m:
         return [
-            "Ground Score: 1v1 defending success on the floor.",
-            "Blends defensive duels volume (30%) + defensive win rate (70%).",
+            "Ground Score: 1v1 defending on the floor.",
+            "Blends defensive duels/90 (30%) + defensive win% (70%).",
             "Percentile-based within the pool, then rescaled to 0–100.",
         ]
     if "retention score" in m:
         return [
-            "Retention Score: safe, reliable passing under pressure.",
-            "Equal blend (25% each): total pass%, forward pass%, progressive pass%, long pass%.",
+            "Retention Score: ball security & clean passing.",
+            "Equal blend (25% each): pass%, forward pass%, progressive pass%, long pass%.",
             "Percentile-based within the pool, then rescaled to 0–100.",
         ]
     if "carrying score" in m:
         return [
-            "Carrying Score: progressing the ball via runs & dribbles.",
-            "Blends dribbles/90 (40%) + dribble success (20%) + progressive runs/90 (40%).",
-            "Percentile-based within the pool, then rescaled to 0–100.",
-        ]
-    if "playmaking score" in m:
-        return [
-            "Playmaking Score: forward passing impact and progression.",
-            "Blends progressive passes/90 (50%) + forward passes/90 (25%) + final-third passes/90 (25%).",
+            "Carrying Score: moving the ball with runs & dribbles.",
+            "Blends dribbles/90 (40%) + dribble success% (20%) + progressive runs/90 (40%).",
             "Percentile-based within the pool, then rescaled to 0–100.",
         ]
     if "positioning score" in m:
@@ -998,11 +1029,10 @@ def _footer_lines_for_metric(metric_col: str, use_league_quality: bool) -> list[
 
     league_phrase = "with league-strength weighting" if use_league_quality else "without league-strength weighting"
     return [
-        "Impact Score: combines six areas (Aerial, Ground, Retention, Carrying, Playmaking, Positioning).",
-        "Areas are averaged into a base performance score, then adjusted for minutes played and team context.",
+        "Impact Score: combines Aerial, Ground, Retention, Carrying, Playmaking and Positioning.",
+        "Averaged into a base score, then adjusted for minutes played and team context vs league.",
         f"Final score is {league_phrase} and rescaled to 0–100 within the selected pool.",
     ]
-
 
 def make_ranking_image(
     df_rank: pd.DataFrame,
@@ -1046,7 +1076,7 @@ def make_ranking_image(
     base_y = TOTAL_H - HEADER_H
     ax.plot([0.02, 0.98], [base_y + ROW_H/2 + 0.02]*2, color="#E2E2E2", lw=1.1, zorder=2)
 
-    # Footer alignment anchors
+    # Footer alignment anchors: from left edge of flag to right edge of score area
     crest_center_x = 0.112
     crest_zoom = 0.50
     crest_half_w_axes = 0.030  # tuned for this layout
@@ -1059,7 +1089,7 @@ def make_ranking_image(
         if i % 2 == 0:
             ax.add_patch(Rectangle((0, y - ROW_H/2), 1, ROW_H, color="#F7F7F7", zorder=1))
 
-        # PERFECT CIRCLE marker (scatter uses points -> no oval distortion)
+        # PERFECT CIRCLE marker (scatter uses points; never becomes oval)
         ax.scatter([0.042], [y], s=420, facecolor="#F3F3F3",
                    edgecolor="#C0C0C0", linewidths=0.8, zorder=3)
         ax.text(0.042, y, str(i+1), fontsize=9, fontweight="bold",
@@ -1091,37 +1121,17 @@ def make_ranking_image(
         ax.text(BAR_LEFT + BAR_W + 0.02, y, f"{float(row[metric_col]):.1f}",
                 fontsize=14, fontweight="bold", ha="left", va="center", zorder=4)
 
-    # ---------------- FOOTER (brief, roomy, aligned) ----------------
-    footer_lines = _footer_lines_for_metric(metric_col, use_league_quality)[:4]
+    # ---------- FOOTER: moved UP, more line spacing, divider moved UP ----------
+    footer_lines = _footer_lines_for_metric(metric_col, use_league_quality)[:3]
 
-    # Divider aligned as requested
-    divider_y = 0.44
+    # move divider up (more gap between row 10 and divider; no clash)
+    divider_y = 0.52
     ax.plot([footer_x_left, footer_x_right], [divider_y]*2, color="#E8E8E8", lw=0.9, zorder=2)
 
-    # Bigger line spacing + moved up
-    line_gap = 0.13
-    first_line_y = 0.33
-
-    def _wrap(line: str, max_chars: int = 105) -> list[str]:
-        if len(line) <= max_chars:
-            return [line]
-        words, out, cur = line.split(), [], ""
-        for w in words:
-            if len(cur) + len(w) + 1 <= max_chars:
-                cur = (cur + " " + w).strip()
-            else:
-                out.append(cur)
-                cur = w
-        if cur:
-            out.append(cur)
-        return out
-
-    rendered = []
-    for ln in footer_lines:
-        rendered.extend(_wrap(ln))
-    rendered = rendered[:4]
-
-    for j, line in enumerate(rendered):
+    # move footer up + increase line spacing (less congested)
+    first_line_y = 0.40
+    line_gap = 0.16  # bigger spacing than before
+    for j, line in enumerate(footer_lines):
         ax.text(
             footer_x_left,
             first_line_y - j * line_gap,
@@ -1133,17 +1143,8 @@ def make_ranking_image(
             zorder=4,
         )
 
-    # Optional logo bottom-right (if you want it)
+    # Optional brand/logo bottom-right
     if brand_logo_url:
-        @st.cache_data(show_spinner=False)
-        def load_remote_png(url: str):
-            try:
-                r = requests.get(url, timeout=6)
-                r.raise_for_status()
-                return plt.imread(io.BytesIO(r.content))
-            except Exception:
-                return None
-
         brand_img = load_remote_png(brand_logo_url)
         if brand_img is not None:
             ax.add_artist(AnnotationBbox(
@@ -1162,13 +1163,11 @@ def make_ranking_image(
     return buf.getvalue()
 
 # ---------------------------------------------------------
-# 6) STREAMLIT OUTPUT – table + image with editable title
-#    (SECOND CHANGE: pass use_league_quality into make_ranking_image)
+# 6) STREAMLIT OUTPUT
 # ---------------------------------------------------------
 
 df_rank_full = df_f.dropna(subset=[rank_col]).sort_values(rank_col, ascending=False).copy()
 df_rank_full[rank_col] = df_rank_full[rank_col].round(round_to)
-
 df_rank_view = df_rank_full[df_rank_full["Age"] <= max_rank_age].copy()
 
 st.header("📊 CB Impact / Profile Rankings (0–100)")
@@ -1180,10 +1179,7 @@ st.caption(
 if df_rank_view.empty:
     st.warning("No players match the age/ranking filters for the current pool.")
 else:
-    st.dataframe(
-        top_generic(df_rank_view, rank_col, top_n, round_to),
-        use_container_width=True,
-    )
+    st.dataframe(top_generic(df_rank_view, rank_col, top_n, round_to), use_container_width=True)
 
 st.subheader("🖼 Exportable CIES-style ranking image")
 
@@ -1191,7 +1187,6 @@ t1 = st.text_input("Title line 1", "TOP U23 CENTRE BACKS", key=f"cb_title1_{sele
 t2 = st.text_input("Title line 2", "IMPACT PERFORMANCE RANKING", key=f"cb_title2_{selected_file}")
 t3 = st.text_input("Title line 3", "GLOBAL SCOUTING INDEX 2025", key=f"cb_title3_{selected_file}")
 
-# (Optional) brand/logo url
 brand_logo_url = "https://image.pitchbook.com/1xOUzrEhnsKrJbNbN8Asf3LND2u1605464042293_200x200"
 
 img_bytes = make_ranking_image(
@@ -1199,19 +1194,15 @@ img_bytes = make_ranking_image(
     rank_col,
     [t1, t2, t3],
     brand_logo_url=brand_logo_url,
-    use_league_quality=use_league_for_impact,  # <-- change #2
+    use_league_quality=use_league_for_impact,
 )
 
 if img_bytes:
     st.image(img_bytes, use_column_width=True)
-    st.download_button(
-        "Download PNG",
-        data=img_bytes,
-        file_name="cb_ranking.png",
-        mime="image/png",
-    )
+    st.download_button("Download PNG", data=img_bytes, file_name="cb_ranking.png", mime="image/png")
 else:
     st.info("No data to generate image.")
+
 
 
 
