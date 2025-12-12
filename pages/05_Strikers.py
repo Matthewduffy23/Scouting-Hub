@@ -762,7 +762,7 @@ import unicodedata
 TWEMOJI_SPECIAL = {
     "eng":"1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
     "sct":"1f3f4-e0067-e0062-e0073-e0063-e0074-e007f",
-    "wls":"1f3f4-e0067-e0062-e0077-e006c-e0073-e007f",
+    "wls":"1f3f4-e0067-e0062-e006c-e0073-e007f",
 }
 
 # Expanded country-name -> ISO-2 code map (many African additions + aliases)
@@ -903,7 +903,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
     .teamline{ color:#dbe3ff; font-size:14px; font-weight:600; margin-top:6.5px; letter-spacing:.05px; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .tl-wrap{ position:relative; }
-    .tl-has-crest{ padding-left:24px; }     /* reserve space only when crest exists */
+    .tl-has-crest{ padding-left:24px; }
     .crest-icon{ height:1.35em; width:auto; object-fit:contain; image-rendering:auto; }
     .crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
 
@@ -920,8 +920,8 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     .filter-label{ color:#cbd3ef; font-weight:700; font-size:13px; letter-spacing:.02em; margin-bottom:4px; }
     </style>
     """, unsafe_allow_html=True)
- 
-     # ---- Filters: Age buckets ----
+
+    # ---- Filters: Age buckets ----
     age_choice = st.selectbox(
         "Age",
         ["All", "U18", "U20", "U21", "U22", "U23", "U25", "U30"],
@@ -989,13 +989,54 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     if df_filtered.empty:
         st.info("No players match the selected filters/search.")
         return
-  
-  
+
+    # ====================================================================
+    # NEW: Minimum role-score filters (AND logic across all enabled roles)
+    # ====================================================================
+    # Build the list of role-score columns present in this dataframe
+    role_score_cols_for_min = [
+        f"{name} Score"
+        for name in ROLES.keys()
+        if f"{name} Score" in df_filtered.columns
+    ]
+
+    min_config = {}
+    if role_score_cols_for_min:
+        with st.expander("Minimum role score filters (optional)", expanded=False):
+            st.caption("Enable roles below and set a minimum score. A player must meet **all** enabled minimums.")
+            for col in role_score_cols_for_min:
+                pretty = col.replace(" Score", "")
+                base_key = pretty.replace(" ", "_").replace("/", "_").lower()
+                use_min = st.checkbox(pretty, value=False, key=f"cf_min_toggle_{base_key}")
+                if use_min:
+                    min_val = st.slider(
+                        f"Min {pretty}",
+                        min_value=0,
+                        max_value=99,
+                        value=60,
+                        step=1,
+                        key=f"cf_min_val_{base_key}"
+                    )
+                    min_config[col] = min_val
+
+        if min_config:
+            mask = pd.Series(True, index=df_filtered.index)
+            for col, threshold in min_config.items():
+                vals = pd.to_numeric(df_filtered[col], errors="coerce").fillna(0)
+                mask &= vals >= threshold
+            df_filtered = df_filtered[mask]
+
+            if df_filtered.empty:
+                st.info("No players match the selected filters/search & minimum role scores.")
+                return
+
     # =========================
     # Sort controls (pull dynamically from ROLES so new roles appear)
     # =========================
-    ROLE_SCORE_COLS = [f"{name} Score" for name in ROLES.keys()
-                       if f"{name} Score" in df_view.columns]
+    ROLE_SCORE_COLS = [
+        f"{name} Score" for name in ROLES.keys()
+        if f"{name} Score" in df_view.columns
+    ]
     sort_candidates = [all_col] + ROLE_SCORE_COLS
 
     sort_by = st.selectbox(
@@ -1021,7 +1062,8 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     default_labels = ["Goal Threat CF", "Link-Up CF", "Target Man CF"]
     default_labels = [lbl for lbl in default_labels if lbl in role_labels]
     for lbl in role_labels:
-        if len(default_labels) >= 3: break
+        if len(default_labels) >= 3:
+            break
         if lbl not in default_labels:
             default_labels.append(lbl)
 
@@ -1056,7 +1098,10 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
     # Numeric helper column for robust sorting
     _sort_col = "__sort_val"
-    df_filtered[_sort_col] = pd.to_numeric(df_filtered.get(sort_by, pd.Series(index=df_filtered.index)), errors="coerce")
+    df_filtered[_sort_col] = pd.to_numeric(
+        df_filtered.get(sort_by, pd.Series(index=df_filtered.index)),
+        errors="coerce"
+    )
 
     # Tie-break on All In Score (desc) to preserve previous behavior
     ranked = (
@@ -1085,9 +1130,13 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
         # positions
         import re as _re
-        codes=[c for c in _re.split(r"[,/; ]+", pos.strip().upper()) if c]
-        if "CF" in codes: codes=["CF"]+[c for c in codes if c!="CF"]
-        pos_html="".join(f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>" for c in dict.fromkeys(codes))
+        codes=[c for c in _re.split(r"[,/; ]+", (pos or "").strip().upper()) if c]
+        if "CF" in codes:
+            codes=["CF"]+[c for c in codes if c!="CF"]
+        pos_html="".join(
+            f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>"
+            for c in dict.fromkeys(codes)
+        )
 
         # left meta
         flag=_flag_html(birth)
