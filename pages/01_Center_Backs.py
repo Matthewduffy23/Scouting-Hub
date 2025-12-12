@@ -1129,7 +1129,7 @@ def make_ranking_image(
     ax.plot([footer_x_left, footer_x_right], [divider_y]*2, color="#E8E8E8", lw=0.9, zorder=2)
 
     # move footer up + increase line spacing (less congested)
-    first_line_y = 0.60
+    first_line_y = 0.48
     line_gap = 0.16  # bigger spacing than before
     for j, line in enumerate(footer_lines):
         ax.text(
