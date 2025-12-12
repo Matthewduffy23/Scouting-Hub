@@ -1801,72 +1801,76 @@ for is_red, grp in squad.groupby("IsRed"):
     )
 
 # --------------------------------------------------------------------------------------
-# LABELS – ALL PLAYERS, NON-OVERLAPPING, CLAMPED INSIDE PLOT
+# LABELS – all players, stacked + slight x-jitter, no overlap, clamped in plot
 # --------------------------------------------------------------------------------------
 if show_labels:
     label_df = squad.copy()
 
-    # axis metrics for spacing
     axis_height = max_minutes_s - min_minutes_s
-    base_offset = axis_height * 0.015      # initial gap above dot
-    min_y_delta = axis_height * 0.04       # minimum separation between labels
-    top_margin = axis_height * 0.03        # keep labels below top
-    bottom_margin = axis_height * 0.03     # keep labels above bottom
-    age_tol = 0.7                          # cluster width in age units
+    base_offset = axis_height * 0.015      # starting gap above dot
+    min_y_delta = axis_height * 0.045      # minimum vertical separation between labels
+    top_margin = axis_height * 0.04        # keep below top
+    bottom_margin = axis_height * 0.03     # keep above bottom
+    age_tol = 0.8                          # "same column" width in age units
+    x_jitter = 0.25                        # horizontal nudge when stacked
 
-    # sort by minutes so low-minute labels place first
+    # sort by minutes so lower-minute labels lay down first
     label_df_sorted = label_df.sort_values("Minutes played")
-    placed = []           # list of (x, y_label)
-    positions = {}        # player -> (x, y_label)
+    placed = []           # list of (x_lab, y_lab)
+    positions = {}        # player -> (x_lab, y_lab)
 
     for _, r in label_df_sorted.iterrows():
-        x = r["Age"]
-        y = r["Minutes played"]
-        y_label = y + base_offset
+        x = float(r["Age"])
+        y = float(r["Minutes played"])
+
+        x_lab = x
+        y_lab = y + base_offset
 
         # clamp initial guess inside plot
-        y_label = max(min_minutes_s + bottom_margin, min(y_label, max_minutes_s - top_margin))
+        y_lab = max(min_minutes_s + bottom_margin, min(y_lab, max_minutes_s - top_margin))
 
-        # look for space by moving up, then down if needed
-        direction = 1      # 1 = up, -1 = down
+        direction_y = 1
+        direction_x = 1
         attempts = 0
-        max_attempts = 60
+        max_attempts = 80
 
         while attempts < max_attempts:
             collision = False
             for (px, py) in placed:
-                if abs(x - px) < age_tol and abs(y_label - py) < min_y_delta:
+                if abs(x_lab - px) < age_tol and abs(y_lab - py) < min_y_delta:
                     collision = True
                     break
 
             if not collision:
                 break
 
-            y_label += direction * min_y_delta
-            # keep inside plot
-            if y_label > max_minutes_s - top_margin:
-                direction = -1
-                y_label = y - base_offset
-            if y_label < min_minutes_s + bottom_margin:
-                # no room below either: stop here
-                y_label = max(min_minutes_s + bottom_margin, min(y_label, max_minutes_s - top_margin))
-                break
+            # move label slightly up/down and sideways
+            y_lab += direction_y * min_y_delta
+            x_lab += direction_x * x_jitter
+
+            # alternate directions so we spread around the point
+            direction_y *= -1
+            direction_x *= -1
+
+            # clamp inside axes
+            y_lab = max(min_minutes_s + bottom_margin, min(y_lab, max_minutes_s - top_margin))
+            x_lab = max(min_age_s + 0.2, min(x_lab, max_age_s - 0.2))
 
             attempts += 1
 
-        placed.append((x, y_label))
-        positions[r["Player"]] = (x, y_label)
+        placed.append((x_lab, y_lab))
+        positions[r["Player"]] = (x_lab, y_lab)
 
-    # Now actually draw labels (and leader lines where moved)
+    # Draw labels + leader lines
     for _, r in label_df.iterrows():
-        x = r["Age"]
-        y = r["Minutes played"]
+        x = float(r["Age"])
+        y = float(r["Minutes played"])
         x_lab, y_lab = positions.get(r["Player"], (x, y + base_offset))
 
-        # leader line if label not right above dot
-        if abs(y_lab - y) > base_offset * 0.5:
+        # leader line if label moved meaningfully
+        if abs(x_lab - x) > 0.05 or abs(y_lab - (y + base_offset)) > 0.05:
             ax.plot(
-                [x, x],
+                [x, x_lab],
                 [y, y_lab],
                 linestyle="-",
                 linewidth=0.5,
@@ -1917,6 +1921,7 @@ else:
 
 plt.close(fig)
 # ============================== END FEATURE R ==========================================
+
 
 
 
