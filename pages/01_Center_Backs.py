@@ -562,33 +562,42 @@ df_f["Pass Ratio Percentile"] = (
 # ===================================================================
 # --------------------  IMPACT SCORE: FULL BLOCK  -------------------
 # ===================================================================
-# Computes:
-#   1. Six CB sub-scores (Aerial, Ground, Retention, Carrying,
-#      Playmaking, Positioning)
-#   2. Base CB Score = average of six categories
-#   3. Minutes Factor (within-league percentile)
-#   4. Team Context Factor (team avg vs league avg)
-#   5. League Quality Factor (STRONG effect across leagues)
-#   6. Final Impact Score scaled 0–100
+# Uses your 6 skill buckets:
+#   Aerial, Ground, Retention, Carrying, Playmaking, Positioning
+# Then:
+#   • Base CB Score  = mean of 6 buckets
+#   • Minutes Factor = within-league minutes percentile
+#   • Team Context   = team avg vs league avg
+#   • League Quality = β-blend with League Strength (0–100)
+#   • Final Impact Score rescaled to 0–100
 # ===================================================================
 
 def _pct(metric: str) -> str:
+    """Helper to get the percentile column name."""
     return f"{metric} Percentile"
+
 
 # -----------------------------
 # 1. SUB-SCORES (each 0–100)
 # -----------------------------
 
+# Aerial: Aerial duels per 90 (30%) + Aerial duels won, % (70%)
 df_f["Aerial Score"] = (
     0.30 * df_f[_pct("Aerial duels per 90")] +
     0.70 * df_f[_pct("Aerial duels won, %")]
 )
 
+# Ground: Defensive duels per 90 (30%) + Defensive duels won, % (70%)
 df_f["Ground Score"] = (
     0.30 * df_f[_pct("Defensive duels per 90")] +
     0.70 * df_f[_pct("Defensive duels won, %")]
 )
 
+# Retention:
+# Accurate passes, % (25%)
+# Accurate forward passes, % (25%)
+# Accurate progressive passes, % (25%)
+# Accurate long passes, % (25%)
 df_f["Retention Score"] = (
     0.25 * df_f[_pct("Accurate passes, %")] +
     0.25 * df_f[_pct("Accurate forward passes, %")] +
@@ -596,26 +605,40 @@ df_f["Retention Score"] = (
     0.25 * df_f[_pct("Accurate long passes, %")]
 )
 
+# Carrying:
+# Dribbles per 90 (40%)
+# Successful dribbles, % (20%)
+# Progressive runs per 90 (40%)
 df_f["Carrying Score"] = (
     0.40 * df_f[_pct("Dribbles per 90")] +
     0.20 * df_f[_pct("Successful dribbles, %")] +
     0.40 * df_f[_pct("Progressive runs per 90")]
 )
 
+# Playmaking:
+# Progressive passes per 90 (50%)
+# Forward passes per 90 (25%)
+# Passes to final third per 90 (25%)
 df_f["Playmaking Score"] = (
     0.50 * df_f[_pct("Progressive passes per 90")] +
     0.25 * df_f[_pct("Forward passes per 90")] +
     0.25 * df_f[_pct("Passes to final third per 90")]
 )
 
+# Positioning:
+# PAdj Interceptions (70%) + Shots blocked per 90 (30%)
 df_f["Positioning Score"] = (
     0.70 * df_f[_pct("PAdj Interceptions")] +
     0.30 * df_f[_pct("Shots blocked per 90")]
 )
 
 SUB_SCORES = [
-    "Aerial Score", "Ground Score", "Retention Score",
-    "Carrying Score", "Playmaking Score", "Positioning Score",
+    "Aerial Score",
+    "Ground Score",
+    "Retention Score",
+    "Carrying Score",
+    "Playmaking Score",
+    "Positioning Score",
 ]
 
 # -----------------------------
@@ -623,18 +646,21 @@ SUB_SCORES = [
 # -----------------------------
 df_f["Base CB Score"] = df_f[SUB_SCORES].mean(axis=1)
 
+
 # -----------------------------
 # 3. MINUTES FACTOR
-#    Percentile mapped ~0.90–1.10 (moderate effect)
+#    Minutes percentile within league → mapped 0.90–1.10
 # -----------------------------
 minutes_pct = df_f.groupby("League")["Minutes played"].rank(pct=True)
-df_f["Minutes Factor"] = 0.90 + 0.20 * minutes_pct   # 0.90 .. 1.10
+df_f["Minutes Factor"] = 0.90 + 0.20 * minutes_pct    # 0.90 .. 1.10
+
 
 # -----------------------------
 # 4. TEAM CONTEXT FACTOR
-#    Strength = team avg / league avg
-#    Impact factor = 1 / strength (clamped 0.90–1.10)
-#    -> boosts players overperforming in weaker teams
+#    Team avg vs league avg → boost good players in weaker teams
+#
+#    strength_ratio = team_avg / league_avg
+#    TeamContextFactor = 1 / strength_ratio, clamped 0.90–1.10
 # -----------------------------
 league_avg = df_f.groupby("League")["Base CB Score"].transform("mean")
 team_avg   = df_f.groupby(["League", "Team"])["Base CB Score"].transform("mean")
@@ -646,49 +672,59 @@ raw_team_factor = np.where(strength_ratio > 0, 1.0 / strength_ratio, 1.0)
 df_f["Team Context Factor"] = np.clip(raw_team_factor, 0.90, 1.10)
 df_f["Team Context Factor"] = df_f["Team Context Factor"].fillna(1.0)
 
+
 # -----------------------------
-# 5. LEAGUE QUALITY FACTOR (STRONGER)
-#    Use actual League Strength spread across the current pool and
-#    map it to a wide 0.75–1.25 range (±25% difference).
+# 5. LEAGUE QUALITY (β-BLEND)
 #
-#    - Top leagues (e.g. 90–100) get close to 1.25
-#    - Middle leagues (~60) around 1.0
-#    - Very weak leagues down near 0.75
+#    We use a β similar to your earlier role-weighting idea:
+#
+#      PlayerImpactPreLeague = Base * MinutesFactor * TeamContextFactor
+#      LeagueQualityScaled   = League Strength rescaled to 0–100
+#
+#      RawImpact = (1 - β) * PlayerImpactPreLeague
+#                  + β * LeagueQualityScaled
+#
+#    β ≈ 0.4 means: 60% player performance, 40% league quality.
 # -----------------------------
+
+# Scale League Strength to 0–100 within current filtered pool
 ls = df_f["League Strength"].fillna(50.0).astype(float)
 ls_min, ls_max = ls.min(), ls.max()
-
 if ls_max > ls_min:
-    ls_scaled = (ls - ls_min) / (ls_max - ls_min)   # 0..1 within filtered pool
+    df_f["League Quality Scaled"] = 100.0 * (ls - ls_min) / (ls_max - ls_min)
 else:
-    ls_scaled = pd.Series(0.5, index=df_f.index)    # fallback
+    df_f["League Quality Scaled"] = 50.0
 
-# Strong effect: 0.75–1.25
-df_f["League Quality Factor"] = 0.75 + 0.50 * ls_scaled   # 0.75 .. 1.25
-
-# -----------------------------
-# 6. RAW IMPACT SCORE
-# -----------------------------
-raw = (
-    df_f["Base CB Score"]
-    * df_f["Minutes Factor"]
-    * df_f["Team Context Factor"]
-    * df_f["League Quality Factor"]
+# Player impact before league blending
+df_f["Player Impact PreLeague"] = (
+    df_f["Base CB Score"] *
+    df_f["Minutes Factor"] *
+    df_f["Team Context Factor"]
 )
 
-df_f["Raw Impact Score"] = raw
+# Use your existing beta slider value if available; default 0.40
+beta_league = st.session_state.get(f"cb_beta_{selected_file}", 0.40)
+
+# β-blended raw impact score
+df_f["Raw Impact Score"] = (
+    (1.0 - beta_league) * df_f["Player Impact PreLeague"] +
+    beta_league         * df_f["League Quality Scaled"]
+)
+
 
 # -----------------------------
-# 7. FINAL IMPACT SCORE (0–100)
+# 6. FINAL IMPACT SCORE 0–100
 # -----------------------------
+raw = df_f["Raw Impact Score"]
 min_raw, max_raw = raw.min(), raw.max()
 
-if max_raw > min_raw:
+if pd.notna(min_raw) and pd.notna(max_raw) and max_raw > min_raw:
     df_f["Impact Score"] = 100.0 * (raw - min_raw) / (max_raw - min_raw)
 else:
     df_f["Impact Score"] = 50.0
 
 df_f["Impact Score"] = df_f["Impact Score"].astype(float)
+
 
 # -----------------------------
 # Helper: Top Impact Table
@@ -713,6 +749,7 @@ def top_impact(df_in: pd.DataFrame, n: int, round_to: int = 0) -> pd.DataFrame:
 # ===================================================================
 # --------------------  END IMPACT SCORE BLOCK  ---------------------
 # ===================================================================
+
 
 
 
