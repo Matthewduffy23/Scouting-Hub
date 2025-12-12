@@ -12,9 +12,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Circle, Wedge
-import requests
-from matplotlib.patches import Rectangle
+from matplotlib.patches import Circle, Wedge, Rectangle
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+import requests
+
 
 
 # ---- Optional sklearn (fallback provided) ----
@@ -564,22 +565,78 @@ df_f["Pass Ratio Percentile"] = (
 )
 
 # ===================================================================
-#  HIGH-QUALITY CIES-STYLE RANKING IMAGE + BADGE FETCHING
+#  RANKING METRIC SELECTOR + CIES-STYLE EXPORTABLE RANKING IMAGE
 # ===================================================================
 
 import requests
 from matplotlib.patches import Rectangle, Circle
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 
-FLAG_COL   = "Flag"         # or whatever your nationality emoji column is
-NATION_COL = "Nationality"  # adjust if your dataset uses a different name
+
+# ---------------------------------------------------------
+# 1. RANKING METRIC SELECTOR
+# ---------------------------------------------------------
+
+RANK_OPTIONS = {
+    "Impact Score (with league quality)": "Impact Score",
+    "Impact Score (no league quality)": "Impact Score (no league)",
+    "Aerial Score": "Aerial Score",
+    "Ground Score": "Ground Score",
+    "Retention Score": "Retention Score",
+    "Carrying Score": "Carrying Score",
+    "Playmaking Score": "Playmaking Score",
+    "Positioning Score": "Positioning Score",
+}
+
+rank_label = st.selectbox(
+    "Ranking metric",
+    list(RANK_OPTIONS.keys()),
+    index=0,
+    key=f"cb_rank_metric_{selected_file}",
+)
+
+rank_col = RANK_OPTIONS[rank_label]
 
 
 # ---------------------------------------------------------
-# 1. FLAG HELPER
+# 2. GENERIC TOP-TABLE GENERATOR
 # ---------------------------------------------------------
-def _get_flag_text(row: pd.Series) -> str:
-    """Returns emoji flag or nationality text."""
+
+def top_generic(df_in: pd.DataFrame, column: str, head_n: int, round_to: int = 0):
+    """Top-N ranking for any metric with no duplicate columns."""
+    ranked = df_in.dropna(subset=[column]).sort_values(column, ascending=False).copy()
+    ranked[column] = ranked[column].round(round_to)
+
+    base_cols = [
+        "Player", "Team", "League", "Position", "Age",
+        "Minutes played", "League Strength",
+        "Impact Score", "Impact Score (no league)",
+        "Aerial Score", "Ground Score", "Retention Score",
+        "Carrying Score", "Playmaking Score", "Positioning Score",
+        column,
+    ]
+
+    seen = set()
+    cols = []
+    for c in base_cols:
+        if c in ranked.columns and c not in seen:
+            cols.append(c)
+            seen.add(c)
+
+    out = ranked[cols].head(head_n).reset_index(drop=True)
+    out.index = np.arange(1, len(out) + 1)
+    return out
+
+
+# ---------------------------------------------------------
+# 3. FLAG + BADGE HELPERS
+# ---------------------------------------------------------
+
+FLAG_COL   = "Flag"         # adjust if needed
+NATION_COL = "Nationality"  # adjust if needed
+
+def _get_flag_text(row: pd.Series):
+    """Return emoji flag or nationality text."""
     if FLAG_COL in row and pd.notna(row[FLAG_COL]):
         return str(row[FLAG_COL])
     if NATION_COL in row and pd.notna(row[NATION_COL]):
@@ -587,17 +644,15 @@ def _get_flag_text(row: pd.Series) -> str:
     return ""
 
 
-# ---------------------------------------------------------
-# 2. WIKIPEDIA BADGE FETCHER (CACHED)
-# ---------------------------------------------------------
 @st.cache_data(show_spinner=False)
 def fetch_wikipedia_badge(team_name: str):
     """
-    Fetches team badge thumbnail from Wikipedia's PageImages API.
-    Returns image array or None.
+    Fetch a small team badge from Wikipedia's PageImages API.
+    Returns numpy array or None.
     """
     if not team_name:
         return None
+
     try:
         api_url = "https://en.wikipedia.org/w/api.php"
         params = {
@@ -607,9 +662,9 @@ def fetch_wikipedia_badge(team_name: str):
             "pithumbsize": 80,
             "format": "json"
         }
-        resp = requests.get(api_url, params=params, timeout=5)
-        resp.raise_for_status()
-        data = resp.json()
+        r = requests.get(api_url, params=params, timeout=5)
+        r.raise_for_status()
+        data = r.json()
 
         pages = data.get("query", {}).get("pages", {})
         if not pages:
@@ -620,10 +675,9 @@ def fetch_wikipedia_badge(team_name: str):
         if not thumb:
             return None
 
-        img_resp = requests.get(thumb, timeout=5)
-        img_resp.raise_for_status()
-
-        img = plt.imread(io.BytesIO(img_resp.content))
+        img_r = requests.get(thumb, timeout=5)
+        img_r.raise_for_status()
+        img = plt.imread(io.BytesIO(img_r.content))
         return img
 
     except Exception:
@@ -631,19 +685,12 @@ def fetch_wikipedia_badge(team_name: str):
 
 
 # ---------------------------------------------------------
-# 3. CIES-STYLE RANKING IMAGE BUILDER
+# 4. HIGH-QUALITY CIES-STYLE RANKING IMAGE
 # ---------------------------------------------------------
+
 def make_ranking_image(df_rank: pd.DataFrame, metric_col: str, title: str = "") -> bytes:
-    """
-    Builds a full CIES-style ranking card:
-      • Rank circle
-      • Badge or flag
-      • Player name (ALL CAPS)
-      • Team + league
-      • Right-aligned score bar
-    Returns PNG bytes.
-    """
-    df_top = df_rank.head(10).copy()
+    """Generate exportable PNG ranking image."""
+    df_top = df_rank.head(10)
     n = len(df_top)
     if n == 0:
         return b""
@@ -651,101 +698,65 @@ def make_ranking_image(df_rank: pd.DataFrame, metric_col: str, title: str = "") 
     scores = df_top[metric_col].astype(float)
     max_score = scores.max() if scores.notna().any() else 1.0
 
-    # FIGURE
-    fig_w, fig_h = 8.0, 0.70 * n + 1.6
+    fig_w, fig_h = 8.0, 0.70 * n + 1.4
     fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=200)
     ax.set_xlim(0, 1)
     ax.set_ylim(0, n + 1)
     ax.axis("off")
 
-    # Light background similar to CIES cards
-    ax.add_patch(Rectangle((0, 0), 1, n + 1, color="#F6F6F6", zorder=0))
-    ax.add_patch(Rectangle((0, 0), 1, 0.5, color="#ECECEC", zorder=0))
+    # Background
+    ax.add_patch(Rectangle((0, 0), 1, n + 1, facecolor="#F6F6F6"))
+    ax.add_patch(Rectangle((0, 0), 1, 0.5, facecolor="#ECECEC"))
 
-    # Title
     if title:
-        ax.text(
-            0.02, n + 0.7, title,
-            fontsize=16, fontweight="bold",
-            va="center", ha="left"
-        )
+        ax.text(0.02, n + 0.65, title, fontsize=16, ha="left", va="center", fontweight="bold")
 
-    # Row geometry
-    row_h   = 1.0
-    bar_x0  = 0.68
-    bar_w   = 0.25
-    bar_h   = 0.28
+    bar_x0 = 0.68
+    bar_w  = 0.25
+    bar_h  = 0.28
+    row_h  = 1.0
 
-    for idx, (_, row) in enumerate(df_top.iterrows()):
-        rank = idx + 1
-        cy   = n - idx  # row center Y
+    for i, (_, row) in enumerate(df_top.iterrows()):
+        y = n - i
+        rank = i + 1
 
-        player = str(row.get("Player", "")).upper()
-        team   = str(row.get("Team", ""))
-        league = str(row.get("League", ""))
+        player = str(row["Player"]).upper()
+        team   = str(row["Team"])
+        league = str(row["League"])
         score  = float(row[metric_col])
 
-        # Alternating row shading
-        if idx % 2 == 0:
-            ax.add_patch(
-                Rectangle((0, cy - row_h / 2), 1, row_h,
-                          facecolor="white", edgecolor="none", zorder=0.5)
-            )
+        # Alternating stripe
+        if i % 2 == 0:
+            ax.add_patch(Rectangle((0, y - row_h/2), 1, row_h, facecolor="white"))
 
         # Rank circle
-        circle_x = 0.05
-        ax.add_patch(
-            Circle((circle_x, cy), 0.04, facecolor="white",
-                   edgecolor="#C0C0C0", linewidth=1)
-        )
-        ax.text(circle_x, cy, str(rank),
-                fontsize=10, fontweight="bold",
-                ha="center", va="center")
+        ax.add_patch(Circle((0.05, y), 0.04, facecolor="white", edgecolor="#C0C0C0"))
+        ax.text(0.05, y, str(rank), fontsize=10, fontweight="bold", ha="center", va="center")
 
-        # Badge or flag
-        badge_x = 0.13
+        # Badge OR flag
         badge = fetch_wikipedia_badge(team)
         if badge is not None:
-            im = OffsetImage(badge, zoom=0.37)
-            ab = AnnotationBbox(im, (badge_x, cy), frameon=False)
+            im = OffsetImage(badge, zoom=0.35)
+            ab = AnnotationBbox(im, (0.13, y), frameon=False)
             ax.add_artist(ab)
         else:
-            flag = _get_flag_text(row)
-            ax.text(badge_x, cy, flag, fontsize=16, ha="center", va="center")
+            ax.text(0.13, y, _get_flag_text(row), fontsize=16, ha="center", va="center")
 
-        # Player name
-        name_x = 0.21
-        ax.text(name_x, cy + 0.12,
-                player, fontsize=11.5, fontweight="bold",
-                ha="left", va="center")
+        # Player + club text
+        ax.text(0.21, y + 0.12, player, fontsize=11.5, fontweight="bold", ha="left")
+        ax.text(0.21, y - 0.10, f"{team} ({league})", fontsize=9, color="#666666", ha="left")
 
-        ax.text(name_x, cy - 0.10,
-                f"{team} ({league})",
-                fontsize=9, color="#666666",
-                ha="left", va="center")
+        # Score bar background
+        ax.add_patch(Rectangle((bar_x0, y - bar_h/2), bar_w, bar_h, facecolor="#DCDCDC"))
 
-        # Bar background
-        ax.add_patch(
-            Rectangle((bar_x0, cy - bar_h / 2),
-                      bar_w, bar_h,
-                      facecolor="#DCDCDC", zorder=1)
-        )
-
-        # Bar filled portion
-        rel = score / max_score if max_score > 0 else 0
-        ax.add_patch(
-            Rectangle((bar_x0, cy - bar_h / 2),
-                      bar_w * rel, bar_h,
-                      facecolor="#BEBEBE", zorder=2)
-        )
+        # Score bar fill
+        fill = bar_w * (score / max_score) if max_score > 0 else 0
+        ax.add_patch(Rectangle((bar_x0, y - bar_h/2), fill, bar_h, facecolor="#BEBEBE"))
 
         # Score text
-        ax.text(bar_x0 + bar_w + 0.03, cy,
-                f"{score:.1f}",
-                fontsize=11, fontweight="bold",
-                ha="right", va="center")
+        ax.text(bar_x0 + bar_w + 0.03, y, f"{score:.1f}", fontsize=11, fontweight="bold", ha="right")
 
-    fig.tight_layout(pad=0.6)
+    fig.tight_layout()
 
     buf = io.BytesIO()
     fig.savefig(buf, format="png", bbox_inches="tight", facecolor="white")
@@ -755,8 +766,9 @@ def make_ranking_image(df_rank: pd.DataFrame, metric_col: str, title: str = "") 
 
 
 # ---------------------------------------------------------
-# 4. STREAMLIT OUTPUT BLOCK
+# 5. STREAMLIT OUTPUT (TABLE + IMAGE)
 # ---------------------------------------------------------
+
 df_rank = df_f.dropna(subset=[rank_col]).sort_values(rank_col, ascending=False).copy()
 df_rank[rank_col] = df_rank[rank_col].round(round_to)
 
@@ -765,25 +777,23 @@ st.caption(f"Sorted by: **{rank_label}**")
 
 st.dataframe(
     top_generic(df_rank, rank_col, top_n, round_to),
-    use_container_width=True
+    use_container_width=True,
 )
 
-# IMAGE EXPORT
 img_title = f"{rank_label} — Top 10"
 img_bytes = make_ranking_image(df_rank, rank_col, title=img_title)
 
 st.subheader("🖼 Exportable Ranking Image")
-
 if img_bytes:
     st.image(img_bytes, caption=img_title, use_column_width=True)
     st.download_button(
         "Download PNG",
         data=img_bytes,
-        file_name="ranking.png",
+        file_name="cb_ranking.png",
         mime="image/png"
     )
 else:
-    st.info("No ranking image available.")
+    st.info("No data to generate image.")
 
 
 
