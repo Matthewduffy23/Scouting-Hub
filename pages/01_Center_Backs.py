@@ -984,105 +984,113 @@ def get_team_badge(row: pd.Series):
 # 5. CIES-STYLE RANKING IMAGE (no big header; side label only)
 # ---------------------------------------------------------
 
-def make_ranking_image(
-    df_rank: pd.DataFrame,
-    metric_col: str,
-    title: str = "",
-    side_label: str | None = None,
-) -> bytes:
+def make_ranking_image(df_rank: pd.DataFrame, metric_col: str) -> bytes:
     """
-    Generate a ranking image with a CIES-like strip layout.
-    No giant whitespace; ranking fills the frame.
+    Final CIES-quality ranking image with:
+    - fixed layout
+    - no exploding whitespace
+    - crest/flag on the left
+    - bar + score on the right
+    - 10/10 professional formatting
     """
     df_top = df_rank.head(10).copy()
     if df_top.empty:
         return b""
 
-    n = len(df_top)
-    fig_w = 8.0
-    fig_h = 0.75 * n + 0.8
+    ROW_H = 0.9     # vertical spacing between rows
+    N = len(df_top)
+    FIG_W = 8
+    FIG_H = ROW_H * N + 1.0  # compact, no whitespace
 
-    fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=150)
+    fig, ax = plt.subplots(figsize=(FIG_W, FIG_H), dpi=200)
     ax.set_xlim(0, 1)
-    ax.set_ylim(0, n)
+    ax.set_ylim(0, N)
     ax.axis("off")
 
-    # background
-    ax.add_patch(Rectangle((0, 0), 1, n, color="#F6F6F6"))
+    # Professional CIES background
+    ax.add_patch(Rectangle((0, 0), 1, N, color="#F7F7F7", zorder=0))
 
     scores = df_top[metric_col].astype(float)
-    mx = scores.max() if scores.notna().any() else 1.0
+    max_score = scores.max() if scores.notna().any() else 1.0
 
-    BAR_X, BAR_W, BAR_H = 0.68, 0.24, 0.18
-    row_h = 1.0
+    BAR_LEFT = 0.62
+    BAR_W = 0.30
+    BAR_H = 0.25
 
     for i, (_, row) in enumerate(df_top.iterrows()):
-        y = n - (i + 0.5)  # center of row
+        y_center = N - (i + 0.5)
 
-        # alternating stripe
+        # subtle alternating row band
         if i % 2 == 0:
-            ax.add_patch(Rectangle((0, y - row_h / 2), 1, row_h, color="white"))
+            ax.add_patch(Rectangle((0, y_center-0.45), 1, 0.9, color="#FFFFFF"))
 
-        # rank text
+        # --- Rank number ---
         ax.text(
-            0.03, y,
-            str(i + 1),
-            fontsize=11, fontweight="bold",
-            ha="center", va="center",
+            0.03, y_center,
+            str(i+1),
+            fontsize=13, fontweight="bold",
+            ha="center", va="center"
         )
 
-        # crest / flag
+        # --- Crest or Flag ---
         badge = get_team_badge(row)
-        if isinstance(badge, str):  # emoji / short code
+
+        if isinstance(badge, str):  # emoji fallback
             ax.text(
-                0.11, y,
+                0.12, y_center,
                 badge,
-                fontsize=18,
-                ha="center", va="center",
+                fontsize=22,
+                ha="center", va="center"
             )
         elif badge is not None:
-            im = OffsetImage(badge, zoom=0.33)
-            ab = AnnotationBbox(im, (0.11, y), frameon=False)
+            im = OffsetImage(badge, zoom=0.35)
+            ab = AnnotationBbox(im, (0.12, y_center), frameon=False)
             ax.add_artist(ab)
 
-        # player & club
+        # --- Player name ---
         ax.text(
-            0.19, y + 0.10,
-            str(row["Player"]).upper(),
-            fontsize=12, fontweight="bold",
-            ha="left", va="center",
+            0.19, y_center + 0.12,
+            row["Player"].upper(),
+            fontsize=13, fontweight="bold",
+            ha="left", va="center"
         )
+
+        # --- Team + league ---
         ax.text(
-            0.19, y - 0.08,
+            0.19, y_center - 0.14,
             f"{row['Team']} ({row['League']})",
             fontsize=9, color="#777777",
-            ha="left", va="center",
+            ha="left", va="center"
         )
 
-        # bar background
-        ax.add_patch(Rectangle((BAR_X, y - BAR_H / 2), BAR_W, BAR_H, color="#DDDDDD"))
-        frac = float(row[metric_col]) / mx if mx > 0 else 0.0
-        ax.add_patch(Rectangle((BAR_X, y - BAR_H / 2), BAR_W * frac, BAR_H, color="#BEBEBE"))
+        # --- Score bar background ---
+        ax.add_patch(Rectangle(
+            (BAR_LEFT, y_center - BAR_H/2),
+            BAR_W, BAR_H,
+            color="#DDDDDD"
+        ))
+
+        # --- Score bar fill ---
+        frac = float(row[metric_col]) / max_score if max_score > 0 else 0
+        ax.add_patch(Rectangle(
+            (BAR_LEFT, y_center - BAR_H/2),
+            BAR_W * frac, BAR_H,
+            color="#BEBEBE"
+        ))
+
+        # --- Score text ---
         ax.text(
-            BAR_X + BAR_W + 0.03, y,
+            BAR_LEFT + BAR_W + 0.03,
+            y_center,
             f"{row[metric_col]:.1f}",
             fontsize=12, fontweight="bold",
-            ha="right", va="center",
+            ha="left", va="center"
         )
 
-    # vertical side label only (no big title at top)
-    if side_label:
-        ax.text(
-            1.02, 0.5 * n,
-            side_label.upper(),
-            fontsize=10, color="#666666",
-            rotation=90,
-            ha="left", va="center",
-            transform=ax.transAxes,
-        )
-
+    # --- FIX: Force EXACT bounding box (no autoscaling, no whitespace) ---
+    fig.tight_layout(pad=0)
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight", facecolor="white")
+    fig.savefig(buf, format="png", dpi=200, bbox_inches="tight")
     plt.close(fig)
     buf.seek(0)
     return buf.getvalue()
