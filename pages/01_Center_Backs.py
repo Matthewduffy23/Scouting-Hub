@@ -568,11 +568,8 @@ df_f["Pass Ratio Percentile"] = (
 #   2. Base CB Score = average of six categories
 #   3. Minutes Factor (within-league percentile)
 #   4. Team Context Factor (team avg vs league avg)
-#   5. League Quality Factor (using "League Strength")
+#   5. League Quality Factor (STRONG effect across leagues)
 #   6. Final Impact Score scaled 0–100
-#
-# Requires that percentile columns already exist:
-#   "<metric> Percentile"
 # ===================================================================
 
 def _pct(metric: str) -> str:
@@ -628,15 +625,16 @@ df_f["Base CB Score"] = df_f[SUB_SCORES].mean(axis=1)
 
 # -----------------------------
 # 3. MINUTES FACTOR
-#     Percentile mapped 0.85–1.15
+#    Percentile mapped ~0.90–1.10 (moderate effect)
 # -----------------------------
 minutes_pct = df_f.groupby("League")["Minutes played"].rank(pct=True)
-df_f["Minutes Factor"] = 0.85 + 0.30 * minutes_pct
+df_f["Minutes Factor"] = 0.90 + 0.20 * minutes_pct   # 0.90 .. 1.10
 
 # -----------------------------
 # 4. TEAM CONTEXT FACTOR
-#     Strength = team avg / league avg
-#     Impact factor = 1 / strength (clamped 0.90–1.10)
+#    Strength = team avg / league avg
+#    Impact factor = 1 / strength (clamped 0.90–1.10)
+#    -> boosts players overperforming in weaker teams
 # -----------------------------
 league_avg = df_f.groupby("League")["Base CB Score"].transform("mean")
 team_avg   = df_f.groupby(["League", "Team"])["Base CB Score"].transform("mean")
@@ -649,11 +647,24 @@ df_f["Team Context Factor"] = np.clip(raw_team_factor, 0.90, 1.10)
 df_f["Team Context Factor"] = df_f["Team Context Factor"].fillna(1.0)
 
 # -----------------------------
-# 5. LEAGUE QUALITY FACTOR
-#     League Strength percentile mapped 0.90–1.10
+# 5. LEAGUE QUALITY FACTOR (STRONGER)
+#    Use actual League Strength spread across the current pool and
+#    map it to a wide 0.75–1.25 range (±25% difference).
+#
+#    - Top leagues (e.g. 90–100) get close to 1.25
+#    - Middle leagues (~60) around 1.0
+#    - Very weak leagues down near 0.75
 # -----------------------------
-league_pct = df_f["League Strength"].rank(pct=True)
-df_f["League Quality Factor"] = 0.90 + 0.20 * league_pct
+ls = df_f["League Strength"].fillna(50.0).astype(float)
+ls_min, ls_max = ls.min(), ls.max()
+
+if ls_max > ls_min:
+    ls_scaled = (ls - ls_min) / (ls_max - ls_min)   # 0..1 within filtered pool
+else:
+    ls_scaled = pd.Series(0.5, index=df_f.index)    # fallback
+
+# Strong effect: 0.75–1.25
+df_f["League Quality Factor"] = 0.75 + 0.50 * ls_scaled   # 0.75 .. 1.25
 
 # -----------------------------
 # 6. RAW IMPACT SCORE
@@ -702,6 +713,7 @@ def top_impact(df_in: pd.DataFrame, n: int, round_to: int = 0) -> pd.DataFrame:
 # ===================================================================
 # --------------------  END IMPACT SCORE BLOCK  ---------------------
 # ===================================================================
+
 
 
 
