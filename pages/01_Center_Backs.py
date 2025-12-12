@@ -574,7 +574,7 @@ import unicodedata
 from pathlib import Path
 
 import requests
-from matplotlib import pyplot as plt
+import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle, Circle
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 
@@ -662,7 +662,7 @@ def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataF
         df_f["Team Context Factor"]
     )
 
-    # --- league factor powered by beta slider ---
+    # --- league factor powered by beta slider (same beta as roles) ---
     ls_norm = df_f["League Strength"].fillna(50.0).astype(float) / 100.0
     ls_norm = np.clip(ls_norm, 0.30, 1.00)
 
@@ -691,9 +691,9 @@ df_f = ensure_cb_impact_metrics(df_f, selected_file)
 # 2. RANKING METRIC SELECTOR + TOP TABLE
 # ---------------------------------------------------------
 
+# single Impact label, we’ll switch between league / no-league with a checkbox
 RANK_OPTIONS = {
-    "Impact Score (with league quality)": "Impact Score",
-    "Impact Score (no league quality)": "Impact Score (no league)",
+    "Impact Score": "Impact Score",
     "Aerial Score": "Aerial Score",
     "Ground Score": "Ground Score",
     "Retention Score": "Retention Score",
@@ -708,7 +708,24 @@ rank_label = st.selectbox(
     index=0,
     key=f"cb_rank_metric_{selected_file}",
 )
+
+use_league_for_impact = st.checkbox(
+    "Include league quality in Impact ranking",
+    value=True,
+    key=f"cb_impact_league_{selected_file}",
+)
+
+# Age filter that only changes the ranking list / image,
+# not the underlying pool or percentiles
+max_rank_age = st.number_input(
+    "Max age in ranking list/image",
+    min_value=16, max_value=40, value=23, step=1,
+    key=f"cb_rank_age_max_{selected_file}",
+)
+
 rank_col = RANK_OPTIONS[rank_label]
+if rank_label == "Impact Score" and not use_league_for_impact:
+    rank_col = "Impact Score (no league)"
 
 def top_generic(df_in: pd.DataFrame, column: str, head_n: int, round_to: int = 0) -> pd.DataFrame:
     ranked = df_in.dropna(subset=[column]).sort_values(column, ascending=False).copy()
@@ -1004,7 +1021,7 @@ def get_team_badge(row: pd.Series):
 
 
 # ---------------------------------------------------------
-# 5. CIES-STYLE RANKING IMAGE – refined layout
+# 5. CIES-STYLE RANKING IMAGE – refined layout / spacing
 # ---------------------------------------------------------
 
 def make_ranking_image(
@@ -1018,7 +1035,7 @@ def make_ranking_image(
       - 3-line title at top
       - perfectly circular rank markers
       - larger left-aligned flags/crests (no white boxes)
-      - even spacing above and below the table
+      - header separated cleanly from first row
     """
     df_top = df_rank.head(10).copy()
     if df_top.empty:
@@ -1026,8 +1043,8 @@ def make_ranking_image(
 
     N = len(df_top)
     ROW_H    = 0.82
-    HEADER_H = 1.05
-    FOOT_H   = 1.6
+    HEADER_H = 1.40   # more space below titles
+    FOOT_H   = 0.9    # less bottom white
     TOTAL_H  = HEADER_H + N * ROW_H + FOOT_H
 
     FIG_W = 8.0
@@ -1058,7 +1075,7 @@ def make_ranking_image(
     BAR_W    = 0.28
     BAR_H    = 0.18
 
-    base_y = TOTAL_H - HEADER_H - 0.10
+    base_y = TOTAL_H - HEADER_H   # first-row centre
 
     for i, (_, row) in enumerate(df_top.iterrows()):
         y_center = base_y - i * ROW_H
@@ -1095,11 +1112,11 @@ def make_ranking_image(
             zorder=4,
         )
 
-        # badge / flag
+        # badge / flag – slightly bigger
         badge = get_team_badge(row)
         if badge is not None:
             crest_x_data = 0.11
-            im = OffsetImage(badge, zoom=0.40)
+            im = OffsetImage(badge, zoom=0.46)
             ab = AnnotationBbox(im, (crest_x_data, y_center), frameon=False, zorder=4)
             ax.add_artist(ab)
 
@@ -1160,16 +1177,24 @@ def make_ranking_image(
 # 6. STREAMLIT OUTPUT – table + image with editable title
 # ---------------------------------------------------------
 
-df_rank = df_f.dropna(subset=[rank_col]).sort_values(rank_col, ascending=False).copy()
-df_rank[rank_col] = df_rank[rank_col].round(round_to)
+# full ranking pool (already filtered by sidebar)
+df_rank_full = df_f.dropna(subset=[rank_col]).sort_values(rank_col, ascending=False).copy()
+df_rank_full[rank_col] = df_rank_full[rank_col].round(round_to)
+
+# age-filtered view for display only
+df_rank_view = df_rank_full[df_rank_full["Age"] <= max_rank_age].copy()
 
 st.header("📊 CB Impact / Profile Rankings (0–100)")
-st.caption(f"Sorted by: **{rank_label}**")
+st.caption(f"Sorted by: **{rank_label}** "
+           f"({'with' if (rank_label != 'Impact Score' or use_league_for_impact) else 'no'} league quality)")
 
-st.dataframe(
-    top_generic(df_rank, rank_col, top_n, round_to),
-    use_container_width=True,
-)
+if df_rank_view.empty:
+    st.warning("No players match the age/ranking filters for the current pool.")
+else:
+    st.dataframe(
+        top_generic(df_rank_view, rank_col, top_n, round_to),
+        use_container_width=True,
+    )
 
 st.subheader("🖼 Exportable CIES-style ranking image")
 
@@ -1183,7 +1208,7 @@ t3 = st.text_input("Title line 3",
                    "GLOBAL SCOUTING INDEX 2025",
                    key=f"cb_title3_{selected_file}")
 
-img_bytes = make_ranking_image(df_rank, rank_col, [t1, t2, t3])
+img_bytes = make_ranking_image(df_rank_view, rank_col, [t1, t2, t3])
 
 if img_bytes:
     st.image(img_bytes, use_column_width=True)
