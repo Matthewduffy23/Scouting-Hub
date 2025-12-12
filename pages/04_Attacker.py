@@ -966,6 +966,38 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 tmask = tmask | tser.str.contains(t, na=False)
             df_filtered = df_filtered[tmask]
 
+    # ---------- NEW: optional minimum role score filters ----------
+    try:
+        role_names_filter = list(ROLES.keys())
+    except Exception:
+        role_names_filter = ["Goal Threat","Playmaker","Ball Carrier","Modern Winger","Traditional Winger","Protagonist"]
+
+    ROLE_SCORE_COLS_FILTER = [f"{name} Score" for name in role_names_filter if f"{name} Score" in df_filtered.columns]
+
+    use_role_filters = st.checkbox(
+        "Filter by minimum role score(s)",
+        value=False,
+        key="att_role_filter_toggle"
+    )
+
+    if use_role_filters and ROLE_SCORE_COLS_FILTER:
+        st.write("Set minimum scores (0–99). Any slider > 0 will filter that role.")
+        minima = {}
+        for col in ROLE_SCORE_COLS_FILTER:
+            pretty = col.replace("Score", "").strip()
+            minima[col] = st.slider(
+                f"Min {pretty}",
+                0, 99, 0, 1,
+                key=f"att_min_{_norm(col)}"
+            )
+
+        # apply minima
+        for col, thr in minima.items():
+            if thr > 0:
+                df_filtered[col] = pd.to_numeric(df_filtered[col], errors="coerce")
+                df_filtered = df_filtered[df_filtered[col] >= thr]
+    # ---------- END NEW BLOCK ----------
+
     # ---- data check ----
     all_col = "All In Score"
     if all_col not in df_view.columns:
