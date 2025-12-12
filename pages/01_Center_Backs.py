@@ -566,7 +566,8 @@ df_f["Pass Ratio Percentile"] = (
 
 # ===================================================================
 #  CB IMPACT FEATURE BLOCK – METRICS + CRESTS + CIES-STYLE IMAGE
-#  + Optional "Compare vs whole pool" view (league display filter)
+#  (League-weighting toggle now affects ALL ranking scores)
+#  + Toggle to show/hide League Strength column in the table
 # ===================================================================
 
 import io
@@ -574,15 +575,18 @@ import re
 import unicodedata
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
 import requests
+import streamlit as st
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 
+
 # ---------------------------------------------------------
 # 0) REMOTE PNG LOADER (logos + special flags)
 # ---------------------------------------------------------
-
 @st.cache_data(show_spinner=False)
 def load_remote_png(url: str):
     try:
@@ -592,15 +596,26 @@ def load_remote_png(url: str):
     except Exception:
         return None
 
-# ---------------------------------------------------------
-# 1) ENSURE IMPACT / BUCKET SCORES EXIST
-# ---------------------------------------------------------
 
+# ---------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------
+def scale_0_100(s: pd.Series, default: float = 50.0) -> pd.Series:
+    lo, hi = s.min(), s.max()
+    if pd.notna(lo) and pd.notna(hi) and hi > lo:
+        return 100.0 * (s - lo) / (hi - lo)
+    return pd.Series(default, index=s.index, dtype=float)
+
+
+# ---------------------------------------------------------
+# 1) ENSURE IMPACT / BUCKET SCORES EXIST (+ League Factor)
+# ---------------------------------------------------------
 def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataFrame:
     required_cols = [
         "Impact Score", "Impact Score (no league)",
         "Aerial Score", "Ground Score", "Retention Score",
         "Carrying Score", "Playmaking Score", "Positioning Score",
+        "League Factor",
     ]
     if all(c in df_f.columns for c in required_cols):
         return df_f
@@ -608,6 +623,7 @@ def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataF
     def pct(m: str) -> str:
         return f"{m} Percentile"
 
+    # --- bucket scores (0–100 each) ---
     df_f["Aerial Score"] = (
         0.30 * df_f[pct("Aerial duels per 90")] +
         0.70 * df_f[pct("Aerial duels won, %")]
@@ -643,9 +659,11 @@ def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataF
     ]
     df_f["Base CB Score"] = df_f[sub_scores].mean(axis=1)
 
+    # --- minutes factor (0.90–1.10 by league percentile) ---
     minutes_pct = df_f.groupby("League")["Minutes played"].rank(pct=True)
     df_f["Minutes Factor"] = 0.90 + 0.20 * minutes_pct
 
+    # --- team context factor (0.90–1.10; boost good players in weak teams) ---
     league_avg = df_f.groupby("League")["Base CB Score"].transform("mean")
     team_avg = df_f.groupby(["League", "Team"])["Base CB Score"].transform("mean")
 
@@ -656,12 +674,14 @@ def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataF
     df_f["Team Context Factor"] = np.clip(raw_team_factor, 0.90, 1.10)
     df_f["Team Context Factor"] = df_f["Team Context Factor"].fillna(1.0)
 
+    # --- impact before league quality ---
     df_f["Raw Impact No League"] = (
         df_f["Base CB Score"] *
         df_f["Minutes Factor"] *
         df_f["Team Context Factor"]
     )
 
+    # --- league factor powered by beta slider ---
     ls_norm = df_f["League Strength"].fillna(50.0).astype(float) / 100.0
     ls_norm = np.clip(ls_norm, 0.30, 1.00)
 
@@ -671,23 +691,21 @@ def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataF
     df_f["League Factor"] = ls_norm ** gamma
     df_f["Raw Impact Score"] = df_f["Raw Impact No League"] * df_f["League Factor"]
 
-    def scale_0_100(s: pd.Series, default: float = 50.0) -> pd.Series:
-        lo, hi = s.min(), s.max()
-        if pd.notna(lo) and pd.notna(hi) and hi > lo:
-            return 100.0 * (s - lo) / (hi - lo)
-        return pd.Series(default, index=s.index, dtype=float)
-
+    # --- scale to 0–100 ---
     df_f["Impact Score"] = scale_0_100(df_f["Raw Impact Score"]).astype(float)
     df_f["Impact Score (no league)"] = scale_0_100(df_f["Raw Impact No League"]).astype(float)
 
     return df_f
 
+
 df_f = ensure_cb_impact_metrics(df_f, selected_file)
+
 
 # ---------------------------------------------------------
 # 2) RANKING METRIC SELECTOR + TOP TABLE
+#    + League-weighting toggle affects ALL metrics
+#    + Toggle for showing League Strength column
 # ---------------------------------------------------------
-
 RANK_OPTIONS = {
     "Impact Score": "Impact Score",
     "Aerial Score": "Aerial Score",
@@ -705,10 +723,16 @@ rank_label = st.selectbox(
     key=f"cb_rank_metric_{selected_file}",
 )
 
-use_league_for_impact = st.checkbox(
-    "Include league quality in Impact ranking",
+use_league_weighting = st.checkbox(
+    "Apply league strength weighting (affects ALL ranking metrics)",
     value=True,
-    key=f"cb_impact_league_{selected_file}",
+    key=f"cb_league_weight_all_{selected_file}",
+)
+
+show_league_strength_col = st.checkbox(
+    "Show League Strength in table",
+    value=True,
+    key=f"cb_show_ls_{selected_file}",
 )
 
 max_rank_age = st.number_input(
@@ -717,25 +741,66 @@ max_rank_age = st.number_input(
     key=f"cb_rank_age_max_{selected_file}",
 )
 
-rank_col = RANK_OPTIONS[rank_label]
-if rank_label == "Impact Score" and not use_league_for_impact:
-    rank_col = "Impact Score (no league)"
+base_rank_col = RANK_OPTIONS[rank_label]
 
-def top_generic(df_in: pd.DataFrame, column: str, head_n: int, round_to: int = 0) -> pd.DataFrame:
+# Build weighted versions of ALL metrics (rescaled 0–100 within the pool)
+# - For Impact: use existing raw components
+# - For sub-scores: multiply by League Factor, then rescale 0–100
+WEIGHTED_COL_MAP = {}
+if use_league_weighting:
+    df_f["_Impact_Weighted_View"] = df_f["Impact Score"]  # already league-weighted by construction
+    df_f["_Impact_Unweighted_View"] = df_f["Impact Score (no league)"]
+
+    for c in ["Aerial Score", "Ground Score", "Retention Score", "Carrying Score", "Playmaking Score", "Positioning Score"]:
+        df_f[f"_{c}_Weighted_View"] = scale_0_100(df_f[c].astype(float) * df_f["League Factor"].astype(float))
+
+    WEIGHTED_COL_MAP = {
+        "Impact Score": "_Impact_Weighted_View",
+        "Aerial Score": "_Aerial Score_Weighted_View",
+        "Ground Score": "_Ground Score_Weighted_View",
+        "Retention Score": "_Retention Score_Weighted_View",
+        "Carrying Score": "_Carrying Score_Weighted_View",
+        "Playmaking Score": "_Playmaking Score_Weighted_View",
+        "Positioning Score": "_Positioning Score_Weighted_View",
+    }
+else:
+    df_f["_Impact_Weighted_View"] = df_f["Impact Score"]  # still exists, but we won't use it
+    df_f["_Impact_Unweighted_View"] = df_f["Impact Score (no league)"]
+    for c in ["Aerial Score", "Ground Score", "Retention Score", "Carrying Score", "Playmaking Score", "Positioning Score"]:
+        df_f[f"_{c}_Weighted_View"] = df_f[c].astype(float)
+
+    WEIGHTED_COL_MAP = {
+        "Impact Score": "_Impact_Unweighted_View",
+        "Aerial Score": "_Aerial Score_Weighted_View",
+        "Ground Score": "_Ground Score_Weighted_View",
+        "Retention Score": "_Retention Score_Weighted_View",
+        "Carrying Score": "_Carrying Score_Weighted_View",
+        "Playmaking Score": "_Playmaking Score_Weighted_View",
+        "Positioning Score": "_Positioning Score_Weighted_View",
+    }
+
+rank_col = WEIGHTED_COL_MAP[rank_label]
+
+
+def top_generic(df_in: pd.DataFrame, column: str, head_n: int, round_to: int = 0, show_ls: bool = True) -> pd.DataFrame:
     ranked = df_in.dropna(subset=[column]).sort_values(column, ascending=False).copy()
     ranked[column] = ranked[column].round(round_to)
 
     base_cols = [
         "Player", "Team", "League", "Position", "Age",
-        "Minutes played", "League Strength",
-        "Impact Score", "Impact Score (no league)",
-        "Aerial Score", "Ground Score", "Retention Score",
-        "Carrying Score", "Playmaking Score", "Positioning Score",
-        column,
+        "Minutes played",
     ]
+    if show_ls and "League Strength" in ranked.columns:
+        base_cols.append("League Strength")
 
-    seen, cols = set(), []
-    for c in base_cols:
+    # show the chosen metric + (optionally) Impact references
+    tail_cols = [column]
+    if "Impact Score" in ranked.columns:
+        tail_cols += ["Impact Score", "Impact Score (no league)"]
+
+    cols = []
+    seen = set()
+    for c in base_cols + tail_cols:
         if c in ranked.columns and c not in seen:
             cols.append(c)
             seen.add(c)
@@ -744,10 +809,10 @@ def top_generic(df_in: pd.DataFrame, column: str, head_n: int, round_to: int = 0
     out.index = np.arange(1, len(out) + 1)
     return out
 
+
 # ---------------------------------------------------------
 # 3) FLAGS (Twemoji) + UK HOME NATIONS FIX
 # ---------------------------------------------------------
-
 _CC_MAP = {
     "england": "FLAG_ENG",
     "scotland": "FLAG_SCT",
@@ -816,21 +881,18 @@ def birth_country_flag_image(birth_country: str | None):
     key = _CC_MAP.get(_norm_country(birth_country))
     if not key:
         return None
-
     if key in _TWEMOJI_SPECIAL:
         return load_twemoji_png_by_code(_TWEMOJI_SPECIAL[key])
     if key in _SPECIAL_FLAG_URLS:
         return load_remote_png(_SPECIAL_FLAG_URLS[key])
-
     if isinstance(key, str) and len(key) == 2:
         return load_twemoji_png_by_code(_twemoji_code_from_cc(key))
-
     return None
+
 
 # ---------------------------------------------------------
 # 4) CREST / BADGE PIPELINE
 # ---------------------------------------------------------
-
 BADGE_DIRS = [
     Path(__file__).resolve().parent / "badges",
     Path(__file__).resolve().parent / "crests",
@@ -972,63 +1034,38 @@ def get_team_badge(row: pd.Series):
     birth = row.get("Birth country") or row.get("Birth Country") or row.get("Nationality")
     return birth_country_flag_image(birth)
 
+
 # ---------------------------------------------------------
-# 5) RANKING IMAGE (FOOTER SPACING + MOVED UP, DIVIDER MOVED UP)
+# 5) RANKING IMAGE + FOOTER (brief, readable, 3–4 lines)
 # ---------------------------------------------------------
+def _footer_lines_for_metric(metric_label: str, league_on: bool) -> list[str]:
+    # brief + understandable for non-data users
+    league_line = "League strength is applied (stronger leagues slightly boost scores)." if league_on \
+                  else "League strength is not applied (pure performance only)."
 
-def _footer_lines_for_metric(metric_col: str, use_league_quality: bool) -> list[str]:
-    m = (metric_col or "").lower()
-
-    if "playmaking score" in m:
+    if metric_label == "Impact Score":
         return [
-            "Playmaking Score: forward passing impact & progression.",
-            "Blends progressive passes/90 (50%) + forward passes/90 (25%) + final-third passes/90 (25%).",
-            "Percentile-based within the pool, then rescaled to 0–100.",
-        ]
-    if "aerial score" in m:
-        return [
-            "Aerial Score: strength in aerial duels.",
-            "Blends aerial duels/90 (30%) + aerial win% (70%).",
-            "Percentile-based within the pool, then rescaled to 0–100.",
-        ]
-    if "ground score" in m:
-        return [
-            "Ground Score: 1v1 defending on the floor.",
-            "Blends defensive duels/90 (30%) + defensive win% (70%).",
-            "Percentile-based within the pool, then rescaled to 0–100.",
-        ]
-    if "retention score" in m:
-        return [
-            "Retention Score: ball security & clean passing.",
-            "Equal blend (25% each): pass%, forward pass%, progressive pass%, long pass%.",
-            "Percentile-based within the pool, then rescaled to 0–100.",
-        ]
-    if "carrying score" in m:
-        return [
-            "Carrying Score: moving the ball with runs & dribbles.",
-            "Blends dribbles/90 (40%) + dribble success% (20%) + progressive runs/90 (40%).",
-            "Percentile-based within the pool, then rescaled to 0–100.",
-        ]
-    if "positioning score" in m:
-        return [
-            "Positioning Score: reading danger & blocking threats.",
-            "Blends PAdj interceptions (70%) + shots blocked/90 (30%).",
-            "Percentile-based within the pool, then rescaled to 0–100.",
+            "Impact Score blends 6 areas: Aerial, Ground, Retention, Carrying, Playmaking, Positioning.",
+            "Then adjusted for minutes played and team context (vs league average).",
+            league_line,
+            "Scores are rescaled to 0–100 within the selected pool.",
         ]
 
-    league_phrase = "with league-strength weighting" if use_league_quality else "without league-strength weighting"
+    # for single-metric rankings
     return [
-        "Impact Score: combines Aerial, Ground, Retention, Carrying, Playmaking and Positioning.",
-        "Averaged into a base score, then adjusted for minutes played and team context vs league.",
-        f"Final score is {league_phrase} and rescaled to 0–100 within the selected pool.",
+        f"{metric_label} reflects that single skill area (no blending).",
+        league_line,
+        "Scores are rescaled to 0–100 within the selected pool.",
     ]
+
 
 def make_ranking_image(
     df_rank: pd.DataFrame,
     metric_col: str,
+    metric_label: str,
     title_lines: list[str],
+    use_league_quality: bool,
     brand_logo_url: str | None = None,
-    use_league_quality: bool = True,
 ) -> bytes:
     df_top = df_rank.head(10).copy()
     if df_top.empty:
@@ -1037,7 +1074,7 @@ def make_ranking_image(
     N        = len(df_top)
     ROW_H    = 0.82
     HEADER_H = 1.70
-    FOOT_H   = 0.65
+    FOOT_H   = 0.70
     TOTAL_H  = HEADER_H + N * ROW_H + FOOT_H
 
     fig, ax = plt.subplots(figsize=(8.0, TOTAL_H), dpi=220)
@@ -1068,7 +1105,7 @@ def make_ranking_image(
     # Footer alignment anchors: from left edge of flag to right edge of score area
     crest_center_x = 0.112
     crest_zoom = 0.50
-    crest_half_w_axes = 0.030  # tuned for this layout
+    crest_half_w_axes = 0.030
     footer_x_left  = crest_center_x - crest_half_w_axes
     footer_x_right = BAR_LEFT + BAR_W + 0.07
 
@@ -1078,7 +1115,7 @@ def make_ranking_image(
         if i % 2 == 0:
             ax.add_patch(Rectangle((0, y - ROW_H/2), 1, ROW_H, color="#F7F7F7", zorder=1))
 
-        # PERFECT CIRCLE marker (scatter uses points; never becomes oval)
+        # PERFECT circle (scatter uses points => never oval)
         ax.scatter([0.042], [y], s=420, facecolor="#F3F3F3",
                    edgecolor="#C0C0C0", linewidths=0.8, zorder=3)
         ax.text(0.042, y, str(i+1), fontsize=9, fontweight="bold",
@@ -1110,15 +1147,16 @@ def make_ranking_image(
         ax.text(BAR_LEFT + BAR_W + 0.02, y, f"{float(row[metric_col]):.1f}",
                 fontsize=14, fontweight="bold", ha="left", va="center", zorder=4)
 
-    # ---------- FOOTER ----------
-    footer_lines = _footer_lines_for_metric(metric_col, use_league_quality)[:3]
+    # ---------- FOOTER (brief, readable, spaced) ----------
+    footer_lines = _footer_lines_for_metric(metric_label, use_league_quality)
 
-    divider_y = 0.80
+    # Controls where the line above footer sits on Y-axis (data coords):
+    divider_y = 0.86  # <-- tweak this up/down to move the divider line
     ax.plot([footer_x_left, footer_x_right], [divider_y]*2, color="#E8E8E8", lw=0.9, zorder=2)
 
-    first_line_y = 0.48
-    line_gap = 0.16
-    for j, line in enumerate(footer_lines):
+    first_line_y = 0.60
+    line_gap = 0.18  # bigger spacing
+    for j, line in enumerate(footer_lines[:4]):
         ax.text(
             footer_x_left,
             first_line_y - j * line_gap,
@@ -1130,7 +1168,6 @@ def make_ranking_image(
             zorder=4,
         )
 
-    # Optional brand/logo bottom-right
     if brand_logo_url:
         brand_img = load_remote_png(brand_logo_url)
         if brand_img is not None:
@@ -1149,66 +1186,28 @@ def make_ranking_image(
     buf.seek(0)
     return buf.getvalue()
 
+
 # ---------------------------------------------------------
-# 6) STREAMLIT OUTPUT (+ league display filter vs whole pool)
+# 6) STREAMLIT OUTPUT
 # ---------------------------------------------------------
-
-# NEW: choose whether to "compare against whole pool" but only DISPLAY a league
-compare_whole_pool = st.checkbox(
-    "Compare against whole pool (display selected league only)",
-    value=True,
-    key=f"cb_compare_whole_pool_{selected_file}",
-)
-
-# NEW: league to display (only affects DISPLAY when compare_whole_pool=True)
-all_leagues = sorted([l for l in df_f["League"].dropna().unique().tolist() if str(l).strip() != ""])
-league_display = st.selectbox(
-    "League to display (optional)",
-    options=["All leagues"] + all_leagues,
-    index=0,
-    key=f"cb_display_league_{selected_file}",
-)
-
-# Build ranking base:
-# - If compare_whole_pool=True: rank on full df (so percentiles/rescaling reflect the whole pool),
-#   then filter to a league for display.
-# - Else: filter to league first, then rank within that league subset.
-df_base = df_f.copy()
-
-# Apply age filter to BOTH modes (because you asked ranking list/image max age)
-df_base = df_base[df_base["Age"] <= max_rank_age].copy()
-
-# Decide ranking frame
-if compare_whole_pool:
-    # Rank against whole pool first
-    df_rank_full = df_base.dropna(subset=[rank_col]).sort_values(rank_col, ascending=False).copy()
-    df_rank_full[rank_col] = df_rank_full[rank_col].round(round_to)
-
-    # Then optionally display a specific league
-    if league_display != "All leagues":
-        df_rank_view = df_rank_full[df_rank_full["League"] == league_display].copy()
-    else:
-        df_rank_view = df_rank_full.copy()
-else:
-    # Filter first, then rank within selected subset
-    if league_display != "All leagues":
-        df_base = df_base[df_base["League"] == league_display].copy()
-
-    df_rank_view = df_base.dropna(subset=[rank_col]).sort_values(rank_col, ascending=False).copy()
-    df_rank_view[rank_col] = df_rank_view[rank_col].round(round_to)
+df_rank_full = df_f.dropna(subset=[rank_col]).sort_values(rank_col, ascending=False).copy()
+df_rank_full[rank_col] = df_rank_full[rank_col].round(round_to)
+df_rank_view = df_rank_full[df_rank_full["Age"] <= max_rank_age].copy()
 
 st.header("📊 CB Impact / Profile Rankings (0–100)")
-pool_note = "whole pool" if compare_whole_pool else "displayed pool"
-league_note = "All leagues" if league_display == "All leagues" else league_display
 st.caption(
-    f"Sorted by: **{rank_label}** | League weighting: **{'ON' if (rank_label != 'Impact Score' or use_league_for_impact) else 'OFF'}** "
-    f"| Compare vs: **{pool_note}** | Display: **{league_note}**"
+    f"Sorted by: **{rank_label}** | "
+    f"League weighting: **{'ON' if use_league_weighting else 'OFF'}** | "
+    f"Display: **{'League Strength shown' if show_league_strength_col else 'League Strength hidden'}**"
 )
 
 if df_rank_view.empty:
-    st.warning("No players match the current filters for the selected view.")
+    st.warning("No players match the age/ranking filters for the current pool.")
 else:
-    st.dataframe(top_generic(df_rank_view, rank_col, top_n, round_to), use_container_width=True)
+    st.dataframe(
+        top_generic(df_rank_view, rank_col, top_n, round_to, show_ls=show_league_strength_col),
+        use_container_width=True
+    )
 
 st.subheader("🖼 Exportable CIES-style ranking image")
 
@@ -1220,10 +1219,11 @@ brand_logo_url = "https://image.pitchbook.com/1xOUzrEhnsKrJbNbN8Asf3LND2u1605464
 
 img_bytes = make_ranking_image(
     df_rank_view,
-    rank_col,
-    [t1, t2, t3],
+    metric_col=rank_col,
+    metric_label=rank_label,
+    title_lines=[t1, t2, t3],
+    use_league_quality=use_league_weighting,
     brand_logo_url=brand_logo_url,
-    use_league_quality=use_league_for_impact,
 )
 
 if img_bytes:
