@@ -825,15 +825,6 @@ def _get_foot(row) -> str:
     return ""
 
 # ----------------- FULLBACK VERSION -----------------
-# Toggle-able pill set (default three are FB roles):
-#   - Build Up FB
-#   - Attacking FB
-#   - Defensive FB
-# Optional toggles to swap in:
-#   - Wide Creator
-#   - Wide Carrier
-#   - PL Profile  (included when columns exist)
-
 # Label → (column_name, pretty_label)
 _FB_ROLE_MAP = [
     ("Build Up FB Score", "Build Up FB"),
@@ -978,6 +969,33 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
                 mask_any = mask_any | df_filtered[c].astype(str).str.lower().str.contains(s, na=False)
             df_filtered = df_filtered[mask_any]
 
+    # ---------- NEW: optional minimum role score filters ----------
+    ROLE_SCORE_COLS_FILTER = [col for col, _ in _FB_ROLE_MAP if col in df_filtered.columns]
+
+    use_role_filters = st.checkbox(
+        "Filter by minimum role score(s)",
+        value=False,
+        key="fb_role_filter_toggle"
+    )
+
+    if use_role_filters and ROLE_SCORE_COLS_FILTER:
+        st.write("Set minimum scores (0–99). Any slider > 0 will filter that role.")
+        minima = {}
+        for col in ROLE_SCORE_COLS_FILTER:
+            pretty = col.replace("Score", "").strip()
+            minima[col] = st.slider(
+                f"Min {pretty}",
+                0, 99, 0, 1,
+                key=f"fb_min_{_norm(col)}"
+            )
+
+        # apply minima
+        for col, thr in minima.items():
+            if thr > 0:
+                df_filtered[col] = pd.to_numeric(df_filtered[col], errors="coerce")
+                df_filtered = df_filtered[df_filtered[col] >= thr]
+    # ---------- END NEW BLOCK ----------
+
     # ---- data check ----
     all_col = "All In Score"
     if all_col not in df_view.columns:
@@ -987,7 +1005,6 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
     if df_filtered.empty:
         st.info("No players match the selected filters.")
         return
-
 
     # ---- Sorting
     _sort_col = "__sort_val"
