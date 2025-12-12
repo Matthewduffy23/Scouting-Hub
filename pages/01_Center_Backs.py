@@ -727,15 +727,22 @@ def top_generic(df_in: pd.DataFrame, column: str, head_n: int, round_to: int = 0
     ranked = df_in.dropna(subset=[column]).sort_values(column, ascending=False).copy()
     ranked[column] = ranked[column].round(round_to)
 
-    cols = [
+    base_cols = [
         "Player", "Team", "League", "Position", "Age",
         "Minutes played", "League Strength",
         "Impact Score", "Impact Score (no league)",
         "Aerial Score", "Ground Score", "Retention Score",
         "Carrying Score", "Playmaking Score", "Positioning Score",
-        column,
+        column,  # ranking metric (may already be in the list)
     ]
-    cols = [c for c in cols if c in ranked.columns]
+
+    # Keep order, drop duplicates, and ensure column exists in df
+    seen = set()
+    cols = []
+    for c in base_cols:
+        if c in ranked.columns and c not in seen:
+            cols.append(c)
+            seen.add(c)
 
     out = ranked[cols].head(head_n).reset_index(drop=True)
     out.index = np.arange(1, len(out) + 1)
