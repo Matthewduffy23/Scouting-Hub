@@ -571,10 +571,8 @@ df_f["Pass Ratio Percentile"] = (
 import io, re, requests
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle, Circle
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
-
 
 # ---------------------------------------------------------
 # 1. ENSURE IMPACT / BUCKET SCORES EXIST
@@ -583,8 +581,8 @@ from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataFrame:
     """
     Compute CB bucket scores + Impact scores if missing.
-    Safe to call multiple times.
     Requires all '<metric> Percentile' columns & 'League Strength'.
+    Safe to call multiple times.
     """
     required_cols = [
         "Impact Score", "Impact Score (no league)",
@@ -597,7 +595,7 @@ def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataF
     def pct(m: str) -> str:
         return f"{m} Percentile"
 
-    # --- Bucket scores ---
+    # --- Bucket scores (0–100 each) ---
     df_f["Aerial Score"] = (
         0.30 * df_f[pct("Aerial duels per 90")] +
         0.70 * df_f[pct("Aerial duels won, %")]
@@ -639,11 +637,11 @@ def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataF
 
     df_f["Base CB Score"] = df_f[sub_scores].mean(axis=1)
 
-    # --- Minutes factor (0.90–1.10, by league percentile) ---
+    # --- Minutes factor (0.90–1.10 by league percentile) ---
     minutes_pct = df_f.groupby("League")["Minutes played"].rank(pct=True)
     df_f["Minutes Factor"] = 0.90 + 0.20 * minutes_pct
 
-    # --- Team context factor (0.90–1.10; boost good players in weak teams) ---
+    # --- Team context factor (0.90–1.10; boost good players in weaker sides) ---
     league_avg = df_f.groupby("League")["Base CB Score"].transform("mean")
     team_avg   = df_f.groupby(["League", "Team"])["Base CB Score"].transform("mean")
 
@@ -661,7 +659,7 @@ def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataF
         df_f["Team Context Factor"]
     )
 
-    # --- League factor (power function of league strength, tuned by beta slider) ---
+    # --- League factor: power of league strength tuned by beta slider ---
     ls_norm = df_f["League Strength"].fillna(50.0).astype(float) / 100.0
     ls_norm = np.clip(ls_norm, 0.30, 1.00)
 
@@ -736,29 +734,30 @@ def top_generic(df_in: pd.DataFrame, column: str, head_n: int, round_to: int = 0
 
 
 # ---------------------------------------------------------
-# 3. COUNTRY → FLAG EMOJI (uses COUNTRY_TO_CC + _norm from later in file)
+# 3. SAFE FLAG FROM COUNTRY (uses COUNTRY_TO_CC + _norm if available)
 # ---------------------------------------------------------
 
-def country_to_flag_emoji(country_name: str | None) -> str:
-    """Convert birth-country string to emoji flag using COUNTRY_TO_CC + _norm."""
+def safe_flag(country_name: str | None) -> str:
+    """
+    Always return a SINGLE emoji flag or ''.
+    Never long text (prevents Matplotlib from stretching the figure).
+    """
     if not country_name:
         return ""
-    if "COUNTRY_TO_CC" not in globals() or "_norm" not in globals():
-        # fallback: just show text
-        return str(country_name).upper()
-    n = _norm(country_name)
-    cc = COUNTRY_TO_CC.get(n)
-    if not cc:
-        return str(country_name).upper()
-    if len(cc) == 2:
-        # build regional-indicator flag emoji
-        return "".join(chr(0x1F1E6 + (ord(c.upper()) - ord("A"))) for c in cc)
-    # special codes like 'eng','sct','wls'
-    return cc.upper()
+    if "COUNTRY_TO_CC" in globals() and "_norm" in globals():
+        n = _norm(country_name)
+        cc = COUNTRY_TO_CC.get(n)
+        if cc and len(cc) == 2:
+            try:
+                return "".join(chr(0x1F1E6 + (ord(c.upper()) - ord("A"))) for c in cc)
+            except Exception:
+                return ""
+    return ""
 
 
 # ---------------------------------------------------------
-# 4. TEAM CREST / BADGE SYSTEM
+# 4. CREST / BADGE PIPELINE
+#    Local PNG → Wikipedia → PlaymakerStats → Flag
 # ---------------------------------------------------------
 
 BADGE_DIRS = [
@@ -769,8 +768,7 @@ for d in BADGE_DIRS:
     d.mkdir(exist_ok=True)
 
 def _clean_filename(name: str) -> str:
-    name = re.sub(r"[^a-zA-Z0-9]+", "_", (name or "").lower())
-    return name.strip("_")
+    return re.sub(r"[^a-zA-Z0-9]+", "_", (name or "").lower()).strip("_")
 
 @st.cache_data(show_spinner=False)
 def load_local_badge(team: str):
@@ -789,7 +787,7 @@ def load_local_badge(team: str):
 
 @st.cache_data(show_spinner=False)
 def load_wikipedia_badge(team: str):
-    """Fetch crest from Wikipedia PageImages API."""
+    """Fetch crest using Wikipedia PageImages (best-effort)."""
     if not team:
         return None
     try:
@@ -817,14 +815,68 @@ def load_wikipedia_badge(team: str):
     except Exception:
         return None
 
+@st.cache_data(show_spinner=False)
+def load_playmaker_badge(team: str):
+    """
+    Best-effort crest scraper from PlaymakerStats:
+    1) search by team name
+    2) open first /team/ link
+    3) take first logo-like <img> path
+    """
+    if not team:
+        return None
+    try:
+        base = "https://www.playmakerstats.com"
+        # search page
+        sr = requests.get(
+            f"{base}/search.php",
+            params={"search": team},
+            timeout=5,
+        )
+        html = sr.text
+
+        # find first /team/ link
+        m = re.search(r'href="(/team/[^"]+)"', html)
+        if not m:
+            return None
+        team_path = m.group(1)
+        if not team_path.startswith("http"):
+            team_url = base + team_path
+        else:
+            team_url = team_path
+
+        tr = requests.get(team_url, timeout=5)
+        thtml = tr.text
+
+        # look for logo-like <img> src (heuristic)
+        m_img = re.search(r'<img[^>]+src="([^"]+)"[^>]*(?:logo|crest|badge)[^>]*>', thtml, re.IGNORECASE)
+        if not m_img:
+            # fallback: any /img/logos/ path
+            m_img = re.search(r'<img[^>]+src="([^"]+img/logos[^"]+)"', thtml, re.IGNORECASE)
+        if not m_img:
+            return None
+
+        src = m_img.group(1)
+        if src.startswith("//"):
+            src = "https:" + src
+        elif src.startswith("/"):
+            src = base + src
+
+        ir = requests.get(src, timeout=5)
+        ir.raise_for_status()
+        return plt.imread(io.BytesIO(ir.content))
+    except Exception:
+        return None
+
 def get_team_badge(row: pd.Series):
     """
-    Try: local PNG → Wikipedia crest → birth-country flag emoji.
-    You can later extend this with FotMob/Sofascore URLs if you add IDs.
+    Return crest image (numpy array),
+    or a SINGLE emoji flag string,
+    or None.
     """
     team = str(row.get("Team", "")).strip()
 
-    # 1) local PNG in badges/ or crests/
+    # 1) local PNG
     img = load_local_badge(team)
     if img is not None:
         return img
@@ -834,14 +886,23 @@ def get_team_badge(row: pd.Series):
     if img is not None:
         return img
 
-    # 3) fall back to birth country flag
-    birth_country = row.get("Birth country") or row.get("Country") or row.get("Nationality")
-    flag = country_to_flag_emoji(birth_country)
+    # 3) PlaymakerStats crest
+    img = load_playmaker_badge(team)
+    if img is not None:
+        return img
+
+    # 4) birth-country flag
+    birth = (
+        row.get("Birth country")
+        or row.get("Country")
+        or row.get("Nationality")
+    )
+    flag = safe_flag(birth)
     return flag if flag else None
 
 
 # ---------------------------------------------------------
-# 5. CIES-STYLE RANKING IMAGE (fixed size, no whitespace)
+# 5. CIES-STYLE RANKING IMAGE (tight, no vertical whitespace)
 # ---------------------------------------------------------
 
 def make_ranking_image(
@@ -850,28 +911,30 @@ def make_ranking_image(
     title: str = "",
     side_label: str | None = None,
 ) -> bytes:
+    """
+    Generate a ranking image with a CIES-like layout.
+    Uses a data coordinate system 0..(n+1) to avoid insane whitespace.
+    """
     df_top = df_rank.head(10).copy()
     if df_top.empty:
         return b""
 
-    ROW_H    = 0.55
-    TITLE_H  = 0.8
-    FOOT_H   = 0.35
-    fig_w    = 8.0
-    fig_h    = TITLE_H + ROW_H * len(df_top) + FOOT_H
+    n = len(df_top)
+    fig_w = 8.0
+    fig_h = 0.75 * n + 1.4  # visual height only; doesn't affect coords
 
     fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=150)
     ax.set_xlim(0, 1)
-    ax.set_ylim(0, fig_h)
+    ax.set_ylim(0, n + 1)
     ax.axis("off")
 
-    # background
-    ax.add_patch(Rectangle((0, 0), 1, fig_h, color="#F6F6F6"))
+    # Background
+    ax.add_patch(Rectangle((0, 0), 1, n + 1, color="#F6F6F6"))
 
-    # title
+    # Title at top
     if title:
         ax.text(
-            0.02, fig_h - 0.35,
+            0.02, n + 0.7,
             title,
             fontsize=18, fontweight="bold",
             ha="left", va="center",
@@ -880,52 +943,57 @@ def make_ranking_image(
     scores = df_top[metric_col].astype(float)
     mx = scores.max() if scores.notna().any() else 1.0
 
-    y0 = fig_h - TITLE_H
     BAR_X, BAR_W, BAR_H = 0.68, 0.24, 0.18
+    row_h = 1.0
 
     for i, (_, row) in enumerate(df_top.iterrows()):
-        y = y0 - i * ROW_H
+        y = n - i  # from top down: n, n-1, ..., 1
 
-        # stripe
+        # alternating row stripe
         if i % 2 == 0:
-            ax.add_patch(Rectangle((0, y - ROW_H/2), 1, ROW_H, color="white"))
+            ax.add_patch(Rectangle((0, y - row_h / 2), 1, row_h, color="white"))
 
         # rank circle
         ax.add_patch(Circle((0.05, y), 0.035, color="white", ec="#999"))
-        ax.text(0.05, y, str(i+1), fontsize=10, fontweight="bold", ha="center", va="center")
+        ax.text(0.05, y, str(i + 1),
+                fontsize=10, fontweight="bold",
+                ha="center", va="center")
 
-        # crest or flag
+        # badge or flag
         badge = get_team_badge(row)
-        if isinstance(badge, str):  # emoji flag
-            ax.text(0.14, y, badge, fontsize=18, ha="center", va="center")
+        if isinstance(badge, str):  # emoji
+            ax.text(0.14, y, badge,
+                    fontsize=18, ha="center", va="center")
         elif badge is not None:
             im = OffsetImage(badge, zoom=0.33)
             ab = AnnotationBbox(im, (0.14, y), frameon=False)
             ax.add_artist(ab)
 
-        # player + club text
-        ax.text(0.22, y + 0.10, str(row["Player"]).upper(),
-                fontsize=12, fontweight="bold", ha="left", va="center")
+        # player & club text
+        ax.text(0.22, y + 0.12, str(row["Player"]).upper(),
+                fontsize=12, fontweight="bold",
+                ha="left", va="center")
         ax.text(0.22, y - 0.08,
                 f"{row['Team']} ({row['League']})",
-                fontsize=9, color="#777", ha="left", va="center")
+                fontsize=9, color="#777",
+                ha="left", va="center")
 
-        # bar background
-        ax.add_patch(Rectangle((BAR_X, y - BAR_H/2), BAR_W, BAR_H, color="#DDDDDD"))
-        # bar fill
+        # score bar
+        ax.add_patch(Rectangle((BAR_X, y - BAR_H / 2), BAR_W, BAR_H, color="#DDDDDD"))
         frac = float(row[metric_col]) / mx if mx > 0 else 0
-        ax.add_patch(Rectangle((BAR_X, y - BAR_H/2), BAR_W * frac, BAR_H, color="#BBBBBB"))
-        # score text
+        ax.add_patch(Rectangle((BAR_X, y - BAR_H / 2), BAR_W * frac, BAR_H, color="#BBBBBB"))
         ax.text(BAR_X + BAR_W + 0.03, y, f"{row[metric_col]:.1f}",
-                fontsize=12, fontweight="bold", ha="right", va="center")
+                fontsize=12, fontweight="bold",
+                ha="right", va="center")
 
-    # vertical side label
+    # vertical side label (in axes coords so it never affects bbox)
     if side_label:
         ax.text(
-            1.02, fig_h / 2,
+            1.02, 0.5,
             side_label.upper(),
             fontsize=10, color="#666",
-            rotation=90, ha="left", va="center",
+            rotation=90,
+            ha="left", va="center",
             transform=ax.transAxes,
         )
 
@@ -953,7 +1021,8 @@ st.dataframe(
 
 img_title  = f"{rank_label} — Top 10"
 side_label = "U23 CENTRE BACKS"  # customise or set to None
-img_bytes  = make_ranking_image(df_rank, rank_col, title=img_title, side_label=side_label)
+
+img_bytes = make_ranking_image(df_rank, rank_col, title=img_title, side_label=side_label)
 
 st.subheader("🖼 Exportable ranking image")
 if img_bytes:
@@ -966,6 +1035,7 @@ if img_bytes:
     )
 else:
     st.info("No data to generate image.")
+
 
 
 
