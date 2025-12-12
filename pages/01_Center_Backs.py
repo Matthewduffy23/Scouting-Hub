@@ -566,6 +566,9 @@ df_f["Pass Ratio Percentile"] = (
 # ===================================================================
 #  CB IMPACT FEATURE BLOCK – METRICS + CRESTS + CIES-STYLE IMAGE
 #  (Pool defined by sidebar; display filters do NOT change pool)
+#  + Dynamic default titles (metric-aware)
+#  + Optional age display (default OFF)
+#  + Display-only League Strength range filter (0–100)
 # ===================================================================
 
 import io
@@ -741,10 +744,27 @@ display_leagues = st.multiselect(
     key=f"cb_display_leagues_{selected_file}",
 )
 
+# Display-only league strength range (does NOT change pool)
+display_ls_min, display_ls_max = st.slider(
+    "Display league strength range (does not change pool)",
+    min_value=0,
+    max_value=100,
+    value=(0, 100),
+    step=1,
+    key=f"cb_display_ls_range_{selected_file}",
+)
+
 max_rank_age = st.number_input(
     "Max age in displayed list/image (does not change pool)",
     min_value=16, max_value=40, value=23, step=1,
     key=f"cb_display_age_{selected_file}",
+)
+
+# Age shown in the IMAGE (default OFF)
+show_age_in_image = st.checkbox(
+    "Show age in ranking image",
+    value=False,
+    key=f"cb_show_age_img_{selected_file}",
 )
 
 show_league_strength_col = st.checkbox(
@@ -755,28 +775,23 @@ show_league_strength_col = st.checkbox(
 
 # ---------------------------------------------------------
 # 3) BUILD DISPLAY METRIC COLUMNS (VS WHOLE POOL)
-#    This is the critical fix: scaling is computed on the pool first.
+#    Critical: scaling is computed on the pool first.
 # ---------------------------------------------------------
 
 df_pool = df_f.copy()
 
-# Create a pool-scaled "display" value for every metric with and without league factor
-# (Impact already exists in both forms)
 metric_to_display_cols = {}
 
 for label, base_col in RANK_OPTIONS.items():
     if base_col == "Impact Score":
-        # For impact we already have both
         metric_to_display_cols[label] = {
             "no_ls": "Impact Score (no league)",
             "ls": "Impact Score",
         }
     else:
-        # Pool-scaled, no league strength
         col_no = f"{base_col} (Display NL)"
         df_pool[col_no] = scale_0_100(df_pool[base_col])
 
-        # Pool-scaled, league strength applied (multiply then rescale)
         col_ls = f"{base_col} (Display LS)"
         df_pool[col_ls] = scale_0_100(df_pool[base_col] * df_pool["League Factor"])
 
@@ -785,7 +800,6 @@ for label, base_col in RANK_OPTIONS.items():
             "ls": col_ls,
         }
 
-# Choose display metric col based on toggle
 display_metric_col = metric_to_display_cols[rank_label]["ls" if display_with_league_strength else "no_ls"]
 
 # ---------------------------------------------------------
@@ -793,10 +807,12 @@ display_metric_col = metric_to_display_cols[rank_label]["ls" if display_with_lea
 # ---------------------------------------------------------
 
 df_display = df_pool.copy()
-df_display = df_display[df_display["Age"] <= max_rank_age]
-df_display = df_display[df_display["League"].isin(display_leagues)]
+df_display = df_display[
+    (df_display["Age"] <= max_rank_age) &
+    (df_display["League"].isin(display_leagues)) &
+    (df_display["League Strength"].between(display_ls_min, display_ls_max))
+]
 
-# Sort by the display metric (already scaled vs pool)
 df_display = df_display.dropna(subset=[display_metric_col]).sort_values(display_metric_col, ascending=False).copy()
 
 
@@ -817,7 +833,8 @@ def top_generic(df_in: pd.DataFrame, metric_col: str, head_n: int, round_to: int
 st.caption(
     f"Sorted by: **{rank_label}** | "
     f"Display: **{'League-strength adjusted' if display_with_league_strength else 'Raw vs pool'}** | "
-    f"Leagues shown: **{len(display_leagues)}** (pool unchanged)"
+    f"Leagues shown: **{len(display_leagues)}** | "
+    f"Strength shown: **{display_ls_min}–{display_ls_max}** (pool unchanged)"
 )
 
 st.dataframe(
@@ -1063,8 +1080,6 @@ def get_team_badge(row: pd.Series):
 # ---------------------------------------------------------
 
 def footer_lines_for_metric(metric_label: str, show_ls: bool) -> list[str]:
-    # Keep it short, readable, consistent.
-    # 3 lines, optional 4th when helpful.
     if metric_label == "Impact Score":
         return [
             "Impact Score blends 6 areas: aerial + ground defending, ball retention, carrying, playmaking and positioning.",
@@ -1073,7 +1088,6 @@ def footer_lines_for_metric(metric_label: str, show_ls: bool) -> list[str]:
             + ("(league strength applied)." if show_ls else "(no league-strength adjustment)."),
         ]
 
-    # Individual metric: tell them it’s that single pillar, still 0–100 vs pool
     short = metric_label.replace(" Score", "")
     return [
         f"{metric_label} reflects the player’s {short.lower()} output (this chart ranks that metric only).",
@@ -1094,6 +1108,7 @@ def make_ranking_image(
     title_lines: list[str],
     brand_logo_url: str | None = None,
     show_ls: bool = False,
+    show_age: bool = False,
 ) -> bytes:
     df_top = df_show.head(10).copy()
     if df_top.empty:
@@ -1162,7 +1177,19 @@ def make_ranking_image(
 
         ax.text(0.18, y + 0.13, str(row["Player"]).upper(),
                 fontsize=14, fontweight="bold", ha="left", va="center", zorder=4)
-        ax.text(0.18, y - 0.10, f"{row['Team']} ({row['League']})",
+
+        team = str(row.get("Team", ""))
+        league = str(row.get("League", ""))
+        if show_age and ("Age" in row.index) and pd.notna(row["Age"]):
+            try:
+                age_int = int(float(row["Age"]))
+                second_line = f"{team} ({league}) · Age {age_int}"
+            except Exception:
+                second_line = f"{team} ({league})"
+        else:
+            second_line = f"{team} ({league})"
+
+        ax.text(0.18, y - 0.10, second_line,
                 fontsize=11, color="#777777", ha="left", va="center", zorder=4)
 
         # Bar
@@ -1176,13 +1203,10 @@ def make_ranking_image(
                 fontsize=14, fontweight="bold", ha="left", va="center", zorder=4)
 
     # ---------- FOOTER (CLEAN / SPACED / CONTROLLABLE) ----------
-    # Want to move the divider line? Change divider_y.
     divider_y = 0.82
     ax.plot([footer_x_left, footer_x_right], [divider_y]*2, color="#E8E8E8", lw=0.9, zorder=2)
 
     lines = footer_lines_for_metric(metric_label, show_ls)
-
-    # Move footer block up/down with footer_first_y; adjust spacing with footer_line_gap.
     footer_first_y = 0.62
     footer_line_gap = 0.18
 
@@ -1219,24 +1243,29 @@ def make_ranking_image(
 
 
 # ---------------------------------------------------------
-# 9) STREAMLIT OUTPUT – IMAGE
+# 9) STREAMLIT OUTPUT – IMAGE (dynamic defaults, still editable)
 # ---------------------------------------------------------
 
 st.subheader("🖼 Exportable CIES-style ranking image")
 
-t1 = st.text_input("Title line 1", "TOP U23 CENTRE BACKS", key=f"cb_title1_{selected_file}")
-t2 = st.text_input("Title line 2", "IMPACT / PROFILE RANKING", key=f"cb_title2_{selected_file}")
-t3 = st.text_input("Title line 3", "GLOBAL SCOUTING INDEX 2025", key=f"cb_title3_{selected_file}")
+default_t1 = "TOP CENTRE BACKS"
+default_t2 = rank_label.upper()
+default_t3 = "PERFORMANCE INDEX  |  Wyscout"
+
+t1 = st.text_input("Title line 1", default_t1, key=f"cb_title1_{selected_file}")
+t2 = st.text_input("Title line 2", default_t2, key=f"cb_title2_{selected_file}")
+t3 = st.text_input("Title line 3", default_t3, key=f"cb_title3_{selected_file}")
 
 brand_logo_url = "https://image.pitchbook.com/1xOUzrEhnsKrJbNbN8Asf3LND2u1605464042293_200x200"
 
 img_bytes = make_ranking_image(
-    df_show=df_display,                    # display-only filtered (leagues + age)
+    df_show=df_display,                    # display-only filtered (leagues + age + strength range)
     metric_col=display_metric_col,         # already scaled vs pool
     metric_label=rank_label,
     title_lines=[t1, t2, t3],
     brand_logo_url=brand_logo_url,
     show_ls=display_with_league_strength,
+    show_age=show_age_in_image,            # default OFF toggle
 )
 
 if img_bytes:
