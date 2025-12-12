@@ -1550,6 +1550,13 @@ st.header("📊 Feature R — Squad Profile")
 # --------------------------------------------------------------------------------------
 CONTRACT_COL = "Contract expires"   # <= 2026 -> default red highlight
 
+# Optional smart label library
+try:
+    from adjustText import adjust_text
+    HAVE_ADJUSTTEXT = True
+except ImportError:
+    HAVE_ADJUSTTEXT = False
+
 # --------------------------------------------------------------------------------------
 # SETTINGS PANEL
 # --------------------------------------------------------------------------------------
@@ -1801,99 +1808,144 @@ for is_red, grp in squad.groupby("IsRed"):
     )
 
 # --------------------------------------------------------------------------------------
-# LABELS – all players, stacked + slight x-jitter, no overlap, clamped in plot
+# LABELS – ALL PLAYERS
 # --------------------------------------------------------------------------------------
 if show_labels:
     label_df = squad.copy()
 
     axis_height = max_minutes_s - min_minutes_s
-    base_offset = axis_height * 0.015      # starting gap above dot
-    min_y_delta = axis_height * 0.045      # minimum vertical separation between labels
-    top_margin = axis_height * 0.04        # keep below top
-    bottom_margin = axis_height * 0.03     # keep above bottom
-    age_tol = 0.8                          # "same column" width in age units
-    x_jitter = 0.25                        # horizontal nudge when stacked
+    top_margin = axis_height * 0.04
+    bottom_margin = axis_height * 0.03
 
-    # sort by minutes so lower-minute labels lay down first
-    label_df_sorted = label_df.sort_values("Minutes played")
-    placed = []           # list of (x_lab, y_lab)
-    positions = {}        # player -> (x_lab, y_lab)
+    # --------------------- PATH 1: adjustText available -------------------------------
+    if HAVE_ADJUSTTEXT:
+        texts = []
+        xs = label_df["Age"].values
+        ys = label_df["Minutes played"].values
 
-    for _, r in label_df_sorted.iterrows():
-        x = float(r["Age"])
-        y = float(r["Minutes played"])
+        for x, y, name, is_red in zip(xs, ys, label_df["Player"], label_df["IsRed"]):
+            t = ax.text(
+                x,
+                y,
+                name,
+                fontsize=label_size,
+                color=txt_col,
+                weight="semibold",
+                ha="center",
+                va="bottom",
+                zorder=6 if is_red else 5,
+            )
+            t.set_path_effects([
+                pe.withStroke(linewidth=2, foreground="#020617", alpha=0.9)
+            ])
+            texts.append(t)
 
-        x_lab = x
-        y_lab = y + base_offset
+        adjust_text(
+            texts,
+            x=xs,
+            y=ys,
+            ax=ax,
+            autoalign="y",
+            only_move={"points": "y", "text": "xy"},
+            force_points=0.7,
+            force_text=0.7,
+            expand_points=(1.1, 1.5),
+            expand_text=(1.1, 1.5),
+            arrowprops=dict(
+                arrowstyle="-",
+                lw=0.6,
+                color=txt_col,
+                alpha=0.6,
+            ),
+        )
 
-        # clamp initial guess inside plot
-        y_lab = max(min_minutes_s + bottom_margin, min(y_lab, max_minutes_s - top_margin))
+        # Clamp labels back inside vertical bounds (below band titles)
+        for t in texts:
+            x_lab, y_lab = t.get_position()
+            y_lab = max(min_minutes_s + bottom_margin, min(y_lab, max_minutes_s - top_margin))
+            t.set_position((x_lab, y_lab))
 
-        direction_y = 1
-        direction_x = 1
-        attempts = 0
-        max_attempts = 80
+    # --------------------- PATH 2: manual fallback ------------------------------------
+    else:
+        axis_height = max_minutes_s - min_minutes_s
+        base_offset = axis_height * 0.015      # starting gap above dot
+        min_y_delta = axis_height * 0.05       # min vertical separation
+        age_tol = 0.7                          # "same column" width in age units
+        x_jitter = 0.25                        # horizontal nudge when stacked
 
-        while attempts < max_attempts:
-            collision = False
-            for (px, py) in placed:
-                if abs(x_lab - px) < age_tol and abs(y_lab - py) < min_y_delta:
-                    collision = True
+        label_df_sorted = label_df.sort_values("Minutes played")
+        placed = []
+        positions = {}
+
+        for _, r in label_df_sorted.iterrows():
+            x = float(r["Age"])
+            y = float(r["Minutes played"])
+
+            x_lab = x
+            y_lab = y + base_offset
+            y_lab = max(min_minutes_s + bottom_margin, min(y_lab, max_minutes_s - top_margin))
+
+            direction_y = 1
+            direction_x = 1
+            attempts = 0
+            max_attempts = 80
+
+            while attempts < max_attempts:
+                collision = False
+                for (px, py) in placed:
+                    if abs(x_lab - px) < age_tol and abs(y_lab - py) < min_y_delta:
+                        collision = True
+                        break
+
+                if not collision:
                     break
 
-            if not collision:
-                break
+                y_lab += direction_y * min_y_delta
+                x_lab += direction_x * x_jitter
 
-            # move label slightly up/down and sideways
-            y_lab += direction_y * min_y_delta
-            x_lab += direction_x * x_jitter
+                direction_y *= -1
+                direction_x *= -1
 
-            # alternate directions so we spread around the point
-            direction_y *= -1
-            direction_x *= -1
+                y_lab = max(min_minutes_s + bottom_margin, min(y_lab, max_minutes_s - top_margin))
+                x_lab = max(min_age_s + 0.2, min(x_lab, max_age_s - 0.2))
 
-            # clamp inside axes
-            y_lab = max(min_minutes_s + bottom_margin, min(y_lab, max_minutes_s - top_margin))
-            x_lab = max(min_age_s + 0.2, min(x_lab, max_age_s - 0.2))
+                attempts += 1
 
-            attempts += 1
+            placed.append((x_lab, y_lab))
+            positions[r["Player"]] = (x_lab, y_lab)
 
-        placed.append((x_lab, y_lab))
-        positions[r["Player"]] = (x_lab, y_lab)
+        # Draw labels + leader lines
+        for _, r in label_df.iterrows():
+            x = float(r["Age"])
+            y = float(r["Minutes played"])
+            x_lab, y_lab = positions.get(r["Player"], (x, y + base_offset))
 
-    # Draw labels + leader lines
-    for _, r in label_df.iterrows():
-        x = float(r["Age"])
-        y = float(r["Minutes played"])
-        x_lab, y_lab = positions.get(r["Player"], (x, y + base_offset))
+            if abs(x_lab - x) > 0.05 or abs(y_lab - (y + base_offset)) > 0.05:
+                ax.plot(
+                    [x, x_lab],
+                    [y, y_lab],
+                    linestyle="-",
+                    linewidth=0.5,
+                    color=txt_col,
+                    alpha=0.5,
+                    zorder=5,
+                )
 
-        # leader line if label moved meaningfully
-        if abs(x_lab - x) > 0.05 or abs(y_lab - (y + base_offset)) > 0.05:
-            ax.plot(
-                [x, x_lab],
-                [y, y_lab],
-                linestyle="-",
-                linewidth=0.5,
+            z = 6 if r["IsRed"] else 5
+            t = ax.annotate(
+                r["Player"],
+                xy=(x_lab, y_lab),
+                textcoords="data",
+                fontsize=label_size,
                 color=txt_col,
-                alpha=0.5,
-                zorder=5,
+                weight="semibold",
+                ha="center",
+                va="bottom",
+                zorder=z,
             )
-
-        z = 6 if r["IsRed"] else 5
-        t = ax.annotate(
-            r["Player"],
-            xy=(x_lab, y_lab),
-            textcoords="data",
-            fontsize=label_size,
-            color=txt_col,
-            weight="semibold",
-            ha="center",
-            va="bottom",
-            zorder=z,
-        )
-        t.set_path_effects([
-            pe.withStroke(linewidth=2, foreground="#020617", alpha=0.9)
-        ])
+            t.set_path_effects([
+                pe.withStroke(linewidth=2, foreground="#020617", alpha=0.9)
+            ])
 
 # --------------------------------------------------------------------------------------
 # LAYOUT & RENDER
@@ -1921,6 +1973,7 @@ else:
 
 plt.close(fig)
 # ============================== END FEATURE R ==========================================
+
 
 
 
