@@ -559,6 +559,153 @@ df_f["Pass Ratio Percentile"] = (
         .transform(lambda x: x.rank(pct=True) * 100.0)
 )
 
+# ===================================================================
+# --------------------  IMPACT SCORE: FULL BLOCK  -------------------
+# ===================================================================
+# Computes:
+#   1. Six CB sub-scores (Aerial, Ground, Retention, Carrying,
+#      Playmaking, Positioning)
+#   2. Base CB Score = average of six categories
+#   3. Minutes Factor (within-league percentile)
+#   4. Team Context Factor (team avg vs league avg)
+#   5. League Quality Factor (using "League Strength")
+#   6. Final Impact Score scaled 0–100
+#
+# Requires that percentile columns already exist:
+#   "<metric> Percentile"
+# ===================================================================
+
+def _pct(metric: str) -> str:
+    return f"{metric} Percentile"
+
+# -----------------------------
+# 1. SUB-SCORES (each 0–100)
+# -----------------------------
+
+df_f["Aerial Score"] = (
+    0.30 * df_f[_pct("Aerial duels per 90")] +
+    0.70 * df_f[_pct("Aerial duels won, %")]
+)
+
+df_f["Ground Score"] = (
+    0.30 * df_f[_pct("Defensive duels per 90")] +
+    0.70 * df_f[_pct("Defensive duels won, %")]
+)
+
+df_f["Retention Score"] = (
+    0.25 * df_f[_pct("Accurate passes, %")] +
+    0.25 * df_f[_pct("Accurate forward passes, %")] +
+    0.25 * df_f[_pct("Accurate progressive passes, %")] +
+    0.25 * df_f[_pct("Accurate long passes, %")]
+)
+
+df_f["Carrying Score"] = (
+    0.40 * df_f[_pct("Dribbles per 90")] +
+    0.20 * df_f[_pct("Successful dribbles, %")] +
+    0.40 * df_f[_pct("Progressive runs per 90")]
+)
+
+df_f["Playmaking Score"] = (
+    0.50 * df_f[_pct("Progressive passes per 90")] +
+    0.25 * df_f[_pct("Forward passes per 90")] +
+    0.25 * df_f[_pct("Passes to final third per 90")]
+)
+
+df_f["Positioning Score"] = (
+    0.70 * df_f[_pct("PAdj Interceptions")] +
+    0.30 * df_f[_pct("Shots blocked per 90")]
+)
+
+SUB_SCORES = [
+    "Aerial Score", "Ground Score", "Retention Score",
+    "Carrying Score", "Playmaking Score", "Positioning Score",
+]
+
+# -----------------------------
+# 2. BASE TECHNICAL SCORE
+# -----------------------------
+df_f["Base CB Score"] = df_f[SUB_SCORES].mean(axis=1)
+
+# -----------------------------
+# 3. MINUTES FACTOR
+#     Percentile mapped 0.85–1.15
+# -----------------------------
+minutes_pct = df_f.groupby("League")["Minutes played"].rank(pct=True)
+df_f["Minutes Factor"] = 0.85 + 0.30 * minutes_pct
+
+# -----------------------------
+# 4. TEAM CONTEXT FACTOR
+#     Strength = team avg / league avg
+#     Impact factor = 1 / strength (clamped 0.90–1.10)
+# -----------------------------
+league_avg = df_f.groupby("League")["Base CB Score"].transform("mean")
+team_avg   = df_f.groupby(["League", "Team"])["Base CB Score"].transform("mean")
+
+with np.errstate(divide="ignore", invalid="ignore"):
+    strength_ratio = team_avg / league_avg.replace(0, np.nan)
+
+raw_team_factor = np.where(strength_ratio > 0, 1.0 / strength_ratio, 1.0)
+df_f["Team Context Factor"] = np.clip(raw_team_factor, 0.90, 1.10)
+df_f["Team Context Factor"] = df_f["Team Context Factor"].fillna(1.0)
+
+# -----------------------------
+# 5. LEAGUE QUALITY FACTOR
+#     League Strength percentile mapped 0.90–1.10
+# -----------------------------
+league_pct = df_f["League Strength"].rank(pct=True)
+df_f["League Quality Factor"] = 0.90 + 0.20 * league_pct
+
+# -----------------------------
+# 6. RAW IMPACT SCORE
+# -----------------------------
+raw = (
+    df_f["Base CB Score"]
+    * df_f["Minutes Factor"]
+    * df_f["Team Context Factor"]
+    * df_f["League Quality Factor"]
+)
+
+df_f["Raw Impact Score"] = raw
+
+# -----------------------------
+# 7. FINAL IMPACT SCORE (0–100)
+# -----------------------------
+min_raw, max_raw = raw.min(), raw.max()
+
+if max_raw > min_raw:
+    df_f["Impact Score"] = 100.0 * (raw - min_raw) / (max_raw - min_raw)
+else:
+    df_f["Impact Score"] = 50.0
+
+df_f["Impact Score"] = df_f["Impact Score"].astype(float)
+
+# -----------------------------
+# Helper: Top Impact Table
+# -----------------------------
+def top_impact(df_in: pd.DataFrame, n: int, round_to: int = 0) -> pd.DataFrame:
+    ranked = df_in.sort_values("Impact Score", ascending=False).copy()
+    ranked["Impact Score"] = ranked["Impact Score"].round(round_to)
+
+    cols = [
+        "Player", "Team", "League", "Position", "Age",
+        "Minutes played", "League Strength",
+        "Aerial Score", "Ground Score", "Retention Score",
+        "Carrying Score", "Playmaking Score", "Positioning Score",
+        "Impact Score",
+    ]
+    cols = [c for c in cols if c in ranked.columns]
+
+    out = ranked[cols].head(n).reset_index(drop=True)
+    out.index = np.arange(1, len(out) + 1)
+    return out
+
+# ===================================================================
+# --------------------  END IMPACT SCORE BLOCK  ---------------------
+# ===================================================================
+
+
+
+
 
 # ----------------- ROLE SCORING (tables) -----------------
 def compute_weighted_role_score(df_in: pd.DataFrame, metrics: dict, beta: float, league_weighting: bool) -> pd.Series:
