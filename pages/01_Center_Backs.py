@@ -813,6 +813,10 @@ for role, role_def in ROLES.items():
         st.dataframe(top_table(filtered_view(df_f, value_max=v_max), role, top_n), use_container_width=True)
         st.divider()
 
+st.header("📊 Impact Score Rankings (0–100)")
+st.dataframe(top_impact(df_f, top_n, round_to), use_container_width=True)
+
+
 # ----------------- PRO LAYOUT TAB (tiles) -----------------
 def _pro_rating_color(v: float) -> str:
     v = float(v)
