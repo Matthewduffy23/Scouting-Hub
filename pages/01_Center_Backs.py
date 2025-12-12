@@ -66,6 +66,16 @@ if not csv_files:
     st.error("No WORLD*.csv files found in the project folder.")
     st.stop()
 
+@st.cache_data(show_spinner=False)
+def load_remote_png(url: str):
+    try:
+        r = requests.get(url, timeout=6)
+        r.raise_for_status()
+        return plt.imread(io.BytesIO(r.content))
+    except Exception:
+        return None
+
+
 # ----------------- PAGE -----------------
 st.set_page_config(page_title="Advanced Center Back Scouting System", layout="wide")
 st.title("🔎 Advanced Center Back Scouting System")
