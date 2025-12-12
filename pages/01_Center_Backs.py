@@ -566,6 +566,8 @@ df_f["Pass Ratio Percentile"] = (
 
 # ===================================================================
 #  CB IMPACT FEATURE BLOCK – METRICS + CRESTS + CIES-STYLE IMAGE
+#  (YOUR EXACT CODE + ONLY CHANGE: add a nicer 2-line footer, light grey,
+#   centered + tight spacing, summarising Impact Score calculation)
 # ===================================================================
 
 import io
@@ -1028,15 +1030,16 @@ def make_ranking_image(
       - perfectly circular rank markers
       - larger left-aligned flags/crests
       - header clearly separated from first row
+      + NEW: centered, light-grey 2-line Impact Score footer (tight spacing)
     """
     df_top = df_rank.head(10).copy()
     if df_top.empty:
         return b""
 
-    N       = len(df_top)
-    ROW_H   = 0.82
-    HEADER_H = 1.70   # more room between titles and first row
-    FOOT_H   = 0.60   # less dead space at bottom
+    N        = len(df_top)
+    ROW_H    = 0.82
+    HEADER_H = 1.70
+    FOOT_H   = 0.72  # slightly more space for a proper footer
     TOTAL_H  = HEADER_H + N * ROW_H + FOOT_H
 
     FIG_W, FIG_H = 8.0, TOTAL_H
@@ -1066,7 +1069,7 @@ def make_ranking_image(
     BAR_W    = 0.28
     BAR_H    = 0.19
 
-    base_y = TOTAL_H - HEADER_H   # first-row centre
+    base_y = TOTAL_H - HEADER_H  # first-row centre
 
     # subtle line under header
     header_bottom_y = base_y + ROW_H / 2 + 0.02
@@ -1160,6 +1163,37 @@ def make_ranking_image(
             zorder=4,
         )
 
+    # -------------------- NEW FOOTER (CENTERED + TIGHT) --------------------
+    # Thin divider above footer
+    footer_div_y = 0.44
+    ax.plot([0.08, 0.92], [footer_div_y, footer_div_y],
+            color="#E8E8E8", linewidth=0.9, zorder=2)
+
+    # Slightly more detailed, but still clean + readable
+    footer_1 = (
+        "Impact Score = mean of six sub-indices: Aerial, Ground, Retention, Carrying, Playmaking, Positioning."
+    )
+    footer_2 = (
+        "Adjusted for minutes played + team context vs league; optionally weighted by league strength; rescaled 0–100."
+    )
+
+    # Centered, closer lines
+    ax.text(
+        0.50, 0.26,
+        footer_1,
+        fontsize=8.6, color="#9B9B9B",
+        ha="center", va="bottom",
+        zorder=5,
+    )
+    ax.text(
+        0.50, 0.12,
+        footer_2,
+        fontsize=8.6, color="#9B9B9B",
+        ha="center", va="bottom",
+        zorder=5,
+    )
+    # ---------------------------------------------------------------------
+
     fig.tight_layout(pad=0.35)
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=220,
@@ -1222,6 +1256,7 @@ if img_bytes:
     )
 else:
     st.info("No data to generate image.")
+
 
 
 
