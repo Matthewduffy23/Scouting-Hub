@@ -566,9 +566,8 @@ df_f["Pass Ratio Percentile"] = (
 # ===================================================================
 #  CB IMPACT FEATURE BLOCK – METRICS + CRESTS + CIES-STYLE IMAGE
 #  (Pool defined by sidebar; display filters do NOT change pool)
-#  + Dynamic default titles (metric-aware)
-#  + Optional age display (default OFF)
-#  + Display-only League Strength range filter (0–100)
+#  + League display filter as dropdown (default = All leagues)
+#  + If league selected -> Team dropdown (default = All teams in that league)
 # ===================================================================
 
 import io
@@ -705,8 +704,7 @@ df_f = ensure_cb_impact_metrics(df_f, selected_file)
 
 
 # ---------------------------------------------------------
-# 2) RANKING / DISPLAY CONTROLS
-#    IMPORTANT: Sidebar defines pool. Controls here do not change pool.
+# 2) RANKING / DISPLAY CONTROLS (display filters do NOT change pool)
 # ---------------------------------------------------------
 
 RANK_OPTIONS = {
@@ -725,9 +723,7 @@ rank_label = st.selectbox(
     index=0,
     key=f"cb_rank_metric_{selected_file}",
 )
-rank_base_col = RANK_OPTIONS[rank_label]
 
-# Display-only toggle (does NOT change pool or underlying calculations)
 display_with_league_strength = st.checkbox(
     "Display league-strength adjusted (0–100)",
     value=False,
@@ -735,14 +731,29 @@ display_with_league_strength = st.checkbox(
     help="Changes only what is shown in the table/image. Pool and core metrics are unchanged.",
 )
 
-# Display-only league selector (does NOT change pool)
+# Display-only league selector as dropdown (default = All leagues)
 all_leagues_in_pool = sorted([x for x in df_f["League"].dropna().unique()])
-display_leagues = st.multiselect(
-    "Display leagues (does not change pool)",
-    options=all_leagues_in_pool,
-    default=all_leagues_in_pool,
-    key=f"cb_display_leagues_{selected_file}",
+league_dropdown_options = ["All leagues"] + all_leagues_in_pool
+selected_display_league = st.selectbox(
+    "Display league (does not change pool)",
+    league_dropdown_options,
+    index=0,
+    key=f"cb_display_league_dd_{selected_file}",
 )
+
+# If league selected, enable a Team dropdown (default = All teams in that league)
+selected_display_team = "All teams"
+if selected_display_league != "All leagues":
+    teams_in_league = sorted(
+        df_f.loc[df_f["League"] == selected_display_league, "Team"].dropna().unique().tolist()
+    )
+    team_dropdown_options = ["All teams"] + teams_in_league
+    selected_display_team = st.selectbox(
+        "Display team (does not change pool)",
+        team_dropdown_options,
+        index=0,
+        key=f"cb_display_team_dd_{selected_file}",
+    )
 
 # Display-only league strength range (does NOT change pool)
 display_ls_min, display_ls_max = st.slider(
@@ -760,7 +771,6 @@ max_rank_age = st.number_input(
     key=f"cb_display_age_{selected_file}",
 )
 
-# Age shown in the IMAGE (default OFF)
 show_age_in_image = st.checkbox(
     "Show age in ranking image",
     value=False,
@@ -773,21 +783,17 @@ show_league_strength_col = st.checkbox(
     key=f"cb_show_ls_col_{selected_file}",
 )
 
+
 # ---------------------------------------------------------
 # 3) BUILD DISPLAY METRIC COLUMNS (VS WHOLE POOL)
-#    Critical: scaling is computed on the pool first.
 # ---------------------------------------------------------
 
 df_pool = df_f.copy()
 
 metric_to_display_cols = {}
-
 for label, base_col in RANK_OPTIONS.items():
     if base_col == "Impact Score":
-        metric_to_display_cols[label] = {
-            "no_ls": "Impact Score (no league)",
-            "ls": "Impact Score",
-        }
+        metric_to_display_cols[label] = {"no_ls": "Impact Score (no league)", "ls": "Impact Score"}
     else:
         col_no = f"{base_col} (Display NL)"
         df_pool[col_no] = scale_0_100(df_pool[base_col])
@@ -795,30 +801,31 @@ for label, base_col in RANK_OPTIONS.items():
         col_ls = f"{base_col} (Display LS)"
         df_pool[col_ls] = scale_0_100(df_pool[base_col] * df_pool["League Factor"])
 
-        metric_to_display_cols[label] = {
-            "no_ls": col_no,
-            "ls": col_ls,
-        }
+        metric_to_display_cols[label] = {"no_ls": col_no, "ls": col_ls}
 
 display_metric_col = metric_to_display_cols[rank_label]["ls" if display_with_league_strength else "no_ls"]
+
 
 # ---------------------------------------------------------
 # 4) DISPLAY FILTERS (DO NOT CHANGE POOL SCALING)
 # ---------------------------------------------------------
 
 df_display = df_pool.copy()
-df_display = df_display[
-    (df_display["Age"] <= max_rank_age) &
-    (df_display["League"].isin(display_leagues)) &
-    (df_display["League Strength"].between(display_ls_min, display_ls_max))
-]
+
+df_display = df_display[df_display["Age"] <= max_rank_age]
+df_display = df_display[df_display["League Strength"].between(display_ls_min, display_ls_max)]
+
+if selected_display_league != "All leagues":
+    df_display = df_display[df_display["League"] == selected_display_league]
+    if selected_display_team != "All teams":
+        df_display = df_display[df_display["Team"] == selected_display_team]
 
 df_display = df_display.dropna(subset=[display_metric_col]).sort_values(display_metric_col, ascending=False).copy()
 
 
 def top_generic(df_in: pd.DataFrame, metric_col: str, head_n: int, round_to: int = 1) -> pd.DataFrame:
     ranked = df_in.copy()
-    ranked[metric_col] = ranked[metric_col].round(round_to)
+    ranked[metric_col] = pd.to_numeric(ranked[metric_col], errors="coerce").round(round_to)
 
     cols = ["Player", "Team", "League", "Position", "Age", "Minutes played"]
     if show_league_strength_col and "League Strength" in ranked.columns:
@@ -830,10 +837,12 @@ def top_generic(df_in: pd.DataFrame, metric_col: str, head_n: int, round_to: int
     return out
 
 
+league_txt = selected_display_league
+team_txt = selected_display_team if selected_display_league != "All leagues" else "—"
 st.caption(
     f"Sorted by: **{rank_label}** | "
     f"Display: **{'League-strength adjusted' if display_with_league_strength else 'Raw vs pool'}** | "
-    f"Leagues shown: **{len(display_leagues)}** | "
+    f"League shown: **{league_txt}** | Team shown: **{team_txt}** | "
     f"Strength shown: **{display_ls_min}–{display_ls_max}** (pool unchanged)"
 )
 
@@ -848,14 +857,12 @@ st.dataframe(
 # ---------------------------------------------------------
 
 _CC_MAP = {
-    # Home nations (NOT GB)
     "england": "FLAG_ENG",
     "scotland": "FLAG_SCT",
     "wales": "FLAG_WLS",
     "northern ireland": "FLAG_NIR",
     "north ireland": "FLAG_NIR",
 
-    # Countries (ISO2)
     "spain": "es", "france": "fr", "germany": "de", "italy": "it",
     "portugal": "pt", "netherlands": "nl", "belgium": "be", "austria": "at",
     "switzerland": "ch", "denmark": "dk", "sweden": "se", "norway": "no",
@@ -1076,7 +1083,7 @@ def get_team_badge(row: pd.Series):
 
 
 # ---------------------------------------------------------
-# 7) FOOTER LINES (BRIEF, 3–4 lines, easy for non-data users)
+# 7) FOOTER LINES (brief)
 # ---------------------------------------------------------
 
 def footer_lines_for_metric(metric_label: str, show_ls: bool) -> list[str]:
@@ -1087,18 +1094,17 @@ def footer_lines_for_metric(metric_label: str, show_ls: bool) -> list[str]:
             "Displayed 0–100 vs the full selected pool "
             + ("(league strength applied)." if show_ls else "(no league-strength adjustment)."),
         ]
-
     short = metric_label.replace(" Score", "")
     return [
         f"{metric_label} reflects the player’s {short.lower()} output (this chart ranks that metric only).",
         "Displayed 0–100 vs the full selected pool "
         + ("(league strength applied)." if show_ls else "(no league-strength adjustment)."),
-        "Tip: switch metric at the top to view other pillars (Aerial, Ground, Retention, Carrying, Playmaking, Positioning).",
+        "Tip: switch metric at the top to view other pillars.",
     ]
 
 
 # ---------------------------------------------------------
-# 8) RANKING IMAGE (FLAGS + PERFECT CIRCLE + CLEAN FOOTER)
+# 8) RANKING IMAGE
 # ---------------------------------------------------------
 
 def make_ranking_image(
@@ -1126,7 +1132,6 @@ def make_ranking_image(
     ax.axis("off")
     ax.add_patch(Rectangle((0, 0), 1, TOTAL_H, color="#FFFFFF", zorder=0))
 
-    # Titles
     t1 = title_lines[0].upper() if len(title_lines) > 0 else ""
     t2 = title_lines[1].upper() if len(title_lines) > 1 else ""
     t3 = title_lines[2].upper() if len(title_lines) > 2 else ""
@@ -1157,7 +1162,7 @@ def make_ranking_image(
         if i % 2 == 0:
             ax.add_patch(Rectangle((0, y - ROW_H/2), 1, ROW_H, color="#F7F7F7", zorder=1))
 
-        # PERFECT circle marker (never oval)
+        # perfect circle rank marker
         ax.scatter([0.042], [y], s=420, facecolor="#F3F3F3",
                    edgecolor="#C0C0C0", linewidths=0.8, zorder=3)
         ax.text(0.042, y, str(i+1), fontsize=9, fontweight="bold",
@@ -1192,7 +1197,6 @@ def make_ranking_image(
         ax.text(0.18, y - 0.10, second_line,
                 fontsize=11, color="#777777", ha="left", va="center", zorder=4)
 
-        # Bar
         ax.add_patch(Rectangle((BAR_LEFT, y - BAR_H/2), BAR_W, BAR_H,
                                color="#E1E1E1", zorder=2))
         val = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
@@ -1202,7 +1206,6 @@ def make_ranking_image(
         ax.text(BAR_LEFT + BAR_W + 0.02, y, f"{val:.1f}",
                 fontsize=14, fontweight="bold", ha="left", va="center", zorder=4)
 
-    # ---------- FOOTER (CLEAN / SPACED / CONTROLLABLE) ----------
     divider_y = 0.82
     ax.plot([footer_x_left, footer_x_right], [divider_y]*2, color="#E8E8E8", lw=0.9, zorder=2)
 
@@ -1222,7 +1225,6 @@ def make_ranking_image(
             zorder=4,
         )
 
-    # Optional brand/logo bottom-right
     if brand_logo_url:
         brand_img = load_remote_png(brand_logo_url)
         if brand_img is not None:
@@ -1259,13 +1261,13 @@ t3 = st.text_input("Title line 3", default_t3, key=f"cb_title3_{selected_file}")
 brand_logo_url = "https://image.pitchbook.com/1xOUzrEhnsKrJbNbN8Asf3LND2u1605464042293_200x200"
 
 img_bytes = make_ranking_image(
-    df_show=df_display,                    # display-only filtered (leagues + age + strength range)
-    metric_col=display_metric_col,         # already scaled vs pool
+    df_show=df_display,
+    metric_col=display_metric_col,
     metric_label=rank_label,
     title_lines=[t1, t2, t3],
     brand_logo_url=brand_logo_url,
     show_ls=display_with_league_strength,
-    show_age=show_age_in_image,            # default OFF toggle
+    show_age=show_age_in_image,
 )
 
 if img_bytes:
@@ -1273,6 +1275,7 @@ if img_bytes:
     st.download_button("Download PNG", data=img_bytes, file_name="cb_ranking.png", mime="image/png")
 else:
     st.info("No data to generate image.")
+
 
 
 
