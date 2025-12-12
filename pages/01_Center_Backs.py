@@ -850,11 +850,10 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
     .teamline{ color:#dbe3ff; font-size:14px; font-weight:600; margin-top:6.5px; letter-spacing:.05px; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .tl-wrap{ position:relative; }
-    .tl-has-crest{ padding-left:24px; }     /* reserve space only when crest exists */
+    .tl-has-crest{ padding-left:24px; }
     .crest-icon{ height:1.35em; width:auto; object-fit:contain; image-rendering:auto; }
     .crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
 
-    /* Individual metrics — restore compact layout */
     .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
     .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
     .m-row{ display:flex; justify-content:space-between; align-items:center; padding:8px 8px; border-radius:10px; }
@@ -863,7 +862,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     .metrics-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
     @media (min-width: 720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr);} }
 
-    /* Filter row */
     .filter-label{ color:#cbd3ef; font-weight:700; font-size:13px; letter-spacing:.02em; margin-bottom:4px; }
     </style>
     """, unsafe_allow_html=True)
@@ -902,6 +900,40 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 mask_any = mask_any | df_filtered[c].astype(str).str.lower().str.contains(s, na=False)
             df_filtered = df_filtered[mask_any]
 
+    # =========================
+    # NEW — optional minimum role-score filters
+    # =========================
+    ROLE_SCORE_COLS = [
+        "Ball Playing CB Score",
+        "Wide CB Score",
+        "Box Defender Score",
+        "PL Profile Score",
+    ]
+
+    use_role_filters = st.checkbox(
+        "Filter by minimum role score(s)",
+        value=False,
+        key="pro_role_filter_toggle"
+    )
+
+    role_minima = {}
+    if use_role_filters:
+        st.write("Set minimum scores (0–99). Leave at 0 to ignore a role.")
+        for col in ROLE_SCORE_COLS:
+            if col in df_filtered.columns:
+                pretty = col.replace("Score", "").strip()
+                role_minima[col] = st.slider(
+                    f"Min {pretty}",
+                    0, 99, 0, 1,
+                    key=f"min_{_norm(col)}"
+                )
+
+        # apply minima
+        for col, thr in role_minima.items():
+            if thr > 0:
+                df_filtered[col] = pd.to_numeric(df_filtered[col], errors="coerce")
+                df_filtered = df_filtered[df_filtered[col] >= thr]
+
     # ---- data check ----
     all_col = "All In Score"
     if all_col not in df_view.columns:
@@ -912,9 +944,8 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         st.info("No players match the selected filters.")
         return
 
- 
     # =========================
-    # NEW — sort controls (ONLY roles + All In; default = All In)
+    # sort controls (roles + All In; default = All In)
     # =========================
     ROLE_SCORE_COLS = [
         "Ball Playing CB Score",
