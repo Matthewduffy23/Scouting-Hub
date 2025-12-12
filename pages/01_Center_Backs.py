@@ -566,6 +566,7 @@ df_f["Pass Ratio Percentile"] = (
 
 # ===================================================================
 #  CB IMPACT FEATURE BLOCK – METRICS + CRESTS + CIES-STYLE IMAGE
+#  + Optional "Compare vs whole pool" view (league display filter)
 # ===================================================================
 
 import io
@@ -745,19 +746,15 @@ def top_generic(df_in: pd.DataFrame, column: str, head_n: int, round_to: int = 0
 
 # ---------------------------------------------------------
 # 3) FLAGS (Twemoji) + UK HOME NATIONS FIX
-#    - England/Scotland/Wales use Twemoji "subdivision flag" tag sequences
-#    - Northern Ireland uses a direct PNG (Ulster Banner) instead of GB
 # ---------------------------------------------------------
 
 _CC_MAP = {
-    # Home nations (NOT GB)
     "england": "FLAG_ENG",
     "scotland": "FLAG_SCT",
     "wales": "FLAG_WLS",
     "northern ireland": "FLAG_NIR",
     "north ireland": "FLAG_NIR",
 
-    # Countries (ISO2)
     "spain": "es", "france": "fr", "germany": "de", "italy": "it",
     "portugal": "pt", "netherlands": "nl", "belgium": "be", "austria": "at",
     "switzerland": "ch", "denmark": "dk", "sweden": "se", "norway": "no",
@@ -784,18 +781,12 @@ _CC_MAP = {
     "egypt": "eg", "south africa": "za",
 }
 
-# Twemoji "subdivision flags" (tag sequences)
-# England: 🏴 (eng) -> 1f3f4-e0067-e0062-e0065-e006e-e0067-e007f
-# Scotland: 🏴 (sct) -> 1f3f4-e0067-e0062-e0073-e0063-e0074-e007f
-# Wales: 🏴 (wls) -> 1f3f4-e0067-e0062-e0077-e006c-e0073-e007f
 _TWEMOJI_SPECIAL = {
     "FLAG_ENG": "1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
     "FLAG_SCT": "1f3f4-e0067-e0062-e0073-e0063-e0074-e007f",
     "FLAG_WLS": "1f3f4-e0067-e0062-e0077-e006c-e0073-e007f",
 }
 
-# Northern Ireland: use a direct PNG (Ulster Banner) instead of GB
-# (If you prefer a different NI graphic, swap this URL.)
 _SPECIAL_FLAG_URLS = {
     "FLAG_NIR": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Ulster_banner.svg/200px-Ulster_banner.svg.png"
 }
@@ -826,13 +817,11 @@ def birth_country_flag_image(birth_country: str | None):
     if not key:
         return None
 
-    # Special cases (ENG/SCT/WLS via Twemoji tag sequence; NIR via Wikimedia)
     if key in _TWEMOJI_SPECIAL:
         return load_twemoji_png_by_code(_TWEMOJI_SPECIAL[key])
     if key in _SPECIAL_FLAG_URLS:
         return load_remote_png(_SPECIAL_FLAG_URLS[key])
 
-    # Standard country flags
     if isinstance(key, str) and len(key) == 2:
         return load_twemoji_png_by_code(_twemoji_code_from_cc(key))
 
@@ -1121,16 +1110,14 @@ def make_ranking_image(
         ax.text(BAR_LEFT + BAR_W + 0.02, y, f"{float(row[metric_col]):.1f}",
                 fontsize=14, fontweight="bold", ha="left", va="center", zorder=4)
 
-    # ---------- FOOTER: moved UP, more line spacing, divider moved UP ----------
+    # ---------- FOOTER ----------
     footer_lines = _footer_lines_for_metric(metric_col, use_league_quality)[:3]
 
-    # move divider up (more gap between row 10 and divider; no clash)
-    divider_y = 0.8
+    divider_y = 0.80
     ax.plot([footer_x_left, footer_x_right], [divider_y]*2, color="#E8E8E8", lw=0.9, zorder=2)
 
-    # move footer up + increase line spacing (less congested)
     first_line_y = 0.48
-    line_gap = 0.16  # bigger spacing than before
+    line_gap = 0.16
     for j, line in enumerate(footer_lines):
         ax.text(
             footer_x_left,
@@ -1163,21 +1150,63 @@ def make_ranking_image(
     return buf.getvalue()
 
 # ---------------------------------------------------------
-# 6) STREAMLIT OUTPUT
+# 6) STREAMLIT OUTPUT (+ league display filter vs whole pool)
 # ---------------------------------------------------------
 
-df_rank_full = df_f.dropna(subset=[rank_col]).sort_values(rank_col, ascending=False).copy()
-df_rank_full[rank_col] = df_rank_full[rank_col].round(round_to)
-df_rank_view = df_rank_full[df_rank_full["Age"] <= max_rank_age].copy()
+# NEW: choose whether to "compare against whole pool" but only DISPLAY a league
+compare_whole_pool = st.checkbox(
+    "Compare against whole pool (display selected league only)",
+    value=True,
+    key=f"cb_compare_whole_pool_{selected_file}",
+)
+
+# NEW: league to display (only affects DISPLAY when compare_whole_pool=True)
+all_leagues = sorted([l for l in df_f["League"].dropna().unique().tolist() if str(l).strip() != ""])
+league_display = st.selectbox(
+    "League to display (optional)",
+    options=["All leagues"] + all_leagues,
+    index=0,
+    key=f"cb_display_league_{selected_file}",
+)
+
+# Build ranking base:
+# - If compare_whole_pool=True: rank on full df (so percentiles/rescaling reflect the whole pool),
+#   then filter to a league for display.
+# - Else: filter to league first, then rank within that league subset.
+df_base = df_f.copy()
+
+# Apply age filter to BOTH modes (because you asked ranking list/image max age)
+df_base = df_base[df_base["Age"] <= max_rank_age].copy()
+
+# Decide ranking frame
+if compare_whole_pool:
+    # Rank against whole pool first
+    df_rank_full = df_base.dropna(subset=[rank_col]).sort_values(rank_col, ascending=False).copy()
+    df_rank_full[rank_col] = df_rank_full[rank_col].round(round_to)
+
+    # Then optionally display a specific league
+    if league_display != "All leagues":
+        df_rank_view = df_rank_full[df_rank_full["League"] == league_display].copy()
+    else:
+        df_rank_view = df_rank_full.copy()
+else:
+    # Filter first, then rank within selected subset
+    if league_display != "All leagues":
+        df_base = df_base[df_base["League"] == league_display].copy()
+
+    df_rank_view = df_base.dropna(subset=[rank_col]).sort_values(rank_col, ascending=False).copy()
+    df_rank_view[rank_col] = df_rank_view[rank_col].round(round_to)
 
 st.header("📊 CB Impact / Profile Rankings (0–100)")
+pool_note = "whole pool" if compare_whole_pool else "displayed pool"
+league_note = "All leagues" if league_display == "All leagues" else league_display
 st.caption(
-    f"Sorted by: **{rank_label}** "
-    f"({'with' if (rank_label != 'Impact Score' or use_league_for_impact) else 'no'} league quality)"
+    f"Sorted by: **{rank_label}** | League weighting: **{'ON' if (rank_label != 'Impact Score' or use_league_for_impact) else 'OFF'}** "
+    f"| Compare vs: **{pool_note}** | Display: **{league_note}**"
 )
 
 if df_rank_view.empty:
-    st.warning("No players match the age/ranking filters for the current pool.")
+    st.warning("No players match the current filters for the selected view.")
 else:
     st.dataframe(top_generic(df_rank_view, rank_col, top_n, round_to), use_container_width=True)
 
