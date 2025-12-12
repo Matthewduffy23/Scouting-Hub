@@ -3255,7 +3255,7 @@ with st.expander("Scatter settings", expanded=False):
 # ==========================================================================================================
 
 
-# ============================== FEATURE Q — CB ARCHETYPE SCATTER ==============================
+# ============================== FEATURE Q — CB / FB ARCHETYPE SCATTER ==============================
 from scipy.stats import rankdata
 from io import BytesIO
 import uuid
@@ -3265,6 +3265,13 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib.ticker import MultipleLocator
 from matplotlib import patheffects as pe
+
+# smart label library (works now that you've installed it)
+try:
+    from adjustText import adjust_text
+    HAVE_ADJUSTTEXT = True
+except ImportError:
+    HAVE_ADJUSTTEXT = False
 
 st.markdown("---")
 st.header("🧭 Feature Q — FB Archetype Map")
@@ -3351,11 +3358,11 @@ with st.expander("Scatter settings", expanded=False):
     render_exact = st.checkbox("Render exact pixels (PNG)", value=True, key="fq_exact")
 
 # ------------------------------------------------------------------
-# CB FILTER + SCORE CALCULATION
+# FB FILTER + SCORE CALCULATION
 # ------------------------------------------------------------------
 pool_sc = df[df["League"].isin(leagues_scatter)].copy()
 pool_sc["Primary Position"] = pool_sc["Position"].astype(str).str.split(",").str[0].str.strip()
-pool_sc = pool_sc[pool_sc["Primary Position"].isin(["LB", "LWB", "RB","RWB"])]
+pool_sc = pool_sc[pool_sc["Primary Position"].isin(["LB", "LWB", "RB", "RWB"])]
 
 pool_sc["Minutes played"] = pd.to_numeric(pool_sc["Minutes played"], errors="coerce")
 pool_sc["Age"] = pd.to_numeric(pool_sc["Age"], errors="coerce")
@@ -3368,38 +3375,38 @@ pool_sc = pool_sc[
 ]
 
 if pool_sc.empty:
-    st.info("No CBs after filtering.")
+    st.info("No fullbacks after filtering.")
     st.stop()
 
 metric_groups = {
-        'def_score': {
-            'Defensive duels per 90': 0.4,
-            'Defensive duels won, %': 0.3,
-            'PAdj Interceptions': 0.2,
-            'Shots blocked per 90': 0.1
-        },
-        'poss_score': {
-            'Passes per 90': 0.1,
-            'Crosses per 90': 0.1,
-            'Forward passes per 90': 0.1,
-            'Progressive passes per 90': 0.2,
-            'xA per 90': 0.1,
-            'Dribbles per 90': 0.1,
-            'Progressive runs per 90': 0.2,
-            'Passes to penalty area per 90': 0.1
-        },
-        'carry_score': {
-            'Dribbles per 90': 0.4,
-            'Successful dribbles, %': 0.1,
-            'Progressive runs per 90': 0.3,
-            'Accelerations per 90': 0.2
-        },
-        'boxing_score': {
-            'xG per 90': 0.3,
-            'Non-penalty goals per 90': 0.4,
-            'Touches in box per 90': 0.3
-        }
-    }
+    "def_score": {
+        "Defensive duels per 90": 0.4,
+        "Defensive duels won, %": 0.3,
+        "PAdj Interceptions": 0.2,
+        "Shots blocked per 90": 0.1,
+    },
+    "poss_score": {
+        "Passes per 90": 0.1,
+        "Crosses per 90": 0.1,
+        "Forward passes per 90": 0.1,
+        "Progressive passes per 90": 0.2,
+        "xA per 90": 0.1,
+        "Dribbles per 90": 0.1,
+        "Progressive runs per 90": 0.2,
+        "Passes to penalty area per 90": 0.1,
+    },
+    "carry_score": {
+        "Dribbles per 90": 0.4,
+        "Successful dribbles, %": 0.1,
+        "Progressive runs per 90": 0.3,
+        "Accelerations per 90": 0.2,
+    },
+    "boxing_score": {
+        "xG per 90": 0.3,
+        "Non-penalty goals per 90": 0.4,
+        "Touches in box per 90": 0.3,
+    },
+}
 
 def weighted_percentile(df_sub, row, mgrp):
     total = 0
@@ -3460,9 +3467,9 @@ ax.axhline(50, color=line_col, linestyle=(0, (4, 4)), lw=1.5)
 quad_fs = 16
 bbox_style = dict(boxstyle="round,pad=0.35", facecolor="#d1d5db", edgecolor="none", alpha=0.9)
 ax.text(6, 94, "LOCKDOWN", fontsize=quad_fs, weight="bold", bbox=bbox_style)
-ax.text(94, 94, "COMPLETE", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
+ax.text(94, 94, "TWO-WAY", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
 ax.text(6, 6, "LIMITED", fontsize=quad_fs, weight="bold", bbox=bbox_style)
-ax.text(94, 6, "BUILD UP/ATTACKING", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
+ax.text(94, 6, "BUILD-UP / ATTACKING", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
 
 # Archetype colours
 arch_colors = {
@@ -3488,7 +3495,7 @@ for (arch, carrier), grp in pool_sc.groupby(["Archetype", "Box-to-Box Ball Carri
     )
 
 # ------------------------------------------------------------------
-# LABEL HANDLING
+# LABEL HANDLING (with adjustText)
 # ------------------------------------------------------------------
 highlight_grp = pool_sc[pool_sc["Team"] == team_highlight] if team_highlight != "(None)" else None
 texts = []
@@ -3509,26 +3516,50 @@ if show_labels:
         else:
             label_df = pool_sc
 
-    for _, r in label_df.iterrows():
-        t = ax.annotate(
-            r["Player"],
-            (r["poss_score"], r["def_score"]),
-            xytext=(10, 12),
-            textcoords="offset points",
-            fontsize=label_size + 2,
-            color=txt_col,
-            weight="semibold",
-            ha="left",
-            va="bottom",
-            zorder=6,
-        )
-        t.set_path_effects([pe.withStroke(linewidth=2, foreground="#020617", alpha=0.9)])
-        texts.append(t)
+    if not label_df.empty:
+        xs = label_df["poss_score"].values
+        ys = label_df["def_score"].values
+
+        for _, r in label_df.iterrows():
+            t = ax.annotate(
+                r["Player"],
+                (r["poss_score"], r["def_score"]),
+                xytext=(0, 10),
+                textcoords="offset points",
+                fontsize=label_size + 2,
+                color=txt_col,
+                weight="semibold",
+                ha="center",
+                va="bottom",
+                zorder=6,
+            )
+            t.set_path_effects([pe.withStroke(linewidth=2, foreground="#020617", alpha=0.9)])
+            texts.append(t)
+
+        # smart spreading if adjustText is available
+        if HAVE_ADJUSTTEXT:
+            adjust_text(
+                texts,
+                x=xs,
+                y=ys,
+                ax=ax,
+                autoalign="y",
+                only_move={"points": "y", "text": "xy"},
+                force_points=0.6,
+                force_text=0.6,
+                expand_points=(1.1, 1.4),
+                expand_text=(1.1, 1.4),
+                arrowprops=dict(
+                    arrowstyle="-",
+                    lw=0.6,
+                    color=txt_col,
+                    alpha=0.6,
+                ),
+            )
 
 # ------------------------------------------------------------------
 # SINGLE, PERFECTLY ALIGNED LEGEND BLOCK
 # ------------------------------------------------------------------
-# Compact spacing so the gap between Archetype and Ball Carrier is small
 legend_kwargs = dict(
     loc="upper left",
     frameon=False,
@@ -3539,12 +3570,7 @@ legend_kwargs = dict(
     borderaxespad=0.0,
 )
 
-# Handles and labels in one legend:
-#   4 archetypes
-#   1 text row "Ball Carrier" (no marker)
-#   2 marker rows: Yes (square), No (circle)
 handles = [
-    # Archetypes
     Line2D([0], [0], marker="s", linestyle="None", color="none",
            markerfacecolor=arch_colors["Build-Up"], markersize=16, label="Build-Up"),
     Line2D([0], [0], marker="s", linestyle="None", color="none",
@@ -3553,9 +3579,7 @@ handles = [
            markerfacecolor=arch_colors["Two-Way"], markersize=16, label="Two-Way"),
     Line2D([0], [0], marker="s", linestyle="None", color="none",
            markerfacecolor=arch_colors["Limited"], markersize=16, label="Limited"),
-    # Ball Carrier header row (no marker)
     Line2D([], [], linestyle="None", color="none", label="Ball Carrier"),
-    # No / Yes markers
     Line2D(
         [0], [0],
         marker="o",
@@ -3581,11 +3605,11 @@ handles = [
 ]
 
 labels = [
-    "Build Up",
+    "Build-Up",
     "Lockdown",
-    "Complete",
+    "Two-Way",
     "Limited",
-    "Ball Carrier",  # header row, no marker
+    "Ball Carrier",
     "No",
     "Yes",
 ]
@@ -3596,17 +3620,15 @@ legend = ax.legend(
     title="Archetype",
     title_fontsize=15,
     fontsize=14,
-    bbox_to_anchor=(1.01, 1.00),   # X for the whole block
+    bbox_to_anchor=(1.01, 1.00),
     **legend_kwargs,
 )
 legend.get_title().set_color(txt_col)
 legend.get_title().set_fontweight("semibold")
 
-# style all label text
 for i, txt in enumerate(legend.get_texts()):
     txt.set_color(txt_col)
     txt.set_fontweight("semibold")
-    # make the "Ball Carrier" header row stand out slightly
     if labels[i] == "Ball Carrier":
         txt.set_fontstyle("italic")
 
@@ -3631,7 +3653,7 @@ if render_exact:
     st.download_button(
         "⬇️ Download Feature Q (PNG)",
         data=buf.getvalue(),
-        file_name=f"feature_q_cb_{uuid.uuid4().hex[:6]}.png",
+        file_name=f"feature_q_fb_{uuid.uuid4().hex[:6]}.png",
         mime="image/png",
     )
 else:
@@ -3639,6 +3661,7 @@ else:
 
 plt.close(fig)
 # ============================== END FEATURE Q ============================================================
+
 
 
 
