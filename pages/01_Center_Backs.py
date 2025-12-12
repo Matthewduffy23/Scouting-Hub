@@ -1028,15 +1028,16 @@ def make_ranking_image(
       - perfectly circular rank markers
       - larger left-aligned flags/crests
       - header clearly separated from first row
+      - light-grey explanation footer for Impact Score
     """
     df_top = df_rank.head(10).copy()
     if df_top.empty:
         return b""
 
-    N       = len(df_top)
-    ROW_H   = 0.82
-    HEADER_H = 1.70   # more room between titles and first row
-    FOOT_H   = 0.60   # less dead space at bottom
+    N        = len(df_top)
+    ROW_H    = 0.82
+    HEADER_H = 1.70   # room between titles and first row
+    FOOT_H   = 0.60   # bottom margin
     TOTAL_H  = HEADER_H + N * ROW_H + FOOT_H
 
     FIG_W, FIG_H = 8.0, TOTAL_H
@@ -1049,7 +1050,7 @@ def make_ranking_image(
     # background
     ax.add_patch(Rectangle((0, 0), 1, TOTAL_H, color="#FFFFFF", zorder=0))
 
-    # titles
+    # ---------- TITLES ----------
     t1 = (title_lines[0] if len(title_lines) > 0 else "").upper()
     t2 = (title_lines[1] if len(title_lines) > 1 else "").upper()
     t3 = (title_lines[2] if len(title_lines) > 2 else "").upper()
@@ -1059,6 +1060,7 @@ def make_ranking_image(
     ax.text(0.03, title_y_top - 0.32, t2, fontsize=13, fontweight="bold", ha="left", va="top")
     ax.text(0.03, title_y_top - 0.60, t3, fontsize=10, color="#555555", ha="left", va="top")
 
+    # ---------- RANK ROWS ----------
     scores    = df_top[metric_col].astype(float)
     max_score = scores.max() if scores.notna().any() else 1.0
 
@@ -1076,7 +1078,7 @@ def make_ranking_image(
     for i, (_, row) in enumerate(df_top.iterrows()):
         y_center = base_y - i * ROW_H
 
-        # alternating background
+        # alternating row background
         if i % 2 == 0:
             ax.add_patch(Rectangle(
                 (0, y_center - ROW_H / 2),
@@ -1085,7 +1087,7 @@ def make_ranking_image(
                 zorder=1,
             ))
 
-        # rank circle (Axes coords)
+        # rank circle (Axes coords for perfect circle)
         y_axes = y_center / TOTAL_H
         circ_x = 0.042
         circ_r = 0.022
@@ -1108,7 +1110,7 @@ def make_ranking_image(
             zorder=4,
         )
 
-        # badge / flag – slightly bigger
+        # badge / flag
         badge = get_team_badge(row)
         if badge is not None:
             crest_x_data = 0.112
@@ -1116,12 +1118,12 @@ def make_ranking_image(
             ab = AnnotationBbox(im, (crest_x_data, y_center), frameon=False, zorder=4)
             ax.add_artist(ab)
 
-        # thin separator between badge & text
+        # thin vertical separator between crest and text
         ax.plot([0.168, 0.168],
                 [y_center - ROW_H/2 + 0.05, y_center + ROW_H/2 - 0.05],
                 color="#E0E0E0", linewidth=0.7, zorder=2)
 
-        # text
+        # player name
         ax.text(
             0.18, y_center + 0.13,
             str(row["Player"]).upper(),
@@ -1129,6 +1131,7 @@ def make_ranking_image(
             ha="left", va="center",
             zorder=4,
         )
+        # team + league
         ax.text(
             0.18, y_center - 0.10,
             f"{row['Team']} ({row['League']})",
@@ -1137,13 +1140,14 @@ def make_ranking_image(
             zorder=4,
         )
 
-        # bar
+        # bar background
         ax.add_patch(Rectangle(
             (BAR_LEFT, y_center - BAR_H/2),
             BAR_W, BAR_H,
             color="#E1E1E1",
             zorder=2,
         ))
+        # bar fill
         frac = float(row[metric_col]) / max_score if max_score > 0 else 0.0
         ax.add_patch(Rectangle(
             (BAR_LEFT, y_center - BAR_H/2),
@@ -1151,6 +1155,7 @@ def make_ranking_image(
             color="#BFBFBF",
             zorder=3,
         ))
+        # score text
         ax.text(
             BAR_LEFT + BAR_W + 0.02,
             y_center,
@@ -1159,6 +1164,33 @@ def make_ranking_image(
             ha="left", va="center",
             zorder=4,
         )
+
+    # ---------- FOOTER SUMMARY (light grey) ----------
+    footer_line1 = (
+        "Impact Score blends six sub-indices "
+        "(Aerial, Ground, Retention, Carrying, Playmaking, Positioning)"
+    )
+    footer_line2 = (
+        "and adjusts for minutes played, team context and league quality "
+        "(if league weighting is enabled)."
+    )
+
+    ax.text(
+        0.03, 0.095,
+        footer_line1,
+        transform=ax.transAxes,
+        fontsize=7.5, color="#9A9A9A",
+        ha="left", va="bottom",
+        zorder=5,
+    )
+    ax.text(
+        0.03, 0.05,
+        footer_line2,
+        transform=ax.transAxes,
+        fontsize=7.5, color="#9A9A9A",
+        ha="left", va="bottom",
+        zorder=5,
+    )
 
     fig.tight_layout(pad=0.35)
     buf = io.BytesIO()
