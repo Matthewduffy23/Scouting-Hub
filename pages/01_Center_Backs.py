@@ -691,7 +691,6 @@ df_f = ensure_cb_impact_metrics(df_f, selected_file)
 # 2. RANKING METRIC SELECTOR + TOP TABLE
 # ---------------------------------------------------------
 
-# single Impact label, we’ll switch between league / no-league with a checkbox
 RANK_OPTIONS = {
     "Impact Score": "Impact Score",
     "Aerial Score": "Aerial Score",
@@ -715,8 +714,6 @@ use_league_for_impact = st.checkbox(
     key=f"cb_impact_league_{selected_file}",
 )
 
-# Age filter that only changes the ranking list / image,
-# not the underlying pool or percentiles
 max_rank_age = st.number_input(
     "Max age in ranking list/image",
     min_value=16, max_value=40, value=23, step=1,
@@ -825,7 +822,6 @@ def birth_country_flag_image(birth_country: str | None):
 
 # ---------------------------------------------------------
 # 4. CREST / BADGE PIPELINE
-#    Local PNG → Wikipedia soft search → PlaymakerStats → flag PNG
 # ---------------------------------------------------------
 
 BADGE_DIRS = [
@@ -996,22 +992,18 @@ def get_team_badge(row: pd.Series):
     """
     team = str(row.get("Team", "")).strip()
 
-    # 1) local PNG
     img = load_local_badge(team)
     if img is not None:
         return img
 
-    # 2) Wikipedia
     img = load_wikipedia_badge_soft(team)
     if img is not None:
         return img
 
-    # 3) PlaymakerStats
     img = load_playmaker_badge_soft(team)
     if img is not None:
         return img
 
-    # 4) Twemoji flag fallback
     birth = row.get("Birth country") or row.get("Birth Country") or row.get("Nationality")
     flag_img = birth_country_flag_image(birth)
     if flag_img is not None:
@@ -1021,7 +1013,7 @@ def get_team_badge(row: pd.Series):
 
 
 # ---------------------------------------------------------
-# 5. CIES-STYLE RANKING IMAGE – refined layout / spacing
+# 5. CIES-STYLE RANKING IMAGE – refined layout / spacing / fonts
 # ---------------------------------------------------------
 
 def make_ranking_image(
@@ -1034,21 +1026,20 @@ def make_ranking_image(
       - white background
       - 3-line title at top
       - perfectly circular rank markers
-      - larger left-aligned flags/crests (no white boxes)
-      - header separated cleanly from first row
+      - larger left-aligned flags/crests
+      - header clearly separated from first row
     """
     df_top = df_rank.head(10).copy()
     if df_top.empty:
         return b""
 
-    N = len(df_top)
-    ROW_H    = 0.82
-    HEADER_H = 1.40   # more space below titles
-    FOOT_H   = 0.9    # less bottom white
+    N       = len(df_top)
+    ROW_H   = 0.82
+    HEADER_H = 1.70   # more room between titles and first row
+    FOOT_H   = 0.60   # less dead space at bottom
     TOTAL_H  = HEADER_H + N * ROW_H + FOOT_H
 
-    FIG_W = 8.0
-    FIG_H = TOTAL_H
+    FIG_W, FIG_H = 8.0, TOTAL_H
 
     fig, ax = plt.subplots(figsize=(FIG_W, FIG_H), dpi=220)
     ax.set_xlim(0, 1)
@@ -1064,18 +1055,23 @@ def make_ranking_image(
     t3 = (title_lines[2] if len(title_lines) > 2 else "").upper()
 
     title_y_top = TOTAL_H - 0.25
-    ax.text(0.03, title_y_top,        t1, fontsize=15, fontweight="bold", ha="left", va="top")
-    ax.text(0.03, title_y_top - 0.30, t2, fontsize=11, fontweight="bold", ha="left", va="top")
-    ax.text(0.03, title_y_top - 0.56, t3, fontsize=9, color="#555555", ha="left", va="top")
+    ax.text(0.03, title_y_top,        t1, fontsize=17, fontweight="bold", ha="left", va="top")
+    ax.text(0.03, title_y_top - 0.32, t2, fontsize=13, fontweight="bold", ha="left", va="top")
+    ax.text(0.03, title_y_top - 0.60, t3, fontsize=10, color="#555555", ha="left", va="top")
 
-    scores = df_top[metric_col].astype(float)
+    scores    = df_top[metric_col].astype(float)
     max_score = scores.max() if scores.notna().any() else 1.0
 
     BAR_LEFT = 0.64
     BAR_W    = 0.28
-    BAR_H    = 0.18
+    BAR_H    = 0.19
 
     base_y = TOTAL_H - HEADER_H   # first-row centre
+
+    # subtle line under header
+    header_bottom_y = base_y + ROW_H / 2 + 0.02
+    ax.plot([0.02, 0.98], [header_bottom_y, header_bottom_y],
+            color="#E2E2E2", linewidth=1.1, zorder=2)
 
     for i, (_, row) in enumerate(df_top.iterrows()):
         y_center = base_y - i * ROW_H
@@ -1089,7 +1085,7 @@ def make_ranking_image(
                 zorder=1,
             ))
 
-        # rank circle in Axes coords
+        # rank circle (Axes coords)
         y_axes = y_center / TOTAL_H
         circ_x = 0.042
         circ_r = 0.022
@@ -1115,28 +1111,28 @@ def make_ranking_image(
         # badge / flag – slightly bigger
         badge = get_team_badge(row)
         if badge is not None:
-            crest_x_data = 0.11
-            im = OffsetImage(badge, zoom=0.46)
+            crest_x_data = 0.112
+            im = OffsetImage(badge, zoom=0.49)
             ab = AnnotationBbox(im, (crest_x_data, y_center), frameon=False, zorder=4)
             ax.add_artist(ab)
 
-        # thin separator line
-        ax.plot([0.165, 0.165],
+        # thin separator between badge & text
+        ax.plot([0.168, 0.168],
                 [y_center - ROW_H/2 + 0.05, y_center + ROW_H/2 - 0.05],
                 color="#E0E0E0", linewidth=0.7, zorder=2)
 
         # text
         ax.text(
-            0.18, y_center + 0.12,
+            0.18, y_center + 0.13,
             str(row["Player"]).upper(),
-            fontsize=12, fontweight="bold",
+            fontsize=14, fontweight="bold",
             ha="left", va="center",
             zorder=4,
         )
         ax.text(
             0.18, y_center - 0.10,
             f"{row['Team']} ({row['League']})",
-            fontsize=9, color="#777777",
+            fontsize=11, color="#777777",
             ha="left", va="center",
             zorder=4,
         )
@@ -1159,7 +1155,7 @@ def make_ranking_image(
             BAR_LEFT + BAR_W + 0.02,
             y_center,
             f"{row[metric_col]:.1f}",
-            fontsize=12, fontweight="bold",
+            fontsize=14, fontweight="bold",
             ha="left", va="center",
             zorder=4,
         )
@@ -1177,16 +1173,16 @@ def make_ranking_image(
 # 6. STREAMLIT OUTPUT – table + image with editable title
 # ---------------------------------------------------------
 
-# full ranking pool (already filtered by sidebar)
 df_rank_full = df_f.dropna(subset=[rank_col]).sort_values(rank_col, ascending=False).copy()
 df_rank_full[rank_col] = df_rank_full[rank_col].round(round_to)
 
-# age-filtered view for display only
 df_rank_view = df_rank_full[df_rank_full["Age"] <= max_rank_age].copy()
 
 st.header("📊 CB Impact / Profile Rankings (0–100)")
-st.caption(f"Sorted by: **{rank_label}** "
-           f"({'with' if (rank_label != 'Impact Score' or use_league_for_impact) else 'no'} league quality)")
+st.caption(
+    f"Sorted by: **{rank_label}** "
+    f"({'with' if (rank_label != 'Impact Score' or use_league_for_impact) else 'no'} league quality)"
+)
 
 if df_rank_view.empty:
     st.warning("No players match the age/ranking filters for the current pool.")
@@ -1198,15 +1194,21 @@ else:
 
 st.subheader("🖼 Exportable CIES-style ranking image")
 
-t1 = st.text_input("Title line 1",
-                   "TOP U23 CENTRE BACKS",
-                   key=f"cb_title1_{selected_file}")
-t2 = st.text_input("Title line 2",
-                   "IMPACT PERFORMANCE RANKING",
-                   key=f"cb_title2_{selected_file}")
-t3 = st.text_input("Title line 3",
-                   "GLOBAL SCOUTING INDEX 2025",
-                   key=f"cb_title3_{selected_file}")
+t1 = st.text_input(
+    "Title line 1",
+    "TOP U23 CENTRE BACKS",
+    key=f"cb_title1_{selected_file}",
+)
+t2 = st.text_input(
+    "Title line 2",
+    "IMPACT PERFORMANCE RANKING",
+    key=f"cb_title2_{selected_file}",
+)
+t3 = st.text_input(
+    "Title line 3",
+    "GLOBAL SCOUTING INDEX 2025",
+    key=f"cb_title3_{selected_file}",
+)
 
 img_bytes = make_ranking_image(df_rank_view, rank_col, [t1, t2, t3])
 
