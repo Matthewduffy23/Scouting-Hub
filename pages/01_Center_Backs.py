@@ -565,13 +565,7 @@ df_f["Pass Ratio Percentile"] = (
 )
 
 # ===================================================================
-#  CB IMPACT FEATURE BLOCK – METRICS + CRESTS/FLAGS + CIES-STYLE IMAGE
-#  - Ranking selector (Impact + sub-scores)
-#  - League quality toggle for Impact
-#  - Age filter for ranking list/image (does NOT change pool creation)
-#  - Crests: local -> Wikipedia -> PlaymakerStats -> Birth-country flag
-#  - Clean CIES-style export image with short readable footer
-#  - Optional bottom-right brand logo via URL
+#  CB IMPACT FEATURE BLOCK – METRICS + CRESTS + CIES-STYLE IMAGE
 # ===================================================================
 
 import io
@@ -579,35 +573,16 @@ import re
 import unicodedata
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
 import requests
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 
 # ---------------------------------------------------------
-# 0) SAFE REMOTE IMAGE LOADER (for brand/logo and any PNG)
-# ---------------------------------------------------------
-@st.cache_data(show_spinner=False)
-def load_remote_png(url: str):
-    try:
-        r = requests.get(url, timeout=6)
-        r.raise_for_status()
-        return plt.imread(io.BytesIO(r.content))
-    except Exception:
-        return None
-
-
-# ---------------------------------------------------------
 # 1) ENSURE IMPACT / BUCKET SCORES EXIST
 # ---------------------------------------------------------
+
 def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataFrame:
-    """
-    Compute CB bucket scores + Impact scores if missing.
-    Requires '<metric> Percentile' columns & 'League Strength'.
-    Safe to call multiple times.
-    """
     required_cols = [
         "Impact Score", "Impact Score (no league)",
         "Aerial Score", "Ground Score", "Retention Score",
@@ -619,7 +594,7 @@ def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataF
     def pct(m: str) -> str:
         return f"{m} Percentile"
 
-    # --- bucket scores (0–100 each) ---
+    # Bucket scores
     df_f["Aerial Score"] = (
         0.30 * df_f[pct("Aerial duels per 90")] +
         0.70 * df_f[pct("Aerial duels won, %")]
@@ -660,13 +635,13 @@ def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataF
     ]
     df_f["Base CB Score"] = df_f[sub_scores].mean(axis=1)
 
-    # --- minutes factor (0.90–1.10 by league percentile) ---
+    # Minutes factor (0.90–1.10)
     minutes_pct = df_f.groupby("League")["Minutes played"].rank(pct=True)
     df_f["Minutes Factor"] = 0.90 + 0.20 * minutes_pct
 
-    # --- team context factor (0.90–1.10; boost good players in weak teams) ---
+    # Team context factor (0.90–1.10)
     league_avg = df_f.groupby("League")["Base CB Score"].transform("mean")
-    team_avg   = df_f.groupby(["League", "Team"])["Base CB Score"].transform("mean")
+    team_avg = df_f.groupby(["League", "Team"])["Base CB Score"].transform("mean")
 
     with np.errstate(divide="ignore", invalid="ignore"):
         strength_ratio = team_avg / league_avg.replace(0, np.nan)
@@ -675,19 +650,19 @@ def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataF
     df_f["Team Context Factor"] = np.clip(raw_team_factor, 0.90, 1.10)
     df_f["Team Context Factor"] = df_f["Team Context Factor"].fillna(1.0)
 
-    # --- impact before league quality ---
+    # Impact before league quality
     df_f["Raw Impact No League"] = (
         df_f["Base CB Score"] *
         df_f["Minutes Factor"] *
         df_f["Team Context Factor"]
     )
 
-    # --- league factor powered by beta slider (same beta as roles) ---
+    # League factor powered by beta slider
     ls_norm = df_f["League Strength"].fillna(50.0).astype(float) / 100.0
     ls_norm = np.clip(ls_norm, 0.30, 1.00)
 
     beta_league = float(st.session_state.get(f"cb_beta_{selected_file}", 0.40))
-    gamma = 1.0 + 1.5 * beta_league  # β=0 → γ=1 ; β=0.4 → γ≈1.6 ; β=1 → γ=2.5
+    gamma = 1.0 + 1.5 * beta_league
 
     df_f["League Factor"] = ls_norm ** gamma
     df_f["Raw Impact Score"] = df_f["Raw Impact No League"] * df_f["League Factor"]
@@ -698,7 +673,7 @@ def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataF
             return 100.0 * (s - lo) / (hi - lo)
         return pd.Series(default, index=s.index, dtype=float)
 
-    df_f["Impact Score"]             = scale_0_100(df_f["Raw Impact Score"]).astype(float)
+    df_f["Impact Score"] = scale_0_100(df_f["Raw Impact Score"]).astype(float)
     df_f["Impact Score (no league)"] = scale_0_100(df_f["Raw Impact No League"]).astype(float)
 
     return df_f
@@ -706,10 +681,10 @@ def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataF
 
 df_f = ensure_cb_impact_metrics(df_f, selected_file)
 
+# ---------------------------------------------------------
+# 2) RANKING METRIC SELECTOR + TOP TABLE
+# ---------------------------------------------------------
 
-# ---------------------------------------------------------
-# 2) RANKING METRIC SELECTOR + LEAGUE TOGGLE + AGE FILTER
-# ---------------------------------------------------------
 RANK_OPTIONS = {
     "Impact Score": "Impact Score",
     "Aerial Score": "Aerial Score",
@@ -743,7 +718,6 @@ rank_col = RANK_OPTIONS[rank_label]
 if rank_label == "Impact Score" and not use_league_for_impact:
     rank_col = "Impact Score (no league)"
 
-
 def top_generic(df_in: pd.DataFrame, column: str, head_n: int, round_to: int = 0) -> pd.DataFrame:
     ranked = df_in.dropna(subset=[column]).sort_values(column, ascending=False).copy()
     ranked[column] = ranked[column].round(round_to)
@@ -757,8 +731,7 @@ def top_generic(df_in: pd.DataFrame, column: str, head_n: int, round_to: int = 0
         column,
     ]
 
-    seen = set()
-    cols = []
+    seen, cols = set(), []
     for c in base_cols:
         if c in ranked.columns and c not in seen:
             cols.append(c)
@@ -768,16 +741,14 @@ def top_generic(df_in: pd.DataFrame, column: str, head_n: int, round_to: int = 0
     out.index = np.arange(1, len(out) + 1)
     return out
 
+# ---------------------------------------------------------
+# 3) FLAG HELPER – Twemoji PNG instead of emoji squares
+# ---------------------------------------------------------
 
-# ---------------------------------------------------------
-# 3) FLAG HELPER – Twemoji PNG
-# ---------------------------------------------------------
 _CC_MAP = {
-    # UK cluster -> GB flag (Twemoji special ENG/SCT/WLS avoided here)
     "england": "gb", "scotland": "gb", "wales": "gb",
     "northern ireland": "gb", "united kingdom": "gb", "great britain": "gb",
 
-    # Europe
     "spain": "es", "france": "fr", "germany": "de", "italy": "it",
     "portugal": "pt", "netherlands": "nl", "belgium": "be", "austria": "at",
     "switzerland": "ch", "denmark": "dk", "sweden": "se", "norway": "no",
@@ -788,19 +759,16 @@ _CC_MAP = {
     "romania": "ro", "bulgaria": "bg", "russia": "ru", "ukraine": "ua",
     "ireland": "ie", "republic of ireland": "ie",
 
-    # Americas
     "brazil": "br", "argentina": "ar", "uruguay": "uy", "chile": "cl",
     "colombia": "co", "peru": "pe", "ecuador": "ec", "paraguay": "py",
     "bolivia": "bo", "mexico": "mx", "united states": "us", "usa": "us",
     "canada": "ca",
 
-    # other frequent
     "turkey": "tr", "cyprus": "cy", "qatar": "qa", "saudi arabia": "sa",
     "uae": "ae", "united arab emirates": "ae", "israel": "il",
     "japan": "jp", "korea": "kr", "south korea": "kr", "australia": "au",
     "new zealand": "nz",
 
-    # Africa (common)
     "nigeria": "ng", "ghana": "gh", "ivory coast": "ci",
     "cote d'ivoire": "ci", "senegal": "sn", "cameroon": "cm",
     "algeria": "dz", "morocco": "ma", "tunisia": "tn",
@@ -832,16 +800,13 @@ def load_flag_image_for_cc(cc: str):
 def birth_country_flag_image(birth_country: str | None):
     if not birth_country:
         return None
-    n = _norm_country(birth_country)
-    cc = _CC_MAP.get(n)
-    if not cc:
-        return None
-    return load_flag_image_for_cc(cc)
-
+    cc = _CC_MAP.get(_norm_country(birth_country))
+    return load_flag_image_for_cc(cc) if cc else None
 
 # ---------------------------------------------------------
-# 4) CREST / BADGE PIPELINE (Local -> Wiki -> Playmaker -> Flag)
+# 4) CREST / BADGE PIPELINE
 # ---------------------------------------------------------
+
 BADGE_DIRS = [
     Path(__file__).resolve().parent / "badges",
     Path(__file__).resolve().parent / "crests",
@@ -873,7 +838,8 @@ def _team_name_candidates(team: str) -> list[str]:
     base = team.strip()
     cand = {base}
     cand.add(re.sub(r"\s*\([^)]*\)", "", base).strip())
-    for s in [" FC", " CF", " AC", " AFC", " U19", " U21", " U23", " B"]:
+    suffixes = [" FC", " CF", " AC", " AFC", " U19", " U21", " U23", " B"]
+    for s in suffixes:
         if base.upper().endswith(s):
             cand.add(base[: -len(s)].strip())
     if "," in base:
@@ -894,7 +860,7 @@ def _wiki_badge_for_title(title: str):
                 "prop": "pageimages",
                 "format": "json",
                 "piprop": "thumbnail",
-                "pithumbsize": 140,
+                "pithumbsize": 120,
                 "titles": title,
             },
             timeout=4,
@@ -925,17 +891,11 @@ def load_wikipedia_badge_soft(team: str):
         q = f"{team} football club"
         r = requests.get(
             "https://en.wikipedia.org/w/api.php",
-            params={
-                "action": "query",
-                "list": "search",
-                "format": "json",
-                "srsearch": q,
-                "srlimit": 3,
-            },
+            params={"action": "query", "list": "search", "format": "json", "srsearch": q, "srlimit": 3},
             timeout=4,
         )
-        data = r.json()
-        for res in data.get("query", {}).get("search", []):
+        results = r.json().get("query", {}).get("search", [])
+        for res in results:
             title = res.get("title")
             img = _wiki_badge_for_title(title)
             if img is not None:
@@ -952,27 +912,22 @@ def load_playmaker_badge_soft(team: str):
         base = "https://www.playmakerstats.com"
         sr = requests.get(f"{base}/search.php", params={"search": team}, timeout=4)
         html = sr.text
-
         m = re.search(r'href="(/team/[^"]+)"', html)
         if not m:
             return None
         team_url = base + m.group(1)
-
         tr = requests.get(team_url, timeout=4)
         thtml = tr.text
-
-        m_img = re.search(r'<img[^>]+src="([^"]+)"[^>]*(?:logo|crest|badge)[^>]*>', thtml, flags=re.I)
+        m_img = re.search(r'<img[^>]+src="([^"]+)"[^>]*(?:logo|crest|badge)[^>]*>', thtml, flags=re.IGNORECASE)
         if not m_img:
-            m_img = re.search(r'<img[^>]+src="([^"]+img/logos[^"]+)"', thtml, flags=re.I)
+            m_img = re.search(r'<img[^>]+src="([^"]+img/logos[^"]+)"', thtml, flags=re.IGNORECASE)
         if not m_img:
             return None
-
         src = m_img.group(1)
         if src.startswith("//"):
             src = "https:" + src
         elif src.startswith("/"):
             src = base + src
-
         ir = requests.get(src, timeout=4)
         ir.raise_for_status()
         return plt.imread(io.BytesIO(ir.content))
@@ -985,11 +940,9 @@ def get_team_badge(row: pd.Series):
     img = load_local_badge(team)
     if img is not None:
         return img
-
     img = load_wikipedia_badge_soft(team)
     if img is not None:
         return img
-
     img = load_playmaker_badge_soft(team)
     if img is not None:
         return img
@@ -997,17 +950,67 @@ def get_team_badge(row: pd.Series):
     birth = row.get("Birth country") or row.get("Birth Country") or row.get("Nationality")
     return birth_country_flag_image(birth)
 
+# ---------------------------------------------------------
+# 5) CIES-STYLE RANKING IMAGE (WITH THE TWO CHANGES)
+#    - Perfect circle rank markers (not ovals)
+#    - Footer is metric-aware + roomy + aligned (flag-left to score-right)
+# ---------------------------------------------------------
 
-# ---------------------------------------------------------
-# 5) CIES-STYLE RANKING IMAGE (PERFECT CIRCLES + CLEAN FOOTER)
-# ---------------------------------------------------------
+def _footer_lines_for_metric(metric_col: str, use_league_quality: bool) -> list[str]:
+    m = (metric_col or "").lower()
+
+    if "aerial score" in m:
+        return [
+            "Aerial Score: how strong a CB is in the air.",
+            "Blends aerial duels volume (30%) + aerial win rate (70%).",
+            "Percentile-based within the pool, then rescaled to 0–100.",
+        ]
+    if "ground score" in m:
+        return [
+            "Ground Score: 1v1 defending success on the floor.",
+            "Blends defensive duels volume (30%) + defensive win rate (70%).",
+            "Percentile-based within the pool, then rescaled to 0–100.",
+        ]
+    if "retention score" in m:
+        return [
+            "Retention Score: safe, reliable passing under pressure.",
+            "Equal blend (25% each): total pass%, forward pass%, progressive pass%, long pass%.",
+            "Percentile-based within the pool, then rescaled to 0–100.",
+        ]
+    if "carrying score" in m:
+        return [
+            "Carrying Score: progressing the ball via runs & dribbles.",
+            "Blends dribbles/90 (40%) + dribble success (20%) + progressive runs/90 (40%).",
+            "Percentile-based within the pool, then rescaled to 0–100.",
+        ]
+    if "playmaking score" in m:
+        return [
+            "Playmaking Score: forward passing impact and progression.",
+            "Blends progressive passes/90 (50%) + forward passes/90 (25%) + final-third passes/90 (25%).",
+            "Percentile-based within the pool, then rescaled to 0–100.",
+        ]
+    if "positioning score" in m:
+        return [
+            "Positioning Score: reading danger & blocking threats.",
+            "Blends PAdj interceptions (70%) + shots blocked/90 (30%).",
+            "Percentile-based within the pool, then rescaled to 0–100.",
+        ]
+
+    league_phrase = "with league-strength weighting" if use_league_quality else "without league-strength weighting"
+    return [
+        "Impact Score: combines six areas (Aerial, Ground, Retention, Carrying, Playmaking, Positioning).",
+        "Areas are averaged into a base performance score, then adjusted for minutes played and team context.",
+        f"Final score is {league_phrase} and rescaled to 0–100 within the selected pool.",
+    ]
+
+
 def make_ranking_image(
     df_rank: pd.DataFrame,
     metric_col: str,
     title_lines: list[str],
     brand_logo_url: str | None = None,
+    use_league_quality: bool = True,
 ) -> bytes:
-
     df_top = df_rank.head(10).copy()
     if df_top.empty:
         return b""
@@ -1015,27 +1018,24 @@ def make_ranking_image(
     N        = len(df_top)
     ROW_H    = 0.82
     HEADER_H = 1.70
-    FOOT_H   = 0.65  # keep image size stable
+    FOOT_H   = 0.65
     TOTAL_H  = HEADER_H + N * ROW_H + FOOT_H
 
     fig, ax = plt.subplots(figsize=(8.0, TOTAL_H), dpi=220)
     ax.set_xlim(0, 1)
     ax.set_ylim(0, TOTAL_H)
     ax.axis("off")
-
     ax.add_patch(Rectangle((0, 0), 1, TOTAL_H, color="#FFFFFF", zorder=0))
 
     # Titles
     t1 = title_lines[0].upper() if len(title_lines) > 0 else ""
     t2 = title_lines[1].upper() if len(title_lines) > 1 else ""
     t3 = title_lines[2].upper() if len(title_lines) > 2 else ""
-
     title_y = TOTAL_H - 0.25
     ax.text(0.03, title_y,        t1, fontsize=17, fontweight="bold", ha="left", va="top")
     ax.text(0.03, title_y - 0.32, t2, fontsize=13, fontweight="bold", ha="left", va="top")
     ax.text(0.03, title_y - 0.60, t3, fontsize=10, color="#555555", ha="left", va="top")
 
-    # Bar scaling
     scores = df_top[metric_col].astype(float)
     max_score = scores.max() if scores.notna().any() else 1.0
 
@@ -1044,8 +1044,14 @@ def make_ranking_image(
     BAR_H    = 0.19
 
     base_y = TOTAL_H - HEADER_H
-
     ax.plot([0.02, 0.98], [base_y + ROW_H/2 + 0.02]*2, color="#E2E2E2", lw=1.1, zorder=2)
+
+    # Footer alignment anchors
+    crest_center_x = 0.112
+    crest_zoom = 0.50
+    crest_half_w_axes = 0.030  # tuned for this layout
+    footer_x_left  = crest_center_x - crest_half_w_axes
+    footer_x_right = BAR_LEFT + BAR_W + 0.07
 
     for i, (_, row) in enumerate(df_top.iterrows()):
         y = base_y - i * ROW_H
@@ -1053,7 +1059,7 @@ def make_ranking_image(
         if i % 2 == 0:
             ax.add_patch(Rectangle((0, y - ROW_H/2), 1, ROW_H, color="#F7F7F7", zorder=1))
 
-        # PERFECT CIRCLE rank marker (scatter uses points, so not oval)
+        # PERFECT CIRCLE marker (scatter uses points -> no oval distortion)
         ax.scatter([0.042], [y], s=420, facecolor="#F3F3F3",
                    edgecolor="#C0C0C0", linewidths=0.8, zorder=3)
         ax.text(0.042, y, str(i+1), fontsize=9, fontweight="bold",
@@ -1062,8 +1068,8 @@ def make_ranking_image(
         badge = get_team_badge(row)
         if badge is not None:
             ax.add_artist(AnnotationBbox(
-                OffsetImage(badge, zoom=0.50),
-                (0.112, y),
+                OffsetImage(badge, zoom=crest_zoom),
+                (crest_center_x, y),
                 frameon=False,
                 zorder=4
             ))
@@ -1085,22 +1091,59 @@ def make_ranking_image(
         ax.text(BAR_LEFT + BAR_W + 0.02, y, f"{float(row[metric_col]):.1f}",
                 fontsize=14, fontweight="bold", ha="left", va="center", zorder=4)
 
-    # Footer (3–4 lines, non-technical, aligned to content column)
-    footer_y = 0.36
-    ax.plot([0.03, 0.97], [footer_y + 0.18]*2, color="#E8E8E8", lw=0.9, zorder=2)
+    # ---------------- FOOTER (brief, roomy, aligned) ----------------
+    footer_lines = _footer_lines_for_metric(metric_col, use_league_quality)[:4]
 
-    footer_lines = [
-        "Impact Score blends aerial & ground defending, ball retention, carrying, passing impact and positioning.",
-        "Each area is weighted for centre-back responsibilities and averaged into a base performance score.",
-        "Scores are adjusted for minutes played and team context, with optional league-strength weighting.",
-        "Final values are rescaled from 0–100 within the selected player pool."
-    ]
-    for j, line in enumerate(footer_lines):
-        ax.text(0.18, footer_y - j*0.11, line,
-                fontsize=8.6, color="#9B9B9B", ha="left", va="bottom", zorder=4)
+    # Divider aligned as requested
+    divider_y = 0.44
+    ax.plot([footer_x_left, footer_x_right], [divider_y]*2, color="#E8E8E8", lw=0.9, zorder=2)
 
-    # Optional brand logo bottom-right
+    # Bigger line spacing + moved up
+    line_gap = 0.13
+    first_line_y = 0.33
+
+    def _wrap(line: str, max_chars: int = 105) -> list[str]:
+        if len(line) <= max_chars:
+            return [line]
+        words, out, cur = line.split(), [], ""
+        for w in words:
+            if len(cur) + len(w) + 1 <= max_chars:
+                cur = (cur + " " + w).strip()
+            else:
+                out.append(cur)
+                cur = w
+        if cur:
+            out.append(cur)
+        return out
+
+    rendered = []
+    for ln in footer_lines:
+        rendered.extend(_wrap(ln))
+    rendered = rendered[:4]
+
+    for j, line in enumerate(rendered):
+        ax.text(
+            footer_x_left,
+            first_line_y - j * line_gap,
+            line,
+            fontsize=8.9,
+            color="#9B9B9B",
+            ha="left",
+            va="bottom",
+            zorder=4,
+        )
+
+    # Optional logo bottom-right (if you want it)
     if brand_logo_url:
+        @st.cache_data(show_spinner=False)
+        def load_remote_png(url: str):
+            try:
+                r = requests.get(url, timeout=6)
+                r.raise_for_status()
+                return plt.imread(io.BytesIO(r.content))
+            except Exception:
+                return None
+
         brand_img = load_remote_png(brand_logo_url)
         if brand_img is not None:
             ax.add_artist(AnnotationBbox(
@@ -1109,7 +1152,7 @@ def make_ranking_image(
                 xycoords=ax.transAxes,
                 frameon=False,
                 box_alignment=(1, 0),
-                zorder=5
+                zorder=5,
             ))
 
     buf = io.BytesIO()
@@ -1118,14 +1161,14 @@ def make_ranking_image(
     buf.seek(0)
     return buf.getvalue()
 
+# ---------------------------------------------------------
+# 6) STREAMLIT OUTPUT – table + image with editable title
+#    (SECOND CHANGE: pass use_league_quality into make_ranking_image)
+# ---------------------------------------------------------
 
-# ---------------------------------------------------------
-# 6) STREAMLIT OUTPUT – table + image + download
-# ---------------------------------------------------------
 df_rank_full = df_f.dropna(subset=[rank_col]).sort_values(rank_col, ascending=False).copy()
 df_rank_full[rank_col] = df_rank_full[rank_col].round(round_to)
 
-# Age filter only affects ranking display/image (NOT the dataset pool creation)
 df_rank_view = df_rank_full[df_rank_full["Age"] <= max_rank_age].copy()
 
 st.header("📊 CB Impact / Profile Rankings (0–100)")
@@ -1135,7 +1178,7 @@ st.caption(
 )
 
 if df_rank_view.empty:
-    st.warning("No players match the age filter in the current pool.")
+    st.warning("No players match the age/ranking filters for the current pool.")
 else:
     st.dataframe(
         top_generic(df_rank_view, rank_col, top_n, round_to),
@@ -1148,14 +1191,15 @@ t1 = st.text_input("Title line 1", "TOP U23 CENTRE BACKS", key=f"cb_title1_{sele
 t2 = st.text_input("Title line 2", "IMPACT PERFORMANCE RANKING", key=f"cb_title2_{selected_file}")
 t3 = st.text_input("Title line 3", "GLOBAL SCOUTING INDEX 2025", key=f"cb_title3_{selected_file}")
 
-# Optional: add your brand logo URL (or set to None)
+# (Optional) brand/logo url
 brand_logo_url = "https://image.pitchbook.com/1xOUzrEhnsKrJbNbN8Asf3LND2u1605464042293_200x200"
 
 img_bytes = make_ranking_image(
     df_rank_view,
     rank_col,
     [t1, t2, t3],
-    brand_logo_url=brand_logo_url
+    brand_logo_url=brand_logo_url,
+    use_league_quality=use_league_for_impact,  # <-- change #2
 )
 
 if img_bytes:
@@ -1168,6 +1212,7 @@ if img_bytes:
     )
 else:
     st.info("No data to generate image.")
+
 
 
 
