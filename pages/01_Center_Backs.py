@@ -570,10 +570,12 @@ df_f["Pass Ratio Percentile"] = (
 
 import io
 import re
-import requests
+import unicodedata
 from pathlib import Path
 
-from matplotlib.patches import Rectangle, Circle, FancyBboxPatch
+import requests
+from matplotlib import pyplot as plt
+from matplotlib.patches import Rectangle, Circle
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 
 # ---------------------------------------------------------
@@ -737,11 +739,8 @@ def top_generic(df_in: pd.DataFrame, column: str, head_n: int, round_to: int = 0
 # 3. FLAG HELPER – Twemoji PNG instead of emoji squares
 # ---------------------------------------------------------
 
-import unicodedata
-
-# minimalist mapping for common football nationalities
 _CC_MAP = {
-    # UK cluster -> GB flag (Twemoji doesn't do ENG/SCT/WLS as separate images by default)
+    # UK cluster -> GB flag
     "england": "gb", "scotland": "gb", "wales": "gb",
     "northern ireland": "gb", "united kingdom": "gb", "great britain": "gb",
 
@@ -768,7 +767,7 @@ _CC_MAP = {
     "japan": "jp", "korea": "kr", "south korea": "kr", "australia": "au",
     "new zealand": "nz",
 
-    # Africa (most common football nations)
+    # Africa
     "nigeria": "ng", "ghana": "gh", "ivory coast": "ci",
     "cote d'ivoire": "ci", "senegal": "sn", "cameroon": "cm",
     "algeria": "dz", "morocco": "ma", "tunisia": "tn",
@@ -779,7 +778,6 @@ def _norm_country(name: str) -> str:
     return unicodedata.normalize("NFKD", str(name)).encode("ascii", "ignore").decode("ascii").strip().lower()
 
 def _twemoji_code_from_cc(cc: str) -> str:
-    """Return e.g. '1f1ea-1f1f8' for 'es' (Spain)."""
     a, b = cc.upper()
     cp1 = 0x1F1E6 + (ord(a) - ord("A"))
     cp2 = 0x1F1E6 + (ord(b) - ord("A"))
@@ -787,7 +785,6 @@ def _twemoji_code_from_cc(cc: str) -> str:
 
 @st.cache_data(show_spinner=False)
 def load_flag_image_for_cc(cc: str):
-    """Download Twemoji PNG for a given 2-letter country code."""
     if not cc or len(cc) != 2:
         return None
     try:
@@ -1007,6 +1004,159 @@ def get_team_badge(row: pd.Series):
 
 
 # ---------------------------------------------------------
+# 5. CIES-STYLE RANKING IMAGE – refined layout
+# ---------------------------------------------------------
+
+def make_ranking_image(
+    df_rank: pd.DataFrame,
+    metric_col: str,
+    title_lines: list[str],
+) -> bytes:
+    """
+    Condensed, professional social-card style:
+      - white background
+      - 3-line title at top
+      - perfectly circular rank markers
+      - larger left-aligned flags/crests (no white boxes)
+      - even spacing above and below the table
+    """
+    df_top = df_rank.head(10).copy()
+    if df_top.empty:
+        return b""
+
+    N = len(df_top)
+    ROW_H    = 0.82
+    HEADER_H = 1.05
+    FOOT_H   = 1.6
+    TOTAL_H  = HEADER_H + N * ROW_H + FOOT_H
+
+    FIG_W = 8.0
+    FIG_H = TOTAL_H
+
+    fig, ax = plt.subplots(figsize=(FIG_W, FIG_H), dpi=220)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, TOTAL_H)
+    ax.axis("off")
+
+    # background
+    ax.add_patch(Rectangle((0, 0), 1, TOTAL_H, color="#FFFFFF", zorder=0))
+
+    # titles
+    t1 = (title_lines[0] if len(title_lines) > 0 else "").upper()
+    t2 = (title_lines[1] if len(title_lines) > 1 else "").upper()
+    t3 = (title_lines[2] if len(title_lines) > 2 else "").upper()
+
+    title_y_top = TOTAL_H - 0.25
+    ax.text(0.03, title_y_top,        t1, fontsize=15, fontweight="bold", ha="left", va="top")
+    ax.text(0.03, title_y_top - 0.30, t2, fontsize=11, fontweight="bold", ha="left", va="top")
+    ax.text(0.03, title_y_top - 0.56, t3, fontsize=9, color="#555555", ha="left", va="top")
+
+    scores = df_top[metric_col].astype(float)
+    max_score = scores.max() if scores.notna().any() else 1.0
+
+    BAR_LEFT = 0.64
+    BAR_W    = 0.28
+    BAR_H    = 0.18
+
+    base_y = TOTAL_H - HEADER_H - 0.10
+
+    for i, (_, row) in enumerate(df_top.iterrows()):
+        y_center = base_y - i * ROW_H
+
+        # alternating background
+        if i % 2 == 0:
+            ax.add_patch(Rectangle(
+                (0, y_center - ROW_H / 2),
+                1, ROW_H,
+                color="#F7F7F7",
+                zorder=1,
+            ))
+
+        # rank circle in Axes coords
+        y_axes = y_center / TOTAL_H
+        circ_x = 0.042
+        circ_r = 0.022
+        circ = Circle(
+            (circ_x, y_axes),
+            circ_r,
+            transform=ax.transAxes,
+            facecolor="#F3F3F3",
+            edgecolor="#C0C0C0",
+            linewidth=0.8,
+            zorder=3,
+        )
+        ax.add_patch(circ)
+        ax.text(
+            circ_x, y_axes,
+            str(i + 1),
+            transform=ax.transAxes,
+            fontsize=9, fontweight="bold",
+            ha="center", va="center",
+            zorder=4,
+        )
+
+        # badge / flag
+        badge = get_team_badge(row)
+        if badge is not None:
+            crest_x_data = 0.11
+            im = OffsetImage(badge, zoom=0.40)
+            ab = AnnotationBbox(im, (crest_x_data, y_center), frameon=False, zorder=4)
+            ax.add_artist(ab)
+
+        # thin separator line
+        ax.plot([0.165, 0.165],
+                [y_center - ROW_H/2 + 0.05, y_center + ROW_H/2 - 0.05],
+                color="#E0E0E0", linewidth=0.7, zorder=2)
+
+        # text
+        ax.text(
+            0.18, y_center + 0.12,
+            str(row["Player"]).upper(),
+            fontsize=12, fontweight="bold",
+            ha="left", va="center",
+            zorder=4,
+        )
+        ax.text(
+            0.18, y_center - 0.10,
+            f"{row['Team']} ({row['League']})",
+            fontsize=9, color="#777777",
+            ha="left", va="center",
+            zorder=4,
+        )
+
+        # bar
+        ax.add_patch(Rectangle(
+            (BAR_LEFT, y_center - BAR_H/2),
+            BAR_W, BAR_H,
+            color="#E1E1E1",
+            zorder=2,
+        ))
+        frac = float(row[metric_col]) / max_score if max_score > 0 else 0.0
+        ax.add_patch(Rectangle(
+            (BAR_LEFT, y_center - BAR_H/2),
+            BAR_W * frac, BAR_H,
+            color="#BFBFBF",
+            zorder=3,
+        ))
+        ax.text(
+            BAR_LEFT + BAR_W + 0.02,
+            y_center,
+            f"{row[metric_col]:.1f}",
+            fontsize=12, fontweight="bold",
+            ha="left", va="center",
+            zorder=4,
+        )
+
+    fig.tight_layout(pad=0.35)
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=220,
+                bbox_inches="tight", facecolor="#FFFFFF")
+    plt.close(fig)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------
 # 6. STREAMLIT OUTPUT – table + image with editable title
 # ---------------------------------------------------------
 
@@ -1045,8 +1195,6 @@ if img_bytes:
     )
 else:
     st.info("No data to generate image.")
-
-
 
 
 
