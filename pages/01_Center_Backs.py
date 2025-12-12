@@ -565,19 +565,133 @@ df_f["Pass Ratio Percentile"] = (
 )
 
 # ===================================================================
-#  RANKING METRIC SELECTOR + CIES-STYLE EXPORTABLE RANKING IMAGE
+#  IMPACT SCORE + RANKING FEATURE BLOCK (CENTER BACKS)
 # ===================================================================
 
 import requests
 from matplotlib.patches import Rectangle, Circle
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 
+# ---------------------------------------------------------
+# 1. IMPACT SCORE COMPONENTS (bucket scores)
+# ---------------------------------------------------------
+
+def _pct(metric: str) -> str:
+    """Helper to access '<metric> Percentile' columns."""
+    return f"{metric} Percentile"
+
+# Aerial: Aerial duels per 90 (30%) + Aerial duels won, % (70%)
+df_f["Aerial Score"] = (
+    0.30 * df_f[_pct("Aerial duels per 90")] +
+    0.70 * df_f[_pct("Aerial duels won, %")]
+)
+
+# Ground: Defensive duels per 90 (30%) + Defensive duels won, % (70%)
+df_f["Ground Score"] = (
+    0.30 * df_f[_pct("Defensive duels per 90")] +
+    0.70 * df_f[_pct("Defensive duels won, %")]
+)
+
+# Retention: 4 × 25%
+df_f["Retention Score"] = (
+    0.25 * df_f[_pct("Accurate passes, %")] +
+    0.25 * df_f[_pct("Accurate forward passes, %")] +
+    0.25 * df_f[_pct("Accurate progressive passes, %")] +
+    0.25 * df_f[_pct("Accurate long passes, %")]
+)
+
+# Carrying: Dribbles per 90 (40%) + Successful dribbles, % (20%) + Progressive runs per 90 (40%)
+df_f["Carrying Score"] = (
+    0.40 * df_f[_pct("Dribbles per 90")] +
+    0.20 * df_f[_pct("Successful dribbles, %")] +
+    0.40 * df_f[_pct("Progressive runs per 90")]
+)
+
+# Playmaking: Progressive passes per 90 (50%) + Forward passes (25%) + Final-third passes (25%)
+df_f["Playmaking Score"] = (
+    0.50 * df_f[_pct("Progressive passes per 90")] +
+    0.25 * df_f[_pct("Forward passes per 90")] +
+    0.25 * df_f[_pct("Passes to final third per 90")]
+)
+
+# Positioning: PAdj Interceptions (70%) + Shots blocked per 90 (30%)
+df_f["Positioning Score"] = (
+    0.70 * df_f[_pct("PAdj Interceptions")] +
+    0.30 * df_f[_pct("Shots blocked per 90")]
+)
+
+SUB_SCORES = [
+    "Aerial Score",
+    "Ground Score",
+    "Retention Score",
+    "Carrying Score",
+    "Playmaking Score",
+    "Positioning Score",
+]
+
+# Base technical impact = mean of six buckets
+df_f["Base CB Score"] = df_f[SUB_SCORES].mean(axis=1)
 
 # ---------------------------------------------------------
-# 1. RANKING METRIC SELECTOR
+# 2. CONTEXT FACTORS (minutes, team, league)
 # ---------------------------------------------------------
 
-RANK_OPTIONS = {
+# Minutes factor: percentile within league → 0.90–1.10
+minutes_pct = df_f.groupby("League")["Minutes played"].rank(pct=True)
+df_f["Minutes Factor"] = 0.90 + 0.20 * minutes_pct  # 0.90 .. 1.10
+
+# Team context: team avg vs league avg → boost good players in weaker teams
+league_avg = df_f.groupby("League")["Base CB Score"].transform("mean")
+team_avg   = df_f.groupby(["League", "Team"])["Base CB Score"].transform("mean")
+
+with np.errstate(divide="ignore", invalid="ignore"):
+    strength_ratio = team_avg / league_avg.replace(0, np.nan)
+
+raw_team_factor = np.where(strength_ratio > 0, 1.0 / strength_ratio, 1.0)
+df_f["Team Context Factor"] = np.clip(raw_team_factor, 0.90, 1.10)
+df_f["Team Context Factor"] = df_f["Team Context Factor"].fillna(1.0)
+
+# Player impact before league quality
+df_f["Raw Impact No League"] = (
+    df_f["Base CB Score"] *
+    df_f["Minutes Factor"] *
+    df_f["Team Context Factor"]
+)
+
+# League quality factor: power function based on league strength
+ls_norm = (df_f["League Strength"].fillna(50.0).astype(float) / 100.0)
+ls_norm = np.clip(ls_norm, 0.30, 1.00)  # don't let very weak go too close to 0
+
+# Use your existing beta slider as league impact control (0..1)
+beta_league = float(st.session_state.get(f"cb_beta_{selected_file}", 0.40))
+gamma = 1.0 + 1.5 * beta_league  # β=0 → γ=1 ; β=0.4 → γ≈1.6 ; β=1 → γ=2.5
+
+df_f["League Factor"] = ls_norm ** gamma
+
+# With league quality
+df_f["Raw Impact Score"] = df_f["Raw Impact No League"] * df_f["League Factor"]
+
+# ---------------------------------------------------------
+# 3. SCALE IMPACT SCORES TO 0–100
+# ---------------------------------------------------------
+
+def _scale_0_100(series: pd.Series, default: float = 50.0) -> pd.Series:
+    lo, hi = series.min(), series.max()
+    if pd.notna(lo) and pd.notna(hi) and hi > lo:
+        return 100.0 * (series - lo) / (hi - lo)
+    return pd.Series(default, index=series.index, dtype=float)
+
+df_f["Impact Score"]             = _scale_0_100(df_f["Raw Impact Score"])
+df_f["Impact Score (no league)"] = _scale_0_100(df_f["Raw Impact No League"])
+
+df_f["Impact Score"]             = df_f["Impact Score"].astype(float)
+df_f["Impact Score (no league)"] = df_f["Impact Score (no league)"].astype(float)
+
+# ---------------------------------------------------------
+# 4. RANKING METRIC SELECTOR (only metrics that exist)
+# ---------------------------------------------------------
+
+_base_rank_options = {
     "Impact Score (with league quality)": "Impact Score",
     "Impact Score (no league quality)": "Impact Score (no league)",
     "Aerial Score": "Aerial Score",
@@ -588,6 +702,15 @@ RANK_OPTIONS = {
     "Positioning Score": "Positioning Score",
 }
 
+RANK_OPTIONS = {
+    label: col for label, col in _base_rank_options.items()
+    if col in df_f.columns
+}
+
+if not RANK_OPTIONS:
+    st.error("No ranking metrics available in the current dataset.")
+    st.stop()
+
 rank_label = st.selectbox(
     "Ranking metric",
     list(RANK_OPTIONS.keys()),
@@ -597,13 +720,15 @@ rank_label = st.selectbox(
 
 rank_col = RANK_OPTIONS[rank_label]
 
-
 # ---------------------------------------------------------
-# 2. GENERIC TOP-TABLE GENERATOR
+# 5. TOP-N TABLE FOR SELECTED METRIC
 # ---------------------------------------------------------
 
-def top_generic(df_in: pd.DataFrame, column: str, head_n: int, round_to: int = 0):
-    """Top-N ranking for any metric with no duplicate columns."""
+def top_generic(df_in: pd.DataFrame, column: str, head_n: int, round_to: int = 0) -> pd.DataFrame:
+    """Return top N rows sorted by the chosen column, with tidy columns and no duplicates."""
+    if column not in df_in.columns:
+        return pd.DataFrame()
+
     ranked = df_in.dropna(subset=[column]).sort_values(column, ascending=False).copy()
     ranked[column] = ranked[column].round(round_to)
 
@@ -627,22 +752,20 @@ def top_generic(df_in: pd.DataFrame, column: str, head_n: int, round_to: int = 0
     out.index = np.arange(1, len(out) + 1)
     return out
 
-
 # ---------------------------------------------------------
-# 3. FLAG + BADGE HELPERS
+# 6. FLAG + BADGE HELPERS (for CIES-style graphic)
 # ---------------------------------------------------------
 
 FLAG_COL   = "Flag"         # adjust if needed
 NATION_COL = "Nationality"  # adjust if needed
 
-def _get_flag_text(row: pd.Series):
+def _get_flag_text(row: pd.Series) -> str:
     """Return emoji flag or nationality text."""
     if FLAG_COL in row and pd.notna(row[FLAG_COL]):
         return str(row[FLAG_COL])
     if NATION_COL in row and pd.notna(row[NATION_COL]):
         return str(row[NATION_COL]).upper()
     return ""
-
 
 @st.cache_data(show_spinner=False)
 def fetch_wikipedia_badge(team_name: str):
@@ -660,7 +783,7 @@ def fetch_wikipedia_badge(team_name: str):
             "titles": team_name,
             "prop": "pageimages",
             "pithumbsize": 80,
-            "format": "json"
+            "format": "json",
         }
         r = requests.get(api_url, params=params, timeout=5)
         r.raise_for_status()
@@ -669,7 +792,6 @@ def fetch_wikipedia_badge(team_name: str):
         pages = data.get("query", {}).get("pages", {})
         if not pages:
             return None
-
         page = next(iter(pages.values()))
         thumb = page.get("thumbnail", {}).get("source")
         if not thumb:
@@ -679,17 +801,18 @@ def fetch_wikipedia_badge(team_name: str):
         img_r.raise_for_status()
         img = plt.imread(io.BytesIO(img_r.content))
         return img
-
     except Exception:
         return None
 
-
 # ---------------------------------------------------------
-# 4. HIGH-QUALITY CIES-STYLE RANKING IMAGE
+# 7. CIES-STYLE RANKING IMAGE
 # ---------------------------------------------------------
 
 def make_ranking_image(df_rank: pd.DataFrame, metric_col: str, title: str = "") -> bytes:
-    """Generate exportable PNG ranking image."""
+    """Generate an exportable PNG ranking image (CIES-style)."""
+    if metric_col not in df_rank.columns:
+        return b""
+
     df_top = df_rank.head(10)
     n = len(df_top)
     if n == 0:
@@ -709,7 +832,8 @@ def make_ranking_image(df_rank: pd.DataFrame, metric_col: str, title: str = "") 
     ax.add_patch(Rectangle((0, 0), 1, 0.5, facecolor="#ECECEC"))
 
     if title:
-        ax.text(0.02, n + 0.65, title, fontsize=16, ha="left", va="center", fontweight="bold")
+        ax.text(0.02, n + 0.65, title, fontsize=16,
+                ha="left", va="center", fontweight="bold")
 
     bar_x0 = 0.68
     bar_w  = 0.25
@@ -720,9 +844,9 @@ def make_ranking_image(df_rank: pd.DataFrame, metric_col: str, title: str = "") 
         y = n - i
         rank = i + 1
 
-        player = str(row["Player"]).upper()
-        team   = str(row["Team"])
-        league = str(row["League"])
+        player = str(row.get("Player", "")).upper()
+        team   = str(row.get("Team", ""))
+        league = str(row.get("League", ""))
         score  = float(row[metric_col])
 
         # Alternating stripe
@@ -731,30 +855,34 @@ def make_ranking_image(df_rank: pd.DataFrame, metric_col: str, title: str = "") 
 
         # Rank circle
         ax.add_patch(Circle((0.05, y), 0.04, facecolor="white", edgecolor="#C0C0C0"))
-        ax.text(0.05, y, str(rank), fontsize=10, fontweight="bold", ha="center", va="center")
+        ax.text(0.05, y, str(rank), fontsize=10, fontweight="bold",
+                ha="center", va="center")
 
-        # Badge OR flag
+        # Badge or flag
         badge = fetch_wikipedia_badge(team)
         if badge is not None:
             im = OffsetImage(badge, zoom=0.35)
             ab = AnnotationBbox(im, (0.13, y), frameon=False)
             ax.add_artist(ab)
         else:
-            ax.text(0.13, y, _get_flag_text(row), fontsize=16, ha="center", va="center")
+            ax.text(0.13, y, _get_flag_text(row),
+                    fontsize=16, ha="center", va="center")
 
         # Player + club text
-        ax.text(0.21, y + 0.12, player, fontsize=11.5, fontweight="bold", ha="left")
-        ax.text(0.21, y - 0.10, f"{team} ({league})", fontsize=9, color="#666666", ha="left")
+        ax.text(0.21, y + 0.12, player,
+                fontsize=11.5, fontweight="bold", ha="left")
+        ax.text(0.21, y - 0.10, f"{team} ({league})",
+                fontsize=9, color="#666666", ha="left")
 
-        # Score bar background
-        ax.add_patch(Rectangle((bar_x0, y - bar_h/2), bar_w, bar_h, facecolor="#DCDCDC"))
-
-        # Score bar fill
+        # Score bar
+        ax.add_patch(Rectangle((bar_x0, y - bar_h/2), bar_w, bar_h,
+                               facecolor="#DCDCDC"))
         fill = bar_w * (score / max_score) if max_score > 0 else 0
-        ax.add_patch(Rectangle((bar_x0, y - bar_h/2), fill, bar_h, facecolor="#BEBEBE"))
+        ax.add_patch(Rectangle((bar_x0, y - bar_h/2), fill, bar_h,
+                               facecolor="#BEBEBE"))
 
-        # Score text
-        ax.text(bar_x0 + bar_w + 0.03, y, f"{score:.1f}", fontsize=11, fontweight="bold", ha="right")
+        ax.text(bar_x0 + bar_w + 0.03, y, f"{score:.1f}",
+                fontsize=11, fontweight="bold", ha="right", va="center")
 
     fig.tight_layout()
 
@@ -764,15 +892,18 @@ def make_ranking_image(df_rank: pd.DataFrame, metric_col: str, title: str = "") 
     buf.seek(0)
     return buf.getvalue()
 
+# ---------------------------------------------------------
+# 8. STREAMLIT OUTPUT (TABLE + IMAGE)
+# ---------------------------------------------------------
 
-# ---------------------------------------------------------
-# 5. STREAMLIT OUTPUT (TABLE + IMAGE)
-# ---------------------------------------------------------
+if rank_col not in df_f.columns:
+    st.error(f"Ranking metric '{rank_col}' not found in dataset.")
+    st.stop()
 
 df_rank = df_f.dropna(subset=[rank_col]).sort_values(rank_col, ascending=False).copy()
 df_rank[rank_col] = df_rank[rank_col].round(round_to)
 
-st.header("📊 Impact Score Rankings (0–100)")
+st.header("📊 CB Impact / Profile Rankings (0–100)")
 st.caption(f"Sorted by: **{rank_label}**")
 
 st.dataframe(
@@ -783,17 +914,18 @@ st.dataframe(
 img_title = f"{rank_label} — Top 10"
 img_bytes = make_ranking_image(df_rank, rank_col, title=img_title)
 
-st.subheader("🖼 Exportable Ranking Image")
+st.subheader("🖼 Exportable ranking image")
 if img_bytes:
-    st.image(img_bytes, caption=img_title, use_column_width=True)
+    st.image(img_bytes, caption=img_title, use_container_width=True)
     st.download_button(
         "Download PNG",
         data=img_bytes,
         file_name="cb_ranking.png",
-        mime="image/png"
+        mime="image/png",
     )
 else:
     st.info("No data to generate image.")
+
 
 
 
