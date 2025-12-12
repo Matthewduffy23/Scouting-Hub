@@ -734,18 +734,18 @@ def top_generic(df_in: pd.DataFrame, column: str, head_n: int, round_to: int = 0
 
 
 # ---------------------------------------------------------
-# 3. FLAG HELPER – self-contained (does NOT rely on globals)
+# 3. FLAG HELPER – Twemoji PNG instead of emoji squares
 # ---------------------------------------------------------
 
 import unicodedata
 
-# light internal mapping – you can extend it if needed
+# minimalist mapping for common football nationalities
 _CC_MAP = {
-    # UK cluster → GB flag (matplotlib can't easily render ENG/SCT/WLS sequences)
+    # UK cluster -> GB flag (Twemoji doesn't do ENG/SCT/WLS as separate images by default)
     "england": "gb", "scotland": "gb", "wales": "gb",
     "northern ireland": "gb", "united kingdom": "gb", "great britain": "gb",
 
-    # core Europe
+    # Europe
     "spain": "es", "france": "fr", "germany": "de", "italy": "it",
     "portugal": "pt", "netherlands": "nl", "belgium": "be", "austria": "at",
     "switzerland": "ch", "denmark": "dk", "sweden": "se", "norway": "no",
@@ -778,25 +778,40 @@ _CC_MAP = {
 def _norm_country(name: str) -> str:
     return unicodedata.normalize("NFKD", str(name)).encode("ascii", "ignore").decode("ascii").strip().lower()
 
-def _emoji_flag_from_cc(cc: str) -> str:
-    if not cc or len(cc) != 2:
-        return ""
+def _twemoji_code_from_cc(cc: str) -> str:
+    """Return e.g. '1f1ea-1f1f8' for 'es' (Spain)."""
     a, b = cc.upper()
-    return chr(0x1F1E6 + (ord(a) - ord("A"))) + chr(0x1F1E6 + (ord(b) - ord("A")))
+    cp1 = 0x1F1E6 + (ord(a) - ord("A"))
+    cp2 = 0x1F1E6 + (ord(b) - ord("A"))
+    return f"{cp1:x}-{cp2:x}"
 
-def birth_country_flag(birth_country: str | None) -> str:
+@st.cache_data(show_spinner=False)
+def load_flag_image_for_cc(cc: str):
+    """Download Twemoji PNG for a given 2-letter country code."""
+    if not cc or len(cc) != 2:
+        return None
+    try:
+        code = _twemoji_code_from_cc(cc)
+        url = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/{code}.png"
+        r = requests.get(url, timeout=4)
+        r.raise_for_status()
+        return plt.imread(io.BytesIO(r.content))
+    except Exception:
+        return None
+
+def birth_country_flag_image(birth_country: str | None):
     if not birth_country:
-        return ""
+        return None
     n = _norm_country(birth_country)
     cc = _CC_MAP.get(n)
     if not cc:
-        return ""
-    return _emoji_flag_from_cc(cc)
+        return None
+    return load_flag_image_for_cc(cc)
 
 
 # ---------------------------------------------------------
 # 4. CREST / BADGE PIPELINE
-#    Local PNG → Wikipedia soft search → PlaymakerStats → flag
+#    Local PNG → Wikipedia soft search → PlaymakerStats → flag PNG
 # ---------------------------------------------------------
 
 BADGE_DIRS = [
@@ -884,13 +899,11 @@ def load_wikipedia_badge_soft(team: str):
     if not team:
         return None
 
-    # 1) try simple candidates
     for cand in _team_name_candidates(team):
         img = _wiki_badge_for_title(cand)
         if img is not None:
             return img
 
-    # 2) search API
     try:
         q = f"{team} football club"
         r = requests.get(
@@ -964,10 +977,8 @@ def load_playmaker_badge_soft(team: str):
 
 def get_team_badge(row: pd.Series):
     """
-    Returns either:
-      - crest image (numpy array),
-      - or emoji flag string (from 'Birth country'),
-      - or None.
+    Returns a numpy image:
+      crest (local / Wikipedia / PlaymakerStats) OR flag PNG from 'Birth country'.
     """
     team = str(row.get("Team", "")).strip()
 
@@ -986,16 +997,22 @@ def get_team_badge(row: pd.Series):
     if img is not None:
         return img
 
-    # 4) Flags from birth country
+    # 4) Twemoji flag fallback
     birth = row.get("Birth country") or row.get("Birth Country") or row.get("Nationality")
-    flag = birth_country_flag(birth)
-    return flag if flag else None
+    flag_img = birth_country_flag_image(birth)
+    if flag_img is not None:
+        return flag_img
+
+    return None
 
 
 # ---------------------------------------------------------
 # 5. CIES-STYLE RANKING IMAGE
 #    – white card, 3-line title, EVEN top/bottom space
 # ---------------------------------------------------------
+
+from matplotlib.patches import Rectangle, Circle, FancyBboxPatch
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 
 def make_ranking_image(
     df_rank: pd.DataFrame,
@@ -1008,8 +1025,8 @@ def make_ranking_image(
 
     N = len(df_top)
     ROW_H    = 0.8
-    HEADER_H = 1.3
-    FOOT_H   = 1.0
+    HEADER_H = 1.4
+    FOOT_H   = 1.4   # more bottom margin
     TOTAL_H  = HEADER_H + N * ROW_H + FOOT_H
 
     FIG_W = 8.0
@@ -1028,7 +1045,7 @@ def make_ranking_image(
     t2 = (title_lines[1] if len(title_lines) > 1 else "").upper()
     t3 = (title_lines[2] if len(title_lines) > 2 else "").upper()
 
-    title_y_top = TOTAL_H - 0.4  # leaves some top gap
+    title_y_top = TOTAL_H - 0.5  # top gap
     ax.text(0.03, title_y_top,         t1, fontsize=15, fontweight="bold", ha="left", va="top")
     ax.text(0.03, title_y_top - 0.35,  t2, fontsize=11, fontweight="bold", ha="left", va="top")
     ax.text(0.03, title_y_top - 0.65,  t3, fontsize=9,  color="#555555", ha="left", va="top")
@@ -1041,7 +1058,7 @@ def make_ranking_image(
     BAR_H    = 0.18
 
     # first row centre y
-    base_y = TOTAL_H - HEADER_H - 0.2
+    base_y = TOTAL_H - HEADER_H - 0.3
 
     for i, (_, row) in enumerate(df_top.iterrows()):
         y_center = base_y - i * ROW_H
@@ -1050,7 +1067,7 @@ def make_ranking_image(
         if i % 2 == 0:
             ax.add_patch(Rectangle((0, y_center - ROW_H / 2), 1, ROW_H, color="#F7F7F7", zorder=1))
 
-        # ----- number circle (CIES style; true circle in Axes coords) -----
+        # ----- number circle (true circle in Axes coords) -----
         y_axes = y_center / TOTAL_H
         circ_x = 0.035
         circ_r = 0.026
@@ -1089,18 +1106,10 @@ def make_ranking_image(
         )
         ax.add_patch(plate)
 
-        # badge or flag (data coords)
+        # badge/flag image (if any)
         badge = get_team_badge(row)
         crest_x_data = 0.11
-        if isinstance(badge, str):  # emoji flag
-            ax.text(
-                crest_x_data, y_center,
-                badge,
-                fontsize=17,
-                ha="center", va="center",
-                zorder=4,
-            )
-        elif badge is not None:
+        if badge is not None:
             im = OffsetImage(badge, zoom=0.34)
             ab = AnnotationBbox(im, (crest_x_data, y_center), frameon=False, zorder=4)
             ax.add_artist(ab)
@@ -1148,7 +1157,7 @@ def make_ranking_image(
             zorder=4,
         )
 
-    fig.tight_layout(pad=0.3)
+    fig.tight_layout(pad=0.35)
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=200, bbox_inches="tight", facecolor="#FFFFFF")
     plt.close(fig)
