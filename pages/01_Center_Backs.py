@@ -562,14 +562,16 @@ df_f["Pass Ratio Percentile"] = (
 # ===================================================================
 # --------------------  IMPACT SCORE: FULL BLOCK  -------------------
 # ===================================================================
-# Uses your 6 skill buckets:
+# 6 buckets:
 #   Aerial, Ground, Retention, Carrying, Playmaking, Positioning
-# Then:
-#   • Base CB Score  = mean of 6 buckets
-#   • Minutes Factor = within-league minutes percentile
-#   • Team Context   = team avg vs league avg
-#   • League Quality = β-blend with League Strength (0–100)
-#   • Final Impact Score rescaled to 0–100
+# Pipeline:
+#   1. Bucket scores (0–100 each, from percentiles)
+#   2. Base CB Score = mean of 6 buckets
+#   3. Minutes Factor  (within-league minutes percentile → 0.90–1.10)
+#   4. Team Context    (team avg vs league avg → 0.90–1.10)
+#   5. League Factor   = (LeagueStrength/100)**γ   (γ from β slider)
+#   6. Raw Impact      = Base * Minutes * Team * LeagueFactor
+#   7. Final Impact Score rescaled to 0–100
 # ===================================================================
 
 def _pct(metric: str) -> str:
@@ -674,46 +676,37 @@ df_f["Team Context Factor"] = df_f["Team Context Factor"].fillna(1.0)
 
 
 # -----------------------------
-# 5. LEAGUE QUALITY (β-BLEND)
+# 5. LEAGUE QUALITY FACTOR (POWER FUNCTION)
 #
-#    We use a β similar to your earlier role-weighting idea:
+#    LeagueNorm = clip(LeagueStrength / 100, 0.3, 1.0)
+#    γ = 1 + 1.5 * β   (β from sidebar; β≈0.4 → γ≈1.6)
+#    LeagueFactor = LeagueNorm ** γ
 #
-#      PlayerImpactPreLeague = Base * MinutesFactor * TeamContextFactor
-#      LeagueQualityScaled   = League Strength rescaled to 0–100
-#
-#      RawImpact = (1 - β) * PlayerImpactPreLeague
-#                  + β * LeagueQualityScaled
-#
-#    β ≈ 0.4 means: 60% player performance, 40% league quality.
+#    → Top leagues keep high ceiling
+#    → Low-strength leagues are heavily capped
 # -----------------------------
+ls_norm = (df_f["League Strength"].fillna(50.0).astype(float) / 100.0)
+ls_norm = np.clip(ls_norm, 0.30, 1.00)   # don’t let it go too close to 0
 
-# Scale League Strength to 0–100 within current filtered pool
-ls = df_f["League Strength"].fillna(50.0).astype(float)
-ls_min, ls_max = ls.min(), ls.max()
-if ls_max > ls_min:
-    df_f["League Quality Scaled"] = 100.0 * (ls - ls_min) / (ls_max - ls_min)
-else:
-    df_f["League Quality Scaled"] = 50.0
+beta_league = st.session_state.get(f"cb_beta_{selected_file}", 0.40)
+gamma = 1.0 + 1.5 * float(beta_league)   # β=0 → γ=1 ; β=0.4 → γ=1.6 ; β=1 → γ=2.5
 
-# Player impact before league blending
-df_f["Player Impact PreLeague"] = (
+df_f["League Factor"] = ls_norm ** gamma
+
+
+# -----------------------------
+# 6. RAW IMPACT SCORE
+# -----------------------------
+df_f["Raw Impact Score"] = (
     df_f["Base CB Score"] *
     df_f["Minutes Factor"] *
-    df_f["Team Context Factor"]
-)
-
-# Use your existing beta slider value if available; default 0.40
-beta_league = st.session_state.get(f"cb_beta_{selected_file}", 0.40)
-
-# β-blended raw impact score
-df_f["Raw Impact Score"] = (
-    (1.0 - beta_league) * df_f["Player Impact PreLeague"] +
-    beta_league         * df_f["League Quality Scaled"]
+    df_f["Team Context Factor"] *
+    df_f["League Factor"]
 )
 
 
 # -----------------------------
-# 6. FINAL IMPACT SCORE 0–100
+# 7. FINAL IMPACT SCORE 0–100
 # -----------------------------
 raw = df_f["Raw Impact Score"]
 min_raw, max_raw = raw.min(), raw.max()
@@ -749,6 +742,7 @@ def top_impact(df_in: pd.DataFrame, n: int, round_to: int = 0) -> pd.DataFrame:
 # ===================================================================
 # --------------------  END IMPACT SCORE BLOCK  ---------------------
 # ===================================================================
+
 
 
 
@@ -864,6 +858,7 @@ for role, role_def in ROLES.items():
 
 st.header("📊 Impact Score Rankings (0–100)")
 st.dataframe(top_impact(df_f, top_n, round_to), use_container_width=True)
+
 
 
 # ----------------- PRO LAYOUT TAB (tiles) -----------------
