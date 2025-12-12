@@ -869,15 +869,6 @@ def _get_foot(row) -> str:
     return ""
 
 # ----------------- CENTRAL MIDFIELD VERSION -----------------
-# Toggle-able pill set (default three are CM roles):
-#   - Deep Playmaker (CM)
-#   - Advanced Playmaker (CM)
-#   - Defensive Midfielder (DM)
-# Optional toggles to swap in:
-#   - Goal Threat (CM)
-#   - Ball-Carrying (CM)
-#   - Modern 6 / Box to Box / Ball Winner / PL Profile  (included when columns exist)
-
 # Label → (column_name, pretty_label)
 _CM_ROLE_MAP = [
     ("Deep Playmaker CM Score", "Deep Playmaker"),
@@ -965,7 +956,6 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
         team_search_q = st.text_input("Search team (name contains)", "", key="cm_team_search")
 
     # ---- NEW: Pill toggle (choose exactly 3 from CM set) ----
-    # Build choices from columns actually present (includes the 4 new roles if present)
     available = [(col, label) for col, label in _CM_ROLE_MAP if col in df_view.columns]
     if not available:
         st.info("No CM role score columns found in the dataframe.")
@@ -1015,6 +1005,33 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
         if "Team" in df_filtered.columns:
             df_filtered = df_filtered[df_filtered["Team"].astype(str).str.lower().str.contains(t, na=False)]
 
+    # ---------- NEW: optional minimum role score filters ----------
+    ROLE_SCORE_COLS_FILTER = [col for col, _ in _CM_ROLE_MAP if col in df_filtered.columns]
+
+    use_role_filters = st.checkbox(
+        "Filter by minimum role score(s)",
+        value=False,
+        key="cm_role_filter_toggle"
+    )
+
+    if use_role_filters and ROLE_SCORE_COLS_FILTER:
+        st.write("Set minimum scores (0–99). Any slider > 0 will filter that role.")
+        minima = {}
+        for col in ROLE_SCORE_COLS_FILTER:
+            pretty = col.replace("Score", "").strip()
+            minima[col] = st.slider(
+                f"Min {pretty}",
+                0, 99, 0, 1,
+                key=f"cm_min_{_norm(col)}"
+            )
+
+        # apply minima
+        for col, thr in minima.items():
+            if thr > 0:
+                df_filtered[col] = pd.to_numeric(df_filtered[col], errors="coerce")
+                df_filtered = df_filtered[df_filtered[col] >= thr]
+    # ---------- END NEW BLOCK ----------
+
     # ---- data check ----
     all_col = "All In Score"
     if all_col not in df_view.columns:
@@ -1057,7 +1074,6 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
         .head(top_n)
         .reset_index(drop=True)
     )
-
 
     # ========================= RENDER CARDS =========================
     for i,row in ranked.iterrows():
