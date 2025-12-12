@@ -573,7 +573,7 @@ import re
 import requests
 from pathlib import Path
 
-from matplotlib.patches import Rectangle
+from matplotlib.patches import Rectangle, Circle
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 
 # ---------------------------------------------------------
@@ -736,12 +736,12 @@ def top_generic(df_in: pd.DataFrame, column: str, head_n: int, round_to: int = 0
 
 
 # ---------------------------------------------------------
-# 3. FLAG HELPERS – use your COUNTRY_TO_CC / TWEMOJI_SPECIAL / _norm
+# 3. FLAG HELPER – use your COUNTRY_TO_CC / _norm
 # ---------------------------------------------------------
 
 def country_to_flag_emoji(country_name: str | None) -> str:
     """
-    Use COUNTRY_TO_CC + _norm (as you defined) to return a single emoji.
+    Use COUNTRY_TO_CC + _norm (defined elsewhere) to return a single emoji.
     No long text (keeps matplotlib layout sane).
     """
     if not country_name:
@@ -750,14 +750,7 @@ def country_to_flag_emoji(country_name: str | None) -> str:
         return ""
     n = _norm(country_name)
     cc = COUNTRY_TO_CC.get(n)
-    if not cc:
-        return ""
-    # special gb-eng / gb-sct / gb-wls handled as plain emoji (🏴?)
-    if cc in {"eng", "sct", "wls"}:
-        # Just return the 2-letter code uppercased for now;
-        # Twemoji SVG is for HTML, not matplotlib.
-        return cc.upper()
-    if len(cc) != 2:
+    if not cc or len(cc) != 2:
         return ""
     try:
         return "".join(chr(0x1F1E6 + (ord(c.upper()) - ord("A"))) for c in cc)
@@ -806,7 +799,7 @@ def _team_name_candidates(team: str) -> list[str]:
     base = team.strip()
     cand = {base}
 
-    # strip things in parentheses
+    # strip text in parentheses
     cand.add(re.sub(r"\s*\([^)]*\)", "", base).strip())
 
     # remove common suffixes
@@ -815,11 +808,11 @@ def _team_name_candidates(team: str) -> list[str]:
         if base.upper().endswith(s):
             cand.add(base[: -len(s)].strip())
 
-    # split on city names with commas
+    # split on commas
     if "," in base:
         cand.add(base.split(",")[0].strip())
 
-    # last word only
+    # last word / minus last word
     parts = base.split()
     if len(parts) > 1:
         cand.add(" ".join(parts[:-1]))
@@ -863,13 +856,13 @@ def load_wikipedia_badge_soft(team: str):
     if not team:
         return None
 
-    # 1) Candidate names directly
+    # 1) candidate names directly
     for cand in _team_name_candidates(team):
         img = _wiki_badge_for_title(cand)
         if img is not None:
             return img
 
-    # 2) Search API then PageImages
+    # 2) search API then PageImages
     try:
         r = requests.get(
             "https://en.wikipedia.org/w/api.php",
@@ -908,7 +901,7 @@ def load_playmaker_badge_soft(team: str):
         sr = requests.get(f"{base}/search.php", params={"search": team}, timeout=5)
         html = sr.text
 
-        # pick first /team/ link
+        # first /team/ link
         m = re.search(r'href="(/team/[^"]+)"', html)
         if not m:
             return None
@@ -921,15 +914,18 @@ def load_playmaker_badge_soft(team: str):
         tr = requests.get(team_url, timeout=5)
         thtml = tr.text
 
-        # try to find logo-like img
+        # logo-like img
         m_img = re.search(
             r'<img[^>]+src="([^"]+)"[^>]*(?:logo|crest|badge)[^>]*>',
             thtml,
             flags=re.IGNORECASE,
         )
         if not m_img:
-            # fallback: something in img/logos
-            m_img = re.search(r'<img[^>]+src="([^"]+img/logos[^"]+)"', thtml, re.IGNORECASE)
+            m_img = re.search(
+                r'<img[^>]+src="([^"]+img/logos[^"]+)"',
+                thtml,
+                flags=re.IGNORECASE,
+            )
         if not m_img:
             return None
 
@@ -950,7 +946,7 @@ def get_team_badge(row: pd.Series):
     """
     Return:
       - crest image (numpy array),
-      - or single emoji / short code string,
+      - or single emoji string,
       - or None.
     """
     team = str(row.get("Team", "")).strip()
@@ -971,43 +967,37 @@ def get_team_badge(row: pd.Series):
         return img
 
     # 4) birth-country flag
-    birth = (
-        row.get("Birth country")
-        or row.get("Country")
-        or row.get("Nationality")
-    )
+    birth = row.get("Birth country") or row.get("Country") or row.get("Nationality")
     flag = country_to_flag_emoji(birth)
     return flag if flag else None
 
 
 # ---------------------------------------------------------
-# 5. CIES-STYLE RANKING IMAGE (no big header; side label only)
+# 5. CIES-STYLE RANKING IMAGE (with circular number plates + crest shadow)
 # ---------------------------------------------------------
 
 def make_ranking_image(df_rank: pd.DataFrame, metric_col: str) -> bytes:
     """
-    Final CIES-quality ranking image with:
-    - fixed layout
-    - no exploding whitespace
-    - crest/flag on the left
-    - bar + score on the right
-    - 10/10 professional formatting
+    Professional CIES-style ranking image:
+    - circular grey number plates
+    - crest with soft drop-shadow
+    - compact layout, no huge whitespace
     """
     df_top = df_rank.head(10).copy()
     if df_top.empty:
         return b""
 
-    ROW_H = 0.9     # vertical spacing between rows
     N = len(df_top)
-    FIG_W = 8
-    FIG_H = ROW_H * N + 1.0  # compact, no whitespace
+    ROW_H = 1.0
+    FIG_W = 8.0
+    FIG_H = ROW_H * N + 0.8
 
     fig, ax = plt.subplots(figsize=(FIG_W, FIG_H), dpi=200)
     ax.set_xlim(0, 1)
     ax.set_ylim(0, N)
     ax.axis("off")
 
-    # Professional CIES background
+    # background
     ax.add_patch(Rectangle((0, 0), 1, N, color="#F7F7F7", zorder=0))
 
     scores = df_top[metric_col].astype(float)
@@ -1020,77 +1010,107 @@ def make_ranking_image(df_rank: pd.DataFrame, metric_col: str) -> bytes:
     for i, (_, row) in enumerate(df_top.iterrows()):
         y_center = N - (i + 0.5)
 
-        # subtle alternating row band
+        # alternating row stripes
         if i % 2 == 0:
-            ax.add_patch(Rectangle((0, y_center-0.45), 1, 0.9, color="#FFFFFF"))
+            ax.add_patch(Rectangle((0, y_center - 0.5), 1, 1.0, color="#FFFFFF", zorder=1))
 
-        # --- Rank number ---
+        # ---------- circular number plate ----------
+        plate_radius = 0.055
+        ax.add_patch(
+            Circle(
+                (0.06, y_center),
+                plate_radius,
+                facecolor="#EEEEEE",
+                edgecolor="#B0B0B0",
+                linewidth=1.0,
+                zorder=2,
+            )
+        )
         ax.text(
-            0.03, y_center,
-            str(i+1),
-            fontsize=13, fontweight="bold",
-            ha="center", va="center"
+            0.06, y_center,
+            str(i + 1),
+            fontsize=11, fontweight="bold",
+            ha="center", va="center",
+            zorder=3,
         )
 
-        # --- Crest or Flag ---
-        badge = get_team_badge(row)
+        # ---------- crest drop-shadow + image / flag ----------
+        crest_x = 0.16
 
+        # soft shadow
+        ax.add_patch(
+            Circle(
+                (crest_x, y_center),
+                0.06,
+                facecolor="black",
+                alpha=0.15,
+                linewidth=0,
+                zorder=2,
+            )
+        )
+
+        badge = get_team_badge(row)
         if isinstance(badge, str):  # emoji fallback
             ax.text(
-                0.12, y_center,
+                crest_x, y_center,
                 badge,
                 fontsize=22,
-                ha="center", va="center"
+                ha="center", va="center",
+                zorder=3,
             )
         elif badge is not None:
-            im = OffsetImage(badge, zoom=0.35)
-            ab = AnnotationBbox(im, (0.12, y_center), frameon=False)
+            im = OffsetImage(badge, zoom=0.37)
+            ab = AnnotationBbox(im, (crest_x, y_center), frameon=False, zorder=3)
             ax.add_artist(ab)
 
-        # --- Player name ---
+        # ---------- player name ----------
         ax.text(
-            0.19, y_center + 0.12,
-            row["Player"].upper(),
+            0.23, y_center + 0.15,
+            str(row["Player"]).upper(),
             fontsize=13, fontweight="bold",
-            ha="left", va="center"
+            ha="left", va="center",
+            zorder=3,
         )
 
-        # --- Team + league ---
+        # ---------- club line ----------
         ax.text(
-            0.19, y_center - 0.14,
+            0.23, y_center - 0.10,
             f"{row['Team']} ({row['League']})",
             fontsize=9, color="#777777",
-            ha="left", va="center"
+            ha="left", va="center",
+            zorder=3,
         )
 
-        # --- Score bar background ---
-        ax.add_patch(Rectangle(
-            (BAR_LEFT, y_center - BAR_H/2),
-            BAR_W, BAR_H,
-            color="#DDDDDD"
-        ))
-
-        # --- Score bar fill ---
-        frac = float(row[metric_col]) / max_score if max_score > 0 else 0
-        ax.add_patch(Rectangle(
-            (BAR_LEFT, y_center - BAR_H/2),
-            BAR_W * frac, BAR_H,
-            color="#BEBEBE"
-        ))
-
-        # --- Score text ---
+        # ---------- score bar ----------
+        ax.add_patch(
+            Rectangle(
+                (BAR_LEFT, y_center - BAR_H / 2),
+                BAR_W, BAR_H,
+                color="#DDDDDD",
+                zorder=2,
+            )
+        )
+        frac = float(row[metric_col]) / max_score if max_score > 0 else 0.0
+        ax.add_patch(
+            Rectangle(
+                (BAR_LEFT, y_center - BAR_H / 2),
+                BAR_W * frac, BAR_H,
+                color="#BEBEBE",
+                zorder=3,
+            )
+        )
         ax.text(
-            BAR_LEFT + BAR_W + 0.03,
+            BAR_LEFT + BAR_W + 0.02,
             y_center,
             f"{row[metric_col]:.1f}",
             fontsize=12, fontweight="bold",
-            ha="left", va="center"
+            ha="left", va="center",
+            zorder=4,
         )
 
-    # --- FIX: Force EXACT bounding box (no autoscaling, no whitespace) ---
-    fig.tight_layout(pad=0)
+    fig.tight_layout(pad=0.3)
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=200, bbox_inches="tight")
+    fig.savefig(buf, format="png", dpi=200, bbox_inches="tight", facecolor="white")
     plt.close(fig)
     buf.seek(0)
     return buf.getvalue()
@@ -1111,15 +1131,11 @@ st.dataframe(
     use_container_width=True,
 )
 
-# For the image, no big title at top, just side label
-img_title  = ""  # CIES-style: no header in the card itself
-side_label = "U23 CENTRE BACKS"  # customise or set to None
-
-img_bytes = make_ranking_image(df_rank, rank_col, title=img_title, side_label=side_label)
-
 st.subheader("🖼 Exportable ranking image")
+img_bytes = make_ranking_image(df_rank, rank_col)
+
 if img_bytes:
-    st.image(img_bytes, use_container_width=True)
+    st.image(img_bytes, use_column_width=True)
     st.download_button(
         "Download PNG",
         data=img_bytes,
