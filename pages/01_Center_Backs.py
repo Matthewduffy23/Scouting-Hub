@@ -736,13 +736,13 @@ def top_generic(df_in: pd.DataFrame, column: str, head_n: int, round_to: int = 0
 
 
 # ---------------------------------------------------------
-# 3. FLAG HELPER – use your COUNTRY_TO_CC / _norm
+# 3. FLAG HELPER – uses your COUNTRY_TO_CC / _norm mapping
 # ---------------------------------------------------------
 
 def country_to_flag_emoji(country_name: str | None) -> str:
     """
-    Use COUNTRY_TO_CC + _norm (defined elsewhere) to return a single emoji.
-    No long text (keeps matplotlib layout sane).
+    Uses COUNTRY_TO_CC + _norm (defined elsewhere) to return a single emoji.
+    Never returns long text (so the layout never explodes).
     """
     if not country_name:
         return ""
@@ -799,7 +799,7 @@ def _team_name_candidates(team: str) -> list[str]:
     base = team.strip()
     cand = {base}
 
-    # strip text in parentheses
+    # strip parentheses
     cand.add(re.sub(r"\s*\([^)]*\)", "", base).strip())
 
     # remove common suffixes
@@ -808,11 +808,11 @@ def _team_name_candidates(team: str) -> list[str]:
         if base.upper().endswith(s):
             cand.add(base[: -len(s)].strip())
 
-    # split on commas
+    # split on comma
     if "," in base:
         cand.add(base.split(",")[0].strip())
 
-    # last word / minus last word
+    # variants from words
     parts = base.split()
     if len(parts) > 1:
         cand.add(" ".join(parts[:-1]))
@@ -832,7 +832,7 @@ def _wiki_badge_for_title(title: str):
                 "prop": "pageimages",
                 "format": "json",
                 "piprop": "thumbnail",
-                "pithumbsize": 100,
+                "pithumbsize": 110,
                 "titles": title,
             },
             timeout=5,
@@ -862,7 +862,7 @@ def load_wikipedia_badge_soft(team: str):
         if img is not None:
             return img
 
-    # 2) search API then PageImages
+    # 2) search API → first 3 results
     try:
         r = requests.get(
             "https://en.wikipedia.org/w/api.php",
@@ -973,24 +973,29 @@ def get_team_badge(row: pd.Series):
 
 
 # ---------------------------------------------------------
-# 5. CIES-STYLE RANKING IMAGE (with circular number plates + crest shadow)
+# 5. CIES-STYLE RANKING IMAGE (condensed + side title)
 # ---------------------------------------------------------
 
-def make_ranking_image(df_rank: pd.DataFrame, metric_col: str) -> bytes:
+def make_ranking_image(
+    df_rank: pd.DataFrame,
+    metric_col: str,
+    side_label: str = "U23 CENTRE BACKS",
+) -> bytes:
     """
-    Professional CIES-style ranking image:
-    - circular grey number plates
-    - crest with soft drop-shadow
-    - compact layout, no huge whitespace
+    Condensed CIES-style ranking image:
+    - circular grey number plate (no stretched ovals)
+    - crest with subtle drop-shadow
+    - compact rows
+    - vertical side label inside the frame
     """
     df_top = df_rank.head(10).copy()
     if df_top.empty:
         return b""
 
     N = len(df_top)
-    ROW_H = 1.0
+    ROW_H = 0.8
     FIG_W = 8.0
-    FIG_H = ROW_H * N + 0.8
+    FIG_H = ROW_H * N + 0.7
 
     fig, ax = plt.subplots(figsize=(FIG_W, FIG_H), dpi=200)
     ax.set_xlim(0, 1)
@@ -1003,49 +1008,47 @@ def make_ranking_image(df_rank: pd.DataFrame, metric_col: str) -> bytes:
     scores = df_top[metric_col].astype(float)
     max_score = scores.max() if scores.notna().any() else 1.0
 
-    BAR_LEFT = 0.62
-    BAR_W = 0.30
-    BAR_H = 0.25
+    BAR_LEFT = 0.60
+    BAR_W = 0.32
+    BAR_H = 0.18
 
     for i, (_, row) in enumerate(df_top.iterrows()):
         y_center = N - (i + 0.5)
 
-        # alternating row stripes
+        # alternating row stripe
         if i % 2 == 0:
-            ax.add_patch(Rectangle((0, y_center - 0.5), 1, 1.0, color="#FFFFFF", zorder=1))
+            ax.add_patch(Rectangle((0, y_center - 0.4), 1, 0.8, color="#FFFFFF", zorder=1))
 
-        # ---------- circular number plate ----------
-        plate_radius = 0.055
+        # ---- circular number plate ----
+        r = 0.045
         ax.add_patch(
             Circle(
-                (0.06, y_center),
-                plate_radius,
+                (0.05, y_center),
+                r,
                 facecolor="#EEEEEE",
                 edgecolor="#B0B0B0",
-                linewidth=1.0,
+                linewidth=0.9,
                 zorder=2,
             )
         )
         ax.text(
-            0.06, y_center,
+            0.05, y_center,
             str(i + 1),
-            fontsize=11, fontweight="bold",
+            fontsize=10, fontweight="bold",
             ha="center", va="center",
             zorder=3,
         )
 
-        # ---------- crest drop-shadow + image / flag ----------
-        crest_x = 0.16
-
-        # soft shadow
+        # ---- crest drop shadow + crest / flag ----
+        crest_x = 0.15
         ax.add_patch(
             Circle(
                 (crest_x, y_center),
-                0.06,
+                0.05,
                 facecolor="black",
-                alpha=0.15,
+                alpha=0.18,
                 linewidth=0,
-                zorder=2,
+                zorder=1.5,
             )
         )
 
@@ -1054,34 +1057,34 @@ def make_ranking_image(df_rank: pd.DataFrame, metric_col: str) -> bytes:
             ax.text(
                 crest_x, y_center,
                 badge,
-                fontsize=22,
+                fontsize=18,
                 ha="center", va="center",
                 zorder=3,
             )
         elif badge is not None:
-            im = OffsetImage(badge, zoom=0.37)
+            im = OffsetImage(badge, zoom=0.36)
             ab = AnnotationBbox(im, (crest_x, y_center), frameon=False, zorder=3)
             ax.add_artist(ab)
 
-        # ---------- player name ----------
+        # ---- player name ----
         ax.text(
-            0.23, y_center + 0.15,
+            0.22, y_center + 0.12,
             str(row["Player"]).upper(),
-            fontsize=13, fontweight="bold",
+            fontsize=12.5, fontweight="bold",
             ha="left", va="center",
             zorder=3,
         )
 
-        # ---------- club line ----------
+        # ---- team line ----
         ax.text(
-            0.23, y_center - 0.10,
+            0.22, y_center - 0.10,
             f"{row['Team']} ({row['League']})",
             fontsize=9, color="#777777",
             ha="left", va="center",
             zorder=3,
         )
 
-        # ---------- score bar ----------
+        # ---- bar ----
         ax.add_patch(
             Rectangle(
                 (BAR_LEFT, y_center - BAR_H / 2),
@@ -1108,7 +1111,18 @@ def make_ranking_image(df_rank: pd.DataFrame, metric_col: str) -> bytes:
             zorder=4,
         )
 
-    fig.tight_layout(pad=0.3)
+    # vertical side label (inside frame so no extra whitespace)
+    if side_label:
+        ax.text(
+            0.985, N / 2,
+            side_label.upper(),
+            fontsize=9.5, color="#777777",
+            rotation=90,
+            ha="right", va="center",
+            zorder=5,
+        )
+
+    fig.tight_layout(pad=0.25)
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=200, bbox_inches="tight", facecolor="white")
     plt.close(fig)
@@ -1132,7 +1146,7 @@ st.dataframe(
 )
 
 st.subheader("🖼 Exportable ranking image")
-img_bytes = make_ranking_image(df_rank, rank_col)
+img_bytes = make_ranking_image(df_rank, rank_col, side_label="U23 CENTRE BACKS")
 
 if img_bytes:
     st.image(img_bytes, use_column_width=True)
@@ -1144,6 +1158,7 @@ if img_bytes:
     )
 else:
     st.info("No data to generate image.")
+
 
 
 
