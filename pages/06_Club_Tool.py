@@ -1548,10 +1548,9 @@ st.header("📊 Feature R — Squad Profile")
 # --------------------------------------------------------------------------------------
 # CONFIG
 # --------------------------------------------------------------------------------------
-# Match your actual contract column name
 CONTRACT_COL = "Contract expires"   # <= 2026 -> default red highlight
 
-# Try to import adjustText for smart labels (optional but recommended)
+# Optional: smart 2D label repulsion if library is available
 try:
     from adjustText import adjust_text
     HAVE_ADJUSTTEXT = True
@@ -1566,18 +1565,14 @@ with st.expander("Squad Profile settings", expanded=False):
     # --- Squad selection ---
     teams_available = sorted(df["Team"].dropna().unique())
 
-    # Safely try to use player_row if it exists
     default_team = None
     selected_player_name = None
-
     player_row_obj = globals().get("player_row", pd.DataFrame())
     if isinstance(player_row_obj, pd.DataFrame) and not player_row_obj.empty:
         default_team = player_row_obj.iloc[0].get("Team", None)
         selected_player_name = player_row_obj.iloc[0].get("Player", None)
 
-    default_idx = 0
-    if default_team in teams_available:
-        default_idx = teams_available.index(default_team)
+    default_idx = teams_available.index(default_team) if default_team in teams_available else 0
 
     squad_team = st.selectbox(
         "Squad (team)",
@@ -1624,7 +1619,7 @@ with st.expander("Squad Profile settings", expanded=False):
         key=lambda x: x[1],
     )
 
-    # --- Contract highlight toggle & custom highlight players ---
+    # --- Contract highlight & custom red players ---
     auto_contract_red = st.checkbox(
         "Highlight players with contract ≤ 2026 in red",
         value=True,
@@ -1641,21 +1636,8 @@ with st.expander("Squad Profile settings", expanded=False):
         key="sq_custom_red",
     )
 
-    # --- Labels & points (defaults updated) ---
+    # --- Labels & points ---
     show_labels = st.toggle("Show labels", value=True, key="sq_show_labels")
-
-    label_subset = st.selectbox(
-        "Label which players?",
-        ["Red only (contract/selected/custom)", "Top N by minutes", "All players"],
-        index=0,
-        key="sq_label_subset",
-    )
-
-    max_labels = st.slider(
-        "Max labels (for 'Top N by minutes')",
-        5, 40, 20, 1,
-        key="sq_label_n",
-    )
 
     label_size = st.slider("Label size", 8, 22, 15, 1, key="sq_lblsize")  # default 15
     point_size = st.slider("Point size", 24, 300, 300, 2, key="sq_pts")   # default 300
@@ -1702,7 +1684,6 @@ if squad.empty:
 # CONTRACT HIGHLIGHT & CUSTOM HIGHLIGHT
 # --------------------------------------------------------------------------------------
 if auto_contract_red and CONTRACT_COL in squad.columns:
-    # Extract year like 2026 from strings such as '2026-06-30' or '2026'
     contract_year = (
         squad[CONTRACT_COL]
         .astype(str)
@@ -1715,25 +1696,20 @@ else:
     squad["ContractYear"] = np.nan
     squad["AutoRed"] = False
 
-# Selected player flag (only if name is known)
 squad["Selected"] = False
 if selected_player_name:
     squad["Selected"] = squad["Player"] == selected_player_name
 
-# Custom multiple-player red highlight
 squad["CustomRed"] = squad["Player"].isin(custom_red_players)
-
-# Final red flag: contract <= 2026 OR selected player OR custom red
 squad["IsRed"] = squad["AutoRed"] | squad["Selected"] | squad["CustomRed"]
 
 # --------------------------------------------------------------------------------------
-# SCATTER: X = Age, Y = Minutes played
+# SCATTER BASE
 # --------------------------------------------------------------------------------------
 fig, ax = plt.subplots(figsize=(w_px / 100, h_px / 100), dpi=100)
 fig.patch.set_facecolor(PAGE_BG)
 ax.set_facecolor(PLOT_BG)
 
-# Axis limits
 ax.set_xlim(min_age_s, max_age_s)
 ax.set_ylim(min_minutes_s, max_minutes_s)
 
@@ -1742,21 +1718,20 @@ ax.xaxis.labelpad = 14
 ax.set_ylabel("Minutes Played", fontsize=16, fontweight="semibold", color=txt_col)
 
 ax.xaxis.set_major_locator(MultipleLocator(1))
-ax.yaxis.set_major_locator(MultipleLocator(250))  # every 250 minutes
+ax.yaxis.set_major_locator(MultipleLocator(250))
 
 for tick in ax.get_xticklabels() + ax.get_yticklabels():
     tick.set_fontweight("semibold")
     tick.set_color(txt_col)
     tick.set_fontsize(14)
 
-# Grid & spines
 ax.grid(True, color=GRID_MAJ, linewidth=0.6)
 for s in ax.spines.values():
     s.set_color("#e5e7eb")
     s.set_linewidth(1.1)
 
 # --------------------------------------------------------------------------------------
-# AGE BANDS (vertical dashed lines + centred titles, ASCENT = 21–24)
+# AGE BANDS (with flexible 'OLD' etc.)
 # --------------------------------------------------------------------------------------
 line_col = "#FFFFFF"
 
@@ -1769,18 +1744,23 @@ for al in [21, 25, 29, 33]:
     if min_age_s <= al <= max_age_s:
         ax.axvline(al, color=line_col, linestyle=(0, (4, 4)), lw=1.5)
 
-# Place titles at centre of their fixed band, but only if that centre is on-screen
+# Titles centred in *visible* part of each band
 for i, label in enumerate(AGE_BAND_LABELS):
-    start = AGE_BAND_EDGES[i]
-    end = AGE_BAND_EDGES[i + 1]
-    center = (start + end) / 2.0
-    if center < min_age_s or center > max_age_s or max_age_s == min_age_s:
+    band_start = AGE_BAND_EDGES[i]
+    band_end = AGE_BAND_EDGES[i + 1]
+
+    visible_start = max(band_start, min_age_s)
+    visible_end = min(band_end, max_age_s)
+
+    if visible_start >= visible_end or max_age_s == min_age_s:
         continue
 
+    center = (visible_start + visible_end) / 2.0
     x_frac = (center - min_age_s) / float(max_age_s - min_age_s)
+
     ax.text(
         x_frac,
-        1.01,  # slightly down from very top
+        1.01,
         label,
         transform=ax.transAxes,
         fontsize=20,
@@ -1791,7 +1771,7 @@ for i, label in enumerate(AGE_BAND_LABELS):
     )
 
 # --------------------------------------------------------------------------------------
-# MINUTES BANDS (horizontal dashed lines + labels)
+# MINUTES BANDS
 # --------------------------------------------------------------------------------------
 for name, y_val in band_lines:
     if min_minutes_s <= y_val <= max_minutes_s:
@@ -1829,113 +1809,112 @@ for is_red, grp in squad.groupby("IsRed"):
     )
 
 # --------------------------------------------------------------------------------------
-# LABELS – cleaned up
+# LABELS – auto for all players, non-overlapping
 # --------------------------------------------------------------------------------------
-texts = []
 if show_labels:
+    label_df = squad.copy()
+    texts = []
 
-    # --- choose which players to label ---
-    if label_subset == "Red only (contract/selected/custom)":
-        label_df = squad[squad["IsRed"]].copy()
-    elif label_subset == "Top N by minutes":
-        label_df = squad.sort_values("Minutes played", ascending=False).head(max_labels).copy()
-    else:  # "All players"
-        label_df = squad.copy()
+    for _, r in label_df.iterrows():
+        z = 6 if r["IsRed"] else 5
+        t = ax.annotate(
+            r["Player"],
+            (r["Age"], r["Minutes played"]),
+            xytext=(0, 10),
+            textcoords="offset points",
+            fontsize=label_size,
+            color=txt_col,
+            weight="semibold",
+            ha="center",
+            va="bottom",
+            zorder=z,
+        )
+        t.set_path_effects([
+            pe.withStroke(linewidth=2, foreground="#020617", alpha=0.9)
+        ])
+        texts.append(t)
 
-    if not label_df.empty:
-        # First pass: create annotations slightly above each point
-        for _, r in label_df.iterrows():
-            z = 6 if r["IsRed"] else 5
-            t = ax.annotate(
-                r["Player"],
-                (r["Age"], r["Minutes played"]),
-                xytext=(0, 10),
-                textcoords="offset points",
-                fontsize=label_size,
+    if HAVE_ADJUSTTEXT:
+        xs = label_df["Age"].values
+        ys = label_df["Minutes played"].values
+
+        adjust_text(
+            texts,
+            x=xs,
+            y=ys,
+            ax=ax,
+            autoalign="y",
+            only_move={"points": "y", "text": "xy"},
+            force_points=0.6,
+            force_text=0.6,
+            expand_points=(1.1, 1.4),
+            expand_text=(1.1, 1.4),
+            arrowprops=dict(
+                arrowstyle="-",
+                lw=0.6,
                 color=txt_col,
-                weight="semibold",
-                ha="center",
-                va="bottom",
-                zorder=z,
-            )
-            t.set_path_effects([
-                pe.withStroke(linewidth=2, foreground="#020617", alpha=0.9)
-            ])
-            texts.append(t)
+                alpha=0.6,
+            ),
+        )
+    else:
+        # Manual vertical stacking per age-cluster – guarantees no overlap
+        placed = []
+        axis_height = max_minutes_s - min_minutes_s
+        min_y_delta = axis_height * 0.035  # ~3.5% of axis height
+        age_tol = 0.6                       # cluster width in age units
 
-        # Preferred: use adjustText if available
-        if HAVE_ADJUSTTEXT:
-            # arrays of x,y for labelled players
-            xs = label_df["Age"].values
-            ys = label_df["Minutes played"].values
+        label_df_sorted = label_df.sort_values("Minutes played")
+        text_map = {t.get_text(): t for t in texts}
 
-            adjust_text(
-                texts,
-                x=xs,
-                y=ys,
-                ax=ax,
-                only_move={"points": "y", "text": "xy"},
-                force_points=0.5,
-                force_text=0.5,
-                expand_points=(1.1, 1.3),
-                expand_text=(1.1, 1.3),
-                arrowprops=dict(
-                    arrowstyle="-",
-                    lw=0.6,
+        for _, r in label_df_sorted.iterrows():
+            x = r["Age"]
+            base_y = r["Minutes played"]
+            y_label = base_y
+
+            # try moving up first, then down if we hit the top
+            direction = 1  # 1 = up, -1 = down
+            attempts = 0
+            max_attempts = 50
+
+            while True:
+                collision = False
+                for (px, py) in placed:
+                    if abs(x - px) < age_tol and abs(y_label - py) < min_y_delta:
+                        collision = True
+                        break
+
+                if not collision or attempts >= max_attempts:
+                    break
+
+                y_label += direction * min_y_delta
+                attempts += 1
+
+                if y_label > max_minutes_s:
+                    y_label = base_y - min_y_delta
+                    direction = -1
+                if y_label < min_minutes_s:
+                    y_label = base_y
+                    break
+
+            placed.append((x, y_label))
+
+            if y_label != base_y:
+                ax.plot(
+                    [x, x],
+                    [base_y, y_label],
+                    linestyle="-",
+                    linewidth=0.5,
                     color=txt_col,
-                    alpha=0.6,
-                ),
-            )
-        else:
-            # Manual light de-collision as a fallback (works on the chosen subset only)
-            placed = []
-            min_y_delta = (max_minutes_s - min_minutes_s) * 0.03
-            age_tol = 0.7
+                    alpha=0.5,
+                    zorder=5,
+                )
 
-            # sort by minutes so lower-minute players placed first
-            label_df_sorted = label_df.sort_values("Minutes played")
-
-            # map from player name to annotation
-            text_map = {t.get_text(): t for t in texts}
-
-            for _, r in label_df_sorted.iterrows():
-                x = r["Age"]
-                base_y = r["Minutes played"]
-                y_label = base_y
-
-                while True:
-                    collision = False
-                    for (px, py) in placed:
-                        if abs(x - px) < age_tol and abs(y_label - py) < min_y_delta:
-                            collision = True
-                            break
-                    if not collision:
-                        break
-                    y_label += min_y_delta
-                    if y_label > max_minutes_s:
-                        y_label = max_minutes_s - min_y_delta
-                        break
-
-                placed.append((x, y_label))
-
-                # draw leader line if label moved
-                if y_label != base_y:
-                    ax.plot(
-                        [x, x],
-                        [base_y, y_label],
-                        linestyle="-",
-                        linewidth=0.5,
-                        color=txt_col,
-                        alpha=0.5,
-                        zorder=5,
-                    )
-
-                t = text_map.get(r["Player"])
-                if t is not None:
-                    t.set_position((x, y_label))
+            t = text_map.get(r["Player"])
+            if t is not None:
+                t.set_position((x, y_label))
 
 # --------------------------------------------------------------------------------------
-# LAYOUT
+# LAYOUT & RENDER
 # --------------------------------------------------------------------------------------
 fig.subplots_adjust(
     left=0.06,
@@ -1944,9 +1923,6 @@ fig.subplots_adjust(
     top=1.02 - top_gap_px / float(h_px),
 )
 
-# --------------------------------------------------------------------------------------
-# RENDER
-# --------------------------------------------------------------------------------------
 if render_exact:
     buf = BytesIO()
     fig.savefig(buf, format="png", dpi=100, facecolor=PAGE_BG)
@@ -1963,6 +1939,7 @@ else:
 
 plt.close(fig)
 # ============================== END FEATURE R ==========================================
+
 
 
 
