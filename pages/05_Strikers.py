@@ -120,8 +120,7 @@ ROLES = {
         'desc': "Aerial outlet, duel dominance, occupy CBs, attack crosses & second balls.",
         'metrics': {
             'Aerial duels per 90': 3,
-            'Aerial duels won, %': 4,
-            'Head goals per 90': 2
+            'Aerial duels won, %': 5,
         },
     },
 
