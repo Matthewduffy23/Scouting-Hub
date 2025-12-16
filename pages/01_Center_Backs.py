@@ -566,14 +566,18 @@ df_f["Pass Ratio Percentile"] = (
 # ===================================================================
 #  CB IMPACT FEATURE BLOCK – METRICS + CRESTS + CIES-STYLE IMAGE
 #  (Pool defined by sidebar; display filters do NOT change pool)
-#
-#  Updates in this version:
-#   - 1920×1080 banner spacing fixed (header/rows/footer separated)
-#   - Bars extend to the right edge and sit under the value
-#   - More flags: fallback country->ISO2 lookup via RestCountries (cached)
-#   - Raw-metric mode prints raw values on image (bars still scaled vs pool)
-#   - Dark theme option (#0a0f1c)
-#   - Multi-player highlight option
+#  + League display filter dropdown (default = All leagues)
+#  + If league selected -> Team dropdown (default = All teams in that league)
+#  + Rank by composite OR any raw numeric column
+#  + Raw-metric mode PRINTS RAW values on image; bars are scaled vs pool
+#  + Export format: Standard (auto height) OR EXACT 1920×1080 banner
+#  + Image theme: Light or Dark (#0a0f1c)
+#  + Optional multi-player highlight (gold overlay) — only if enabled
+#  + FIXES:
+#      - 1920×1080 crash removed
+#      - Value sits OUTSIDE bar (to the right), not inside/touching it
+#      - Row background & highlight span across the value number fully
+#      - More flags via RestCountries fallback → ISO2 → Twemoji (cached)
 # ===================================================================
 
 import io
@@ -704,7 +708,7 @@ df_f = ensure_cb_impact_metrics(df_f, selected_file)
 
 
 # ---------------------------------------------------------
-# 2) RANKING / DISPLAY CONTROLS
+# 2) RANKING / DISPLAY CONTROLS (display filters do NOT change pool)
 # ---------------------------------------------------------
 
 rank_mode = st.radio(
@@ -774,6 +778,7 @@ display_with_league_strength = st.checkbox(
     "Display league-strength adjusted (0–100)",
     value=False,
     key=f"cb_display_ls_{selected_file}",
+    help="Changes only what is shown in the table/image. Pool and core metrics are unchanged.",
 )
 
 all_leagues_in_pool = sorted([x for x in df_f["League"].dropna().unique()])
@@ -849,9 +854,9 @@ if enable_highlight_players:
 
 
 # ---------------------------------------------------------
-# 3) BUILD DISPLAY METRIC COLUMNS (pool scaling)
-#    - display_metric_col: used for sorting + bar scale (0–100 vs pool)
-#    - value_label_col: printed at right (raw in raw-mode)
+# 3) BUILD DISPLAY METRIC COLUMNS (VS WHOLE POOL)
+#    display_metric_col = bars + sorting (0–100 vs pool)
+#    value_label_col    = printed value (raw in raw-mode)
 # ---------------------------------------------------------
 
 df_pool = df_f.copy()
@@ -883,14 +888,15 @@ else:
 
     display_metric_col = col_ls if display_with_league_strength else col_no
     metric_label_for_image = raw_col
-    value_label_col = raw_col  # raw printed
+    value_label_col = raw_col
 
 
 # ---------------------------------------------------------
-# 4) DISPLAY FILTERS (do not change pool scaling)
+# 4) DISPLAY FILTERS (DO NOT CHANGE POOL SCALING)
 # ---------------------------------------------------------
 
 df_display = df_pool.copy()
+
 df_display = df_display[df_display["Age"] <= max_rank_age]
 df_display = df_display[df_display["League Strength"].between(display_ls_min, display_ls_max)]
 
@@ -925,11 +931,14 @@ st.caption(
     f"Strength shown: **{display_ls_min}–{display_ls_max}** (pool unchanged)"
 )
 
-st.dataframe(top_generic(df_display, display_metric_col, top_n, round_to=1), use_container_width=True)
+st.dataframe(
+    top_generic(df_display, display_metric_col, top_n, round_to=1),
+    use_container_width=True,
+)
 
 
 # ---------------------------------------------------------
-# 5) FLAGS (Twemoji) + UK HOME NATIONS FIX + fallback lookup
+# 5) FLAGS (Twemoji) + UK HOME NATIONS FIX + RestCountries fallback
 # ---------------------------------------------------------
 
 _CC_MAP = {
@@ -996,21 +1005,17 @@ def load_twemoji_png_by_code(code: str):
 
 @st.cache_data(show_spinner=False)
 def country_to_iso2_soft(name: str) -> str | None:
-    """
-    Fallback: resolve country names you don't have in _CC_MAP.
-    Uses RestCountries name search; returns ISO alpha-2 if found.
-    Cached to avoid repeated calls.
-    """
     n = _norm_country(name)
     if not n:
         return None
-    # quick normalizations
     n = n.replace("u.s.", "united states").replace("u.s.a.", "united states")
-    n = n.replace("korea republic", "south korea").replace("republic of korea", "south korea")
-
+    n = n.replace("republic of korea", "south korea").replace("korea republic", "south korea")
     try:
-        r = requests.get(f"https://restcountries.com/v3.1/name/{requests.utils.quote(n)}",
-                         params={"fields": "cca2,name"}, timeout=4)
+        r = requests.get(
+            f"https://restcountries.com/v3.1/name/{requests.utils.quote(n)}",
+            params={"fields": "cca2,name"},
+            timeout=4,
+        )
         if r.status_code != 200:
             return None
         data = r.json()
@@ -1027,10 +1032,8 @@ def birth_country_flag_image(birth_country: str | None):
     if not birth_country:
         return None
     norm = _norm_country(birth_country)
-
     key = _CC_MAP.get(norm)
 
-    # fallback to RestCountries if not in map
     if not key:
         iso2 = country_to_iso2_soft(birth_country)
         if iso2:
@@ -1218,7 +1221,11 @@ def footer_lines_for_metric(metric_label: str, show_ls: bool) -> list[str]:
 
 
 # ---------------------------------------------------------
-# 8) RANKING IMAGE (improved 1920×1080 spacing + bars to edge)
+# 8) RANKING IMAGE (Standard + 1920×1080)
+#    FIXES:
+#      - 1920×1080 crash removed
+#      - value sits outside bar (to right), not inside
+#      - row background/highlight spans across value
 # ---------------------------------------------------------
 
 def _format_value(v) -> str:
@@ -1241,8 +1248,8 @@ def _format_value(v) -> str:
 
 def make_ranking_image(
     df_show: pd.DataFrame,
-    metric_col: str,         # bar scaling col (0–100 vs pool)
-    value_label_col: str,    # printed value col (raw in raw-mode)
+    metric_col: str,         # bar scaling (0–100 vs pool)
+    value_label_col: str,    # printed value (raw in raw-mode)
     metric_label: str,
     title_lines: list[str],
     brand_logo_url: str | None = None,
@@ -1277,79 +1284,77 @@ def make_ranking_image(
     scores = pd.to_numeric(df_top[metric_col], errors="coerce")
     max_score = float(scores.max()) if scores.notna().any() else 1.0
 
-    # --------------------------
-    # 1920×1080 banner (fixed spacing + bar to edge)
-    # --------------------------
+    # =====================================================
+    # 1920×1080 banner
+    # =====================================================
     if export_mode == "1920×1080 (banner)":
         DPI = 100
         fig, ax = plt.subplots(figsize=(1920 / DPI, 1080 / DPI), dpi=DPI)
         ax.set_xlim(0, 1)
         ax.set_ylim(0, 1)
         ax.axis("off")
-        ax.add_patch(Rectangle((0, 0), 1, 1, color=BGćBG, zorder=0))  # <- typo fix below
+        ax.add_patch(Rectangle((0, 0), 1, 1, color=BG, zorder=0))
 
-        # (typo guard in case you copy/paste into a linter)
-        ax.patches[-1].set_color(BG)
-
-        # Layout zones (prevents “stacked” look)
+        # zones
         HEADER_TOP = 0.955
         HEADER_BOT = 0.805
         ROW_TOP    = 0.775
         ROW_BOT    = 0.205
         FOOT_TOP   = 0.175
-        FOOT_BOT   = 0.055
 
-        # Title block spacing (not on top of each other)
+        # titles (more spacing; no overlap)
         t1 = title_lines[0].upper() if len(title_lines) > 0 else ""
         t2 = title_lines[1].upper() if len(title_lines) > 1 else ""
         t3 = title_lines[2].upper() if len(title_lines) > 2 else ""
 
-        ax.text(0.050, HEADER_TOP, t1, fontsize=34, fontweight="bold", color=TXT, ha="left", va="top")
+        ax.text(0.050, HEADER_TOP,        t1, fontsize=34, fontweight="bold", color=TXT, ha="left", va="top")
         ax.text(0.050, HEADER_TOP - 0.058, t2, fontsize=24, fontweight="bold", color=TXT, ha="left", va="top")
-        ax.text(0.050, HEADER_TOP - 0.110, t3, fontsize=16, color=SUB, ha="left", va="top")
-
+        ax.text(0.050, HEADER_TOP - 0.112, t3, fontsize=16, color=SUB, ha="left", va="top")
         ax.plot([0.04, 0.96], [HEADER_BOT, HEADER_BOT], color=DIV, lw=1.4, zorder=2)
 
-        # Row geometry
+        # row geometry
         row_gap = (ROW_TOP - ROW_BOT) / 10.0
         row_h = row_gap * 0.86
 
-        # Columns (bar goes to edge; value sits ON TOP)
-        RANK_X  = 0.065
-        CREST_X = 0.155
-        NAME_X  = 0.225
+        # widths (ROW spans across value; value is outside bar)
+        ROW_L, ROW_R = 0.04, 0.96
+        RANK_X, CREST_X, NAME_X = 0.065, 0.155, 0.225
 
-        BAR_LEFT  = 0.62
-        BAR_RIGHT = 0.955     # to the edge (tight pad)
-        BAR_W     = BAR_RIGHT - BAR_LEFT
-        VAL_X     = BAR_RIGHT - 0.010  # right aligned inside bar area
-        bar_h     = row_h * 0.42
+        BAR_L, BAR_R = 0.60, 0.88   # bar stops before number
+        BAR_W = BAR_R - BAR_L
+        VAL_X = 0.94                # value right of bar, not touching
+
         crest_zoom = 0.62
+        bar_h = row_h * 0.42
 
         for i, (_, row) in enumerate(df_top.iterrows()):
             y = ROW_TOP - (i + 0.5) * row_gap
 
-            ax.add_patch(Rectangle((0.04, y - row_h/2), 0.92, row_h,
+            # full-width row background (covers number)
+            ax.add_patch(Rectangle((ROW_L, y - row_h/2), ROW_R - ROW_L, row_h,
                                    color=(ROW_A if i % 2 == 0 else ROW_B), zorder=1))
 
             if is_hi(row):
-                ax.add_patch(Rectangle((0.04, y - row_h/2), 0.92, row_h,
-                                       color=HILITE, alpha=0.26, zorder=2.2))
-                ax.add_patch(Rectangle((0.04, y - row_h/2), 0.92, row_h,
+                ax.add_patch(Rectangle((ROW_L, y - row_h/2), ROW_R - ROW_L, row_h,
+                                       color=HILITE, alpha=0.25, zorder=2.2))
+                ax.add_patch(Rectangle((ROW_L, y - row_h/2), ROW_R - ROW_L, row_h,
                                        fill=False, edgecolor=HILITE_EDGE, lw=1.3, zorder=2.3))
 
+            # rank marker
             ax.scatter([RANK_X], [y], s=920, facecolor=RANK_BG,
                        edgecolor=(HILITE_EDGE if is_hi(row) else RANK_EDGE),
                        linewidths=(1.3 if is_hi(row) else 1.0),
                        zorder=3)
-            ax.text(RANK_X, y, str(i + 1), fontsize=14, fontweight="bold", color=TXT,
-                    ha="center", va="center", zorder=4)
+            ax.text(RANK_X, y, str(i + 1), fontsize=14, fontweight="bold",
+                    color=TXT, ha="center", va="center", zorder=4)
 
+            # crest/flag
             badge = get_team_badge(row)
             if badge is not None:
                 ax.add_artist(AnnotationBbox(OffsetImage(badge, zoom=crest_zoom),
                                              (CREST_X, y), frameon=False, zorder=4))
 
+            # names
             ax.text(NAME_X, y + row_h*0.18, str(row.get("Player", "")).upper(),
                     fontsize=22, fontweight="bold", color=TXT, ha="left", va="center", zorder=4)
 
@@ -1364,23 +1369,24 @@ def make_ranking_image(
             else:
                 sub = f"{team} ({league})"
 
-            ax.text(NAME_X, y - row_h*0.18, sub, fontsize=16, color=SUB, ha="left", va="center", zorder=4)
+            ax.text(NAME_X, y - row_h*0.18, sub,
+                    fontsize=16, color=SUB, ha="left", va="center", zorder=4)
 
-            # Bar background to the edge (covers behind number)
-            ax.add_patch(Rectangle((BAR_LEFT, y - bar_h/2), BAR_W, bar_h, color=BAR_BG, zorder=2))
-
+            # bar background + fill (bar stops before number)
+            ax.add_patch(Rectangle((BAR_L, y - bar_h/2), BAR_W, bar_h, color=BAR_BG, zorder=2))
             v_bar = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
             frac = (v_bar / max_score) if max_score else 0.0
-            ax.add_patch(Rectangle((BAR_LEFT, y - bar_h/2), BAR_W * frac, bar_h, color=BAR_FG, zorder=3))
+            ax.add_patch(Rectangle((BAR_L, y - bar_h/2), BAR_W * frac, bar_h, color=BAR_FG, zorder=3))
 
+            # value outside bar (right aligned)
             v_lab = row.get(value_label_col)
             ax.text(VAL_X, y, _format_value(v_lab),
                     fontsize=22, fontweight="bold", color=TXT,
                     ha="right", va="center", zorder=4)
 
-        # Footer (kept separate from rows)
+        # footer (kept separate)
         lines = footer_lines_for_metric(metric_label, show_ls)
-        ax.plot([0.12, 0.955], [FOOT_TOP, FOOT_TOP], color=DIV, lw=1.1, zorder=2)
+        ax.plot([0.12, 0.94], [FOOT_TOP, FOOT_TOP], color=DIV, lw=1.1, zorder=2)
         for j, line in enumerate(lines):
             ax.text(0.12, FOOT_TOP - 0.020 - j * 0.032, line,
                     fontsize=12.5, color=FOOT, ha="left", va="top", zorder=4)
@@ -1403,9 +1409,9 @@ def make_ranking_image(
         buf.seek(0)
         return buf.getvalue()
 
-    # --------------------------
-    # Standard mode (keep tight right side)
-    # --------------------------
+    # =====================================================
+    # Standard mode (auto height)
+    # =====================================================
     N        = len(df_top)
     ROW_H    = 0.82
     HEADER_H = 1.70
@@ -1429,11 +1435,12 @@ def make_ranking_image(
     base_y = TOTAL_H - HEADER_H
     ax.plot([0.02, 0.98], [base_y + ROW_H/2 + 0.02]*2, color=DIV, lw=1.1, zorder=2)
 
-    BAR_LEFT = 0.66
-    BAR_RIGHT = 0.96
-    BAR_W = BAR_RIGHT - BAR_LEFT
+    # row spans across value; bar stops before value
+    ROW_L, ROW_R = 0.0, 1.0
+    BAR_L, BAR_R = 0.66, 0.88
+    BAR_W = BAR_R - BAR_L
     BAR_H = 0.19
-    VAL_X = BAR_RIGHT - 0.005
+    VAL_X = 0.95
 
     crest_center_x = 0.112
     crest_zoom = 0.50
@@ -1441,13 +1448,13 @@ def make_ranking_image(
     for i, (_, row) in enumerate(df_top.iterrows()):
         y = base_y - i * ROW_H
 
-        ax.add_patch(Rectangle((0.0, y - ROW_H/2), 1.0, ROW_H,
+        ax.add_patch(Rectangle((ROW_L, y - ROW_H/2), ROW_R - ROW_L, ROW_H,
                                color=(ROW_A if i % 2 == 0 else ROW_B), zorder=1))
 
         if is_hi(row):
-            ax.add_patch(Rectangle((0.0, y - ROW_H/2), 1.0, ROW_H,
-                                   color=HILITE, alpha=0.26, zorder=2.2))
-            ax.add_patch(Rectangle((0.0, y - ROW_H/2), 1.0, ROW_H,
+            ax.add_patch(Rectangle((ROW_L, y - ROW_H/2), ROW_R - ROW_L, ROW_H,
+                                   color=HILITE, alpha=0.25, zorder=2.2))
+            ax.add_patch(Rectangle((ROW_L, y - ROW_H/2), ROW_R - ROW_L, ROW_H,
                                    fill=False, edgecolor=HILITE_EDGE, lw=1.0, zorder=2.3))
 
         ax.scatter([0.042], [y], s=(520 if is_hi(row) else 420),
@@ -1483,11 +1490,10 @@ def make_ranking_image(
         ax.text(0.18, y - 0.10, second_line,
                 fontsize=11, color=SUB, ha="left", va="center", zorder=4)
 
-        # bar to the edge (covers behind number)
-        ax.add_patch(Rectangle((BAR_LEFT, y - BAR_H/2), BAR_W, BAR_H, color=BAR_BG, zorder=2))
+        ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W, BAR_H, color=BAR_BG, zorder=2))
         v_bar = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
         frac = (v_bar / max_score) if max_score else 0.0
-        ax.add_patch(Rectangle((BAR_LEFT, y - BAR_H/2), BAR_W * frac, BAR_H, color=BAR_FG, zorder=3))
+        ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W * frac, BAR_H, color=BAR_FG, zorder=3))
 
         v_lab = row.get(value_label_col)
         ax.text(VAL_X, y, _format_value(v_lab),
@@ -1564,6 +1570,7 @@ if img_bytes:
     st.download_button("Download PNG", data=img_bytes, file_name="cb_ranking.png", mime="image/png")
 else:
     st.info("No data to generate image.")
+
 
 
 
