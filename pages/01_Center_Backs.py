@@ -568,6 +568,10 @@ df_f["Pass Ratio Percentile"] = (
 #  (Pool defined by sidebar; display filters do NOT change pool)
 #  + League display filter as dropdown (default = All leagues)
 #  + If league selected -> Team dropdown (default = All teams in that league)
+#  + Toggle to rank by composite scores OR any raw numeric metric (e.g. Progressive passes per 90)
+#  + OPTIONAL highlight player (gold overlay on that row) — only if enabled
+#  + Export format toggle: Standard (auto height) OR EXACT 1920×720 banner
+#  + FIXED: NO excessive right whitespace (tight right padding in both modes)
 # ===================================================================
 
 import io
@@ -707,6 +711,14 @@ df_f = ensure_cb_impact_metrics(df_f, selected_file)
 # 2) RANKING / DISPLAY CONTROLS (display filters do NOT change pool)
 # ---------------------------------------------------------
 
+rank_mode = st.radio(
+    "Ranking mode",
+    ["Composite (CB scores)", "Raw metric (any numeric column)"],
+    index=0,
+    horizontal=True,
+    key=f"cb_rank_mode_{selected_file}",
+)
+
 RANK_OPTIONS = {
     "Impact Score": "Impact Score",
     "Aerial Score": "Aerial Score",
@@ -717,12 +729,50 @@ RANK_OPTIONS = {
     "Positioning Score": "Positioning Score",
 }
 
-rank_label = st.selectbox(
-    "Ranking metric",
-    list(RANK_OPTIONS.keys()),
-    index=0,
-    key=f"cb_rank_metric_{selected_file}",
-)
+def _raw_metric_candidates(df: pd.DataFrame) -> list[str]:
+    bad = {
+        "Impact Score", "Impact Score (no league)",
+        "Aerial Score", "Ground Score", "Retention Score", "Carrying Score",
+        "Playmaking Score", "Positioning Score",
+        "Base CB Score", "Raw Impact Score", "Raw Impact No League",
+        "Minutes Factor", "Team Context Factor", "League Factor",
+    }
+    numeric_cols = []
+    for c in df.columns:
+        if c in bad:
+            continue
+        if df[c].dtype.kind in ("i", "u", "f"):
+            numeric_cols.append(c)
+
+    def score_name(x: str) -> int:
+        xlow = x.lower()
+        w = 0
+        if "percentile" in xlow: w += 8
+        if "per 90" in xlow or "p90" in xlow: w -= 6
+        if "padj" in xlow or "p adj" in xlow: w -= 2
+        if "%" in x: w -= 1
+        return w
+
+    return sorted(numeric_cols, key=lambda s: (score_name(s), s))
+
+raw_metric_list = _raw_metric_candidates(df_f)
+
+if rank_mode == "Composite (CB scores)":
+    rank_label = st.selectbox(
+        "Ranking metric",
+        list(RANK_OPTIONS.keys()),
+        index=0,
+        key=f"cb_rank_metric_{selected_file}",
+    )
+else:
+    default_raw = "Progressive passes per 90" if "Progressive passes per 90" in raw_metric_list else (raw_metric_list[0] if raw_metric_list else None)
+    rank_label = st.selectbox(
+        "Ranking metric (raw column)",
+        raw_metric_list,
+        index=(raw_metric_list.index(default_raw) if default_raw in raw_metric_list else 0),
+        key=f"cb_rank_raw_metric_{selected_file}",
+        help="Ranks a single numeric column from your dataset (pool scaling still applies).",
+    )
 
 display_with_league_strength = st.checkbox(
     "Display league-strength adjusted (0–100)",
@@ -783,27 +833,57 @@ show_league_strength_col = st.checkbox(
     key=f"cb_show_ls_col_{selected_file}",
 )
 
+# Optional highlight player (ONLY if enabled)
+enable_highlight_player = st.checkbox(
+    "Highlight a player in the ranking image",
+    value=False,
+    key=f"cb_enable_highlight_{selected_file}",
+)
+highlight_player_name = None
+if enable_highlight_player:
+    player_opts = sorted(df_f["Player"].dropna().astype(str).unique().tolist())
+    highlight_player_name = st.selectbox(
+        "Player to highlight",
+        ["—"] + player_opts,
+        index=0,
+        key=f"cb_highlight_player_{selected_file}",
+    )
+    if highlight_player_name == "—":
+        highlight_player_name = None
+
 
 # ---------------------------------------------------------
 # 3) BUILD DISPLAY METRIC COLUMNS (VS WHOLE POOL)
 # ---------------------------------------------------------
 
 df_pool = df_f.copy()
-
 metric_to_display_cols = {}
-for label, base_col in RANK_OPTIONS.items():
-    if base_col == "Impact Score":
-        metric_to_display_cols[label] = {"no_ls": "Impact Score (no league)", "ls": "Impact Score"}
-    else:
-        col_no = f"{base_col} (Display NL)"
-        df_pool[col_no] = scale_0_100(df_pool[base_col])
 
-        col_ls = f"{base_col} (Display LS)"
-        df_pool[col_ls] = scale_0_100(df_pool[base_col] * df_pool["League Factor"])
+if rank_mode == "Composite (CB scores)":
+    for label, base_col in RANK_OPTIONS.items():
+        if base_col == "Impact Score":
+            metric_to_display_cols[label] = {"no_ls": "Impact Score (no league)", "ls": "Impact Score"}
+        else:
+            col_no = f"{base_col} (Display NL)"
+            df_pool[col_no] = scale_0_100(df_pool[base_col])
 
-        metric_to_display_cols[label] = {"no_ls": col_no, "ls": col_ls}
+            col_ls = f"{base_col} (Display LS)"
+            df_pool[col_ls] = scale_0_100(df_pool[base_col] * df_pool["League Factor"])
 
-display_metric_col = metric_to_display_cols[rank_label]["ls" if display_with_league_strength else "no_ls"]
+            metric_to_display_cols[label] = {"no_ls": col_no, "ls": col_ls}
+
+    display_metric_col = metric_to_display_cols[rank_label]["ls" if display_with_league_strength else "no_ls"]
+    metric_label_for_image = rank_label
+else:
+    raw_col = rank_label
+    col_no = f"{raw_col} (Display NL)"
+    df_pool[col_no] = scale_0_100(df_pool[raw_col])
+
+    col_ls = f"{raw_col} (Display LS)"
+    df_pool[col_ls] = scale_0_100(df_pool[raw_col] * df_pool["League Factor"])
+
+    display_metric_col = col_ls if display_with_league_strength else col_no
+    metric_label_for_image = raw_col
 
 
 # ---------------------------------------------------------
@@ -811,7 +891,6 @@ display_metric_col = metric_to_display_cols[rank_label]["ls" if display_with_lea
 # ---------------------------------------------------------
 
 df_display = df_pool.copy()
-
 df_display = df_display[df_display["Age"] <= max_rank_age]
 df_display = df_display[df_display["League Strength"].between(display_ls_min, display_ls_max)]
 
@@ -840,7 +919,7 @@ def top_generic(df_in: pd.DataFrame, metric_col: str, head_n: int, round_to: int
 league_txt = selected_display_league
 team_txt = selected_display_team if selected_display_league != "All leagues" else "—"
 st.caption(
-    f"Sorted by: **{rank_label}** | "
+    f"Sorted by: **{metric_label_for_image}** | "
     f"Display: **{'League-strength adjusted' if display_with_league_strength else 'Raw vs pool'}** | "
     f"League shown: **{league_txt}** | Team shown: **{team_txt}** | "
     f"Strength shown: **{display_ls_min}–{display_ls_max}** (pool unchanged)"
@@ -1105,6 +1184,8 @@ def footer_lines_for_metric(metric_label: str, show_ls: bool) -> list[str]:
 
 # ---------------------------------------------------------
 # 8) RANKING IMAGE
+#     - Standard: tight right padding (no big whitespace)
+#     - Banner: exact 1920×720, also tight right padding
 # ---------------------------------------------------------
 
 def make_ranking_image(
@@ -1115,22 +1196,149 @@ def make_ranking_image(
     brand_logo_url: str | None = None,
     show_ls: bool = False,
     show_age: bool = False,
+    highlight_player: str | None = None,
+    export_mode: str = "Standard (auto)",
 ) -> bytes:
     df_top = df_show.head(10).copy()
     if df_top.empty:
         return b""
 
+    def _is_highlight(row: pd.Series) -> bool:
+        if not highlight_player:
+            return False
+        return str(row.get("Player", "")).strip().lower() == str(highlight_player).strip().lower()
+
+    scores = pd.to_numeric(df_top[metric_col], errors="coerce")
+    max_score = float(scores.max()) if scores.notna().any() else 1.0
+
+    # --------------------------
+    # BANNER MODE (exact 1920×720)
+    # --------------------------
+    if export_mode == "1920×720 (banner)":
+        DPI = 100
+        FIG_W_IN = 1920 / DPI
+        FIG_H_IN = 720 / DPI
+
+        # Tight right pad (NO huge whitespace)
+        X_MAX = 1.02
+        RIGHT_PAD = 0.02
+
+        # Positions
+        RANK_X   = 0.055
+        CREST_X  = 0.135
+        NAME_X   = 0.200
+
+        BAR_W    = 0.22
+        VAL_PAD  = 0.018
+        BAR_LEFT = (X_MAX - RIGHT_PAD) - (BAR_W + VAL_PAD + 0.06)  # keeps number inside view
+        VAL_X    = BAR_LEFT + BAR_W + VAL_PAD
+
+        HEADER_Y_TOP = 0.98
+        ROW_START_Y  = 0.74
+        ROW_GAP      = 0.062
+
+        crest_zoom = 0.52
+        bar_h = 0.030
+
+        fig, ax = plt.subplots(figsize=(FIG_W_IN, FIG_H_IN), dpi=DPI)
+        ax.set_xlim(0, X_MAX)
+        ax.set_ylim(0, 1)
+        ax.axis("off")
+        ax.add_patch(Rectangle((0, 0), X_MAX, 1, color="#FFFFFF", zorder=0))
+
+        t1 = title_lines[0].upper() if len(title_lines) > 0 else ""
+        t2 = title_lines[1].upper() if len(title_lines) > 1 else ""
+        t3 = title_lines[2].upper() if len(title_lines) > 2 else ""
+        ax.text(0.04, HEADER_Y_TOP,        t1, fontsize=28, fontweight="bold", ha="left", va="top")
+        ax.text(0.04, HEADER_Y_TOP - 0.06, t2, fontsize=20, fontweight="bold", ha="left", va="top")
+        ax.text(0.04, HEADER_Y_TOP - 0.11, t3, fontsize=14, color="#555555", ha="left", va="top")
+
+        ax.plot([0.03, X_MAX - 0.03], [0.80, 0.80], color="#E2E2E2", lw=1.2, zorder=2)
+
+        for i, (_, row) in enumerate(df_top.iterrows()):
+            y = ROW_START_Y - i * ROW_GAP
+
+            if i % 2 == 0:
+                ax.add_patch(Rectangle((0.03, y - ROW_GAP/2), X_MAX - 0.06, ROW_GAP, color="#F7F7F7", zorder=1))
+
+            if _is_highlight(row):
+                ax.add_patch(Rectangle((0.03, y - ROW_GAP/2), X_MAX - 0.06, ROW_GAP,
+                                       color="#F6D46B", alpha=0.30, zorder=2.2))
+                ax.add_patch(Rectangle((0.03, y - ROW_GAP/2), X_MAX - 0.06, ROW_GAP,
+                                       fill=False, edgecolor="#D2A100", lw=1.2, zorder=2.3))
+
+            ax.scatter([RANK_X], [y], s=650, facecolor="#F3F3F3",
+                       edgecolor=("#B98500" if _is_highlight(row) else "#C0C0C0"),
+                       linewidths=(1.1 if _is_highlight(row) else 0.9),
+                       zorder=3)
+            ax.text(RANK_X, y, str(i + 1), fontsize=12, fontweight="bold", ha="center", va="center", zorder=4)
+
+            badge = get_team_badge(row)
+            if badge is not None:
+                ax.add_artist(AnnotationBbox(OffsetImage(badge, zoom=crest_zoom), (CREST_X, y), frameon=False, zorder=4))
+
+            ax.text(NAME_X, y + 0.013, str(row.get("Player", "")).upper(),
+                    fontsize=18, fontweight="bold", ha="left", va="center", zorder=4)
+
+            team = str(row.get("Team", ""))
+            league = str(row.get("League", ""))
+            if show_age and ("Age" in row.index) and pd.notna(row["Age"]):
+                try:
+                    age_int = int(float(row["Age"]))
+                    sub = f"{team} ({league}) · Age {age_int}"
+                except Exception:
+                    sub = f"{team} ({league})"
+            else:
+                sub = f"{team} ({league})"
+            ax.text(NAME_X, y - 0.017, sub, fontsize=13, color="#777777", ha="left", va="center", zorder=4)
+
+            ax.add_patch(Rectangle((BAR_LEFT, y - bar_h/2), BAR_W, bar_h, color="#E1E1E1", zorder=2))
+            val = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
+            frac = (val / max_score) if max_score else 0.0
+            ax.add_patch(Rectangle((BAR_LEFT, y - bar_h/2), BAR_W * frac, bar_h, color="#BFBFBF", zorder=3))
+            ax.text(VAL_X, y, f"{val:.1f}", fontsize=18, fontweight="bold", ha="left", va="center", zorder=4)
+
+        # footer
+        lines = footer_lines_for_metric(metric_label, show_ls)
+        ax.plot([0.12, X_MAX - RIGHT_PAD], [0.135, 0.135], color="#E8E8E8", lw=1.0, zorder=2)
+        for j, line in enumerate(lines):
+            ax.text(0.12, 0.085 - j * 0.03, line, fontsize=11, color="#9B9B9B", ha="left", va="top", zorder=4)
+
+        if brand_logo_url:
+            brand_img = load_remote_png(brand_logo_url)
+            if brand_img is not None:
+                ax.add_artist(AnnotationBbox(
+                    OffsetImage(brand_img, zoom=0.30),
+                    (0.992, 0.02),
+                    xycoords=ax.transAxes,
+                    frameon=False,
+                    box_alignment=(1, 0),
+                    zorder=5,
+                ))
+
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=DPI, bbox_inches=None, facecolor="#FFFFFF")
+        plt.close(fig)
+        buf.seek(0)
+        return buf.getvalue()
+
+    # --------------------------
+    # STANDARD MODE (auto height, tight right padding)
+    # --------------------------
     N        = len(df_top)
     ROW_H    = 0.82
     HEADER_H = 1.70
     FOOT_H   = 0.70
     TOTAL_H  = HEADER_H + N * ROW_H + FOOT_H
 
-    fig, ax = plt.subplots(figsize=(8.0, TOTAL_H), dpi=220)
-    ax.set_xlim(0, 1)
+    # Tight right pad (NO huge whitespace)
+    X_MAX = 1.04
+
+    fig, ax = plt.subplots(figsize=(8.4, TOTAL_H), dpi=220)
+    ax.set_xlim(0, X_MAX)
     ax.set_ylim(0, TOTAL_H)
     ax.axis("off")
-    ax.add_patch(Rectangle((0, 0), 1, TOTAL_H, color="#FFFFFF", zorder=0))
+    ax.add_patch(Rectangle((0, 0), X_MAX, TOTAL_H, color="#FFFFFF", zorder=0))
 
     t1 = title_lines[0].upper() if len(title_lines) > 0 else ""
     t2 = title_lines[1].upper() if len(title_lines) > 1 else ""
@@ -1140,47 +1348,48 @@ def make_ranking_image(
     ax.text(0.03, title_y - 0.32, t2, fontsize=13, fontweight="bold", ha="left", va="top")
     ax.text(0.03, title_y - 0.60, t3, fontsize=10, color="#555555", ha="left", va="top")
 
-    scores = pd.to_numeric(df_top[metric_col], errors="coerce")
-    max_score = float(scores.max()) if scores.notna().any() else 1.0
-
-    BAR_LEFT = 0.64
-    BAR_W    = 0.28
+    BAR_W    = 0.24
     BAR_H    = 0.19
+    VAL_PAD  = 0.018
+    BAR_LEFT = (X_MAX - 0.02) - (BAR_W + VAL_PAD + 0.07)  # keeps value text inside
+    VAL_X    = BAR_LEFT + BAR_W + VAL_PAD
 
     base_y = TOTAL_H - HEADER_H
-    ax.plot([0.02, 0.98], [base_y + ROW_H/2 + 0.02]*2, color="#E2E2E2", lw=1.1, zorder=2)
+    ax.plot([0.02, X_MAX - 0.02], [base_y + ROW_H/2 + 0.02]*2, color="#E2E2E2", lw=1.1, zorder=2)
 
     crest_center_x = 0.112
     crest_zoom = 0.50
     crest_half_w_axes = 0.030
     footer_x_left  = crest_center_x - crest_half_w_axes
-    footer_x_right = BAR_LEFT + BAR_W + 0.07
+    footer_x_right = X_MAX - 0.02
 
     for i, (_, row) in enumerate(df_top.iterrows()):
         y = base_y - i * ROW_H
 
         if i % 2 == 0:
-            ax.add_patch(Rectangle((0, y - ROW_H/2), 1, ROW_H, color="#F7F7F7", zorder=1))
+            ax.add_patch(Rectangle((0, y - ROW_H/2), X_MAX, ROW_H, color="#F7F7F7", zorder=1))
 
-        # perfect circle rank marker
-        ax.scatter([0.042], [y], s=420, facecolor="#F3F3F3",
-                   edgecolor="#C0C0C0", linewidths=0.8, zorder=3)
+        if _is_highlight(row):
+            ax.add_patch(Rectangle((0, y - ROW_H/2), X_MAX, ROW_H, color="#F6D46B", alpha=0.30, zorder=2.2))
+            ax.add_patch(Rectangle((0, y - ROW_H/2), X_MAX, ROW_H, fill=False, edgecolor="#D2A100", lw=1.0, zorder=2.3))
+
+        ax.scatter([0.042], [y], s=(520 if _is_highlight(row) else 420),
+                   facecolor="#F3F3F3",
+                   edgecolor=("#B98500" if _is_highlight(row) else "#C0C0C0"),
+                   linewidths=(1.1 if _is_highlight(row) else 0.8),
+                   zorder=3)
         ax.text(0.042, y, str(i+1), fontsize=9, fontweight="bold",
                 ha="center", va="center", zorder=4)
 
         badge = get_team_badge(row)
         if badge is not None:
-            ax.add_artist(AnnotationBbox(
-                OffsetImage(badge, zoom=crest_zoom),
-                (crest_center_x, y),
-                frameon=False,
-                zorder=4
-            ))
+            ax.add_artist(AnnotationBbox(OffsetImage(badge, zoom=crest_zoom),
+                                         (crest_center_x, y), frameon=False, zorder=4))
 
         ax.plot([0.168, 0.168], [y - ROW_H/2 + 0.05, y + ROW_H/2 - 0.05],
                 color="#E0E0E0", lw=0.7, zorder=2)
 
-        ax.text(0.18, y + 0.13, str(row["Player"]).upper(),
+        ax.text(0.18, y + 0.13, str(row.get("Player", "")).upper(),
                 fontsize=14, fontweight="bold", ha="left", va="center", zorder=4)
 
         team = str(row.get("Team", ""))
@@ -1197,14 +1406,12 @@ def make_ranking_image(
         ax.text(0.18, y - 0.10, second_line,
                 fontsize=11, color="#777777", ha="left", va="center", zorder=4)
 
-        ax.add_patch(Rectangle((BAR_LEFT, y - BAR_H/2), BAR_W, BAR_H,
-                               color="#E1E1E1", zorder=2))
+        ax.add_patch(Rectangle((BAR_LEFT, y - BAR_H/2), BAR_W, BAR_H, color="#E1E1E1", zorder=2))
         val = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
         frac = (val / max_score) if max_score else 0.0
-        ax.add_patch(Rectangle((BAR_LEFT, y - BAR_H/2), BAR_W * frac, BAR_H,
-                               color="#BFBFBF", zorder=3))
-        ax.text(BAR_LEFT + BAR_W + 0.02, y, f"{val:.1f}",
-                fontsize=14, fontweight="bold", ha="left", va="center", zorder=4)
+        ax.add_patch(Rectangle((BAR_LEFT, y - BAR_H/2), BAR_W * frac, BAR_H, color="#BFBFBF", zorder=3))
+        ax.text(VAL_X, y, f"{val:.1f}", fontsize=14, fontweight="bold",
+                ha="left", va="center", zorder=4)
 
     divider_y = 0.82
     ax.plot([footer_x_left, footer_x_right], [divider_y]*2, color="#E8E8E8", lw=0.9, zorder=2)
@@ -1212,25 +1419,16 @@ def make_ranking_image(
     lines = footer_lines_for_metric(metric_label, show_ls)
     footer_first_y = 0.62
     footer_line_gap = 0.18
-
     for j, line in enumerate(lines):
-        ax.text(
-            footer_x_left,
-            footer_first_y - j * footer_line_gap,
-            line,
-            fontsize=9.0,
-            color="#9B9B9B",
-            ha="left",
-            va="top",
-            zorder=4,
-        )
+        ax.text(footer_x_left, footer_first_y - j * footer_line_gap, line,
+                fontsize=9.0, color="#9B9B9B", ha="left", va="top", zorder=4)
 
     if brand_logo_url:
         brand_img = load_remote_png(brand_logo_url)
         if brand_img is not None:
             ax.add_artist(AnnotationBbox(
                 OffsetImage(brand_img, zoom=0.18),
-                (0.97, 0.06),
+                (0.992, 0.02),
                 xycoords=ax.transAxes,
                 frameon=False,
                 box_alignment=(1, 0),
@@ -1251,23 +1449,32 @@ def make_ranking_image(
 st.subheader("🖼 Exportable CIES-style ranking image")
 
 default_t1 = "TOP CENTRE BACKS"
-default_t2 = rank_label.upper()
+default_t2 = str(metric_label_for_image).upper()
 default_t3 = "PERFORMANCE INDEX  |  Wyscout"
 
 t1 = st.text_input("Title line 1", default_t1, key=f"cb_title1_{selected_file}")
 t2 = st.text_input("Title line 2", default_t2, key=f"cb_title2_{selected_file}")
 t3 = st.text_input("Title line 3", default_t3, key=f"cb_title3_{selected_file}")
 
+export_mode = st.selectbox(
+    "Export format",
+    ["Standard (auto)", "1920×720 (banner)"],
+    index=0,
+    key=f"cb_export_mode_{selected_file}",
+)
+
 brand_logo_url = "https://image.pitchbook.com/1xOUzrEhnsKrJbNbN8Asf3LND2u1605464042293_200x200"
 
 img_bytes = make_ranking_image(
     df_show=df_display,
     metric_col=display_metric_col,
-    metric_label=rank_label,
+    metric_label=str(metric_label_for_image),
     title_lines=[t1, t2, t3],
     brand_logo_url=brand_logo_url,
     show_ls=display_with_league_strength,
     show_age=show_age_in_image,
+    highlight_player=(highlight_player_name if enable_highlight_player else None),
+    export_mode=export_mode,
 )
 
 if img_bytes:
@@ -1275,6 +1482,7 @@ if img_bytes:
     st.download_button("Download PNG", data=img_bytes, file_name="cb_ranking.png", mime="image/png")
 else:
     st.info("No data to generate image.")
+
 
 
 
