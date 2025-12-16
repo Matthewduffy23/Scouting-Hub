@@ -567,11 +567,16 @@ df_f["Pass Ratio Percentile"] = (
 #  CB IMPACT FEATURE BLOCK – METRICS + CRESTS + CIES-STYLE IMAGE
 #  (Pool defined by sidebar; display filters do NOT change pool)
 #
-#  FIXES vs previous:
-#   - 1920×1080 now truly fills canvas (no subplot padding; full-bleed axes)
-#   - Rows span full width (like your 3rd image)
-#   - Bar ends earlier; value sits to the right with clear gap
-#   - Highlight overlay spans across value area too
+#  Changes included:
+#   - Standard: bar no longer clashes with team name (bar moved right,
+#              ~half width, thinner)
+#   - 1920×1080: true full-bleed canvas, fixed grid + font sizes
+#              (no overlap / "off" look)
+#   - Value always OUTSIDE bar with clean gap (like your 3rd image)
+#   - Row blocks span full width (covers value area)
+#   - Multi-player highlight optional (gold overlay)
+#   - Dark theme option (#0a0f1c)
+#   - Raw metric mode prints RAW values on image (bars scaled vs pool)
 #   - More flags via RestCountries fallback → ISO2 → Twemoji (cached)
 # ===================================================================
 
@@ -824,7 +829,6 @@ enable_highlight_players = st.checkbox(
     value=False,
     key=f"cb_enable_highlight_{selected_file}",
 )
-
 highlight_player_names: list[str] = []
 if enable_highlight_players:
     player_opts = sorted(df_f["Player"].dropna().astype(str).unique().tolist())
@@ -887,26 +891,11 @@ if selected_display_league != "All leagues":
 
 df_display = df_display.dropna(subset=[display_metric_col]).sort_values(display_metric_col, ascending=False).copy()
 
-
-def top_generic(df_in: pd.DataFrame, metric_col: str, head_n: int, round_to: int = 1) -> pd.DataFrame:
-    ranked = df_in.copy()
-    ranked[metric_col] = pd.to_numeric(ranked[metric_col], errors="coerce").round(round_to)
-
-    cols = ["Player", "Team", "League", "Position", "Age", "Minutes played"]
-    if show_league_strength_col and "League Strength" in ranked.columns:
-        cols.append("League Strength")
-    cols.append(metric_col)
-
-    out = ranked[cols].head(head_n).reset_index(drop=True)
-    out.index = np.arange(1, len(out) + 1)
-    return out
-
-
-st.dataframe(top_generic(df_display, display_metric_col, top_n, round_to=1), use_container_width=True)
+st.dataframe(df_display.head(top_n), use_container_width=True)
 
 
 # ---------------------------------------------------------
-# 5) FLAGS (Twemoji) + UK HOME NATIONS FIX + RestCountries fallback
+# 5) FLAGS (Twemoji) + UK HOME NATIONS + RestCountries fallback
 # ---------------------------------------------------------
 
 _CC_MAP = {
@@ -993,7 +982,7 @@ def birth_country_flag_image(birth_country: str | None):
 
 
 # ---------------------------------------------------------
-# 6) CREST / BADGE PIPELINE
+# 6) CREST / BADGE PIPELINE (local only here; can plug in your wiki/playmaker versions)
 # ---------------------------------------------------------
 
 BADGE_DIRS = [
@@ -1050,10 +1039,7 @@ def footer_lines_for_metric(metric_label: str, show_ls: bool) -> list[str]:
 
 
 # ---------------------------------------------------------
-# 8) RANKING IMAGE (Standard + TRUE 1920×1080 full-bleed)
-#    Matches your 3rd image style:
-#      - row blocks span across to value
-#      - bar ends earlier; value has clear gap to the right
+# 8) RANKING IMAGE (Standard + 1920×1080) – updated bars + banner grid
 # ---------------------------------------------------------
 
 def _format_value(v) -> str:
@@ -1073,6 +1059,7 @@ def _format_value(v) -> str:
     if av >= 1:
         return f"{v:.2f}"
     return f"{v:.3f}"
+
 
 def make_ranking_image(
     df_show: pd.DataFrame,
@@ -1117,50 +1104,51 @@ def make_ranking_image(
     max_score = float(scores.max()) if scores.notna().any() else 1.0
 
     # =====================================================
-    # 1920×1080 (banner) – FULL BLEED, fills canvas
+    # 1920×1080 banner – fixed grid + sensible font sizes
     # =====================================================
     if export_mode == "1920×1080 (banner)":
         DPI = 100
         fig = plt.figure(figsize=(1920 / DPI, 1080 / DPI), dpi=DPI)
-        ax = fig.add_axes([0, 0, 1, 1])  # FULL BLEED (no internal margins)
+        ax = fig.add_axes([0, 0, 1, 1])  # full bleed
         ax.set_xlim(0, 1)
         ax.set_ylim(0, 1)
         ax.axis("off")
         ax.add_patch(Rectangle((0, 0), 1, 1, color=BG, zorder=0))
 
-        # content bounds (use the canvas!)
-        LEFT, RIGHT = 0.06, 0.94
+        LEFT, RIGHT = 0.055, 0.945
 
-        # header
+        # header (smaller / better spaced)
         t1 = title_lines[0].upper() if len(title_lines) > 0 else ""
         t2 = title_lines[1].upper() if len(title_lines) > 1 else ""
         t3 = title_lines[2].upper() if len(title_lines) > 2 else ""
 
-        ax.text(LEFT, 0.94, t1, fontsize=54, fontweight="bold", color=TXT, ha="left", va="top")
-        ax.text(LEFT, 0.89, t2, fontsize=34, fontweight="bold", color=TXT, ha="left", va="top")
-        ax.text(LEFT, 0.85, t3, fontsize=22, color=SUB, ha="left", va="top")
+        ax.text(LEFT, 0.94, t1, fontsize=44, fontweight="bold", color=TXT, ha="left", va="top")
+        ax.text(LEFT, 0.895, t2, fontsize=30, fontweight="bold", color=TXT, ha="left", va="top")
+        ax.text(LEFT, 0.858, t3, fontsize=18, color=SUB, ha="left", va="top")
         ax.plot([LEFT, RIGHT], [0.80, 0.80], color=DIV, lw=2.0)
 
         # row region
-        ROW_TOP, ROW_BOT = 0.78, 0.17
+        ROW_TOP, ROW_BOT = 0.78, 0.19
         row_gap = (ROW_TOP - ROW_BOT) / 10.0
         row_h = row_gap * 0.86
 
-        # columns (match your 3rd image spacing)
+        # columns
         RANK_X  = LEFT + 0.02
         CREST_X = LEFT + 0.10
         NAME_X  = LEFT + 0.16
 
-        BAR_L   = LEFT + 0.52
-        BAR_R   = RIGHT - 0.12   # stop bar earlier
-        VAL_X   = RIGHT - 0.02   # value at far right, with gap
+        # BAR: moved right and about half width vs previous banner
+        BAR_L   = LEFT + 0.60
+        BAR_R   = RIGHT - 0.14
         BAR_W   = BAR_R - BAR_L
-        BAR_H   = row_h * 0.38
+        BAR_H   = row_h * 0.32
+
+        # value with gap
+        VAL_X   = RIGHT - 0.02
 
         for i, (_, row) in enumerate(df_top.iterrows()):
             y = ROW_TOP - (i + 0.5) * row_gap
 
-            # FULL row card (spans across to value area)
             ax.add_patch(Rectangle((LEFT, y - row_h/2), RIGHT - LEFT, row_h,
                                    color=(ROW_A if i % 2 == 0 else ROW_B), zorder=1))
 
@@ -1170,49 +1158,44 @@ def make_ranking_image(
                 ax.add_patch(Rectangle((LEFT, y - row_h/2), RIGHT - LEFT, row_h,
                                        fill=False, edgecolor=HILITE_EDGE, lw=2.0, zorder=3))
 
-            # rank circle
-            ax.scatter([RANK_X], [y], s=1500,
+            ax.scatter([RANK_X], [y], s=1100,
                        facecolor=RANK_BG,
                        edgecolor=(HILITE_EDGE if is_hi(row) else RANK_EDGE),
                        linewidths=2.0, zorder=4)
-            ax.text(RANK_X, y, str(i + 1), fontsize=18, fontweight="bold",
+            ax.text(RANK_X, y, str(i + 1), fontsize=16, fontweight="bold",
                     color=TXT, ha="center", va="center", zorder=5)
 
-            # crest / flag
             badge = get_team_badge(row)
             if badge is not None:
                 ax.add_artist(AnnotationBbox(
-                    OffsetImage(badge, zoom=0.85),
+                    OffsetImage(badge, zoom=0.78),
                     (CREST_X, y),
                     frameon=False,
                     zorder=5,
                 ))
 
-            # player name + line
             ax.text(NAME_X, y + row_h*0.18, str(row.get("Player", "")).upper(),
-                    fontsize=30, fontweight="bold", color=TXT, ha="left", va="center")
+                    fontsize=24, fontweight="bold", color=TXT, ha="left", va="center")
             team = str(row.get("Team", ""))
             league = str(row.get("League", ""))
             ax.text(NAME_X, y - row_h*0.18, f"{team} ({league})",
-                    fontsize=22, color=SUB, ha="left", va="center")
+                    fontsize=18, color=SUB, ha="left", va="center")
 
-            # bar (ends earlier, like your 3rd image)
             ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W, BAR_H, color=BAR_BG, zorder=2))
             v_bar = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
             frac = (v_bar / max_score) if max_score else 0.0
             ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W * frac, BAR_H, color=BAR_FG, zorder=3))
 
-            # value OUTSIDE bar (with clear gap)
             v_lab = row.get(value_label_col)
             ax.text(VAL_X, y, _format_value(v_lab),
-                    fontsize=30, fontweight="bold", color=TXT,
+                    fontsize=24, fontweight="bold", color=TXT,
                     ha="right", va="center", zorder=6)
 
         # footer
-        ax.plot([LEFT, RIGHT], [0.13, 0.13], color=DIV, lw=2.0)
+        ax.plot([LEFT, RIGHT], [0.15, 0.15], color=DIV, lw=2.0)
         lines = footer_lines_for_metric(metric_label, show_ls)
         for j, line in enumerate(lines):
-            ax.text(LEFT, 0.10 - j*0.03, line, fontsize=18, color=FOOT, ha="left", va="top")
+            ax.text(LEFT, 0.12 - j*0.028, line, fontsize=14, color=FOOT, ha="left", va="top")
 
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=DPI, facecolor=BG)
@@ -1221,7 +1204,7 @@ def make_ranking_image(
         return buf.getvalue()
 
     # =====================================================
-    # Standard (auto height) – match your 3rd image spacing
+    # Standard (auto height) – bar moved right, thinner, half width
     # =====================================================
     N        = len(df_top)
     ROW_H    = 0.82
@@ -1246,12 +1229,16 @@ def make_ranking_image(
     base_y = TOTAL_H - HEADER_H
     ax.plot([0.04, 0.96], [base_y + ROW_H/2 + 0.02]*2, color=DIV, lw=1.1, zorder=2)
 
-    # FULL-WIDTH row cards, bar ends early, value with gap (like 3rd image)
+    # FULL-WIDTH row cards + bar moved right and half width
     LEFT, RIGHT = 0.04, 0.96
-    BAR_L, BAR_R = 0.60, 0.82
-    VAL_X = 0.94
+
+    # --- BAR: moved right so it NEVER clashes with team text; about half width ---
+    BAR_L, BAR_R = 0.66, 0.82
     BAR_W = BAR_R - BAR_L
-    BAR_H = 0.19
+    BAR_H = 0.14  # thinner than before
+
+    # value gap / placement
+    VAL_X = 0.94
 
     crest_x = 0.14
 
@@ -1349,6 +1336,7 @@ if img_bytes:
     st.download_button("Download PNG", data=img_bytes, file_name="cb_ranking.png", mime="image/png")
 else:
     st.info("No data to generate image.")
+
 
 
 
