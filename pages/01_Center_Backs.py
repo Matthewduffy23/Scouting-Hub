@@ -1115,87 +1115,163 @@ def make_ranking_image(
         ax.axis("off")
         ax.add_patch(Rectangle((0, 0), 1, 1, color=BG, zorder=0))
 
-        LEFT, RIGHT = 0.055, 0.945
+        # Wider usable content area
+        LEFT, RIGHT = 0.050, 0.950
 
-        # header (smaller / better spaced)
+        # -----------------------
+        # Header (more refined: smaller + more breathing room)
+        # -----------------------
         t1 = title_lines[0].upper() if len(title_lines) > 0 else ""
         t2 = title_lines[1].upper() if len(title_lines) > 1 else ""
         t3 = title_lines[2].upper() if len(title_lines) > 2 else ""
 
-        ax.text(LEFT, 0.94, t1, fontsize=44, fontweight="bold", color=TXT, ha="left", va="top")
-        ax.text(LEFT, 0.895, t2, fontsize=30, fontweight="bold", color=TXT, ha="left", va="top")
-        ax.text(LEFT, 0.858, t3, fontsize=18, color=SUB, ha="left", va="top")
-        ax.plot([LEFT, RIGHT], [0.80, 0.80], color=DIV, lw=2.0)
+        ax.text(LEFT, 0.945, t1, fontsize=46, fontweight="bold", color=TXT, ha="left", va="top")
+        ax.text(LEFT, 0.900, t2, fontsize=30, fontweight="bold", color=TXT, ha="left", va="top")
+        ax.text(LEFT, 0.862, t3, fontsize=18, color=SUB, ha="left", va="top")
+        ax.plot([LEFT, RIGHT], [0.805, 0.805], color=DIV, lw=2.0)
 
-        # row region
-        ROW_TOP, ROW_BOT = 0.78, 0.19
+        # -----------------------
+        # Rows (use MORE vertical canvas → taller rows, no overlap)
+        # -----------------------
+        ROW_TOP, ROW_BOT = 0.785, 0.205   # bigger row region than before
         row_gap = (ROW_TOP - ROW_BOT) / 10.0
-        row_h = row_gap * 0.86
+        row_h = row_gap * 0.90           # taller row cards
 
-        # columns
-        RANK_X  = LEFT + 0.02
-        CREST_X = LEFT + 0.10
-        NAME_X  = LEFT + 0.16
+        # Columns
+        RANK_X  = LEFT + 0.022
+        CREST_X = LEFT + 0.105
+        NAME_X  = LEFT + 0.165
 
-        # BAR: moved right and about half width vs previous banner
-        BAR_L   = LEFT + 0.60
-        BAR_R   = RIGHT - 0.14
+        # Bar/value block (keep right side clean + professional spacing)
+        BAR_L   = LEFT + 0.62            # keep bars away from team line
+        BAR_R   = RIGHT - 0.145
         BAR_W   = BAR_R - BAR_L
-        BAR_H   = row_h * 0.32
+        BAR_H   = row_h * 0.30           # slightly thinner (cleaner)
+        VAL_X   = RIGHT - 0.025          # value has clear margin
 
-        # value with gap
-        VAL_X   = RIGHT - 0.02
+        # Typography inside row (reduced offsets to avoid squashing)
+        NAME_FS = 26
+        TEAM_FS = 18
+        NAME_DY = row_h * 0.16
+        TEAM_DY = row_h * 0.16
+
+        # Crest size tuned to row height
+        crest_zoom = 0.80
 
         for i, (_, row) in enumerate(df_top.iterrows()):
             y = ROW_TOP - (i + 0.5) * row_gap
 
-            ax.add_patch(Rectangle((LEFT, y - row_h/2), RIGHT - LEFT, row_h,
-                                   color=(ROW_A if i % 2 == 0 else ROW_B), zorder=1))
+            # Full-width row card (covers bar + value)
+            ax.add_patch(Rectangle(
+                (LEFT, y - row_h / 2),
+                RIGHT - LEFT,
+                row_h,
+                color=(ROW_A if i % 2 == 0 else ROW_B),
+                zorder=1,
+            ))
 
             if is_hi(row):
-                ax.add_patch(Rectangle((LEFT, y - row_h/2), RIGHT - LEFT, row_h,
-                                       color=HILITE, alpha=0.25, zorder=2))
-                ax.add_patch(Rectangle((LEFT, y - row_h/2), RIGHT - LEFT, row_h,
-                                       fill=False, edgecolor=HILITE_EDGE, lw=2.0, zorder=3))
+                ax.add_patch(Rectangle(
+                    (LEFT, y - row_h / 2),
+                    RIGHT - LEFT,
+                    row_h,
+                    color=HILITE,
+                    alpha=0.22,
+                    zorder=2,
+                ))
+                ax.add_patch(Rectangle(
+                    (LEFT, y - row_h / 2),
+                    RIGHT - LEFT,
+                    row_h,
+                    fill=False,
+                    edgecolor=HILITE_EDGE,
+                    lw=2.0,
+                    zorder=3,
+                ))
 
-            ax.scatter([RANK_X], [y], s=1100,
-                       facecolor=RANK_BG,
-                       edgecolor=(HILITE_EDGE if is_hi(row) else RANK_EDGE),
-                       linewidths=2.0, zorder=4)
-            ax.text(RANK_X, y, str(i + 1), fontsize=16, fontweight="bold",
-                    color=TXT, ha="center", va="center", zorder=5)
+            # Rank marker
+            ax.scatter(
+                [RANK_X], [y],
+                s=1200,
+                facecolor=RANK_BG,
+                edgecolor=(HILITE_EDGE if is_hi(row) else RANK_EDGE),
+                linewidths=2.0,
+                zorder=4,
+            )
+            ax.text(
+                RANK_X, y, str(i + 1),
+                fontsize=16, fontweight="bold",
+                color=TXT, ha="center", va="center",
+                zorder=5,
+            )
 
+            # Crest / flag
             badge = get_team_badge(row)
             if badge is not None:
                 ax.add_artist(AnnotationBbox(
-                    OffsetImage(badge, zoom=0.78),
+                    OffsetImage(badge, zoom=crest_zoom),
                     (CREST_X, y),
                     frameon=False,
                     zorder=5,
                 ))
 
-            ax.text(NAME_X, y + row_h*0.18, str(row.get("Player", "")).upper(),
-                    fontsize=24, fontweight="bold", color=TXT, ha="left", va="center")
+            # Text
+            player = str(row.get("Player", "")).upper()
             team = str(row.get("Team", ""))
             league = str(row.get("League", ""))
-            ax.text(NAME_X, y - row_h*0.18, f"{team} ({league})",
-                    fontsize=18, color=SUB, ha="left", va="center")
 
-            ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W, BAR_H, color=BAR_BG, zorder=2))
+            ax.text(
+                NAME_X, y + NAME_DY,
+                player,
+                fontsize=NAME_FS,
+                fontweight="bold",
+                color=TXT,
+                ha="left",
+                va="center",
+                zorder=5,
+            )
+            ax.text(
+                NAME_X, y - TEAM_DY,
+                f"{team} ({league})",
+                fontsize=TEAM_FS,
+                color=SUB,
+                ha="left",
+                va="center",
+                zorder=5,
+            )
+
+            # Bar (scaled vs pool)
+            ax.add_patch(Rectangle((BAR_L, y - BAR_H / 2), BAR_W, BAR_H, color=BAR_BG, zorder=2))
             v_bar = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
             frac = (v_bar / max_score) if max_score else 0.0
-            ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W * frac, BAR_H, color=BAR_FG, zorder=3))
+            ax.add_patch(Rectangle((BAR_L, y - BAR_H / 2), BAR_W * frac, BAR_H, color=BAR_FG, zorder=3))
 
+            # Value OUTSIDE bar with clear gap
             v_lab = row.get(value_label_col)
-            ax.text(VAL_X, y, _format_value(v_lab),
-                    fontsize=24, fontweight="bold", color=TXT,
-                    ha="right", va="center", zorder=6)
+            ax.text(
+                VAL_X, y, _format_value(v_lab),
+                fontsize=26,
+                fontweight="bold",
+                color=TXT,
+                ha="right",
+                va="center",
+                zorder=6,
+            )
 
-        # footer
-        ax.plot([LEFT, RIGHT], [0.15, 0.15], color=DIV, lw=2.0)
+        # -----------------------
+        # Footer (slightly higher + cleaner)
+        # -----------------------
+        ax.plot([LEFT, RIGHT], [0.165, 0.165], color=DIV, lw=2.0)
         lines = footer_lines_for_metric(metric_label, show_ls)
         for j, line in enumerate(lines):
-            ax.text(LEFT, 0.12 - j*0.028, line, fontsize=14, color=FOOT, ha="left", va="top")
+            ax.text(
+                LEFT, 0.135 - j * 0.028,
+                line,
+                fontsize=14,
+                color=FOOT,
+                ha="left",
+                va="top",
+            )
 
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=DPI, facecolor=BG)
