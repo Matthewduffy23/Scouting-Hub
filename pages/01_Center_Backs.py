@@ -1125,9 +1125,9 @@ def make_ranking_image(
     # =====================================================
     # 1920×880 banner – FIXED (bigger table, better title spacing, footer pinned low)
     # =====================================================
-    if export_mode == "1920×880 (banner)":
+    if export_mode == "1920×1080 (banner)":
         DPI = 100
-        fig = plt.figure(figsize=(1920 / DPI, 880 / DPI), dpi=DPI)
+        fig = plt.figure(figsize=(1920 / DPI, 1080 / DPI), dpi=DPI)
         ax = fig.add_axes([0, 0, 1, 1])  # full bleed
         ax.set_xlim(0, 1)
         ax.set_ylim(0, 1)
@@ -1137,40 +1137,47 @@ def make_ranking_image(
         LEFT, RIGHT = 0.045, 0.955
 
         # -----------------------
-        # TITLES: more spacing (no clash)
+        # TITLES: FIXED (more vertical spacing between the 3 lines)
         # -----------------------
         t1 = title_lines[0].upper() if len(title_lines) > 0 else ""
         t2 = title_lines[1].upper() if len(title_lines) > 1 else ""
         t3 = title_lines[2].upper() if len(title_lines) > 2 else ""
 
-        ax.text(LEFT, 0.968, t1, fontsize=44, fontweight="bold", color=TXT, ha="left", va="top")
-        ax.text(LEFT, 0.905, t2, fontsize=30, fontweight="bold", color=TXT, ha="left", va="top")
-        ax.text(LEFT, 0.862, t3, fontsize=18, color=SUB, ha="left", va="top")
+        # Bigger gaps so they never feel "stacked"
+        ax.text(LEFT, 0.972, t1, fontsize=48, fontweight="bold", color=TXT, ha="left", va="top")
+        ax.text(LEFT, 0.912, t2, fontsize=34, fontweight="bold", color=TXT, ha="left", va="top")
+        ax.text(LEFT, 0.870, t3, fontsize=20, color=SUB, ha="left", va="top")
 
-        header_div_y = 0.820
-        ax.plot([LEFT, RIGHT], [header_div_y, header_div_y], color=DIV, lw=2.0)
+        # Divider under titles (slightly lower, helps breathing room)
+        header_div_y = 0.835
+        ax.plot([LEFT, RIGHT], [header_div_y, header_div_y], color=DIV, lw=2.2)
 
         # -----------------------
-        # FOOTER: pinned very low (2 lines)
+        # FOOTER pinned very low
         # -----------------------
-        footer_div_y = 0.065
-        ax.plot([LEFT, RIGHT], [footer_div_y, footer_div_y], color=DIV, lw=2.0)
+        footer_div_y = 0.070
+        ax.plot([LEFT, RIGHT], [footer_div_y, footer_div_y], color=DIV, lw=2.2)
 
         footer_line1 = "Impact Score: combines Aerial, Ground, Retention, Carrying, Playmaking and Positioning."
-        footer_line2 = "0–100 vs selected pool (league strength applied)." if show_ls else "0–100 vs selected pool (no league-strength adjustment)."
-
-        ax.text(LEFT, footer_div_y - 0.018, footer_line1, fontsize=12.5, color=FOOT, ha="left", va="top")
-        ax.text(LEFT, footer_div_y - 0.040, footer_line2, fontsize=12.5, color=FOOT, ha="left", va="top")
+        footer_line2 = (
+            "0–100 vs selected pool (league strength applied)."
+            if show_ls
+            else "0–100 vs selected pool (no league-strength adjustment)."
+        )
+        ax.text(LEFT, footer_div_y - 0.018, footer_line1, fontsize=13, color=FOOT, ha="left", va="top")
+        ax.text(LEFT, footer_div_y - 0.040, footer_line2, fontsize=13, color=FOOT, ha="left", va="top")
 
         # -----------------------
-        # TABLE: bigger (fills vertical space)
+        # TABLE: BIGGER + fills vertical space (removes extra gap to footer line)
         # -----------------------
-        ROW_TOP = header_div_y - 0.020
-        ROW_BOT = footer_div_y + 0.050
+        # Start closer to header divider and end closer to footer divider.
+        ROW_TOP = header_div_y - 0.022
+        ROW_BOT = footer_div_y + 0.048
+
         row_gap = (ROW_TOP - ROW_BOT) / 10.0
-        row_h = row_gap * 0.98
+        row_h = row_gap * 0.98  # taller cards, minimal dead space
 
-        # Columns
+        # Layout columns
         RANK_X  = LEFT + 0.024
         CREST_X = LEFT + 0.112
         NAME_X  = LEFT + 0.190
@@ -1182,13 +1189,13 @@ def make_ranking_image(
 
         VAL_X   = RIGHT - 0.030
 
-        # Typography (scaled for 880 canvas)
-        NAME_FS = 26
-        TEAM_FS = 17
+        # Typography
+        NAME_FS = 28
+        TEAM_FS = 19
         NAME_DY = row_h * 0.20
         TEAM_DY = row_h * 0.24
 
-        crest_zoom = 0.86
+        crest_zoom = 0.88
 
         for i, (_, row) in enumerate(df_top.iterrows()):
             y = ROW_TOP - (i + 0.5) * row_gap
@@ -1216,23 +1223,22 @@ def make_ranking_image(
                     row_h,
                     fill=False,
                     edgecolor=HILITE_EDGE,
-                    lw=2.0,
+                    lw=2.2,
                     zorder=3,
                 ))
 
             ax.scatter(
                 [RANK_X], [y],
-                s=1150,
+                s=1320,
                 facecolor=RANK_BG,
                 edgecolor=(HILITE_EDGE if is_hi(row) else RANK_EDGE),
-                linewidths=2.0,
+                linewidths=2.2,
                 zorder=4,
             )
             ax.text(
                 RANK_X, y, str(i + 1),
-                fontsize=14, fontweight="bold",
-                color=TXT, ha="center", va="center",
-                zorder=5,
+                fontsize=16, fontweight="bold", color=TXT,
+                ha="center", va="center", zorder=5
             )
 
             badge = get_team_badge(row)
@@ -1248,13 +1254,16 @@ def make_ranking_image(
             team = str(row.get("Team", ""))
             league = str(row.get("League", ""))
 
-            ax.text(NAME_X, y + NAME_DY, player,
-                    fontsize=NAME_FS, fontweight="bold", color=TXT,
-                    ha="left", va="center", zorder=6)
-
-            ax.text(NAME_X, y - TEAM_DY, f"{team} ({league})",
-                    fontsize=TEAM_FS, color=SUB,
-                    ha="left", va="center", zorder=6)
+            ax.text(
+                NAME_X, y + NAME_DY, player,
+                fontsize=NAME_FS, fontweight="bold", color=TXT,
+                ha="left", va="center", zorder=6
+            )
+            ax.text(
+                NAME_X, y - TEAM_DY, f"{team} ({league})",
+                fontsize=TEAM_FS, color=SUB,
+                ha="left", va="center", zorder=6
+            )
 
             ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W, BAR_H, color=BAR_BG, zorder=2))
             v_bar = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
@@ -1262,15 +1271,18 @@ def make_ranking_image(
             ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W * frac, BAR_H, color=BAR_FG, zorder=3))
 
             v_lab = row.get(value_label_col)
-            ax.text(VAL_X, y, _format_value(v_lab),
-                    fontsize=26, fontweight="bold", color=TXT,
-                    ha="right", va="center", zorder=6)
+            ax.text(
+                VAL_X, y, _format_value(v_lab),
+                fontsize=29, fontweight="bold", color=TXT,
+                ha="right", va="center", zorder=6
+            )
 
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=DPI, facecolor=BG)
         plt.close(fig)
         buf.seek(0)
         return buf.getvalue()
+
 
 
 
