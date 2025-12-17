@@ -1122,154 +1122,156 @@ def make_ranking_image(
     scores = pd.to_numeric(df_top[metric_col], errors="coerce")
     max_score = float(scores.max()) if scores.notna().any() else 1.0
 
-    # =====================================================
-    # 1920×1080 banner – USE MORE SPACE + FIX OVERLAPS
-    # =====================================================
-    if export_mode == "1920×1080 (banner)":
-        DPI = 100
-        fig = plt.figure(figsize=(1920 / DPI, 1080 / DPI), dpi=DPI)
-        ax = fig.add_axes([0, 0, 1, 1])  # full bleed
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
-        ax.axis("off")
-        ax.add_patch(Rectangle((0, 0), 1, 1, color=BG, zorder=0))
+# =====================================================
+# 1920×880 banner – FIXED (bigger table, better title spacing, footer pinned low)
+# =====================================================
+if export_mode == "1920×880 (banner)":
+    DPI = 100
+    fig = plt.figure(figsize=(1920 / DPI, 880 / DPI), dpi=DPI)
+    ax = fig.add_axes([0, 0, 1, 1])  # full bleed
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.axis("off")
+    ax.add_patch(Rectangle((0, 0), 1, 1, color=BG, zorder=0))
 
-        LEFT, RIGHT = 0.045, 0.955
+    LEFT, RIGHT = 0.045, 0.955
 
-        # -----------------------
-        # TITLES: fixed positions (no overlap)
-        # -----------------------
-        t1 = title_lines[0].upper() if len(title_lines) > 0 else ""
-        t2 = title_lines[1].upper() if len(title_lines) > 1 else ""
-        t3 = title_lines[2].upper() if len(title_lines) > 2 else ""
+    # -----------------------
+    # TITLES: more spacing (no clash)
+    # -----------------------
+    t1 = title_lines[0].upper() if len(title_lines) > 0 else ""
+    t2 = title_lines[1].upper() if len(title_lines) > 1 else ""
+    t3 = title_lines[2].upper() if len(title_lines) > 2 else ""
 
-        # Force separation: these WILL NOT collide
-        ax.text(LEFT, 0.972, t1, fontsize=48, fontweight="bold", color=TXT, ha="left", va="top")
-        ax.text(LEFT, 0.928, t2, fontsize=34, fontweight="bold", color=TXT, ha="left", va="top")
-        ax.text(LEFT, 0.895, t3, fontsize=20, color=SUB, ha="left", va="top")
+    ax.text(LEFT, 0.968, t1, fontsize=44, fontweight="bold", color=TXT, ha="left", va="top")
+    ax.text(LEFT, 0.905, t2, fontsize=30, fontweight="bold", color=TXT, ha="left", va="top")
+    ax.text(LEFT, 0.862, t3, fontsize=18, color=SUB, ha="left", va="top")
 
-        # Divider under titles
-        header_div_y = 0.845
-        ax.plot([LEFT, RIGHT], [header_div_y, header_div_y], color=DIV, lw=2.2)
+    header_div_y = 0.820
+    ax.plot([LEFT, RIGHT], [header_div_y, header_div_y], color=DIV, lw=2.0)
 
-        # -----------------------
-        # FOOTER pinned very low
-        # -----------------------
-        footer_div_y = 0.070
-        ax.plot([LEFT, RIGHT], [footer_div_y, footer_div_y], color=DIV, lw=2.2)
+    # -----------------------
+    # FOOTER: pinned very low (2 lines)
+    # -----------------------
+    footer_div_y = 0.065
+    ax.plot([LEFT, RIGHT], [footer_div_y, footer_div_y], color=DIV, lw=2.0)
 
-        footer_line1 = "Impact Score: combines Aerial, Ground, Retention, Carrying, Playmaking and Positioning."
-        footer_line2 = "0–100 vs selected pool (league strength applied)." if show_ls else "0–100 vs selected pool (no league-strength adjustment)."
-        ax.text(LEFT, footer_div_y - 0.018, footer_line1, fontsize=13, color=FOOT, ha="left", va="top")
-        ax.text(LEFT, footer_div_y - 0.040, footer_line2, fontsize=13, color=FOOT, ha="left", va="top")
+    footer_line1 = "Impact Score: combines Aerial, Ground, Retention, Carrying, Playmaking and Positioning."
+    footer_line2 = "0–100 vs selected pool (league strength applied)." if show_ls else "0–100 vs selected pool (no league-strength adjustment)."
 
-        # -----------------------
-        # TABLE: make it BIGGER + minimal gaps to both lines
-        # -----------------------
-        # Start almost immediately under header divider and end almost immediately above footer divider.
-        ROW_TOP = header_div_y - 0.030
-        ROW_BOT = footer_div_y + 0.060
+    ax.text(LEFT, footer_div_y - 0.018, footer_line1, fontsize=12.5, color=FOOT, ha="left", va="top")
+    ax.text(LEFT, footer_div_y - 0.040, footer_line2, fontsize=12.5, color=FOOT, ha="left", va="top")
 
-        row_gap = (ROW_TOP - ROW_BOT) / 10.0
-        row_h = row_gap * 0.96  # tall cards, minimal dead space
+    # -----------------------
+    # TABLE: bigger (fills vertical space)
+    # -----------------------
+    ROW_TOP = header_div_y - 0.020
+    ROW_BOT = footer_div_y + 0.050
+    row_gap = (ROW_TOP - ROW_BOT) / 10.0
+    row_h = row_gap * 0.98
 
-        # Layout columns (slightly tighter + more professional)
-        RANK_X  = LEFT + 0.024
-        CREST_X = LEFT + 0.112
-        NAME_X  = LEFT + 0.190
+    # Columns
+    RANK_X  = LEFT + 0.024
+    CREST_X = LEFT + 0.112
+    NAME_X  = LEFT + 0.190
 
-        BAR_L   = LEFT + 0.63
-        BAR_R   = RIGHT - 0.155
-        BAR_W   = BAR_R - BAR_L
-        BAR_H   = row_h * 0.26
+    BAR_L   = LEFT + 0.63
+    BAR_R   = RIGHT - 0.155
+    BAR_W   = BAR_R - BAR_L
+    BAR_H   = row_h * 0.26
 
-        VAL_X   = RIGHT - 0.030
+    VAL_X   = RIGHT - 0.030
 
-        # Typography: scaled for denser table without overlap
-        NAME_FS = 28
-        TEAM_FS = 19
-        NAME_DY = row_h * 0.20
-        TEAM_DY = row_h * 0.24
+    # Typography (scaled for 880 canvas)
+    NAME_FS = 26
+    TEAM_FS = 17
+    NAME_DY = row_h * 0.20
+    TEAM_DY = row_h * 0.24
 
-        crest_zoom = 0.88
+    crest_zoom = 0.86
 
-        for i, (_, row) in enumerate(df_top.iterrows()):
-            y = ROW_TOP - (i + 0.5) * row_gap
+    for i, (_, row) in enumerate(df_top.iterrows()):
+        y = ROW_TOP - (i + 0.5) * row_gap
 
+        ax.add_patch(Rectangle(
+            (LEFT, y - row_h / 2),
+            RIGHT - LEFT,
+            row_h,
+            color=(ROW_A if i % 2 == 0 else ROW_B),
+            zorder=1,
+        ))
+
+        if is_hi(row):
             ax.add_patch(Rectangle(
                 (LEFT, y - row_h / 2),
                 RIGHT - LEFT,
                 row_h,
-                color=(ROW_A if i % 2 == 0 else ROW_B),
-                zorder=1,
+                color=HILITE,
+                alpha=0.22,
+                zorder=2,
+            ))
+            ax.add_patch(Rectangle(
+                (LEFT, y - row_h / 2),
+                RIGHT - LEFT,
+                row_h,
+                fill=False,
+                edgecolor=HILITE_EDGE,
+                lw=2.0,
+                zorder=3,
             ))
 
-            if is_hi(row):
-                ax.add_patch(Rectangle(
-                    (LEFT, y - row_h / 2),
-                    RIGHT - LEFT,
-                    row_h,
-                    color=HILITE,
-                    alpha=0.22,
-                    zorder=2,
-                ))
-                ax.add_patch(Rectangle(
-                    (LEFT, y - row_h / 2),
-                    RIGHT - LEFT,
-                    row_h,
-                    fill=False,
-                    edgecolor=HILITE_EDGE,
-                    lw=2.2,
-                    zorder=3,
-                ))
+        ax.scatter(
+            [RANK_X], [y],
+            s=1150,
+            facecolor=RANK_BG,
+            edgecolor=(HILITE_EDGE if is_hi(row) else RANK_EDGE),
+            linewidths=2.0,
+            zorder=4,
+        )
+        ax.text(
+            RANK_X, y, str(i + 1),
+            fontsize=14, fontweight="bold",
+            color=TXT, ha="center", va="center",
+            zorder=5,
+        )
 
-            ax.scatter(
-                [RANK_X], [y],
-                s=1320,
-                facecolor=RANK_BG,
-                edgecolor=(HILITE_EDGE if is_hi(row) else RANK_EDGE),
-                linewidths=2.2,
-                zorder=4,
-            )
-            ax.text(RANK_X, y, str(i + 1),
-                    fontsize=16, fontweight="bold", color=TXT,
-                    ha="center", va="center", zorder=5)
+        badge = get_team_badge(row)
+        if badge is not None:
+            ax.add_artist(AnnotationBbox(
+                OffsetImage(badge, zoom=crest_zoom),
+                (CREST_X, y),
+                frameon=False,
+                zorder=5,
+            ))
 
-            badge = get_team_badge(row)
-            if badge is not None:
-                ax.add_artist(AnnotationBbox(
-                    OffsetImage(badge, zoom=crest_zoom),
-                    (CREST_X, y),
-                    frameon=False,
-                    zorder=5,
-                ))
+        player = str(row.get("Player", "")).upper()
+        team = str(row.get("Team", ""))
+        league = str(row.get("League", ""))
 
-            player = str(row.get("Player", "")).upper()
-            team = str(row.get("Team", ""))
-            league = str(row.get("League", ""))
+        ax.text(NAME_X, y + NAME_DY, player,
+                fontsize=NAME_FS, fontweight="bold", color=TXT,
+                ha="left", va="center", zorder=6)
 
-            ax.text(NAME_X, y + NAME_DY, player,
-                    fontsize=NAME_FS, fontweight="bold", color=TXT,
-                    ha="left", va="center", zorder=6)
-            ax.text(NAME_X, y - TEAM_DY, f"{team} ({league})",
-                    fontsize=TEAM_FS, color=SUB,
-                    ha="left", va="center", zorder=6)
+        ax.text(NAME_X, y - TEAM_DY, f"{team} ({league})",
+                fontsize=TEAM_FS, color=SUB,
+                ha="left", va="center", zorder=6)
 
-            ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W, BAR_H, color=BAR_BG, zorder=2))
-            v_bar = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
-            frac = (v_bar / max_score) if max_score else 0.0
-            ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W * frac, BAR_H, color=BAR_FG, zorder=3))
+        ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W, BAR_H, color=BAR_BG, zorder=2))
+        v_bar = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
+        frac = (v_bar / max_score) if max_score else 0.0
+        ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W * frac, BAR_H, color=BAR_FG, zorder=3))
 
-            v_lab = row.get(value_label_col)
-            ax.text(VAL_X, y, _format_value(v_lab),
-                    fontsize=29, fontweight="bold", color=TXT,
-                    ha="right", va="center", zorder=6)
+        v_lab = row.get(value_label_col)
+        ax.text(VAL_X, y, _format_value(v_lab),
+                fontsize=26, fontweight="bold", color=TXT,
+                ha="right", va="center", zorder=6)
 
-        buf = io.BytesIO()
-        fig.savefig(buf, format="png", dpi=DPI, facecolor=BG)
-        plt.close(fig)
-        buf.seek(0)
-        return buf.getvalue()
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=DPI, facecolor=BG)
+    plt.close(fig)
+    buf.seek(0)
+    return buf.getvalue()
+
 
 
 
