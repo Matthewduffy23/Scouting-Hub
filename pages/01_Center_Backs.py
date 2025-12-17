@@ -1136,67 +1136,104 @@ def make_ranking_image(
 
         LEFT, RIGHT = 0.045, 0.955
 
-        # -----------------------
-        # HEADER: no overlap (explicit spacing)
-        # -----------------------
+        # =========================
+        # HEADER BLOCK (fixed height, NO overlap possible)
+        # =========================
         t1 = title_lines[0].upper() if len(title_lines) > 0 else ""
         t2 = title_lines[1].upper() if len(title_lines) > 1 else ""
         t3 = title_lines[2].upper() if len(title_lines) > 2 else ""
 
-        # Use slightly smaller sizes + clear vertical gaps
-        ax.text(LEFT, 0.955, t1, fontsize=46, fontweight="bold", color=TXT, ha="left", va="top")
-        ax.text(LEFT, 0.915, t2, fontsize=30, fontweight="bold", color=TXT, ha="left", va="top")
-        ax.text(LEFT, 0.882, t3, fontsize=18, color=SUB, ha="left", va="top")
+        # Give the header real breathing room by using explicit y slots.
+        # (These values are intentionally far apart.)
+        ax.text(LEFT, 0.970, t1, fontsize=50, fontweight="bold", color=TXT, ha="left", va="top")
+        ax.text(LEFT, 0.925, t2, fontsize=34, fontweight="bold", color=TXT, ha="left", va="top")
+        ax.text(LEFT, 0.892, t3, fontsize=20, color=SUB, ha="left", va="top")
 
-        # Divider moved DOWN a touch so header breathes
-        header_div_y = 0.825
-        ax.plot([LEFT, RIGHT], [header_div_y, header_div_y], color=DIV, lw=2.0)
+        # Divider clearly BELOW header
+        header_div_y = 0.840
+        ax.plot([LEFT, RIGHT], [header_div_y, header_div_y], color=DIV, lw=2.2)
 
-        # -----------------------
-        # TABLE: start lower + use MORE vertical space
-        # -----------------------
-        # Bring table DOWN and make it taller (fills canvas better)
-        ROW_TOP, ROW_BOT = 0.790, 0.200
+        # =========================
+        # TABLE BLOCK (starts WAY lower, uses MOST of the canvas)
+        # =========================
+        # Move table down a lot, and make it tall so rows are not squashed.
+        ROW_TOP = 0.800
+        # Put footer very near the bottom -> leave just enough space for 2 lines
+        FOOTER_DIV_Y = 0.085
+        ROW_BOT = FOOTER_DIV_Y + 0.055   # gap above footer divider
+
         row_gap = (ROW_TOP - ROW_BOT) / 10.0
         row_h = row_gap * 0.92
 
-        # columns
+        # Columns (balanced for 1920)
         RANK_X  = LEFT + 0.024
-        CREST_X = LEFT + 0.110
-        NAME_X  = LEFT + 0.175
+        CREST_X = LEFT + 0.112
+        NAME_X  = LEFT + 0.185
 
         BAR_L   = LEFT + 0.62
-        BAR_R   = RIGHT - 0.155
+        BAR_R   = RIGHT - 0.150
         BAR_W   = BAR_R - BAR_L
-        BAR_H   = row_h * 0.28
+        BAR_H   = row_h * 0.30
+
         VAL_X   = RIGHT - 0.030
 
-        # row typography
-        NAME_FS = 26
-        TEAM_FS = 18
-        NAME_DY = row_h * 0.18
-        TEAM_DY = row_h * 0.20
-        crest_zoom = 0.82
+        # Typography: tuned to row height (prevents overlap always)
+        NAME_FS = 28
+        TEAM_FS = 19
+        NAME_DY = row_h * 0.20
+        TEAM_DY = row_h * 0.22
+
+        crest_zoom = 0.86
 
         for i, (_, row) in enumerate(df_top.iterrows()):
             y = ROW_TOP - (i + 0.5) * row_gap
 
-            ax.add_patch(Rectangle((LEFT, y - row_h/2), RIGHT - LEFT, row_h,
-                                   color=(ROW_A if i % 2 == 0 else ROW_B), zorder=1))
+            # Full-width row card
+            ax.add_patch(Rectangle(
+                (LEFT, y - row_h / 2),
+                RIGHT - LEFT,
+                row_h,
+                color=(ROW_A if i % 2 == 0 else ROW_B),
+                zorder=1,
+            ))
 
+            # Highlight overlay
             if is_hi(row):
-                ax.add_patch(Rectangle((LEFT, y - row_h/2), RIGHT - LEFT, row_h,
-                                       color=HILITE, alpha=0.22, zorder=2))
-                ax.add_patch(Rectangle((LEFT, y - row_h/2), RIGHT - LEFT, row_h,
-                                       fill=False, edgecolor=HILITE_EDGE, lw=2.0, zorder=3))
+                ax.add_patch(Rectangle(
+                    (LEFT, y - row_h / 2),
+                    RIGHT - LEFT,
+                    row_h,
+                    color=HILITE,
+                    alpha=0.22,
+                    zorder=2,
+                ))
+                ax.add_patch(Rectangle(
+                    (LEFT, y - row_h / 2),
+                    RIGHT - LEFT,
+                    row_h,
+                    fill=False,
+                    edgecolor=HILITE_EDGE,
+                    lw=2.2,
+                    zorder=3,
+                ))
 
-            ax.scatter([RANK_X], [y], s=1250,
-                       facecolor=RANK_BG,
-                       edgecolor=(HILITE_EDGE if is_hi(row) else RANK_EDGE),
-                       linewidths=2.0, zorder=4)
-            ax.text(RANK_X, y, str(i + 1), fontsize=16, fontweight="bold",
-                    color=TXT, ha="center", va="center", zorder=5)
+            # Rank marker
+            ax.scatter(
+                [RANK_X], [y],
+                s=1300,
+                facecolor=RANK_BG,
+                edgecolor=(HILITE_EDGE if is_hi(row) else RANK_EDGE),
+                linewidths=2.2,
+                zorder=4,
+            )
+            ax.text(
+                RANK_X, y, str(i + 1),
+                fontsize=16, fontweight="bold",
+                color=TXT, ha="center", va="center",
+                zorder=5,
+            )
 
+            # Crest / flag
             badge = get_team_badge(row)
             if badge is not None:
                 ax.add_artist(AnnotationBbox(
@@ -1206,46 +1243,68 @@ def make_ranking_image(
                     zorder=5,
                 ))
 
+            # Player + team line
             player = str(row.get("Player", "")).upper()
             team = str(row.get("Team", ""))
             league = str(row.get("League", ""))
 
-            ax.text(NAME_X, y + NAME_DY, player,
-                    fontsize=NAME_FS, fontweight="bold", color=TXT,
-                    ha="left", va="center", zorder=5)
+            ax.text(
+                NAME_X, y + NAME_DY,
+                player,
+                fontsize=NAME_FS,
+                fontweight="bold",
+                color=TXT,
+                ha="left",
+                va="center",
+                zorder=6,
+            )
+            ax.text(
+                NAME_X, y - TEAM_DY,
+                f"{team} ({league})",
+                fontsize=TEAM_FS,
+                color=SUB,
+                ha="left",
+                va="center",
+                zorder=6,
+            )
 
-            ax.text(NAME_X, y - TEAM_DY, f"{team} ({league})",
-                    fontsize=TEAM_FS, color=SUB,
-                    ha="left", va="center", zorder=5)
-
-            ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W, BAR_H, color=BAR_BG, zorder=2))
+            # Bar
+            ax.add_patch(Rectangle((BAR_L, y - BAR_H / 2), BAR_W, BAR_H, color=BAR_BG, zorder=2))
             v_bar = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
             frac = (v_bar / max_score) if max_score else 0.0
-            ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W * frac, BAR_H, color=BAR_FG, zorder=3))
+            ax.add_patch(Rectangle((BAR_L, y - BAR_H / 2), BAR_W * frac, BAR_H, color=BAR_FG, zorder=3))
 
+            # Value OUTSIDE bar with margin
             v_lab = row.get(value_label_col)
-            ax.text(VAL_X, y, _format_value(v_lab),
-                    fontsize=26, fontweight="bold", color=TXT,
-                    ha="right", va="center", zorder=6)
+            ax.text(
+                VAL_X, y,
+                _format_value(v_lab),
+                fontsize=28,
+                fontweight="bold",
+                color=TXT,
+                ha="right",
+                va="center",
+                zorder=6,
+            )
 
-        # -----------------------
-        # FOOTER: push down + 2 lines only (smaller)
-        # -----------------------
-        footer_div_y = 0.160
-        ax.plot([LEFT, RIGHT], [footer_div_y, footer_div_y], color=DIV, lw=2.0)
+        # =========================
+        # FOOTER (pinned LOW + 2 lines)
+        # =========================
+        ax.plot([LEFT, RIGHT], [FOOTER_DIV_Y, FOOTER_DIV_Y], color=DIV, lw=2.2)
 
-        # only two short lines (more professional)
+        # Two-line footer, small and near bottom
         footer_line1 = "Impact Score: combines Aerial, Ground, Retention, Carrying, Playmaking and Positioning."
         footer_line2 = "0–100 vs selected pool (league strength applied)." if show_ls else "0–100 vs selected pool (no league-strength adjustment)."
 
-        ax.text(LEFT, 0.135, footer_line1, fontsize=13, color=FOOT, ha="left", va="top")
-        ax.text(LEFT, 0.108, footer_line2, fontsize=13, color=FOOT, ha="left", va="top")
+        ax.text(LEFT, FOOTER_DIV_Y - 0.022, footer_line1, fontsize=13.5, color=FOOT, ha="left", va="top")
+        ax.text(LEFT, FOOTER_DIV_Y - 0.045, footer_line2, fontsize=13.5, color=FOOT, ha="left", va="top")
 
         buf = io.BytesIO()
         fig.savefig(buf, format="png", dpi=DPI, facecolor=BG)
         plt.close(fig)
         buf.seek(0)
         return buf.getvalue()
+
 
     # =====================================================
     # Standard (auto height) – team line moved DOWN slightly
