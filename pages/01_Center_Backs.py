@@ -1137,47 +1137,52 @@ def make_ranking_image(
         LEFT, RIGHT = 0.045, 0.955
 
         # -----------------------
-        # TITLES: FIXED (more vertical spacing between the 3 lines)
+        # TITLES (spaced)
         # -----------------------
         t1 = title_lines[0].upper() if len(title_lines) > 0 else ""
         t2 = title_lines[1].upper() if len(title_lines) > 1 else ""
         t3 = title_lines[2].upper() if len(title_lines) > 2 else ""
 
-        # Bigger gaps so they never feel "stacked"
         ax.text(LEFT, 0.972, t1, fontsize=48, fontweight="bold", color=TXT, ha="left", va="top")
         ax.text(LEFT, 0.912, t2, fontsize=34, fontweight="bold", color=TXT, ha="left", va="top")
         ax.text(LEFT, 0.870, t3, fontsize=20, color=SUB, ha="left", va="top")
 
-        # Divider under titles (slightly lower, helps breathing room)
         header_div_y = 0.835
         ax.plot([LEFT, RIGHT], [header_div_y, header_div_y], color=DIV, lw=2.2)
 
         # -----------------------
-        # FOOTER pinned very low
+        # FOOTER: single abbreviated line ON the bottom divider line
+        # + push divider lower
         # -----------------------
-        footer_div_y = 0.070
+        footer_div_y = 0.040  # lower than before
         ax.plot([LEFT, RIGHT], [footer_div_y, footer_div_y], color=DIV, lw=2.2)
 
-        footer_line1 = "Impact Score: combines Aerial, Ground, Retention, Carrying, Playmaking and Positioning."
-        footer_line2 = (
-            "0–100 vs selected pool (league strength applied)."
-            if show_ls
-            else "0–100 vs selected pool (no league-strength adjustment)."
+        # One-liner footer, anchored starting at the divider
+        footer_one = (
+            "Impact Score: aerial+ground+retention+carry+playmaking+positioning | "
+            + ("0–100 (LS applied)" if show_ls else "0–100 (no LS)")
         )
-        ax.text(LEFT, footer_div_y - 0.018, footer_line1, fontsize=13, color=FOOT, ha="left", va="top")
-        ax.text(LEFT, footer_div_y - 0.040, footer_line2, fontsize=13, color=FOOT, ha="left", va="top")
+        ax.text(
+            LEFT,
+            footer_div_y - 0.018,   # starts just under the divider
+            footer_one,
+            fontsize=13,
+            color=FOOT,
+            ha="left",
+            va="top",
+            zorder=10,
+        )
 
         # -----------------------
-        # TABLE: BIGGER + fills vertical space (removes extra gap to footer line)
+        # TABLE: extend down to the footer divider (no extra vertical gap)
         # -----------------------
-        # Start closer to header divider and end closer to footer divider.
         ROW_TOP = header_div_y - 0.022
-        ROW_BOT = footer_div_y + 0.048
+        ROW_BOT = footer_div_y + 0.010   # VERY close to divider line
 
         row_gap = (ROW_TOP - ROW_BOT) / 10.0
-        row_h = row_gap * 0.98  # taller cards, minimal dead space
+        row_h   = row_gap * 0.99
 
-        # Layout columns
+        # Columns
         RANK_X  = LEFT + 0.024
         CREST_X = LEFT + 0.112
         NAME_X  = LEFT + 0.190
@@ -1194,7 +1199,6 @@ def make_ranking_image(
         TEAM_FS = 19
         NAME_DY = row_h * 0.20
         TEAM_DY = row_h * 0.24
-
         crest_zoom = 0.88
 
         for i, (_, row) in enumerate(df_top.iterrows()):
@@ -1251,7 +1255,7 @@ def make_ranking_image(
                 ))
 
             player = str(row.get("Player", "")).upper()
-            team = str(row.get("Team", ""))
+            team   = str(row.get("Team", ""))
             league = str(row.get("League", ""))
 
             ax.text(
@@ -1267,7 +1271,7 @@ def make_ranking_image(
 
             ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W, BAR_H, color=BAR_BG, zorder=2))
             v_bar = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
-            frac = (v_bar / max_score) if max_score else 0.0
+            frac  = (v_bar / max_score) if max_score else 0.0
             ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W * frac, BAR_H, color=BAR_FG, zorder=3))
 
             v_lab = row.get(value_label_col)
@@ -1282,6 +1286,7 @@ def make_ranking_image(
         plt.close(fig)
         buf.seek(0)
         return buf.getvalue()
+
 
 
 
