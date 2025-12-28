@@ -1840,7 +1840,10 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     </style>
     """, unsafe_allow_html=True)
 
-     # 🔎 Global search (Player / Team / League)
+    # start from full table
+    df_filtered = df_view.copy()
+
+    # 🔎 Global search (Player / Team / League)
     search_q = st.text_input("🔎 Search player / team / league", "", key="cb_search_bar")
 
     # ---- Filters: Age buckets (under & over) ----
@@ -1873,6 +1876,29 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         except Exception:
             pass
 
+    # ---- Contract expiry filter (by minimum year) ----
+    contract_choice = None
+    contract_options = ["Any", "2024+", "2025+", "2026+", "2027+", "2028+"]
+
+    if "Contract expires" in df_filtered.columns:
+        contract_choice = st.selectbox(
+            "Contract expires (min year)",
+            options=contract_options,
+            index=0,
+            key="pro_contract_filter",
+            label_visibility="visible"
+        )
+
+        if contract_choice != "Any":
+            try:
+                contract_min_year = int(contract_choice.replace("+", ""))
+                df_filtered["_contract_year"] = (
+                    pd.to_datetime(df_filtered["Contract expires"], errors="coerce").dt.year
+                )
+                df_filtered = df_filtered[df_filtered["_contract_year"] >= contract_min_year]
+            except Exception:
+                pass
+
     # Apply search (case-insensitive; match ANY of Player/Team/League)
     if search_q:
         s = str(search_q).strip().lower()
@@ -1889,7 +1915,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
     # Birth country filter (multi-select)
     if "Birth country" in df_filtered.columns:
-        # Unique, non-empty countries from the current pool
         country_vals = (
             df_filtered["Birth country"]
             .dropna()
@@ -1909,7 +1934,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
             df_filtered = df_filtered[df_filtered["Birth country"].isin(selected_countries)]
 
     # Foot filter (Left / Right / Both, etc.)
-    # Build a helper column once so we can filter on it
     df_filtered["__foot"] = df_filtered.apply(_get_foot, axis=1)
 
     foot_vals = (
