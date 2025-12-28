@@ -971,8 +971,8 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
             elif age_choice == "U25": df_filtered = df_filtered[df_filtered["Age_num"] <= 25]
             elif age_choice == "U30": df_filtered = df_filtered[df_filtered["Age_num"] <= 30]
             elif age_choice == "30+": df_filtered = df_filtered[df_filtered["Age_num"] >= 30]
-            elif age_choice == "32+": df_filtered = df_filtered[df_filtered["Age_num"] >= 32]
-            elif age_choice == "35+": df_filtered = df_filtered[df_filtered["Age_num"] >= 35]
+            elif age_choice == "25+": df_filtered = df_filtered[df_filtered["Age_num"] >= 25]
+            elif age_choice == "28+": df_filtered = df_filtered[df_filtered["Age_num"] >= 28]
         except Exception:
             pass
 
