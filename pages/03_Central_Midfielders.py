@@ -750,8 +750,10 @@ def _pro_show99(x) -> int:
         return 0
 
 def _fmt2(n: int) -> str:
-    try: return f"{int(n):02d}"
-    except Exception: return "00"
+    try:
+        return f"{int(n):02d}"
+    except Exception:
+        return "00"
 
 _POS_COLORS = {
     "CF":"#6EA8FF","LWF":"#6EA8FF","LW":"#6EA8FF","LAMF":"#6EA8FF","RW":"#6EA8FF","RWF":"#6EA8FF","RAMF":"#6EA8FF",
@@ -759,8 +761,8 @@ _POS_COLORS = {
     "LWB":"#FFD34D","RWB":"#FFD34D","LB":"#FF9A3C","RB":"#FF9A3C","RCB":"#D1763A","CB":"#D1763A","LCB":"#D1763A",
 }
 
-def _pro_chip_color(p:str)->str:
-    return _POS_COLORS.get(str(p).strip().upper(),"#2d3550")
+def _pro_chip_color(p: str) -> str:
+    return _POS_COLORS.get(str(p).strip().upper(), "#2d3550")
 
 TWEMOJI_SPECIAL = {
     "eng":"1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
@@ -828,44 +830,54 @@ COUNTRY_TO_CC = {
 }
 
 def _norm(s: str) -> str:
-    if not s: return ""
+    if not s:
+        return ""
     return unicodedata.normalize("NFKD", str(s)).encode("ascii","ignore").decode("ascii").strip().lower()
 
 def _cc_to_twemoji(cc: str) -> str | None:
-    if not cc or len(cc) != 2: return None
-    a,b=cc.upper()
-    cp1=0x1F1E6+(ord(a)-ord('A')); cp2=0x1F1E6+(ord(b)-ord('A'))
+    if not cc or len(cc) != 2:
+        return None
+    a, b = cc.upper()
+    cp1 = 0x1F1E6 + (ord(a) - ord('A'))
+    cp2 = 0x1F1E6 + (ord(b) - ord('A'))
     return f"{cp1:04x}-{cp2:04x}"
 
 def _flag_html(country_name: str) -> str:
-    if not country_name: return "<span class='chip'>—</span>"
-    n=_norm(country_name); cc=COUNTRY_TO_CC.get(n,"")
-    if not cc: return "<span class='chip'>—</span>"
+    if not country_name:
+        return "<span class='chip'>—</span>"
+    n = _norm(country_name)
+    cc = COUNTRY_TO_CC.get(n, "")
+    if not cc:
+        return "<span class='chip'>—</span>"
     if cc in TWEMOJI_SPECIAL:
-        code=TWEMOJI_SPECIAL[cc]; src=f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
+        code = TWEMOJI_SPECIAL[cc]
+        src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
         return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
-    code=_cc_to_twemoji(cc) if len(cc)==2 else None
+    code = _cc_to_twemoji(cc) if len(cc) == 2 else None
     if code:
-        src=f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
+        src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
         return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
     return f"<span class='chip'>{cc.upper()}</span>"
 
 # --- SAFE foot extractor ---
 def _get_foot(row) -> str:
-    for col in ("Foot","Preferred foot","Preferred Foot"):
+    for col in ("Foot", "Preferred foot", "Preferred Foot"):
         if col in row.index:
-            val=row[col]
+            val = row[col]
             try:
                 import pandas as _pd
-                if _pd.isna(val): continue
+                if _pd.isna(val):
+                    continue
             except Exception:
                 pass
-            if isinstance(val,str):
-                s=val.strip()
-                if s and s.lower() not in {"nan","none","null"}: return s
+            if isinstance(val, str):
+                s = val.strip()
+                if s and s.lower() not in {"nan", "none", "null"}:
+                    return s
             else:
-                s=str(val).strip()
-                if s and s.lower() not in {"nan","none","null"}: return s
+                s = str(val).strip()
+                if s and s.lower() not in {"nan", "none", "null"}:
+                    return s
     return ""
 
 # ----------------- CENTRAL MIDFIELD VERSION -----------------
@@ -938,24 +950,58 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
     @media (min-width: 720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr);} }
 
     .filter-label{ color:#cbd3ef; font-weight:700; font-size:13px; letter-spacing:.02em; margin-bottom:4px; }
+
+    /* Keep role pills + labels on one line, let label stretch & ellipsize on mobile */
+    .role-row{
+      display:flex;
+      align-items:center;
+      flex-wrap:nowrap;
+      width:100%;
+      justify-content:flex-start;
+    }
+    .role-row .pill{
+      flex:0 0 auto;
+    }
+    .role-row .sub{
+      flex:1 1 auto;
+      margin-left:8px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    @media (max-width: 480px){
+      .role-row .sub{
+        font-size:13px;
+      }
+      .role-row .pill{
+        min-width:32px;
+        font-size:16px;
+      }
+    }
     </style>
     """, unsafe_allow_html=True)
 
-    # ---- Filters: Age buckets (EXACT) ----
-    c1, c2 = st.columns([1,2])
+    # ---- FILTERS UI ROW ----
+    c1, c2 = st.columns([1, 2])
     with c1:
         age_choice = st.selectbox(
             "Age",
-            ["All","U18","U20","U21","U22","U23","U25","U30"],
-            index=0, key="pro_age_filter_cm", label_visibility="visible"
+            [
+                "All",
+                "U18","U20","U21","U22","U23","U25","U30",   # <=
+                "30+","32+","35+"                            # >=
+            ],
+            index=0,
+            key="pro_age_filter_cm",
+            label_visibility="visible"
         )
     with c2:
-        # 🔎 Player search (contains, case-insensitive)
+        # Player & Team search
         search_q = st.text_input("Search player (name contains)", "", key="cm_player_search")
-        # 🔎 Team search (contains, case-insensitive)
         team_search_q = st.text_input("Search team (name contains)", "", key="cm_team_search")
 
-    # ---- NEW: Pill toggle (choose exactly 3 from CM set) ----
+    # ---- Pill toggle (choose exactly 3 from CM set) ----
     available = [(col, label) for col, label in _CM_ROLE_MAP if col in df_view.columns]
     if not available:
         st.info("No CM role score columns found in the dataframe.")
@@ -966,8 +1012,10 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
     default_labels = ["Deep Playmaker","Advanced Playmaker","Defensive Midfielder"]
     default_labels = [lbl for lbl in default_labels if lbl in labels]
     for lbl in labels:
-        if len(default_labels) >= 3: break
-        if lbl not in default_labels: default_labels.append(lbl)
+        if len(default_labels) >= 3:
+            break
+        if lbl not in default_labels:
+            default_labels.append(lbl)
 
     selected_labels = st.multiselect(
         "Displayed role pills (pick 3)",
@@ -975,13 +1023,30 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
         default=default_labels[:3],
         key="cm_pill_select"
     )
-    # enforce exactly 3 for rendering
     if len(selected_labels) != 3:
         st.warning("Please select exactly 3 pills — showing the first three available.")
         selected_labels = (selected_labels + [lbl for lbl in labels if lbl not in selected_labels])[:3]
 
-    # ---- Apply age & search filters ----
+    # ---- Start from full table ----
     df_filtered = df_view.copy()
+
+    # ---- Player search ----
+    if search_q:
+        s = str(search_q).strip().lower()
+        if "Player" in df_filtered.columns:
+            df_filtered = df_filtered[
+                df_filtered["Player"].astype(str).str.lower().str.contains(s, na=False)
+            ]
+
+    # ---- Team search ----
+    if team_search_q:
+        t = str(team_search_q).strip().lower()
+        if "Team" in df_filtered.columns:
+            df_filtered = df_filtered[
+                df_filtered["Team"].astype(str).str.lower().str.contains(t, na=False)
+            ]
+
+    # ---- Age filter (under & over) ----
     if "Age" in df_filtered.columns and age_choice != "All":
         try:
             df_filtered["Age_num"] = pd.to_numeric(df_filtered["Age"], errors="coerce")
@@ -992,20 +1057,71 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
             elif age_choice == "U23": df_filtered = df_filtered[df_filtered["Age_num"] <= 23]
             elif age_choice == "U25": df_filtered = df_filtered[df_filtered["Age_num"] <= 25]
             elif age_choice == "U30": df_filtered = df_filtered[df_filtered["Age_num"] <= 30]
+            elif age_choice == "30+": df_filtered = df_filtered[df_filtered["Age_num"] >= 30]
+            elif age_choice == "32+": df_filtered = df_filtered[df_filtered["Age_num"] >= 32]
+            elif age_choice == "35+": df_filtered = df_filtered[df_filtered["Age_num"] >= 35]
         except Exception:
             pass
 
-    if search_q:
-        s = str(search_q).strip().lower()
-        if "Player" in df_filtered.columns:
-            df_filtered = df_filtered[df_filtered["Player"].astype(str).str.lower().str.contains(s, na=False)]
+    # ---- Contract expiry filter (max year) ----
+    if "Contract expires" in df_filtered.columns:
+        contract_choice = st.selectbox(
+            "Contract expires (max year)",
+            ["Any", "2024", "2025", "2026", "2027", "2028"],
+            index=0,
+            key="pro_contract_filter_cm",
+            label_visibility="visible"
+        )
+        if contract_choice != "Any":
+            try:
+                max_year = int(contract_choice)
+                df_filtered["_contract_year"] = pd.to_datetime(
+                    df_filtered["Contract expires"], errors="coerce"
+                ).dt.year
+                df_filtered = df_filtered[df_filtered["_contract_year"] <= max_year]
+            except Exception:
+                pass
 
-    if team_search_q:
-        t = str(team_search_q).strip().lower()
-        if "Team" in df_filtered.columns:
-            df_filtered = df_filtered[df_filtered["Team"].astype(str).str.lower().str.contains(t, na=False)]
+    # ---- Birth country filter ----
+    if "Birth country" in df_filtered.columns:
+        country_vals = (
+            df_filtered["Birth country"]
+            .dropna()
+            .astype(str)
+            .str.strip()
+        )
+        country_vals = sorted({c for c in country_vals if c and c.lower() not in {"nan","none","null"}})
 
-    # ---------- NEW: optional minimum role score filters ----------
+        selected_countries = st.multiselect(
+            "Birth country",
+            options=country_vals,
+            default=[],
+            key="pro_birth_country_filter_cm"
+        )
+        if selected_countries:
+            df_filtered = df_filtered[df_filtered["Birth country"].isin(selected_countries)]
+
+    # ---- Foot filter ----
+    df_filtered["__foot"] = df_filtered.apply(_get_foot, axis=1)
+    foot_vals = (
+        df_filtered["__foot"]
+        .dropna()
+        .astype(str)
+        .str.strip()
+    )
+    foot_vals = sorted({f for f in foot_vals if f and f.lower() not in {"nan","none","null"}})
+
+    if foot_vals:
+        selected_feet = st.multiselect(
+            "Foot",
+            options=foot_vals,
+            default=[],
+            key="pro_foot_filter_cm"
+        )
+        if selected_feet:
+            df_filtered = df_filtered[df_filtered["__foot"].isin(selected_feet)]
+
+    # ---------- optional minimum role score filters ----------
     ROLE_SCORE_COLS_FILTER = [col for col, _ in _CM_ROLE_MAP if col in df_filtered.columns]
 
     use_role_filters = st.checkbox(
@@ -1025,12 +1141,10 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
                 key=f"cm_min_{_norm(col)}"
             )
 
-        # apply minima
         for col, thr in minima.items():
             if thr > 0:
                 df_filtered[col] = pd.to_numeric(df_filtered[col], errors="coerce")
                 df_filtered = df_filtered[df_filtered[col] >= thr]
-    # ---------- END NEW BLOCK ----------
 
     # ---- data check ----
     all_col = "All In Score"
@@ -1065,7 +1179,10 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
     asc = (sort_dir_label == "Low → High")
 
     _sort_col = "__sort_val"
-    df_filtered[_sort_col] = pd.to_numeric(df_filtered.get(sort_by, pd.Series(index=df_filtered.index)), errors="coerce")
+    df_filtered[_sort_col] = pd.to_numeric(
+        df_filtered.get(sort_by, pd.Series(index=df_filtered.index)),
+        errors="coerce"
+    )
 
     ranked = (
         df_filtered
@@ -1076,17 +1193,19 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
     )
 
     # ========================= RENDER CARDS =========================
-    for i,row in ranked.iterrows():
+    for i, row in ranked.iterrows():
         player = str(row.get("Player","")) or ""
         team = str(row.get("Team","")) or ""
         league = str(row.get("League","")) or ""
         pos = str(row.get("Position","")) or ""
+
         # Age text
         try:
             age_val = int(row.get("Age")) if not pd.isna(row.get("Age", None)) else int(row.get("Age_num", 0))
         except Exception:
             age_val = 0
-        age_txt = f"{age_val}y.o." if age_val>0 else "—"
+        age_txt = f"{age_val}y.o." if age_val > 0 else "—"
+
         cy = pd.to_datetime(row.get("Contract expires"), errors="coerce")
         cyr = int(cy.year) if pd.notna(cy) else 0
         birth = row.get("Birth country","") if "Birth country" in row else ""
@@ -1099,10 +1218,11 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
             val = _pro_show99(row.get(col, 0))
             pill_triplet.append((lbl, val, _fmt2(val)))
 
-        # ---- positions — preserve dataset order & de-dupe (FIXED placement) ----
+        # ---- positions — preserve dataset order & de-dupe ----
         raw = (pos or "").strip().upper()
         codes = [c for c in _re.split(r"[,\s/;]+", raw) if c]
-        seen = set(); ordered = []
+        seen = set()
+        ordered = []
         for c in codes:
             if c not in seen:
                 seen.add(c)
@@ -1113,13 +1233,13 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
         )
 
         # left meta
-        flag=_flag_html(birth)
-        contract_txt=f"{cyr}" if cyr>0 else "—"
+        flag = _flag_html(birth)
+        contract_txt = f"{cyr}" if cyr > 0 else "—"
 
-        # keys & avatar (use per-row unique keys to avoid duplicate widget keys)
+        # keys & avatar
         key_id = f"{_norm(player)}|{_norm(team)}"
-        default_avatar="https://i.redd.it/43axcjdu59nd1.jpeg"
-        avatar_url=st.session_state.get("photo_map", {}).get(key_id, default_avatar)
+        default_avatar = "https://i.redd.it/43axcjdu59nd1.jpeg"
+        avatar_url = st.session_state.get("photo_map", {}).get(key_id, default_avatar)
 
         # crest (stored per club)
         crest_store_key = f"{_norm(team)}|{_norm(league)}"
@@ -1165,9 +1285,18 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
             </div>
             <div>
               <div class='name'>{player}</div>
-              <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(v1)}'>{t1}</span><span class='sub'>{_subtitle_map.get(l1,l1)}</span></div>
-              <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(v2)}'>{t2}</span><span class='sub'>{_subtitle_map.get(l2,l2)}</span></div>
-              <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(v3)}'>{t3}</span><span class='sub'>{_subtitle_map.get(l3,l3)}</span></div>
+              <div class='row role-row'>
+                <span class='pill' style='background:{_pro_rating_color(v1)}'>{t1}</span>
+                <span class='sub'>{_subtitle_map.get(l1,l1)}</span>
+              </div>
+              <div class='row role-row'>
+                <span class='pill' style='background:{_pro_rating_color(v2)}'>{t2}</span>
+                <span class='sub'>{_subtitle_map.get(l2,l2)}</span>
+              </div>
+              <div class='row role-row'>
+                <span class='pill' style='background:{_pro_rating_color(v3)}'>{t3}</span>
+                <span class='sub'>{_subtitle_map.get(l3,l3)}</span>
+              </div>
               <div class='row posrow'>{pos_html}</div>
               {teamline_html}
             </div>
@@ -1179,7 +1308,7 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
         # ----- Expander: CM individual metrics (ATT/DEF/POS) -----
         with st.expander("Individual Metrics", expanded=False):
             def _pct(m):
-                col=f"{m} Percentile"
+                col = f"{m} Percentile"
                 return float(row[col]) if col in row and not pd.isna(row[col]) else 0.0
 
             ATT=[("Crosses","Crosses per 90"),
@@ -1220,9 +1349,10 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
                  ("Smart Passes","Smart passes per 90")]
 
             def _sec_html(title, pairs):
-                rows=[]
-                for lab,met in pairs:
-                    p=_pro_show99(_pct(met)); ptxt=_fmt2(p)
+                rows = []
+                for lab, met in pairs:
+                    p = _pro_show99(_pct(met))
+                    ptxt = _fmt2(p)
                     rows.append(
                         f"<div class='m-row'>"
                         f"<div class='m-label'>{lab}</div>"
@@ -1243,8 +1373,16 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
             # --- Player image override (per-player unique keys) ---
             img_key = f"imgurl_{i}_{key_id}"
             default_url = st.session_state.get("photo_map", {}).get(key_id, "")
-            uploaded_file = st.file_uploader("Upload player image (PNG/JPG)", type=["png","jpg","jpeg"], key=f"upload_{i}_{key_id}")
-            _ = st.text_input("Custom image URL (override avatar — e.g., https://images.fotmob.com/image_resources/playerimages/1199383.png)", value=default_url, key=img_key)
+            uploaded_file = st.file_uploader(
+                "Upload player image (PNG/JPG)",
+                type=["png","jpg","jpeg"],
+                key=f"upload_{i}_{key_id}"
+            )
+            _ = st.text_input(
+                "Custom image URL (override avatar — e.g., https://images.fotmob.com/image_resources/playerimages/1199383.png)",
+                value=default_url,
+                key=img_key
+            )
 
             col_a, col_b = st.columns([1, 3])
             with col_a:
@@ -1259,14 +1397,19 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
                             except Exception:
                                 pass
                             kind = imghdr.what(None, h=data)
-                            if kind in ("jpeg","jpg"): mime="image/jpeg"
-                            elif kind=="png": mime="image/png"
-                            else: mime = uploaded_file.type if getattr(uploaded_file,"type","").startswith("image/") else "image/png"
+                            if kind in ("jpeg","jpg"):
+                                mime = "image/jpeg"
+                            elif kind == "png":
+                                mime = "image/png"
+                            else:
+                                mime = uploaded_file.type if getattr(uploaded_file,"type","").startswith("image/") else "image/png"
                             b64 = base64.b64encode(data).decode("ascii")
                             st.session_state.setdefault("photo_map", {})[key_id] = f"data:{mime};base64,{b64}"
                             st.success("Uploaded image saved!")
-                            try: st.rerun()
-                            except Exception: st.experimental_rerun()
+                            try:
+                                st.rerun()
+                            except Exception:
+                                st.experimental_rerun()
                         except Exception as e:
                             st.error(f"Couldn't process the uploaded image: {e}")
                     else:
@@ -1278,20 +1421,32 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
                         else:
                             st.session_state.setdefault("photo_map", {})[key_id] = val
                             st.success("Saved!")
-                            try: st.rerun()
-                            except Exception: st.experimental_rerun()
+                            try:
+                                st.rerun()
+                            except Exception:
+                                st.experimental_rerun()
             with col_b:
                 if st.button("Clear override", key=f"clear_{i}_{key_id}"):
                     st.session_state.setdefault("photo_map", {}).pop(key_id, None)
                     st.info("Cleared.")
-                    try: st.rerun()
-                    except Exception: st.experimental_rerun()
+                    try:
+                        st.rerun()
+                    except Exception:
+                        st.experimental_rerun()
 
-            # --- Club crest override (unchanged UI; unique widget keys) ---
+            # --- Club crest override (unique widget keys) ---
             crest_widget_ns = f"{crest_store_key}|{key_id}|{i}"
             crest_default = st.session_state.get("crest_map", {}).get(crest_store_key, "")
-            crest_upload = st.file_uploader("Upload club crest (SVG/PNG/JPG)", type=["svg","png","jpg","jpeg"], key=f"crest_upload_{crest_widget_ns}")
-            _ = st.text_input("Custom crest URL (e.g., https://…/club.svg or .png)", value=crest_default, key=f"crest_url_{crest_widget_ns}")
+            crest_upload = st.file_uploader(
+                "Upload club crest (SVG/PNG/JPG)",
+                type=["svg","png","jpg","jpeg"],
+                key=f"crest_upload_{crest_widget_ns}"
+            )
+            _ = st.text_input(
+                "Custom crest URL (e.g., https://…/club.svg or .png)",
+                value=crest_default,
+                key=f"crest_url_{crest_widget_ns}"
+            )
             col_c, col_d = st.columns([1, 3])
             with col_c:
                 if st.button("Apply crest", key=f"apply_crest_{crest_widget_ns}"):
@@ -1302,15 +1457,21 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
                             mime = crest_upload.type or ""
                             if not mime.startswith("image/"):
                                 ext = os.path.splitext(crest_upload.name or "")[1].lower()
-                                if ext == ".svg": mime = "image/svg+xml"
-                                elif ext == ".png": mime = "image/png"
-                                elif ext in (".jpg",".jpeg"): mime = "image/jpeg"
-                                else: mime = "image/png"
+                                if ext == ".svg":
+                                    mime = "image/svg+xml"
+                                elif ext == ".png":
+                                    mime = "image/png"
+                                elif ext in (".jpg",".jpeg"):
+                                    mime = "image/jpeg"
+                                else:
+                                    mime = "image/png"
                             b64 = base64.b64encode(data).decode("ascii")
                             st.session_state.setdefault("crest_map", {})[crest_store_key] = f"data:{mime};base64,{b64}"
                             st.success("Crest saved!")
-                            try: st.rerun()
-                            except Exception: st.experimental_rerun()
+                            try:
+                                st.rerun()
+                            except Exception:
+                                st.experimental_rerun()
                         except Exception as e:
                             st.error(f"Couldn't process crest: {e}")
                     else:
@@ -1322,20 +1483,24 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
                         else:
                             st.session_state.setdefault("crest_map", {})[crest_store_key] = val
                             st.success("Crest URL saved!")
-                            try: st.rerun()
-                            except Exception: st.experimental_rerun()
+                            try:
+                                st.rerun()
+                            except Exception:
+                                st.experimental_rerun()
             with col_d:
                 if st.button("Clear crest", key=f"clear_crest_{crest_widget_ns}"):
                     st.session_state.setdefault("crest_map", {}).pop(crest_store_key, None)
                     st.info("Crest cleared.")
-                    try: st.rerun()
-                    except Exception: st.experimental_rerun()
+                    try:
+                        st.rerun()
+                    except Exception:
+                        st.experimental_rerun()
 
-# ---- TAB HOOK (kept identical pattern) ----
+# ---- TAB HOOK ----
 with tabs[4]:
     st.subheader("Pro Layout — Top Central Midfielders (Tiles)")
     render_pro_layout_cm(df_f, top_n=top_n)
-# ----------------- END PRO LAYOUT TAB — CENTRAL MIDFIELDERS -----------------
+## ----------------- END PRO LAYOUT TAB — CENTRAL MIDFIELDERS -----------------
 
 
 
