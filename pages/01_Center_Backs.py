@@ -1846,112 +1846,88 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     # 🔎 Global search (Player / Team / League)
     search_q = st.text_input("🔎 Search player / team / league", "", key="cb_search_bar")
 
-    # ---- Filters: Age buckets (under & over) ----
+    if search_q:
+        s = str(search_q).strip().lower()
+        cols = [c for c in ("Player","Team","League") if c in df_filtered.columns]
+        if cols:
+            mask_any = pd.Series(False, index=df_filtered.index)
+            for c in cols:
+                mask_any = mask_any | df_filtered[c].astype(str).str.lower().str.contains(s, na=False)
+            df_filtered = df_filtered[mask_any]
+
+    # ---- Age filter ----
     age_choice = st.selectbox(
         "Age",
-        [
-            "All",
-            "U18","U20","U21","U22","U23","U25","U30",   # <=
-            "30+","32+","35+"                            # >=
-        ],
+        ["All","U18","U20","U21","U22","U23","U25","U30","30+","32+","35+"],
         index=0,
-        key="pro_age_filter",
-        label_visibility="visible"
+        key="pro_age_filter"
     )
 
     if "Age" in df_filtered.columns and age_choice != "All":
         try:
             df_filtered["Age_num"] = pd.to_numeric(df_filtered["Age"], errors="coerce")
-
-            if   age_choice == "U18":  df_filtered = df_filtered[df_filtered["Age_num"] <= 18]
-            elif age_choice == "U20":  df_filtered = df_filtered[df_filtered["Age_num"] <= 20]
-            elif age_choice == "U21":  df_filtered = df_filtered[df_filtered["Age_num"] <= 21]
-            elif age_choice == "U22":  df_filtered = df_filtered[df_filtered["Age_num"] <= 22]
-            elif age_choice == "U23":  df_filtered = df_filtered[df_filtered["Age_num"] <= 23]
-            elif age_choice == "U25":  df_filtered = df_filtered[df_filtered["Age_num"] <= 25]
-            elif age_choice == "U30":  df_filtered = df_filtered[df_filtered["Age_num"] <= 30]
-            elif age_choice == "30+":  df_filtered = df_filtered[df_filtered["Age_num"] >= 30]
-            elif age_choice == "32+":  df_filtered = df_filtered[df_filtered["Age_num"] >= 32]
-            elif age_choice == "35+":  df_filtered = df_filtered[df_filtered["Age_num"] >= 35]
+            if   age_choice == "U18": df_filtered = df_filtered[df_filtered["Age_num"] <= 18]
+            elif age_choice == "U20": df_filtered = df_filtered[df_filtered["Age_num"] <= 20]
+            elif age_choice == "U21": df_filtered = df_filtered[df_filtered["Age_num"] <= 21]
+            elif age_choice == "U22": df_filtered = df_filtered[df_filtered["Age_num"] <= 22]
+            elif age_choice == "U23": df_filtered = df_filtered[df_filtered["Age_num"] <= 23]
+            elif age_choice == "U25": df_filtered = df_filtered[df_filtered["Age_num"] <= 25]
+            elif age_choice == "U30": df_filtered = df_filtered[df_filtered["Age_num"] <= 30]
+            elif age_choice == "30+": df_filtered = df_filtered[df_filtered["Age_num"] >= 30]
+            elif age_choice == "32+": df_filtered = df_filtered[df_filtered["Age_num"] >= 32]
+            elif age_choice == "35+": df_filtered = df_filtered[df_filtered["Age_num"] >= 35]
         except Exception:
             pass
 
-     # ---- Contract expiry filter (by maximum year) ----
-    contract_choice = None
-    contract_options = ["Any", "2024", "2025", "2026", "2027", "2028"]
-
+    # ---- Contract max year ----
     if "Contract expires" in df_filtered.columns:
         contract_choice = st.selectbox(
             "Contract expires (max year)",
-            options=contract_options,
+            ["Any","2024","2025","2026","2027","2028"],
             index=0,
-            key="pro_contract_filter",
-            label_visibility="visible"
+            key="pro_contract_filter"
         )
-
         if contract_choice != "Any":
             try:
-                contract_max_year = int(contract_choice)
-
-                df_filtered["_contract_year"] = (
-                    pd.to_datetime(
-                        df_filtered["Contract expires"],
-                        errors="coerce"
-                    ).dt.year
-                )
-
-                df_filtered = df_filtered[
-                    df_filtered["_contract_year"] <= contract_max_year
-                ]
-
+                max_year = int(contract_choice)
+                df_filtered["_contract_year"] = pd.to_datetime(
+                    df_filtered["Contract expires"], errors="coerce"
+                ).dt.year
+                df_filtered = df_filtered[df_filtered["_contract_year"] <= max_year]
             except Exception:
                 pass
 
-
-    # -------------------------
-    # Extra filters: Birth country & Foot
-    # -------------------------
-
-    # Birth country filter (multi-select)
+    # ---- Birth country ----
     if "Birth country" in df_filtered.columns:
-        country_vals = (
+        country_vals = sorted(set(
             df_filtered["Birth country"]
-            .dropna()
-            .astype(str)
-            .str.strip()
-        )
-        country_vals = sorted({c for c in country_vals if c and c.lower() not in {"nan","none","null"}})
-
+            .dropna().astype(str).str.strip()
+        ))
         selected_countries = st.multiselect(
             "Birth country",
             options=country_vals,
             default=[],
             key="pro_birth_country_filter"
         )
-
         if selected_countries:
             df_filtered = df_filtered[df_filtered["Birth country"].isin(selected_countries)]
 
-    # Foot filter (Left / Right / Both, etc.)
+    # ---- Foot ----
     df_filtered["__foot"] = df_filtered.apply(_get_foot, axis=1)
 
-    foot_vals = (
+    foot_vals = sorted(set(
         df_filtered["__foot"]
-        .dropna()
-        .astype(str)
-        .str.strip()
-    )
-    foot_vals = sorted({f for f in foot_vals if f and f.lower() not in {"nan","none","null"}})
+        .dropna().astype(str).str.strip()
+    ))
 
-    if foot_vals:
-        selected_feet = st.multiselect(
-            "Foot",
-            options=foot_vals,
-            default=[],
-            key="pro_foot_filter"
-        )
-        if selected_feet:
-            df_filtered = df_filtered[df_filtered["__foot"].isin(selected_feet)]
+    selected_feet = st.multiselect(
+        "Foot",
+        options=foot_vals,
+        default=[],
+        key="pro_foot_filter"
+    )
+    if selected_feet:
+        df_filtered = df_filtered[df_filtered["__foot"].isin(selected_feet)]
 
 
     # =========================
