@@ -1876,13 +1876,13 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         except Exception:
             pass
 
-    # ---- Contract expiry filter (by minimum year) ----
+     # ---- Contract expiry filter (by maximum year) ----
     contract_choice = None
-    contract_options = ["Any", "2024+", "2025+", "2026+", "2027+", "2028+"]
+    contract_options = ["Any", "2024", "2025", "2026", "2027", "2028"]
 
     if "Contract expires" in df_filtered.columns:
         contract_choice = st.selectbox(
-            "Contract expires (min year)",
+            "Contract expires (max year)",
             options=contract_options,
             index=0,
             key="pro_contract_filter",
@@ -1891,23 +1891,22 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
         if contract_choice != "Any":
             try:
-                contract_min_year = int(contract_choice.replace("+", ""))
+                contract_max_year = int(contract_choice)
+
                 df_filtered["_contract_year"] = (
-                    pd.to_datetime(df_filtered["Contract expires"], errors="coerce").dt.year
+                    pd.to_datetime(
+                        df_filtered["Contract expires"],
+                        errors="coerce"
+                    ).dt.year
                 )
-                df_filtered = df_filtered[df_filtered["_contract_year"] >= contract_min_year]
+
+                df_filtered = df_filtered[
+                    df_filtered["_contract_year"] <= contract_max_year
+                ]
+
             except Exception:
                 pass
 
-    # Apply search (case-insensitive; match ANY of Player/Team/League)
-    if search_q:
-        s = str(search_q).strip().lower()
-        cols = [c for c in ("Player","Team","League") if c in df_filtered.columns]
-        if cols:
-            mask_any = pd.Series(False, index=df_filtered.index)
-            for c in cols:
-                mask_any = mask_any | df_filtered[c].astype(str).str.lower().str.contains(s, na=False)
-            df_filtered = df_filtered[mask_any]
 
     # -------------------------
     # Extra filters: Birth country & Foot
