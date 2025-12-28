@@ -824,7 +824,6 @@ def _get_foot(row) -> str:
                 if s and s.lower() not in {"nan","none","null"}: return s
     return ""
 
-# ----------------- FULLBACK VERSION -----------------
 # Label → (column_name, pretty_label)
 _FB_ROLE_MAP = [
     ("Build Up FB Score", "Build Up FB"),
@@ -894,22 +893,35 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
     </style>
     """, unsafe_allow_html=True)
 
-    # ---- Filters: Age buckets + Search (EXACT pattern) ----
+    # ---- UI ROW 1: Age, Role sort, Search ----
     c1, c2, c3 = st.columns([1, 1.4, 2])
     with c1:
         age_choice = st.selectbox(
             "Age",
-            ["All","U18","U20","U21","U22","U23","U25","U30"],
-            index=0, key="pro_age_filter_fb", label_visibility="visible"
+            [
+                "All",
+                "U18","U20","U21","U22","U23","U25","U30",   # <=
+                "30+","32+","35+"                            # >=
+            ],
+            index=0,
+            key="pro_age_filter_fb",
+            label_visibility="visible"
         )
     with c2:
-        # Role (sort by) — include All In and any FB role scores present
         ROLE_SCORE_COLS = [col for col,_ in _FB_ROLE_MAP if col in df_view.columns]
         sort_candidates = ["All In Score"] + ROLE_SCORE_COLS
-        sort_by = st.selectbox("Role (sort by)", options=sort_candidates, index=0, key="pro_sort_by_fb")
+        sort_by = st.selectbox(
+            "Role (sort by)",
+            options=sort_candidates,
+            index=0,
+            key="pro_sort_by_fb"
+        )
     with c3:
-        # 🔎 Search across Player/Team/League
-        search_q = st.text_input("🔎 Search player / team / league", "", key="fb_global_search")
+        search_q = st.text_input(
+            "🔎 Search player / team / league",
+            "",
+            key="fb_global_search"
+        )
 
     # ---- Order toggle ----
     sort_dir_label = st.radio(
@@ -932,8 +944,10 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
     default_labels = ["Build Up FB","Attacking FB","Defensive FB"]
     default_labels = [lbl for lbl in default_labels if lbl in labels]
     for lbl in labels:
-        if len(default_labels) >= 3: break
-        if lbl not in default_labels: default_labels.append(lbl)
+        if len(default_labels) >= 3:
+            break
+        if lbl not in default_labels:
+            default_labels.append(lbl)
 
     selected_labels = st.multiselect(
         "Displayed role pills (pick 3)",
@@ -945,8 +959,20 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
         st.warning("Please select exactly 3 pills — showing the first three available.")
         selected_labels = (selected_labels + [lbl for lbl in labels if lbl not in selected_labels])[:3]
 
-    # ---- Apply age & search filters ----
+    # ---- start from full table ----
     df_filtered = df_view.copy()
+
+    # ---- Global search (Player / Team / League) ----
+    if search_q:
+        s = str(search_q).strip().lower()
+        cols = [c for c in ("Player","Team","League") if c in df_filtered.columns]
+        if cols:
+            mask_any = pd.Series(False, index=df_filtered.index)
+            for c in cols:
+                mask_any = mask_any | df_filtered[c].astype(str).str.lower().str.contains(s, na=False)
+            df_filtered = df_filtered[mask_any]
+
+    # ---- Age filter (under & over) ----
     if "Age" in df_filtered.columns and age_choice != "All":
         try:
             df_filtered["Age_num"] = pd.to_numeric(df_filtered["Age"], errors="coerce")
@@ -957,19 +983,71 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
             elif age_choice == "U23": df_filtered = df_filtered[df_filtered["Age_num"] <= 23]
             elif age_choice == "U25": df_filtered = df_filtered[df_filtered["Age_num"] <= 25]
             elif age_choice == "U30": df_filtered = df_filtered[df_filtered["Age_num"] <= 30]
+            elif age_choice == "30+": df_filtered = df_filtered[df_filtered["Age_num"] >= 30]
+            elif age_choice == "32+": df_filtered = df_filtered[df_filtered["Age_num"] >= 32]
+            elif age_choice == "35+": df_filtered = df_filtered[df_filtered["Age_num"] >= 35]
         except Exception:
             pass
 
-    if search_q:
-        s = str(search_q).strip().lower()
-        cols = [c for c in ("Player","Team","League") if c in df_filtered.columns]
-        if cols:
-            mask_any = False
-            for c in cols:
-                mask_any = mask_any | df_filtered[c].astype(str).str.lower().str.contains(s, na=False)
-            df_filtered = df_filtered[mask_any]
+    # ---- Contract expiry filter (max year) ----
+    if "Contract expires" in df_filtered.columns:
+        contract_choice = st.selectbox(
+            "Contract expires (max year)",
+            ["Any", "2024", "2025", "2026", "2027", "2028"],
+            index=0,
+            key="pro_contract_filter_fb",
+            label_visibility="visible"
+        )
+        if contract_choice != "Any":
+            try:
+                max_year = int(contract_choice)
+                df_filtered["_contract_year"] = pd.to_datetime(
+                    df_filtered["Contract expires"], errors="coerce"
+                ).dt.year
+                df_filtered = df_filtered[df_filtered["_contract_year"] <= max_year]
+            except Exception:
+                pass
 
-    # ---------- NEW: optional minimum role score filters ----------
+    # ---- Birth country filter ----
+    if "Birth country" in df_filtered.columns:
+        country_vals = (
+            df_filtered["Birth country"]
+            .dropna()
+            .astype(str)
+            .str.strip()
+        )
+        country_vals = sorted({c for c in country_vals if c and c.lower() not in {"nan","none","null"}})
+
+        selected_countries = st.multiselect(
+            "Birth country",
+            options=country_vals,
+            default=[],
+            key="pro_birth_country_filter_fb"
+        )
+        if selected_countries:
+            df_filtered = df_filtered[df_filtered["Birth country"].isin(selected_countries)]
+
+    # ---- Foot filter ----
+    df_filtered["__foot"] = df_filtered.apply(_get_foot, axis=1)
+    foot_vals = (
+        df_filtered["__foot"]
+        .dropna()
+        .astype(str)
+        .str.strip()
+    )
+    foot_vals = sorted({f for f in foot_vals if f and f.lower() not in {"nan","none","null"}})
+
+    if foot_vals:
+        selected_feet = st.multiselect(
+            "Foot",
+            options=foot_vals,
+            default=[],
+            key="pro_foot_filter_fb"
+        )
+        if selected_feet:
+            df_filtered = df_filtered[df_filtered["__foot"].isin(selected_feet)]
+
+    # ---------- optional minimum role score filters ----------
     ROLE_SCORE_COLS_FILTER = [col for col, _ in _FB_ROLE_MAP if col in df_filtered.columns]
 
     use_role_filters = st.checkbox(
@@ -989,12 +1067,17 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
                 key=f"fb_min_{_norm(col)}"
             )
 
-        # apply minima
         for col, thr in minima.items():
             if thr > 0:
                 df_filtered[col] = pd.to_numeric(df_filtered[col], errors="coerce")
                 df_filtered = df_filtered[df_filtered[col] >= thr]
-    # ---------- END NEW BLOCK ----------
+
+    # ---- from here down, keep your existing: ----
+    # - data check for "All In Score"
+    # - sort by sort_by (All In or a role), with asc/desc
+    # - take head(top_n)
+    # - render cards using selected_labels / label_to_col
+    # - avatar & crest overrides, metrics expander, etc.
 
     # ---- data check ----
     all_col = "All In Score"
