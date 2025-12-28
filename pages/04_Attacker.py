@@ -893,7 +893,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     .crest-icon{ height:1.35em; width:auto; object-fit:contain; image-rendering:auto; }
     .crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
 
-    /* Individual metrics — restore compact layout */
+    /* Individual metrics — compact layout */
     .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
     .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
     .m-row{ display:flex; justify-content:space-between; align-items:center; padding:8px 8px; border-radius:10px; }
@@ -910,7 +910,11 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     # ---- Filters: Age buckets ----
     age_choice = st.selectbox(
         "Age",
-        ["All", "U18", "U20", "U21", "U22", "U23", "U25", "U30"],
+        [
+            "All",
+            "U18","U20","U21","U22","U23","U25","U30",   # <=
+            "30+","32+","35+"                            # >=
+        ],
         index=0,
         key="pro_age_filter",
         label_visibility="visible"
@@ -932,19 +936,8 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         help="Type a team name or comma-separate multiple (e.g., Barcelona, Inter). Partial & case-insensitive."
     ).strip()
 
+    # ---- start from full table ----
     df_filtered = df_view.copy()
-    if "Age" in df_filtered.columns and age_choice != "All":
-        try:
-            df_filtered["Age_num"] = pd.to_numeric(df_filtered["Age"], errors="coerce")
-            if   age_choice == "U18": df_filtered = df_filtered[df_filtered["Age_num"] <= 18]
-            elif age_choice == "U20": df_filtered = df_filtered[df_filtered["Age_num"] <= 20]
-            elif age_choice == "U21": df_filtered = df_filtered[df_filtered["Age_num"] <= 21]
-            elif age_choice == "U22": df_filtered = df_filtered[df_filtered["Age_num"] <= 22]
-            elif age_choice == "U23": df_filtered = df_filtered[df_filtered["Age_num"] <= 23]
-            elif age_choice == "U25": df_filtered = df_filtered[df_filtered["Age_num"] <= 25]
-            elif age_choice == "U30": df_filtered = df_filtered[df_filtered["Age_num"] <= 30]
-        except Exception:
-            pass
 
     # Apply player search
     if search_text:
@@ -966,13 +959,99 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 tmask = tmask | tser.str.contains(t, na=False)
             df_filtered = df_filtered[tmask]
 
+    # Apply age filter (under & over)
+    if "Age" in df_filtered.columns and age_choice != "All":
+        try:
+            df_filtered["Age_num"] = pd.to_numeric(df_filtered["Age"], errors="coerce")
+            if   age_choice == "U18": df_filtered = df_filtered[df_filtered["Age_num"] <= 18]
+            elif age_choice == "U20": df_filtered = df_filtered[df_filtered["Age_num"] <= 20]
+            elif age_choice == "U21": df_filtered = df_filtered[df_filtered["Age_num"] <= 21]
+            elif age_choice == "U22": df_filtered = df_filtered[df_filtered["Age_num"] <= 22]
+            elif age_choice == "U23": df_filtered = df_filtered[df_filtered["Age_num"] <= 23]
+            elif age_choice == "U25": df_filtered = df_filtered[df_filtered["Age_num"] <= 25]
+            elif age_choice == "U30": df_filtered = df_filtered[df_filtered["Age_num"] <= 30]
+            elif age_choice == "30+": df_filtered = df_filtered[df_filtered["Age_num"] >= 30]
+            elif age_choice == "32+": df_filtered = df_filtered[df_filtered["Age_num"] >= 32]
+            elif age_choice == "35+": df_filtered = df_filtered[df_filtered["Age_num"] >= 35]
+        except Exception:
+            pass
+
+    # ---- Contract expiry filter (max year) ----
+    if "Contract expires" in df_filtered.columns:
+        contract_choice = st.selectbox(
+            "Contract expires (max year)",
+            ["Any", "2024", "2025", "2026", "2027", "2028"],
+            index=0,
+            key="pro_contract_filter_att",
+            label_visibility="visible"
+        )
+        if contract_choice != "Any":
+            try:
+                max_year = int(contract_choice)
+                df_filtered["_contract_year"] = pd.to_datetime(
+                    df_filtered["Contract expires"], errors="coerce"
+                ).dt.year
+                df_filtered = df_filtered[df_filtered["_contract_year"] <= max_year]
+            except Exception:
+                pass
+
+    # ---- Birth country filter ----
+    if "Birth country" in df_filtered.columns:
+        country_vals = (
+            df_filtered["Birth country"]
+            .dropna()
+            .astype(str)
+            .str.strip()
+        )
+        country_vals = sorted({c for c in country_vals if c and c.lower() not in {"nan","none","null"}})
+
+        selected_countries = st.multiselect(
+            "Birth country",
+            options=country_vals,
+            default=[],
+            key="pro_birth_country_filter_att"
+        )
+        if selected_countries:
+            df_filtered = df_filtered[df_filtered["Birth country"].isin(selected_countries)]
+
+    # ---- Foot filter ----
+    df_filtered["__foot"] = df_filtered.apply(_get_foot, axis=1)
+    foot_vals = (
+        df_filtered["__foot"]
+        .dropna()
+        .astype(str)
+        .str.strip()
+    )
+    foot_vals = sorted({f for f in foot_vals if f and f.lower() not in {"nan","none","null"}})
+
+    if foot_vals:
+        selected_feet = st.multiselect(
+            "Foot",
+            options=foot_vals,
+            default=[],
+            key="pro_foot_filter_att"
+        )
+        if selected_feet:
+            df_filtered = df_filtered[df_filtered["__foot"].isin(selected_feet)]
+
     # ---------- NEW: optional minimum role score filters ----------
     try:
         role_names_filter = list(ROLES.keys())
     except Exception:
-        role_names_filter = ["Goal Threat","Playmaker","Ball Carrier","Modern Winger","Traditional Winger","Protagonist"]
+        role_names_filter = [
+            "Goal Threat",
+            "Playmaker",
+            "Ball Carrier",
+            "Modern Winger",
+            "Traditional Winger",
+            "Protagonist",
+        ]
 
-    ROLE_SCORE_COLS_FILTER = [f"{name} Score" for name in role_names_filter if f"{name} Score" in df_filtered.columns]
+    ROLE_SCORE_COLS_FILTER = [
+        f"{name} Score"
+        for name in role_names_filter
+        if f"{name} Score" in df_filtered.columns
+    ]
 
     use_role_filters = st.checkbox(
         "Filter by minimum role score(s)",
@@ -997,6 +1076,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 df_filtered[col] = pd.to_numeric(df_filtered[col], errors="coerce")
                 df_filtered = df_filtered[df_filtered[col] >= thr]
     # ---------- END NEW BLOCK ----------
+
 
     # ---- data check ----
     all_col = "All In Score"
