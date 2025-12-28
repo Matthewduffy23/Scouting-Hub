@@ -1840,7 +1840,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     </style>
     """, unsafe_allow_html=True)
 
-    # 🔎 Global search (Player / Team / League)
+     # 🔎 Global search (Player / Team / League)
     search_q = st.text_input("🔎 Search player / team / league", "", key="cb_search_bar")
 
     # ---- Filters: Age buckets (under & over) ----
