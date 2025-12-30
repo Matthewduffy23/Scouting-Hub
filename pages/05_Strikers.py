@@ -5074,6 +5074,41 @@ else:
     """
     st.markdown(card_html, unsafe_allow_html=True)
 
+    # ========= Download snapshot (plain text) =========
+    snapshot_lines = [
+        f"GBE / Visa points snapshot",
+        f"Player: {player_name}",
+        f"Team: {player_team}",
+        f"League: {player_league} (Band {player_band})",
+        "",
+        f"Estimated points: {total_points}",
+        f"Status: {status}",
+        "",
+        "Breakdown:",
+        f"- Domestic minutes (Table 2): {domestic_points} pts (auto % = {domestic_minutes_pct}%)",
+        f"- Senior international (Table 1): {intl_points} pts (auto pass: {intl_auto})",
+        f"- Continental minutes (Table 3): {cont_points} pts",
+        f"- Final league position (Table 4): {finish_points} pts",
+        f"- Continental progression (Table 5): {cprog_points} pts",
+        f"- League band – current club (Table 6): {lq_points} pts",
+    ]
+
+    if youth_int_caps > 0 or youth_int_note.strip():
+        yn = youth_int_note.strip() or f"Youth competitive internationals: {youth_int_caps} match(es)"
+        snapshot_lines.append("")
+        snapshot_lines.append(f"Youth note: {yn}")
+
+    snapshot_text = "\n".join(snapshot_lines)
+
+    st.download_button(
+        "📥 Download GBE / Visa snapshot (.txt)",
+        data=snapshot_text,
+        file_name=f"GBE_snapshot_{player_name.replace(' ', '_')}.txt",
+        mime="text/plain",
+        key=f"gbe_dl_{player_name}",
+    )
+
+
 
 
 
