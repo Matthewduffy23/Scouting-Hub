@@ -4544,7 +4544,6 @@ if player_row.empty:
     st.info("Select a player in the Single Player Role Profile above to see their GBE snapshot.")
 else:
     # ========= Helper: league → FA Band (1–6) =========
-    # Mapping follows the FA band definitions (see PDF – summary only)
     LEAGUE_TO_GBE_BAND = {
         # Band 1 – Big 5
         "England 1.": 1,
@@ -4595,8 +4594,7 @@ else:
         "Korea 1.": 5,
         "Australia 1.": 5,
         "England 3.": 5,
-
-        # All others → Band 6
+        # all others => Band 6
     }
 
     def gbe_band_for_league(league_name: str) -> int:
@@ -4606,7 +4604,7 @@ else:
     def intl_points_and_auto(fifa_rank: int, pct: int) -> tuple[int, bool]:
         """
         Returns (points, auto_pass) according to Table 1
-        (Aggregated FIFA rank band × % of competitive senior internationals).
+        (FIFA ranking band × % of competitive senior internationals).
         """
         if fifa_rank <= 10:
             band = "1-10"
@@ -4761,7 +4759,7 @@ else:
         "Band2 qualifiers":            [2, 1, 0, 0, 0, 0],
         "Mid-table":                   [1, 0, 0, 0, 0, 0],
         "Relegation":                  [0, 0, 0, 0, 0, 0],
-        "Promotion":                   [0, 1, 1, 1, 1, 1],  # Band1 → 0
+        "Promotion":                   [0, 1, 1, 1, 1, 1],  # Band1 => 0
     }
 
     def final_position_points(band: int, category: str) -> int:
@@ -4804,11 +4802,9 @@ else:
 - **Domestic league minutes (Table 2)** – up to **12 pts** from:
   - **League band (1–6)** × % of **available league minutes** played.  
 - **Continental minutes (Table 3)** – up to **10 pts**:
-  - Band 1: UCL / Libertadores;  
-  - Band 2: UEL / UECL / Sudamericana / Club WC;  
-  - Band 3: all other continental.
-- **Final league position (Table 4)** – up to **6 pts** (title winner, qualifiers, mid-table, promotion / relegation).
-- **Continental progression (Table 5)** – up to **10 pts** (stage reached).
+  - Band 1: UCL / Libertadores; Band 2: UEL / UECL / Sudamericana / Club WC; Band 3: all other continental.
+- **Final league position (Table 4)** – up to **6 pts**.
+- **Continental progression (Table 5)** – up to **10 pts**.
 - **League quality – current club (Table 6)** – up to **12 pts** from league band.
 - **Youth internationals** – used for ESC / Youth routes, **no points** in the standard 15-point total.
             """
@@ -4832,7 +4828,7 @@ else:
     birth_norm = birth_country.lower()
     is_home_nation_player = birth_norm in home_nation_names
 
-    # Use global extract_country() (defined earlier) to read league country
+    # League country via extract_country helper
     try:
         league_country = extract_country(player_league)
     except Exception:
@@ -4853,14 +4849,13 @@ else:
 
     player_band = gbe_band_for_league(player_league)
 
-    # Simple display row
     st.markdown(
         f"**League / Band:** {player_league}  →  **Band {player_band}**  "
         f"&nbsp;&nbsp;|&nbsp;&nbsp; **Minutes:** {int(player_minutes)} "
         f"({domestic_minutes_pct}% of max minutes in this league sample)"
     )
 
-    # ========= 2) Inputs for the rest of the criteria =========
+    # ========= 2) Inputs =========
     st.markdown("### Inputs")
 
     col_intl, col_dom, col_other = st.columns([1.2, 1.0, 1.2])
@@ -4902,11 +4897,10 @@ else:
         st.write(f"Domestic minutes % (auto): **{domestic_minutes_pct}%**")
         st.write(f"Domestic minutes points (Table 2): **{domestic_points}**")
 
-    # ---- Other criteria (user-assigned) ----
+    # ---- Other criteria (Tables 3–6) ----
     with col_other:
         st.markdown("**Other criteria (Tables 3–6)**")
 
-        # Continental minutes (Table 3)
         use_cont = st.checkbox("Add continental minutes (Table 3)", value=False, key="gbe_use_cont")
         cont_points = 0
         if use_cont:
@@ -4922,7 +4916,6 @@ else:
             )
             cont_points = table3_continental_points(cont_band, cont_pct)
 
-        # Final league position (Table 4)
         use_finish = st.checkbox("Add final league position (Table 4)", value=False, key="gbe_use_finish")
         finish_points = 0
         if use_finish:
@@ -4942,7 +4935,6 @@ else:
             )
             finish_points = final_position_points(player_band, finish_cat)
 
-        # Continental progression (Table 5)
         use_cprog = st.checkbox("Add continental progression (Table 5)", value=False, key="gbe_use_cprog")
         cprog_points = 0
         if use_cprog:
@@ -4967,13 +4959,12 @@ else:
             )
             cprog_points = continental_progression_points(cprog_band, cprog_stage)
 
-        # League quality of current club (Table 6)
         use_lq = st.checkbox("Add league band points – current club (Table 6)", value=True, key="gbe_use_lq")
         lq_points = league_quality_points(player_band) if use_lq else 0
 
-    # ==== Youth internationals – info only (ESC / Youth Player routes) ====
+    # ==== Youth internationals – info only ====
     st.markdown("**Youth competitive internationals (info only)**")
-    st.caption("Used for ESC / Youth Player routes – **no points in the standard 15-point total.**")
+    st.caption("Used for ESC / Youth Player routes – **no points** in the standard 15-point total.")
     youth_int_caps = st.number_input(
         "Number of youth competitive international matches in reference period",
         min_value=0, max_value=100, value=0, step=1,
@@ -4995,7 +4986,7 @@ else:
         + lq_points
     )
 
-    # Home-nations / Ireland auto-pass logic
+    # Home-nation / Ireland auto-pass
     auto_reason = ""
     auto_source = None  # "home" or "intl"
 
@@ -5011,12 +5002,10 @@ else:
         auto_source = "intl"
         auto_reason = "Meets automatic pass threshold via senior international appearances."
 
-    # Points shown on the card (auto-pass treated as at least 15)
     display_points = base_total_points
     if auto_source is not None and display_points < 15:
         display_points = 15
 
-    # Status label + colour
     if auto_source == "home":
         status = "Automatic Pass – UK / Irish route"
         status_color = "#16a34a"
@@ -5034,8 +5023,7 @@ else:
             status = "Fail / ESC territory (0–9 points)"
             status_color = "#b91c1c"
 
-    # ========= Card layout =========
-    bg_color = "#0b1220"  # dark navy
+    bg_color = "#0b1220"
     breakdown_str = (
         f"Domestic minutes: {domestic_points} pts; "
         f"International: {intl_points} pts; "
@@ -5063,6 +5051,7 @@ else:
             f"</div>"
         )
 
+    # ========= Card layout (tweaked) =========
     st.markdown(
         f"""
 <div style="
@@ -5074,19 +5063,27 @@ else:
     color: #e5e7eb;
     font-size: 0.94rem;
 ">
-  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:0.75rem; margin-bottom:0.4rem;">
-    <div style="font-weight:600; font-size:0.95rem; color:#cbd5f5;">
-      GBE / Visa points – <span style="font-weight:800; color:#f9fafb;">{player_name}</span>
-      <span style="opacity:0.85;">({player_team})</span>
+  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:0.75rem; margin-bottom:0.45rem;">
+    <div style="font-size:0.95rem; color:#cbd5f5;">
+      <div style="font-weight:600;">GBE / Visa points</div>
+      <div>
+        <span style="font-weight:800; color:#f9fafb;">{player_name}</span>
+        <span style="opacity:0.85;">({player_team})</span>
+      </div>
     </div>
     <div style="font-size:0.82rem; color:#9ca3af; white-space:nowrap; text-align:right;">
       League: {player_league} · Band {player_band}
     </div>
   </div>
 
-  <div style="display:flex; align-items:center; gap:1.0rem; margin:0.2rem 0 0.55rem 0;">
-    <div style="font-size:2.35rem; font-weight:800; line-height:1; letter-spacing:0.02em;">
-      {display_points}
+  <div style="display:flex; align-items:flex-end; gap:1.0rem; margin:0.2rem 0 0.6rem 0;">
+    <div>
+      <div style="font-size:2.35rem; font-weight:800; line-height:1; letter-spacing:0.02em;">
+        {display_points}
+      </div>
+      <div style="font-size:0.8rem; color:#9ca3af; margin-top:0.18rem;">
+        Est. points
+      </div>
     </div>
     <div style="
         padding:0.45rem 0.95rem;
@@ -5101,12 +5098,12 @@ else:
     </div>
   </div>
 
-  <div style="font-size:0.82rem; margin-bottom:0.55rem; color:#cbd5f5;">
+  <div style="font-size:0.82rem; margin-bottom:0.45rem; color:#cbd5f5;">
     {points_band_str}
   </div>
 
-  <div style="margin-top:0.1rem; font-size:0.9rem;">
-    <span style="font-weight:700;">Breakdown</span> – {breakdown_str}
+  <div style="margin-top:0.05rem; font-size:0.82rem; color:#cbd5f5;">
+    <span style="font-weight:700; color:#f9fafb;">Breakdown</span> – {breakdown_str}
   </div>
   {auto_reason_html}
   {youth_html}
@@ -5121,7 +5118,7 @@ else:
 League: {player_league} (Band {player_band})
 Minutes: {int(player_minutes)} ({domestic_minutes_pct}% of max minutes in league sample)
 
-Displayed points: {display_points}
+Estimated points (displayed): {display_points}
 Base total (before auto-pass adjustment): {base_total_points}
 Status: {status}
 
@@ -5147,6 +5144,7 @@ Auto-pass reason: {auto_reason if auto_reason else 'None'}
         mime="text/plain",
         key="gbe_download_btn",
     )
+
 
 
 
