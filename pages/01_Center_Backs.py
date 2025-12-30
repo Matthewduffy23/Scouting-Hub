@@ -237,6 +237,50 @@ LEAGUE_STRENGTHS = {
 
 }
 
+# ---- GBE league bands (custom: all UK & Ireland leagues in Band 1) ----
+GBE_LEAGUE_BANDS = {
+    # Band 1 – Top 5 + all England / Scotland / Wales / Ireland / Northern Ireland leagues
+    "England 1.": 1, "England 2.": 1, "England 3.": 1, "England 4.": 1,
+    "England 5.": 1, "England 6.": 1, "England 7.": 1, "England 8.": 1,
+    "England 9.": 1, "England 10.": 1,
+    "Scotland 1.": 1, "Scotland 2.": 1, "Scotland 3.": 1,
+    "Wales 1.": 1,
+    "Ireland 1.": 1,
+    "Northern Ireland 1.": 1,
+
+    "Spain 1.": 1, "Germany 1.": 1, "Italy 1.": 1, "France 1.": 1,
+
+    # Band 2
+    "Portugal 1.": 2, "Netherlands 1.": 2, "Belgium 1.": 2, "Turkey 1.": 2,
+    # You can keep England 2./3. here as well if you want, but they’re already Band 1 above.
+
+    # Band 3
+    "USA 1.": 3, "Brazil 1.": 3, "Argentina 1.": 3, "Mexico 1.": 3,
+
+    # Band 4
+    "Czech 1.": 4, "Croatia 1.": 4, "Switzerland 1.": 4,
+    "Spain 2.": 4, "Germany 2.": 4,
+    "Ukraine 1.": 4, "Greece 1.": 4, "Colombia 1.": 4,
+    "Austria 1.": 4, "Denmark 1.": 4, "France 2.": 4, "Russia 1.": 4,
+
+    # Band 5
+    "Serbia 1.": 5, "Poland 1.": 5, "Slovenia 1.": 5, "Chile 1.": 5, "Uruguay 1.": 5,
+    "Sweden 1.": 5, "Norway 1.": 5, "Italy 2.": 5, "Hungary 1.": 5, "Japan 1.": 5,
+    "Korea 1.": 5, "Australia 1.": 5, "Brazil 2.": 5,
+
+    # Everything else defaults to Band 6
+}
+
+def gbe_league_band(league_name: str) -> int:
+    """
+    Map 'Country N.' league name to custom GBE band 1–6.
+    Unlisted leagues default to Band 6.
+    """
+    league_name = str(league_name).strip()
+    return int(GBE_LEAGUE_BANDS.get(league_name, 6))
+
+
+
 import re
 
 # --- Youth leagues: excluded by default, optional toggle to include ---
@@ -498,12 +542,20 @@ if missing_feats:
 # ----------------- FILTER POOL -----------------
 df_f = df.copy()
 
-# leagues
+# leagues (from sidebar presets / selection)
 if st.session_state.get("cb_leagues_sel"):
     df_f = df_f[df_f["League"].isin(st.session_state["cb_leagues_sel"])]
 
+# --- GBE band filter (NO auto-pass) ---
+df_f["GBE Band"] = df_f["League"].apply(gbe_league_band).astype(int)
+
+bands_sel = st.session_state.get(f"cb_gbe_bands_{selected_file}", [1, 2, 3, 4, 5, 6])
+if bands_sel:
+    df_f = df_f[df_f["GBE Band"].isin(bands_sel)]
+
 # positions (center backs)
 df_f = df_f[df_f["Position"].astype(str).apply(position_filter)]
+
 
 # numerics
 df_f["Minutes played"] = pd.to_numeric(df_f["Minutes played"], errors="coerce")
@@ -1874,8 +1926,8 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
             elif age_choice == "U25": df_filtered = df_filtered[df_filtered["Age_num"] <= 25]
             elif age_choice == "U30": df_filtered = df_filtered[df_filtered["Age_num"] <= 30]
             elif age_choice == "30+": df_filtered = df_filtered[df_filtered["Age_num"] >= 30]
-            elif age_choice == "32+": df_filtered = df_filtered[df_filtered["Age_num"] >= 32]
-            elif age_choice == "35+": df_filtered = df_filtered[df_filtered["Age_num"] >= 35]
+            elif age_choice == "25+": df_filtered = df_filtered[df_filtered["Age_num"] >= 25]
+            elif age_choice == "28+": df_filtered = df_filtered[df_filtered["Age_num"] >= 28]
         except Exception:
             pass
 
