@@ -5780,8 +5780,13 @@ else:
         margin-bottom:6px;
     }
     .gbe-title{
-        font-weight:700;
+        font-weight:600;
         font-size:1.0rem;
+        color: rgba(229, 231, 235, 0.9);
+    }
+    .gbe-title span.gbe-player{
+        color:#ffffff;
+        font-weight:800;
     }
     .gbe-league{
         font-size:0.82rem;
@@ -5860,7 +5865,7 @@ else:
     <div class="gbe-card">
       <div class="gbe-header">
         <div class="gbe-title">
-          GBE Snapshot – {player_name} ({player_team})
+          GBE / Visa points – <span class="gbe-player">{player_name}</span> ({player_team})
         </div>
         <div class="gbe-league">
           League: {player_league} · Band {player_band}
@@ -5870,7 +5875,7 @@ else:
       <div class="gbe-main-row">
         <div>
           <div class="gbe-points-num">{total_points}</div>
-          <div class="gbe-points-label">total points</div>
+          <div class="gbe-points-label">Est. points</div>
         </div>
         <div class="gbe-status-pill" style="background:{status_color};">
           {status}
@@ -5891,20 +5896,6 @@ else:
     </div>
     """
     st.markdown(card_html, unsafe_allow_html=True)
-
-    # Raw-value debug
-    with st.expander("Point breakdown (raw values)", expanded=False):
-        st.write(
-            {
-                "International (Table 1)": intl_points,
-                "Domestic minutes (Table 2)": domestic_points,
-                "Continental minutes (Table 3)": cont_points,
-                "Final league position (Table 4)": finish_points,
-                "Continental progression (Table 5)": cprog_points,
-                "League band – current club (Table 6)": lq_points,
-                "Youth competitive internationals (info only)": youth_int_caps,
-            }
-        )
 
 
 
