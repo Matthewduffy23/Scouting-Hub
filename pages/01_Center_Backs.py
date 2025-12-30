@@ -403,6 +403,29 @@ with st.sidebar:
     if use_efl:
         seed |= PRESET_LEAGUES["EFL (England 2–4)"]
 
+    # --- GBE Band presets (1–6) ---
+    st.markdown("### GBE Bands")
+
+    b1, b2, b3 = st.columns(3)
+    use_band1 = b1.checkbox("Band 1", value=True,  key=f"cb_band1_{selected_file}")
+    use_band2 = b2.checkbox("Band 2", value=True,  key=f"cb_band2_{selected_file}")
+    use_band3 = b3.checkbox("Band 3", value=True,  key=f"cb_band3_{selected_file}")
+
+    c4, c5, c6 = st.columns(3)
+    use_band4 = c4.checkbox("Band 4", value=True,  key=f"cb_band4_{selected_file}")
+    use_band5 = c5.checkbox("Band 5", value=True,  key=f"cb_band5_{selected_file}")
+    use_band6 = c6.checkbox("Band 6", value=True,  key=f"cb_band6_{selected_file}")
+
+    selected_bands: list[int] = []
+    if use_band1: selected_bands.append(1)
+    if use_band2: selected_bands.append(2)
+    if use_band3: selected_bands.append(3)
+    if use_band4: selected_bands.append(4)
+    if use_band5: selected_bands.append(5)
+    if use_band6: selected_bands.append(6)
+
+    st.session_state[f"cb_gbe_bands_{selected_file}"] = selected_bands
+
     # --- Leagues present in this dataset ---
     leagues_in_df = sorted(
         pd.Series(df.get("League", pd.Series(dtype=object)))
@@ -527,6 +550,7 @@ with st.sidebar:
 
     top_n = st.number_input("Top N per table", 5, 200, 50, 5, key=f"cb_topn_{selected_file}")
     round_to = st.selectbox("Round output percentiles to", [0, 1], index=0, key=f"cb_round_to_{selected_file}")
+
 
 
 # ----------------- VALIDATION -----------------
