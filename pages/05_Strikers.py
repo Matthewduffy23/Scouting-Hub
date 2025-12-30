@@ -5032,7 +5032,8 @@ else:
         f"Continental progression: {cprog_points} pts; "
         f"League band: {lq_points} pts."
     )
-    points_band_str = "Points: 0–9 = Fail / ESC, 10–14 = Exceptions Panel, 15+ = Pass."
+    # 🔹 UPDATED: removed 'Points:' prefix
+    points_band_str = "0–9 = Fail / ESC, 10–14 = Exceptions Panel, 15+ = Pass."
 
     auto_reason_html = ""
     if auto_reason:
@@ -5051,7 +5052,7 @@ else:
             f"</div>"
         )
 
-    # ========= Card layout (tweaked) =========
+    # ========= Card layout (tweaked for mobile) =========
     st.markdown(
         f"""
 <div style="
@@ -5064,11 +5065,12 @@ else:
     font-size: 0.94rem;
 ">
   <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:0.75rem; margin-bottom:0.45rem;">
-    <div style="font-size:0.95rem; color:#cbd5f5;">
+    <!-- 🔹 Header font size bumped -->
+    <div style="font-size:1.05rem; color:#cbd5f5;">
       <div style="font-weight:600;">GBE / Visa points</div>
       <div>
-        <span style="font-weight:800; color:#f9fafb;">{player_name}</span>
-        <span style="opacity:0.85;">({player_team})</span>
+        <span style="font-weight:800; color:#f9fafb; font-size:1.05rem;">{player_name}</span>
+        <span style="opacity:0.85; font-size:1.05rem;">({player_team})</span>
       </div>
     </div>
     <div style="font-size:0.82rem; color:#9ca3af; white-space:nowrap; text-align:right;">
@@ -5076,12 +5078,14 @@ else:
     </div>
   </div>
 
-  <div style="display:flex; align-items:flex-end; gap:1.0rem; margin:0.2rem 0 0.6rem 0;">
+  <!-- 🔹 align-items changed to center so chip sits midway between number and label -->
+  <div style="display:flex; align-items:center; gap:1.0rem; margin:0.2rem 0 0.6rem 0;">
     <div>
       <div style="font-size:2.35rem; font-weight:800; line-height:1; letter-spacing:0.02em;">
         {display_points}
       </div>
-      <div style="font-size:0.8rem; color:#9ca3af; margin-top:0.18rem;">
+      <!-- 🔹 white-space:nowrap so 'Est. points' stays on one line -->
+      <div style="font-size:0.8rem; color:#9ca3af; margin-top:0.18rem; white-space:nowrap;">
         Est. points
       </div>
     </div>
