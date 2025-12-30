@@ -5362,66 +5362,37 @@ else:
 # Relies on df_f, player_name, player_row already defined above
 
 st.subheader("🧮 GBE Calculator (FA 2025/26 snapshot)")
-st.caption(
-    "Quick, **unofficial** GBE-style points summary based on FA 2025/26 criteria. "
-    "Uses this dataset for domestic minutes; everything else is user-assigned."
-)
 
 if player_row.empty:
     st.info("Select a player in the Single Player Role Profile above to see their GBE snapshot.")
 else:
     # ========= Helper: league → FA Band (1–6) =========
-    # Mapping follows FA definitions for Bands 1–5; everything else is Band 6.
     LEAGUE_TO_GBE_BAND = {
         # Band 1 – EPL, Bundesliga, La Liga, Serie A, Ligue 1
-        "England 1.": 1,   # Premier League
-        "Germany 1.": 1,   # Bundesliga
-        "Spain 1.": 1,     # La Liga
-        "Italy 1.": 1,     # Serie A
-        "France 1.": 1,    # Ligue 1
+        "England 1.": 1, "Germany 1.": 1, "Spain 1.": 1,
+        "Italy 1.": 1, "France 1.": 1,
 
-        # Band 2 – Portugal, Netherlands, Belgium, Turkey, Championship
-        "Portugal 1.": 2,      # Primeira Liga
-        "Netherlands 1.": 2,   # Eredivisie
-        "Belgium 1.": 2,       # First Division A
-        "Turkey 1.": 2,        # Süper Lig
-        "England 2.": 2,       # EFL Championship
+        # Band 2
+        "Portugal 1.": 2, "Netherlands 1.": 2, "Belgium 1.": 2,
+        "Turkey 1.": 2, "England 2.": 2,
 
-        # Band 3 – MLS, Brazil A, Argentina, Liga MX, Scottish Premiership
-        "USA 1.": 3,       # MLS
-        "Brazil 1.": 3,    # Série A
-        "Argentina 1.": 3, # Primera División
-        "Mexico 1.": 3,    # Liga MX
-        "Scotland 1.": 3,  # Premiership
+        # Band 3
+        "USA 1.": 3, "Brazil 1.": 3, "Argentina 1.": 3,
+        "Mexico 1.": 3, "Scotland 1.": 3,
 
-        # Band 4 – as per FA defs
-        "Czech 1.": 4,
-        "Croatia 1.": 4,
-        "Switzerland 1.": 4,
-        "Spain 2.": 4,     # La Liga 2
-        "Germany 2.": 4,   # 2. Bundesliga
-        "Ukraine 1.": 4,
-        "Greece 1.": 4,
-        "Colombia 1.": 4,
-        "Austria 1.": 4,
-        "Denmark 1.": 4,
-        "France 2.": 4,    # Ligue 2
-        "Russia 1.": 4,
+        # Band 4
+        "Czech 1.": 4, "Croatia 1.": 4, "Switzerland 1.": 4,
+        "Spain 2.": 4, "Germany 2.": 4, "Ukraine 1.": 4,
+        "Greece 1.": 4, "Colombia 1.": 4, "Austria 1.": 4,
+        "Denmark 1.": 4, "France 2.": 4, "Russia 1.": 4,
 
-        # Band 5 – as per FA defs
-        "Serbia 1.": 5,
-        "Poland 1.": 5,
-        "Slovenia 1.": 5,
-        "Chile 1.": 5,
-        "Uruguay 1.": 5,
-        "Sweden 1.": 5,
-        "Norway 1.": 5,
-        "Italy 2.": 5,     # Serie B
-        "Hungary 1.": 5,
-        "Japan 1.": 5,     # J1
-        "Korea 1.": 5,     # K League 1
-        "Australia 1.": 5, # A-League
-        "England 3.": 5,   # League One
+        # Band 5
+        "Serbia 1.": 5, "Poland 1.": 5, "Slovenia 1.": 5,
+        "Chile 1.": 5, "Uruguay 1.": 5, "Sweden 1.": 5,
+        "Norway 1.": 5, "Italy 2.": 5, "Hungary 1.": 5,
+        "Japan 1.": 5, "Korea 1.": 5, "Australia 1.": 5,
+        "England 3.": 5,
+        # everything else → Band 6
     }
 
     def gbe_band_for_league(league_name: str) -> int:
@@ -5430,9 +5401,7 @@ else:
     # ========= Helper: International appearances (Table 1) =========
     def intl_points_and_auto(fifa_rank: int, pct: int) -> tuple[int, bool]:
         """
-        Returns (points, auto_pass) according to Table 1.
-        - fifa_rank: aggregated FIFA World Ranking (1–200)
-        - pct: % of available senior competitive internationals (0–100, rounded to whole no.)
+        Returns (points, auto_pass) per Table 1.
         """
         if fifa_rank <= 10:
             band = "1-10"
@@ -5450,7 +5419,6 @@ else:
         p = int(pct)
 
         if band in ("1-10", "11-20", "21-30", "31-50"):
-            # Columns 1–4: all have auto-pass bands 30%+ for top nations
             if p >= 90:
                 auto = True
             elif p >= 80:
@@ -5467,14 +5435,14 @@ else:
                     auto = True
                 elif band == "21-30":
                     pts = 10
-                else:  # 31–50
+                elif band == "31-50":
                     pts = 8
             elif p >= 40:
                 if band in ("1-10", "11-20"):
                     auto = True
                 elif band == "21-30":
                     pts = 9
-                else:
+                elif band == "31-50":
                     pts = 7
             elif p >= 30:
                 if band == "1-10":
@@ -5483,24 +5451,24 @@ else:
                     pts = 10
                 elif band == "21-30":
                     pts = 8
-                else:
+                elif band == "31-50":
                     pts = 6
             elif p >= 20:
                 if band == "1-10":
                     pts = 10
                 elif band == "11-20":
                     pts = 9
-                else:  # 21–30
+                elif band == "21-30":
                     pts = 7
             elif p >= 10:
                 if band == "1-10":
                     pts = 9
-                else:  # 11–20
+                elif band == "11-20":
                     pts = 8
             elif p >= 1:
                 if band == "1-10":
                     pts = 8
-                else:  # 11–20
+                elif band == "11-20":
                     pts = 7
         else:
             # 51+ column
@@ -5515,7 +5483,6 @@ else:
     def table2_minutes_points(band: int, pct: int, youth_debut: bool) -> int:
         band = int(band)
         p = int(pct)
-        # rows: 90–100, 80–89, 70–79, 60–69, 50–59, 40–49, 30–39
         row_90 = [12, 10, 8, 6, 4, 2]
         row_80 = [11,  9, 7, 5, 3, 1]
         row_70 = [10,  8, 6, 4, 2, 0]
@@ -5528,20 +5495,13 @@ else:
         idx = max(0, min(5, band - 1))
 
         base = 0
-        if p >= 90:
-            base = row_90[idx]
-        elif p >= 80:
-            base = row_80[idx]
-        elif p >= 70:
-            base = row_70[idx]
-        elif p >= 60:
-            base = row_60[idx]
-        elif p >= 50:
-            base = row_50[idx]
-        elif p >= 40:
-            base = row_40[idx]
-        elif p >= 30:
-            base = row_30[idx]
+        if p >= 90:   base = row_90[idx]
+        elif p >= 80: base = row_80[idx]
+        elif p >= 70: base = row_70[idx]
+        elif p >= 60: base = row_60[idx]
+        elif p >= 50: base = row_50[idx]
+        elif p >= 40: base = row_40[idx]
+        elif p >= 30: base = row_30[idx]
 
         debut_pts = debut[idx] if youth_debut else 0
         return int(max(base, debut_pts))
@@ -5550,7 +5510,6 @@ else:
     def table3_continental_points(comp_band: int, pct: int) -> int:
         comp_band = int(comp_band)
         p = int(pct)
-        # rows: 90–100, 80–89, 70–79, 60–69, 50–59, 40–49, 30–39
         band1 = [10, 9, 8, 7, 6, 5, 4]
         band2 = [ 5, 4, 3, 2, 1, 0, 0]
         band3 = [ 2, 1, 0, 0, 0, 0, 0]
@@ -5562,22 +5521,14 @@ else:
         else:
             row = band3
 
-        if p >= 90:
-            val = row[0]
-        elif p >= 80:
-            val = row[1]
-        elif p >= 70:
-            val = row[2]
-        elif p >= 60:
-            val = row[3]
-        elif p >= 50:
-            val = row[4]
-        elif p >= 40:
-            val = row[5]
-        elif p >= 30:
-            val = row[6]
-        else:
-            val = 0
+        if p >= 90:   val = row[0]
+        elif p >= 80: val = row[1]
+        elif p >= 70: val = row[2]
+        elif p >= 60: val = row[3]
+        elif p >= 50: val = row[4]
+        elif p >= 40: val = row[5]
+        elif p >= 30: val = row[6]
+        else:         val = 0
         return int(val)
 
     # ========= Helper: Final league position (Table 4) =========
@@ -5589,24 +5540,23 @@ else:
         "Band2 qualifiers":            [2, 1, 0, 0, 0, 0],
         "Mid-table":                   [1, 0, 0, 0, 0, 0],
         "Relegation":                  [0, 0, 0, 0, 0, 0],
-        "Promotion":                   [0, 1, 1, 1, 1, 1],  # N/A for Band1
+        "Promotion":                   [0, 1, 1, 1, 1, 1],
     }
 
     def final_position_points(band: int, category: str) -> int:
-        band = int(band)
-        idx = max(0, min(5, band - 1))
+        idx = max(0, min(5, int(band) - 1))
         row = FINAL_POS_ROWS.get(category, [0, 0, 0, 0, 0, 0])
         return int(row[idx])
 
     # ========= Helper: Continental progression (Table 5) =========
     CONT_PROG_ROWS = {
-        "Final":       [10, 7, 2],
-        "Semi-final":  [ 9, 6, 1],
-        "Quarter-final":[8, 5, 0],
-        "Round of 16": [ 7, 4, 0],
-        "Round of 32 / KO PO": [6, 3, 0],
-        "Group / league phase": [5, 2, 0],
-        "Other":       [ 0, 0, 0],
+        "Final":                 [10, 7, 2],
+        "Semi-final":            [ 9, 6, 1],
+        "Quarter-final":         [ 8, 5, 0],
+        "Round of 16":           [ 7, 4, 0],
+        "Round of 32 / KO PO":   [ 6, 3, 0],
+        "Group / league phase":  [ 5, 2, 0],
+        "Other":                 [ 0, 0, 0],
     }
 
     def continental_progression_points(comp_band: int, stage: str) -> int:
@@ -5622,51 +5572,26 @@ else:
         idx = max(0, min(5, int(band) - 1))
         return int(LEAGUE_BAND_POINTS[idx])
 
-    # ========= Helper text for continental comps =========
-    CONTINENTAL_BAND_LABELS = {
-        1: "Band 1 – UEFA Champions League, Copa Libertadores",
-        2: "Band 2 – UEFA Europa League, UEFA Europa Conference, Copa Sudamericana, FIFA Club World Cup",
-        3: "Band 3 – Any other continental competition",
-    }
-
     # ========= Quick reference =========
     with st.expander("📚 GBE helper – what gives points? (short version)", expanded=False):
         st.markdown(
             """
-**International (Table 1)**  
-• % of *senior competitive* internationals for national team (by FIFA ranking band)  
-• High % for top-ranked nations ⇒ **Auto Pass**.
-
-**Domestic league minutes (Table 2)**  
-• % of available minutes in league, by **league band (1–6)**  
-• Up to **12 pts**. Youth Player first-team debut can give points even at low %.
-
-**Continental minutes (Table 3)**  
-• % of minutes in continental club comps:  
-  - **Band 1:** UCL, Copa Libertadores  
-  - **Band 2:** UEL, UECL, Copa Sudamericana, FIFA Club World Cup  
-  - **Band 3:** Any other continental competition  
-• Up to **10 pts**.
-
-**Final league position (Table 4)**  
-• Title winners, continental qualifiers, mid-table, promotion / relegation  
-• Up to **6 pts**.
-
-**Continental progression (Table 5)**  
-• Stage reached in continental competition (Final → Group)  
-• Up to **10 pts**.
-
-**League quality – current club (Table 6)**  
-• Band of current club only (1–6)  
-• Up to **12 pts**.
-
-👉 **Totals:** 0–9 = Fail / ESC; 10–14 = Exceptions Panel; **15+ = Pass**.
-"""
+- **Senior international (Table 1)** – up to **Auto Pass** based on FIFA ranking band + % of senior competitive internationals.
+- **Domestic league minutes (Table 2)** – up to **12 pts** from league band (1–6) × % of league minutes.
+- **Continental minutes (Table 3)** – up to **10 pts** from:
+  - Band 1: UCL, Libertadores, AFC CL Elite
+  - Band 2: UEL, UECL, Sudamericana, Club World Cup etc.
+  - Band 3: any other continental club competition.
+- **Final league position (Table 4)** – up to **6 pts** (title, continental qualifiers, promotion, etc.).
+- **Continental progression (Table 5)** – up to **10 pts** based on stage reached.
+- **League quality – current club (Table 6)** – up to **12 pts** purely from current club’s league band.
+- **Youth internationals** – drive **ESC / Youth Player** routes only (no points in the 15-point total).
+            """
         )
 
     # ========= Pull player info =========
     pr = player_row.iloc[0]
-    player_team = str(pr.get("Team", ""))
+    player_team   = str(pr.get("Team", ""))
     player_league = str(pr.get("League", ""))
     player_minutes = float(pr.get("Minutes played", 0) or 0)
 
@@ -5677,292 +5602,297 @@ else:
     if is_home_nation:
         st.info(
             f"ℹ️ **{player_name}** was born in **{birth_country}**. "
-            "Home-nation / Irish players do not need a GBE in reality, "
-            "but this snapshot is still useful context for squad building."
+            "Under FA rules, UK / Irish nationals don’t require a GBE – use this as reference only."
         )
 
-    # ========= 1) Auto domestic minutes % from dataset =========
+    # ========= Auto domestic minutes % from dataset =========
     same_league = df_f[df_f["League"] == player_league]
     max_minutes_league = float(same_league["Minutes played"].max() or 0)
 
     if max_minutes_league > 0:
         raw_pct = 100.0 * player_minutes / max_minutes_league
-        domestic_minutes_pct = int(math.floor(raw_pct + 0.5))  # nearest whole %
+        domestic_minutes_pct = int(math.floor(raw_pct + 0.5))  # .5 up
         domestic_minutes_pct = max(0, min(100, domestic_minutes_pct))
     else:
         domestic_minutes_pct = 0
 
     player_band = gbe_band_for_league(player_league)
 
-    # ===== Top row summary (clean layout) =====
-    top_l, top_r = st.columns([1.4, 1.0])
+    st.markdown(
+        f"**League / Band:** {player_league} → **Band {player_band}**  "
+        f"&nbsp;&nbsp;|&nbsp;&nbsp; **Minutes:** {int(player_minutes)} "
+        f"({domestic_minutes_pct}% of max minutes in this league sample)"
+    )
 
-    with top_l:
-        st.markdown(
-            f"""
-**Current club snapshot**
+    # ========= Inputs =========
+    st.markdown("### Inputs")
 
-- **League:** {player_league}  
-- **GBE band:** **{player_band}**  
-- **Minutes in dataset:** {int(player_minutes):,}  
-- **Domestic minutes (auto):** {domestic_minutes_pct}% of max in this league sample
-"""
-        )
+    col_intl, col_dom, col_other = st.columns([1.2, 1.0, 1.2])
 
-    with top_r:
-        st.markdown("**Band of player's current club (Table 6)**")
-        st.markdown(
-            f"""
-- Band {player_band} ⇒ **{league_quality_points(player_band)} pts**  
-- Band scores: 1 → 12, 2 → 10, 3 → 8, 4 → 6, 5 → 4, 6 → 2
-"""
-        )
+    # ---- Senior international (Table 1) ----
+    with col_intl:
+        st.markdown("**Senior International (Table 1)**")
+        use_intl = st.checkbox("Include senior international appearances", value=False, key="gbe_use_intl")
 
-    st.markdown("---")
-    st.markdown("### Inputs & points")
-
-    # ========= 2) Inputs for the rest of the criteria =========
-    tab_intl, tab_other = st.tabs(["International & Domestic", "Continental / League extras"])
-
-    # ---- International + domestic (left tab) ----
-    with tab_intl:
-        col_intl, col_dom = st.columns([1.2, 1.0])
-
-        # Senior international (Table 1)
-        with col_intl:
-            st.markdown("#### Senior International (Table 1)")
-            use_intl = st.checkbox(
-                "Include senior international appearances",
-                value=False,
-                key="gbe_use_intl",
+        intl_points = 0
+        intl_auto = False
+        if use_intl:
+            fifa_rank = st.number_input(
+                "Aggregated FIFA ranking of national team (1–200)",
+                min_value=1, max_value=200, value=50, step=1, key="gbe_fifa_rank",
             )
-            intl_points = 0
-            intl_auto = False
-            fifa_rank_used = None
-            intl_pct_used = None
-
-            if use_intl:
-                fifa_rank = st.number_input(
-                    "Aggregated FIFA ranking of national team (1–200)",
-                    min_value=1, max_value=200, value=50, step=1,
-                    key="gbe_fifa_rank",
-                )
-                intl_pct = st.slider(
-                    "Player's appearances (% of available senior competitive internationals)",
-                    0, 100, 0, step=5, key="gbe_intl_pct",
-                )
-                intl_points, intl_auto = intl_points_and_auto(fifa_rank, intl_pct)
-                fifa_rank_used = int(fifa_rank)
-                intl_pct_used = int(intl_pct)
-
-            st.caption("Auto-pass only applies for high % in top-ranked nations (Tables 1A–1D).")
-            st.write(f"**International points:** {intl_points}  |  Auto-pass: `{intl_auto}`")
-
-        # Domestic minutes (Table 2)
-        with col_dom:
-            st.markdown("#### Domestic League Minutes (Table 2)")
-            is_youth_debut = st.checkbox(
-                "Youth Player – first senior league debut in reference period",
-                value=False,
-                key="gbe_youth_debut",
+            intl_pct = st.slider(
+                "% of available senior competitive internationals played",
+                0, 100, 0, step=5, key="gbe_intl_pct",
             )
-            domestic_points = table2_minutes_points(player_band, domestic_minutes_pct, is_youth_debut)
+            intl_points, intl_auto = intl_points_and_auto(int(fifa_rank), int(intl_pct))
 
-            st.write(f"**Minutes % (auto from dataset):** {domestic_minutes_pct}%")
-            st.write(f"**Domestic minutes points:** {domestic_points}")
+        st.caption(f"International points (Table 1): **{intl_points}**  ·  Auto pass: **{intl_auto}**")
 
-            st.caption(
-                "Minutes banded in 10% blocks (90–100, 80–89, …, 30–39). "
-                "Youth Player debut column can override low-minute rows."
-            )
-
-        st.markdown("##### Youth competitive internationals (info only)")
-        st.caption("Used for ESC / Youth Player routes – **no points** in the standard 15-point total.")
-        youth_int_caps = st.number_input(
-            "Number of youth competitive international matches in reference period",
-            min_value=0, max_value=100, value=0, step=1,
-            key="gbe_youth_caps",
+    # ---- Domestic minutes (Table 2) ----
+    with col_dom:
+        st.markdown("**Domestic League Minutes (Table 2)**")
+        is_youth_debut = st.checkbox(
+            "Youth Player – first senior league debut in reference period",
+            value=False, key="gbe_youth_debut",
         )
+        domestic_points = table2_minutes_points(player_band, domestic_minutes_pct, is_youth_debut)
+        st.caption(f"Domestic minutes % (auto): **{domestic_minutes_pct}%**")
+        st.caption(f"Domestic minutes points (Table 2): **{domestic_points}**")
 
-    # ---- Continental + league extras (right tab) ----
-    with tab_other:
-        col_cont, col_league = st.columns([1.2, 1.2])
+    # ---- Other criteria ----
+    with col_other:
+        st.markdown("**Other criteria (Tables 3–6)**")
 
         # Continental minutes (Table 3)
-        with col_cont:
-            st.markdown("#### Continental Minutes (Table 3)")
-            use_cont = st.checkbox(
-                "Add continental minutes",
-                value=False,
-                key="gbe_use_cont",
+        use_cont = st.checkbox("Add continental minutes (Table 3)", value=False, key="gbe_use_cont")
+        cont_points = 0
+        if use_cont:
+            st.caption("Band 1: UCL/Libertadores, Band 2: UEL/UECL/Sudamericana/CWC, Band 3: other continental.")
+            cont_band = st.selectbox(
+                "Continental competition band", options=[1, 2, 3],
+                format_func=lambda x: f"Band {x}", key="gbe_cont_band",
             )
-            cont_points = 0
-            cont_band_label = ""
-
-            if use_cont:
-                cont_band = st.selectbox(
-                    "Continental competition band",
-                    options=[1, 2, 3],
-                    format_func=lambda x: CONTINENTAL_BAND_LABELS[x],
-                    key="gbe_cont_band",
-                )
-                cont_pct = st.slider(
-                    "Player's continental minutes (% of available)",
-                    0, 100, 0, step=5, key="gbe_cont_pct",
-                )
-                cont_points = table3_continental_points(cont_band, cont_pct)
-                cont_band_label = CONTINENTAL_BAND_LABELS[cont_band]
-
-            if use_cont:
-                st.write(f"**Continental minutes points:** {cont_points}")
-                st.caption(cont_band_label)
-            else:
-                st.caption("Tick the box to add UCL / UEL / other continental minutes.")
-
-        with col_league:
-            st.markdown("#### Final Position & Continental Progression")
-
-            # Final league position (Table 4)
-            use_finish = st.checkbox("Add final league position (Table 4)", value=False, key="gbe_use_finish")
-            finish_points = 0
-            if use_finish:
-                finish_cat = st.selectbox(
-                    "Final league position category",
-                    options=[
-                        "Title winner",
-                        "Band1 group / conf winner",
-                        "Band1 qualifiers",
-                        "Band2 group",
-                        "Band2 qualifiers",
-                        "Mid-table",
-                        "Relegation",
-                        "Promotion",
-                    ],
-                    key="gbe_finish_cat",
-                )
-                finish_points = final_position_points(player_band, finish_cat)
-                st.write(f"**League position points:** {finish_points}")
-                st.caption("Requires at least one league or domestic-cup appearance for that club.")
-
-            # Continental progression (Table 5)
-            use_cprog = st.checkbox("Add continental progression (Table 5)", value=False, key="gbe_use_cprog")
-            cprog_points = 0
-            if use_cprog:
-                cprog_band = st.selectbox(
-                    "Continental competition band (for progression)",
-                    options=[1, 2, 3],
-                    format_func=lambda x: CONTINENTAL_BAND_LABELS[x],
-                    key="gbe_cprog_band",
-                )
-                cprog_stage = st.selectbox(
-                    "Stage reached",
-                    options=[
-                        "Final",
-                        "Semi-final",
-                        "Quarter-final",
-                        "Round of 16",
-                        "Round of 32 / KO PO",
-                        "Group / league phase",
-                        "Other",
-                    ],
-                    key="gbe_cprog_stage",
-                )
-                cprog_points = continental_progression_points(cprog_band, cprog_stage)
-                st.write(f"**Continental progression points:** {cprog_points}")
-                st.caption("Use the highest stage reached by the player's last club in that competition.")
-
-            # League quality of current club (Table 6)
-            st.markdown("#### League Quality – Current Club (Table 6)")
-            use_lq = st.checkbox(
-                "Include league band points for current club",
-                value=True,
-                key="gbe_use_lq",
+            cont_pct = st.slider(
+                "% of available continental minutes played",
+                0, 100, 0, step=5, key="gbe_cont_pct",
             )
-            lq_points = league_quality_points(player_band) if use_lq else 0
-            st.write(f"**League band points:** {lq_points} (Band {player_band})")
+            cont_points = table3_continental_points(int(cont_band), int(cont_pct))
+
+        # Final league position (Table 4)
+        use_finish = st.checkbox("Add final league position (Table 4)", value=False, key="gbe_use_finish")
+        finish_points = 0
+        if use_finish:
+            finish_cat = st.selectbox(
+                "Final league position category",
+                options=[
+                    "Title winner",
+                    "Band1 group / conf winner",
+                    "Band1 qualifiers",
+                    "Band2 group",
+                    "Band2 qualifiers",
+                    "Mid-table",
+                    "Relegation",
+                    "Promotion",
+                ],
+                key="gbe_finish_cat",
+            )
+            finish_points = final_position_points(player_band, finish_cat)
+
+        # Continental progression (Table 5)
+        use_cprog = st.checkbox("Add continental progression (Table 5)", value=False, key="gbe_use_cprog")
+        cprog_points = 0
+        if use_cprog:
+            cprog_band = st.selectbox(
+                "Continental competition band (progression)",
+                options=[1, 2, 3],
+                format_func=lambda x: f"Band {x}", key="gbe_cprog_band",
+            )
+            cprog_stage = st.selectbox(
+                "Stage reached",
+                options=[
+                    "Final",
+                    "Semi-final",
+                    "Quarter-final",
+                    "Round of 16",
+                    "Round of 32 / KO PO",
+                    "Group / league phase",
+                    "Other",
+                ],
+                key="gbe_cprog_stage",
+            )
+            cprog_points = continental_progression_points(int(cprog_band), cprog_stage)
+
+        # League quality (Table 6)
+        use_lq = st.checkbox("Add league band points – current club (Table 6)", value=True, key="gbe_use_lq")
+        lq_points = league_quality_points(player_band) if use_lq else 0
+
+    # ==== Youth internationals – info only ====
+    st.markdown("**Youth competitive internationals (info only)**")
+    st.caption("Used for ESC / Youth Player routes – no points in the standard 15-point total.")
+    youth_int_caps = st.number_input(
+        "Number of youth competitive international matches in reference period",
+        min_value=0, max_value=100, value=0, step=1, key="gbe_youth_caps",
+    )
+    youth_int_note = st.text_input(
+        "Youth international caption (optional, e.g. 'Slovakia U21 International')",
+        value="", key="gbe_youth_note",
+    )
 
     # ========= Total & classification =========
     total_points = int(
-        intl_points
-        + domestic_points
-        + cont_points
-        + finish_points
-        + cprog_points
-        + lq_points
+        intl_points + domestic_points + cont_points
+        + finish_points + cprog_points + lq_points
     )
 
     if intl_auto and use_intl:
-        status = "Auto Pass – senior international"
-        status_color = "#16a34a"  # green
+        status = "Auto Pass (Senior International)"
+        status_color = "#16a34a"
     else:
         if total_points >= 15:
             status = "Pass (15+ points)"
-            status_color = "#16a34a"  # green
+            status_color = "#16a34a"
         elif total_points >= 10:
-            status = "Exceptions Panel range (10–14 points)"
-            status_color = "#ea580c"  # orange
+            status = "Exceptions Panel (10–14 points)"
+            status_color = "#ea580c"
         else:
             status = "Fail / ESC territory (0–9 points)"
-            status_color = "#b91c1c"  # red
+            status_color = "#b91c1c"
 
-    bg_color = "#0f172a"  # dark card
+    # ========= Card styling (mobile-friendly) =========
+    gbe_css = """
+    <style>
+    .gbe-card{
+        border-radius: 16px;
+        padding: 14px 16px 12px 16px;
+        margin-top: 12px;
+        background: #0f172a;
+        border: 1px solid rgba(148, 163, 184, 0.55);
+        color: #e5e7eb;
+        font-size: 0.93rem;
+    }
+    .gbe-header{
+        display:flex;
+        justify-content:space-between;
+        align-items:flex-start;
+        gap:4px;
+        flex-wrap:wrap;
+        margin-bottom:6px;
+    }
+    .gbe-title{
+        font-weight:700;
+        font-size:1.0rem;
+    }
+    .gbe-league{
+        font-size:0.82rem;
+        opacity:0.8;
+        text-align:right;
+    }
+    .gbe-main-row{
+        display:flex;
+        align-items:center;
+        justify-content:flex-start;
+        gap:12px;
+        margin:6px 0 8px 0;
+        flex-wrap:wrap;
+    }
+    .gbe-points-num{
+        font-size:2.0rem;
+        font-weight:800;
+        line-height:1;
+    }
+    .gbe-points-label{
+        font-size:0.78rem;
+        opacity:0.85;
+    }
+    .gbe-status-pill{
+        padding:6px 12px;
+        border-radius:999px;
+        font-weight:700;
+        font-size:0.86rem;
+        color:#fff;
+        white-space:nowrap;
+    }
+    .gbe-scale{
+        font-size:0.82rem;
+        opacity:0.85;
+        margin-bottom:6px;
+    }
+    .gbe-divider{
+        border-top:1px solid rgba(148,163,184,0.4);
+        margin:6px 0 8px 0;
+    }
+    .gbe-breakdown-title{
+        font-weight:600;
+        font-size:0.86rem;
+        margin-bottom:2px;
+    }
+    .gbe-breakdown-body{
+        font-size:0.84rem;
+        opacity:0.9;
+        line-height:1.4;
+    }
+    .gbe-footer-note{
+        font-size:0.8rem;
+        opacity:0.9;
+        margin-top:6px;
+        font-style:italic;
+    }
+    </style>
+    """
+    st.markdown(gbe_css, unsafe_allow_html=True)
 
-    st.markdown(
-        f"""
-<div style="
-    border-radius: 0.9rem;
-    padding: 0.9rem 1.1rem;
-    margin-top: 0.8rem;
-    background: {bg_color};
-    border: 1px solid rgba(148, 163, 184, 0.5);
-    color: #e5e7eb;
-    font-size: 0.95rem;
-">
-  <div style="display:flex; justify-content:space-between; align-items:baseline;">
-    <div style="font-weight: 700; font-size: 1.05rem;">
-      GBE Snapshot – {player_name} ({player_team})
-    </div>
-    <div style="font-size: 0.9rem; opacity: 0.8;">
-      League: {player_league} · Band {player_band}
-    </div>
-  </div>
-
-  <div style="display:flex; align-items:center; margin-top: 0.5rem; gap: 1.25rem;">
-    <div style="font-size: 2.1rem; font-weight: 800; line-height: 1;">
-      {total_points}
-    </div>
-    <div style="
-        padding: 0.35rem 0.7rem;
-        border-radius: 999px;
-        background: {status_color};
-        color: white;
-        font-weight: 700;
-        font-size: 0.9rem;
-    ">
-      {status}
-    </div>
-  </div>
-
-  <div style="margin-top: 0.4rem; font-size: 0.9rem; opacity: 0.9;">
-    Bands: 0–9 = <b>Fail / ESC</b>, 10–14 = <b>Exceptions Panel</b>, 15+ = <b>Pass</b>.
-  </div>
-
-  <hr style="border: none; border-top: 1px solid rgba(148, 163, 184, 0.4); margin: 0.6rem 0;" />
-
-  <div style="font-size: 0.9rem;">
-    <b>Breakdown</b> –
-    Domestic minutes: {domestic_points} pts;
-    International: {intl_points} pts;
-    Continental minutes: {cont_points} pts;
-    League position: {finish_points} pts;
-    Continental progression: {cprog_points} pts;
-    League band: {lq_points} pts.
-  </div>
-</div>
-""",
-        unsafe_allow_html=True,
+    breakdown_text = (
+        f"Domestic minutes: {domestic_points} pts; "
+        f"International: {intl_points} pts; "
+        f"Continental minutes: {cont_points} pts; "
+        f"League position: {finish_points} pts; "
+        f"Continental progression: {cprog_points} pts; "
+        f"League band: {lq_points} pts."
     )
 
+    youth_caption = ""
+    if youth_int_caps > 0 or youth_int_note.strip():
+        label = youth_int_note.strip() or f"Youth competitive internationals: {youth_int_caps} match(es)"
+        youth_caption = f"<div class='gbe-footer-note'>{label}</div>"
+
+    card_html = f"""
+    <div class="gbe-card">
+      <div class="gbe-header">
+        <div class="gbe-title">
+          GBE Snapshot – {player_name} ({player_team})
+        </div>
+        <div class="gbe-league">
+          League: {player_league} · Band {player_band}
+        </div>
+      </div>
+
+      <div class="gbe-main-row">
+        <div>
+          <div class="gbe-points-num">{total_points}</div>
+          <div class="gbe-points-label">total points</div>
+        </div>
+        <div class="gbe-status-pill" style="background:{status_color};">
+          {status}
+        </div>
+      </div>
+
+      <div class="gbe-scale">
+        Points: 0–9 = <strong>Fail / ESC</strong>, 10–14 = <strong>Exceptions Panel</strong>, 15+ = <strong>Pass</strong>.
+      </div>
+
+      <div class="gbe-divider"></div>
+
+      <div class="gbe-breakdown-title">Breakdown</div>
+      <div class="gbe-breakdown-body">
+        {breakdown_text}
+      </div>
+      {youth_caption}
+    </div>
+    """
+    st.markdown(card_html, unsafe_allow_html=True)
+
+    # Raw-value debug
     with st.expander("Point breakdown (raw values)", expanded=False):
         st.write(
             {
