@@ -4536,7 +4536,7 @@ else:
 # ---------------------------- END Club Fit ----------------------------
 
 # ----------------- GBE CALCULATOR (FA 2025/26) -----------------
-# Relies on df_f, player_name, player_row, extract_country already defined above
+# Relies on df_f, player_name, player_row, extract_country, _flag_html already defined above
 
 st.subheader("🧮 GBE Calculator (FA 2025/26 snapshot)")
 
@@ -4837,6 +4837,12 @@ else:
     league_country_norm = league_country.strip().lower()
     is_home_nation_league = league_country_norm in home_nation_names
 
+    # Flag HTML for league country (small flag next to team name)
+    try:
+        gbe_flag_html = _flag_html(league_country)
+    except Exception:
+        gbe_flag_html = ""
+
     # ========= 1) Auto domestic minutes % from dataset =========
     same_league = df_f[df_f["League"] == player_league]
     max_minutes_league = float(same_league["Minutes played"].max() or 0)
@@ -5092,12 +5098,13 @@ else:
         <span style="opacity:0.85; font-size:1.05rem;">
           ({player_team})
         </span>
+        {gbe_flag_html}
       </div>
     </div>
     <div style="
         font-size:0.82rem;
         color:#9ca3af;
-        text-align:right;
+        text-align:left;
         line-height:1.25;
     ">
       <div>League: {player_league}</div>
@@ -5174,6 +5181,7 @@ Auto-pass reason: {auto_reason if auto_reason else 'None'}
         mime="text/plain",
         key="gbe_download_btn",
     )
+
 
 
 
