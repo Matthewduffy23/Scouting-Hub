@@ -5052,7 +5052,7 @@ else:
             f"</div>"
         )
 
-     # ========= Card layout (tweaked for mobile) =========
+    # ========= Card layout (tweaked for mobile) =========
     st.markdown(
         f"""
 <div style="
@@ -5076,7 +5076,15 @@ else:
         </span>
       </div>
     </div>
-    <div style="font-size:0.82rem; color:#9ca3af; white-space:nowrap; text-align:right;">
+    <!-- allow wrapping + constrain width so it stays inside the card -->
+    <div style="
+        font-size:0.82rem;
+        color:#9ca3af;
+        text-align:right;
+        max-width:40%;
+        line-height:1.2;
+        word-wrap:break-word;
+    ">
       League: {player_league} · Band {player_band}
     </div>
   </div>
@@ -5150,6 +5158,7 @@ Auto-pass reason: {auto_reason if auto_reason else 'None'}
         mime="text/plain",
         key="gbe_download_btn",
     )
+
 
 
 
