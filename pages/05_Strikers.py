@@ -4816,6 +4816,7 @@ else:
     player_league = str(pr.get("League", ""))
     player_minutes = float(pr.get("Minutes played", 0) or 0)
 
+    # Birth country / home-nation detection
     birth_country = str(pr.get("Birth country", "") or "").strip()
     home_nation_names = {
         "england",
@@ -4847,13 +4848,31 @@ else:
     else:
         domestic_minutes_pct = 0
 
-    player_band = gbe_band_for_league(player_league)
+    # Auto band from league
+    auto_band = gbe_band_for_league(player_league)
 
     st.markdown(
-        f"**League / Band:** {player_league}  →  **Band {player_band}**  "
+        f"**League / Band:** {player_league}  →  **Band {auto_band}**  "
         f"&nbsp;&nbsp;|&nbsp;&nbsp; **Minutes:** {int(player_minutes)} "
         f"({domestic_minutes_pct}% of max minutes in this league sample)"
     )
+
+    # ---- League band override (e.g. parent club band) ----
+    override_band_on = st.checkbox(
+        "Override league band (e.g. use parent club band)",
+        value=False,
+        key="gbe_override_band",
+    )
+    band_for_calc = auto_band
+    if override_band_on:
+        band_for_calc = int(
+            st.selectbox(
+                "Override band (1–6)",
+                options=[1, 2, 3, 4, 5, 6],
+                index=max(0, min(5, auto_band - 1)),
+                key="gbe_override_band_value",
+            )
+        )
 
     # ========= 2) Inputs =========
     st.markdown("### Inputs")
@@ -4893,7 +4912,7 @@ else:
             value=False,
             key="gbe_youth_debut",
         )
-        domestic_points = table2_minutes_points(player_band, domestic_minutes_pct, is_youth_debut)
+        domestic_points = table2_minutes_points(band_for_calc, domestic_minutes_pct, is_youth_debut)
         st.write(f"Domestic minutes % (auto): **{domestic_minutes_pct}%**")
         st.write(f"Domestic minutes points (Table 2): **{domestic_points}**")
 
@@ -4933,7 +4952,7 @@ else:
                 ],
                 key="gbe_finish_cat",
             )
-            finish_points = final_position_points(player_band, finish_cat)
+            finish_points = final_position_points(band_for_calc, finish_cat)
 
         use_cprog = st.checkbox("Add continental progression (Table 5)", value=False, key="gbe_use_cprog")
         cprog_points = 0
@@ -4960,7 +4979,7 @@ else:
             cprog_points = continental_progression_points(cprog_band, cprog_stage)
 
         use_lq = st.checkbox("Add league band points – current club (Table 6)", value=True, key="gbe_use_lq")
-        lq_points = league_quality_points(player_band) if use_lq else 0
+        lq_points = league_quality_points(band_for_calc) if use_lq else 0
 
     # ==== Youth internationals – info only ====
     st.markdown("**Youth competitive internationals (info only)**")
@@ -5032,7 +5051,6 @@ else:
         f"Continental progression: {cprog_points} pts; "
         f"League band: {lq_points} pts."
     )
-    # 🔹 UPDATED: removed 'Points:' prefix
     points_band_str = "0–9 = Fail / ESC, 10–14 = Exceptions Panel, 15+ = Pass."
 
     auto_reason_html = ""
@@ -5044,11 +5062,11 @@ else:
         )
 
     youth_html = ""
-    if youth_caption.strip():
+    cap_text = youth_caption.strip()
+    if cap_text:
         youth_html = (
             f"<div style='margin-top:0.3rem; font-size:0.8rem; color:#cbd5f5;'>"
-            f"Youth international: {youth_caption.strip()} "
-            f"({youth_int_caps} competitive youth caps in period)"
+            f"{cap_text}"
             f"</div>"
         )
 
@@ -5076,16 +5094,14 @@ else:
         </span>
       </div>
     </div>
-    <!-- allow wrapping + constrain width so it stays inside the card -->
     <div style="
         font-size:0.82rem;
         color:#9ca3af;
         text-align:right;
-        max-width:40%;
-        line-height:1.2;
-        word-wrap:break-word;
+        line-height:1.25;
     ">
-      League: {player_league} · Band {player_band}
+      <div>League: {player_league}</div>
+      <div>Band {band_for_calc}</div>
     </div>
   </div>
 
@@ -5129,7 +5145,7 @@ else:
     # ========= Download snapshot =========
     snapshot_text = f"""GBE / Visa snapshot – {player_name} ({player_team})
 
-League: {player_league} (Band {player_band})
+League: {player_league} (Band {band_for_calc})
 Minutes: {int(player_minutes)} ({domestic_minutes_pct}% of max minutes in league sample)
 
 Estimated points (displayed): {display_points}
@@ -5158,6 +5174,7 @@ Auto-pass reason: {auto_reason if auto_reason else 'None'}
         mime="text/plain",
         key="gbe_download_btn",
     )
+
 
 
 
