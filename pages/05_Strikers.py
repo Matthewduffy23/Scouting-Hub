@@ -5017,10 +5017,10 @@ else:
             status = "Pass (15+ points)"
             status_color = "#16a34a"
         elif display_points >= 10:
-            status = "Exceptions Panel range (10–14 points)"
+            status = "Exceptions Panel (10–14 points)"
             status_color = "#ea580c"
         else:
-            status = "Fail / ESC territory (0–9 points)"
+            status = "Fail / ESC slot (0–9 points)"
             status_color = "#b91c1c"
 
     bg_color = "#0b1220"
@@ -5052,9 +5052,9 @@ else:
             f"</div>"
         )
 
-    # ========= Card layout (tweaked for mobile) =========
-    st.markdown(
-        f"""
+  # ========= Card layout (tweaked for mobile) =========
+st.markdown(
+    f"""
 <div style="
     border-radius: 0.9rem;
     padding: 1.0rem 1.25rem 0.95rem 1.25rem;
@@ -5065,30 +5065,40 @@ else:
     font-size: 0.94rem;
 ">
   <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:0.75rem; margin-bottom:0.45rem;">
-    <!-- 🔹 Header font size bumped -->
+    <!-- 🔹 Header -->
     <div style="font-size:1.05rem; color:#cbd5f5;">
       <div style="font-weight:600;">GBE / Visa points</div>
+
+      <!-- 🔹 Player + Team kept on ONE line -->
       <div>
-        <span style="font-weight:800; color:#f9fafb; font-size:1.05rem;">{player_name}</span>
-        <span style="opacity:0.85; font-size:1.05rem;">({player_team})</span>
+        <span style="
+          font-weight:800;
+          color:#f9fafb;
+          font-size:1.05rem;
+          white-space:nowrap;
+        ">
+          {player_name} ({player_team})
+        </span>
       </div>
     </div>
+
+    <!-- 🔹 League info -->
     <div style="font-size:0.82rem; color:#9ca3af; white-space:nowrap; text-align:right;">
       League: {player_league} · Band {player_band}
     </div>
   </div>
 
-  <!-- 🔹 align-items changed to center so chip sits midway between number and label -->
+  <!-- 🔹 Points + Status -->
   <div style="display:flex; align-items:center; gap:1.0rem; margin:0.2rem 0 0.6rem 0;">
     <div>
       <div style="font-size:2.35rem; font-weight:800; line-height:1; letter-spacing:0.02em;">
         {display_points}
       </div>
-      <!-- 🔹 white-space:nowrap so 'Est. points' stays on one line -->
       <div style="font-size:0.8rem; color:#9ca3af; margin-top:0.18rem; white-space:nowrap;">
         Est. points
       </div>
     </div>
+
     <div style="
         padding:0.45rem 0.95rem;
         border-radius:999px;
@@ -5102,52 +5112,23 @@ else:
     </div>
   </div>
 
+  <!-- 🔹 Band explanation -->
   <div style="font-size:0.82rem; margin-bottom:0.45rem; color:#cbd5f5;">
     {points_band_str}
   </div>
 
+  <!-- 🔹 Breakdown -->
   <div style="margin-top:0.05rem; font-size:0.82rem; color:#cbd5f5;">
     <span style="font-weight:700; color:#f9fafb;">Breakdown</span> – {breakdown_str}
   </div>
+
   {auto_reason_html}
   {youth_html}
 </div>
 """,
-        unsafe_allow_html=True,
-    )
+    unsafe_allow_html=True,
+)
 
-    # ========= Download snapshot =========
-    snapshot_text = f"""GBE / Visa snapshot – {player_name} ({player_team})
-
-League: {player_league} (Band {player_band})
-Minutes: {int(player_minutes)} ({domestic_minutes_pct}% of max minutes in league sample)
-
-Estimated points (displayed): {display_points}
-Base total (before auto-pass adjustment): {base_total_points}
-Status: {status}
-
-Breakdown
-- Domestic league minutes (Table 2): {domestic_points} pts
-- Senior internationals (Table 1): {intl_points} pts
-- Continental minutes (Table 3): {cont_points} pts
-- Final league position (Table 4): {finish_points} pts
-- Continental progression (Table 5): {cprog_points} pts
-- League band – current club (Table 6): {lq_points} pts
-
-Youth internationals (info only)
-- Competitive youth caps in period: {youth_int_caps}
-- Caption: {youth_caption}
-
-Auto-pass reason: {auto_reason if auto_reason else 'None'}
-"""
-
-    st.download_button(
-        "⬇️ Download GBE / Visa snapshot (.txt)",
-        data=snapshot_text.encode("utf-8"),
-        file_name=f"gbe_snapshot_{player_name.replace(' ', '_')}.txt",
-        mime="text/plain",
-        key="gbe_download_btn",
-    )
 
 
 
