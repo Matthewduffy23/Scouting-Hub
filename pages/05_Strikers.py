@@ -777,11 +777,11 @@ COUNTRY_TO_CC = {
     "greece":"gr","hungary":"hu","romania":"ro","bulgaria":"bg","russia":"ru","ukraine":"ua","georgia":"ge",
     "kazakhstan":"kz","azerbaijan":"az","armenia":"am","turkey":"tr","cyprus":"cy","luxembourg":"lu","andorra":"ad",
     "monaco":"mc","san marino":"sm","malta":"mt","moldova":"md","north macedonia":"mk","macedonia":"mk","estonia":"ee",
-    "latvia":"lv","lithuania":"lt",
+    "latvia":"lv","lithuania":"lt", "czech":"cz",
 
     # Middle East & Asia (existing)
     "qatar":"qa","saudi arabia":"sa","uae":"ae","united arab emirates":"ae","israel":"il","japan":"jp","korea":"kr",
-    "south korea":"kr","korea republic":"kr","china":"cn",
+    "south korea":"kr","korea republic":"kr","china":"cn", "saudi":"sa", 
 
     # Africa — big expansion
     "algeria":"dz","angola":"ao","benin":"bj","botswana":"bw","burkina faso":"bf","burundi":"bi","cabo verde":"cv",
