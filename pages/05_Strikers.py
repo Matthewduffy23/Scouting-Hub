@@ -4536,7 +4536,7 @@ else:
 # ---------------------------- END Club Fit ----------------------------
 
 # ----------------- GBE CALCULATOR (FA 2025/26) -----------------
-# Relies on df_f, player_name, player_row, extract_country, _flag_html already defined above
+# Relies on df_f, player_name, player_row, extract_country, COUNTRY_TO_CC, TWEMOJI_SPECIAL, _cc_to_twemoji already defined above
 
 st.subheader("🧮 GBE Calculator (FA 2025/26 snapshot)")
 
@@ -4837,11 +4837,36 @@ else:
     league_country_norm = league_country.strip().lower()
     is_home_nation_league = league_country_norm in home_nation_names
 
-    # Flag HTML for league country (small flag next to team name)
+    # Make sure a couple of short-name aliases exist for flags
     try:
-        gbe_flag_html = _flag_html(league_country)
+        COUNTRY_TO_CC.update({"czech": "cz", "saudi": "sa"})
     except Exception:
-        gbe_flag_html = ""
+        pass
+
+    # Flag HTML for league country (small flag next to player / team)
+    flag_img_html = ""
+    try:
+        norm_country = _norm(league_country)  # defined with COUNTRY_TO_CC upstream
+        cc = COUNTRY_TO_CC.get(norm_country)
+        if cc:
+            if cc in TWEMOJI_SPECIAL:
+                code = TWEMOJI_SPECIAL[cc]
+                src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
+            else:
+                code = _cc_to_twemoji(cc)
+                if code:
+                    src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
+                else:
+                    src = ""
+            if src:
+                flag_img_html = (
+                    f"<span style='display:inline-flex;align-items:center;margin-left:0.35rem;'>"
+                    f"<img src=\"{src}\" alt=\"{league_country}\" "
+                    f"style=\"height:1.05em;width:auto;display:block;\"/>"
+                    f"</span>"
+                )
+    except Exception:
+        flag_img_html = ""
 
     # ========= 1) Auto domestic minutes % from dataset =========
     same_league = df_f[df_f["League"] == player_league]
@@ -4854,7 +4879,7 @@ else:
     else:
         domestic_minutes_pct = 0
 
-    # Auto band from league
+    # Auto band from league (this is the *true* band)
     auto_band = gbe_band_for_league(player_league)
 
     st.markdown(
@@ -4862,23 +4887,6 @@ else:
         f"&nbsp;&nbsp;|&nbsp;&nbsp; **Minutes:** {int(player_minutes)} "
         f"({domestic_minutes_pct}% of max minutes in this league sample)"
     )
-
-    # ---- League band override (e.g. parent club band) ----
-    override_band_on = st.checkbox(
-        "Override league band (e.g. use parent club band)",
-        value=False,
-        key="gbe_override_band",
-    )
-    band_for_calc = auto_band
-    if override_band_on:
-        band_for_calc = int(
-            st.selectbox(
-                "Override band (1–6)",
-                options=[1, 2, 3, 4, 5, 6],
-                index=max(0, min(5, auto_band - 1)),
-                key="gbe_override_band_value",
-            )
-        )
 
     # ========= 2) Inputs =========
     st.markdown("### Inputs")
@@ -4918,7 +4926,8 @@ else:
             value=False,
             key="gbe_youth_debut",
         )
-        domestic_points = table2_minutes_points(band_for_calc, domestic_minutes_pct, is_youth_debut)
+        # ✅ Minutes ALWAYS use the *real* league band
+        domestic_points = table2_minutes_points(auto_band, domestic_minutes_pct, is_youth_debut)
         st.write(f"Domestic minutes % (auto): **{domestic_minutes_pct}%**")
         st.write(f"Domestic minutes points (Table 2): **{domestic_points}**")
 
@@ -4926,6 +4935,7 @@ else:
     with col_other:
         st.markdown("**Other criteria (Tables 3–6)**")
 
+        # Continental minutes – Table 3
         use_cont = st.checkbox("Add continental minutes (Table 3)", value=False, key="gbe_use_cont")
         cont_points = 0
         if use_cont:
@@ -4941,6 +4951,7 @@ else:
             )
             cont_points = table3_continental_points(cont_band, cont_pct)
 
+        # Final league position – Table 4 (also uses REAL band)
         use_finish = st.checkbox("Add final league position (Table 4)", value=False, key="gbe_use_finish")
         finish_points = 0
         if use_finish:
@@ -4958,8 +4969,9 @@ else:
                 ],
                 key="gbe_finish_cat",
             )
-            finish_points = final_position_points(band_for_calc, finish_cat)
+            finish_points = final_position_points(auto_band, finish_cat)
 
+        # Continental progression – Table 5
         use_cprog = st.checkbox("Add continental progression (Table 5)", value=False, key="gbe_use_cprog")
         cprog_points = 0
         if use_cprog:
@@ -4984,8 +4996,29 @@ else:
             )
             cprog_points = continental_progression_points(cprog_band, cprog_stage)
 
-        use_lq = st.checkbox("Add league band points – current club (Table 6)", value=True, key="gbe_use_lq")
-        lq_points = league_quality_points(band_for_calc) if use_lq else 0
+        # League band points – Table 6 (THIS is where override applies)
+        use_lq = st.checkbox(
+            "Add league band points – current club (Table 6)",
+            value=True,
+            key="gbe_use_lq",
+        )
+        lq_band_used = auto_band
+        if use_lq:
+            override_lq = st.checkbox(
+                "Override band for Table 6 only (e.g. use parent club band)",
+                value=False,
+                key="gbe_lq_override",
+            )
+            if override_lq:
+                lq_band_used = int(
+                    st.selectbox(
+                        "Band used for Table 6",
+                        options=[1, 2, 3, 4, 5, 6],
+                        index=max(0, min(5, auto_band - 1)),
+                        key="gbe_lq_override_val",
+                    )
+                )
+        lq_points = league_quality_points(lq_band_used) if use_lq else 0
 
     # ==== Youth internationals – info only ====
     st.markdown("**Youth competitive internationals (info only)**")
@@ -5055,7 +5088,7 @@ else:
         f"Continental minutes: {cont_points} pts; "
         f"League position: {finish_points} pts; "
         f"Continental progression: {cprog_points} pts; "
-        f"League band: {lq_points} pts."
+        f"League band (Table 6, band {lq_band_used}): {lq_points} pts."
     )
     points_band_str = "0–9 = Fail / ESC, 10–14 = Exceptions Panel, 15+ = Pass."
 
@@ -5091,14 +5124,14 @@ else:
   <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:0.75rem; margin-bottom:0.45rem;">
     <div style="font-size:1.05rem; color:#cbd5f5;">
       <div style="font-weight:600;">GBE / Visa points</div>
-      <div style="white-space:nowrap;">
+      <div style="display:flex; align-items:center; gap:0.35rem;">
         <span style="font-weight:800; color:#f9fafb; font-size:1.05rem;">
           {player_name}
         </span>
         <span style="opacity:0.85; font-size:1.05rem;">
           ({player_team})
         </span>
-        {gbe_flag_html}
+        {flag_img_html}
       </div>
     </div>
     <div style="
@@ -5108,7 +5141,7 @@ else:
         line-height:1.25;
     ">
       <div>League: {player_league}</div>
-      <div>Band {band_for_calc}</div>
+      <div>Band {auto_band}</div>
     </div>
   </div>
 
@@ -5152,7 +5185,7 @@ else:
     # ========= Download snapshot =========
     snapshot_text = f"""GBE / Visa snapshot – {player_name} ({player_team})
 
-League: {player_league} (Band {band_for_calc})
+League: {player_league} (Band {auto_band}, Table 6 band used: {lq_band_used})
 Minutes: {int(player_minutes)} ({domestic_minutes_pct}% of max minutes in league sample)
 
 Estimated points (displayed): {display_points}
@@ -5165,7 +5198,7 @@ Breakdown
 - Continental minutes (Table 3): {cont_points} pts
 - Final league position (Table 4): {finish_points} pts
 - Continental progression (Table 5): {cprog_points} pts
-- League band – current club (Table 6): {lq_points} pts
+- League band – current club (Table 6, band used {lq_band_used}): {lq_points} pts
 
 Youth internationals (info only)
 - Competitive youth caps in period: {youth_int_caps}
@@ -5181,6 +5214,7 @@ Auto-pass reason: {auto_reason if auto_reason else 'None'}
         mime="text/plain",
         key="gbe_download_btn",
     )
+
 
 
 
