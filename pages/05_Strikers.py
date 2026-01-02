@@ -5080,123 +5080,114 @@ else:
         "wls": "1f3f4-e0067-e0062-e006c-e0073-e007f",
     }
 
-    LOCAL_COUNTRY_TO_CC = {
-        # Home nations + Ireland
-        "england": "eng",
-        "scotland": "sct",
-        "wales": "wls",
-        "northern ireland": "gb",
-        "ireland": "ie",
-        "republic of ireland": "ie",
+LOCAL_COUNTRY_TO_CC = {
+    # 🇬🇧 Home nations + Ireland
+    "england": "eng",          # special flag via LOCAL_TWEMOJI_SPECIAL
+    "scotland": "sct",         # special flag
+    "wales": "wls",            # special flag
+    "northern ireland": "gb",  # use Union Jack (or change to custom if you add NIR)
+    "ireland": "ie",
+    "republic of ireland": "ie",
 
-        # Common league countries (including the ones you listed)
-        "spain": "es",
-        "germany": "de",
-        "italy": "it",
-        "france": "fr",
-        "belgium": "be",
-        "brazil": "br",
-        "portugal": "pt",
-        "argentina": "ar",
-        "usa": "us",
-        "united states": "us",
-        "denmark": "dk",
-        "poland": "pl",
-        "turkey": "tr",
-        "netherlands": "nl",
-        "croatia": "hr",
-        "japan": "jp",
-        "switzerland": "ch",
-        "norway": "no",
-        "mexico": "mx",
-        "sweden": "se",
-        "colombia": "co",
-        "cyprus": "cy",
-        "czech": "cz",
-        "czech republic": "cz",
-        "ecuador": "ec",
-        "greece": "gr",
-        "saudi": "sa",
-        "saudi arabia": "sa",
-        "hungary": "hu",
-        "austria": "at",
-        "morocco": "ma",
-        "korea": "kr",
-        "south korea": "kr",
-        "paraguay": "py",
-        "romania": "ro",
-        "scotland": "sct",
-        "algeria": "dz",
-        "uruguay": "uy",
-        "chile": "cl",
-        "egypt": "eg",
-        "israel": "il",
-        "slovenia": "si",
-        "bolivia": "bo",
-        "slovakia": "sk",
-        "azerbaijan": "az",
-        "south africa": "za",
-        "uae": "ae",
-        "united arab emirates": "ae",
-        "costa rica": "cr",
-        "peru": "pe",
-        "ukraine": "ua",
-        "bulgaria": "bg",
-        "albania": "al",
-        "bosnia": "ba",
-        "kosovo": "xk",
-        "kazakhstan": "kz",
-        "nigeria": "ng",
-        "tunisia": "tn",
-        "venezuela": "ve",
-        "finland": "fi",
-        "armenia": "am",
-        "georgia": "ge",
-        "iceland": "is",
-        "north macedonia": "mk",
-        "lithuania": "lt",
-        "malta": "mt",
-        "moldova": "md",
-        "latvia": "lv",
-        "montenegro": "me",
-        "canada": "ca",
-        "estonia": "ee",
-        "russia": "ru",
-    }
+    # Top 5 etc.
+    "spain": "es",
+    "germany": "de",
+    "italy": "it",
+    "france": "fr",
+
+    # Other European leagues
+    "belgium": "be",
+    "denmark": "dk",
+    "poland": "pl",
+    "turkey": "tr",
+    "netherlands": "nl",
+    "croatia": "hr",
+    "switzerland": "ch",
+    "norway": "no",
+    "sweden": "se",
+    "cyprus": "cy",
+    "czech": "cz",
+    "czech republic": "cz",
+    "greece": "gr",
+    "hungary": "hu",
+    "austria": "at",
+    "romania": "ro",
+    "albania": "al",
+    "bosnia": "ba",
+    "bosnia and herzegovina": "ba",
+    "kosovo": "xk",
+    "slovenia": "si",
+    "slovakia": "sk",
+    "bulgaria": "bg",
+    "finland": "fi",
+    "armenia": "am",
+    "georgia": "ge",
+    "iceland": "is",
+    "north macedonia": "mk",
+    "lithuania": "lt",
+    "malta": "mt",
+    "moldova": "md",
+    "latvia": "lv",
+    "montenegro": "me",
+    "estonia": "ee",
+    "russia": "ru",
+
+    # South / Central / North America
+    "brazil": "br",
+    "argentina": "ar",
+    "mexico": "mx",
+    "colombia": "co",
+    "ecuador": "ec",
+    "paraguay": "py",
+    "uruguay": "uy",
+    "chile": "cl",
+    "bolivia": "bo",
+    "peru": "pe",
+    "venezuela": "ve",
+    "costa rica": "cr",
+    "canada": "ca",
+    "usa": "us",
+    "united states": "us",
+
+    # Africa
+    "morocco": "ma",
+    "algeria": "dz",
+    "egypt": "eg",
+    "south africa": "za",
+    "nigeria": "ng",
+    "tunisia": "tn",
+
+    # Middle East / Asia
+    "saudi": "sa",
+    "saudi arabia": "sa",
+    "uae": "ae",
+    "united arab emirates": "ae",
+    "qatar": "qa",
+    "uzbekistan": "uz",
+    "kazakhstan": "kz",
+    "israel": "il",
+    "japan": "jp",
+    "korea": "kr",
+    "south korea": "kr",
+    "china": "cn",
+
+    # Oceania
+    "australia": "au",
+}
+
 
     def _norm_local(s: str) -> str:
         if not s:
             return ""
         return unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode("ascii").strip().lower()
 
-def league_flag_html(league_name: str) -> str:
-    country = extract_country(league_name)
-    n = _norm_local(country)
-    cc = LOCAL_COUNTRY_TO_CC.get(n, "")
-    if not cc:
-        return ""
-
-    # Home nations that already use Twemoji SVG sequences
-    if cc in LOCAL_TWEMOJI_SPECIAL:
-        code = LOCAL_TWEMOJI_SPECIAL[cc]
-        src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
-        return (
-            f"<span style='display:inline-flex;align-items:center;"
-            f"margin-left:0.35rem;'><img src='{src}' "
-            f"style='height:1.05rem;vertical-align:middle;' alt='{country}'></span>"
+    def _iso_to_flag_emoji(cc: str) -> str:
+        if not cc or len(cc) != 2:
+            return ""
+        base = 0x1F1E6
+        return chr(base + (ord(cc[0].upper()) - ord("A"))) + chr(
+            base + (ord(cc[1].upper()) - ord("A"))
         )
-
-    # All normal 2-letter country codes → use a PNG flag image
-    if len(cc) == 2:
-        src = f"https://flagcdn.com/24x18/{cc.lower()}.png"
-        return (
-            f"<span style='display:inline-flex;align-items:center;"
-            f"margin-left:0.35rem;'><img src='{src}' "
-            f"style='height:1.05rem;vertical-align:middle;' alt='{country}'></span>"
-        )
-
-    return ""
-
 
     def league_flag_html(league_name: str) -> str:
         country = extract_country(league_name)
@@ -5396,6 +5387,7 @@ def league_flag_html(league_name: str) -> str:
         mime="image/png",
         key="gbe_download_image_btn",
     )
+
 
 
 
