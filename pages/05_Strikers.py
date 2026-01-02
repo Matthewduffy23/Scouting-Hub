@@ -5118,8 +5118,8 @@ else:
                 status = "Pass"
                 status_color = "#16a34a"
             elif display_points >= 10:
-                status = "Fail / ESC"
-                status_color = "#ea580c"
+                status = "Exceptions Panel"
+                status_color = "#ea580c"  # yellow/orange
             else:
                 status = "Fail"
                 status_color = "#b91c1c"
@@ -5133,7 +5133,7 @@ else:
         f"Continental progression: {cprog_points} pts; "
         f"League band: {lq_points} pts."
     )
-    points_band_str = "0–9 = Fail, 10–14 = Fail / ESC, 15+ = Pass."
+    points_band_str = "0–9 = Fail, 10–14 = Exceptions Panel, 15+ = Pass."
 
     auto_reason_html = ""
     if auto_reason:
@@ -5165,11 +5165,11 @@ else:
             else:
                 esc_reason_html = (
                     f"<div style='margin-top:0.3rem; font-size:0.8rem; color:#f97373;'>"
-                    f"<strong>ESC criteria not met:</strong>"
+                    f"<strong>ESC criteria not met</strong>"
                     f"</div>"
                 )
-        # Band 1–5 players who are Fail / ESC
-        elif status == "Fail / ESC":
+        # Band 1–5 players who are in Exceptions Panel range (10–14 pts)
+        elif 10 <= display_points < 15:
             esc_reason_html = (
                 f"<div style='margin-top:0.3rem; font-size:0.8rem; color:#fbbf24;'>"
                 f"<strong>ESC criteria met:</strong> Domestic senior (Band 1–5)"
@@ -5490,6 +5490,7 @@ else:
         mime="image/png",
         key="gbe_download_image_btn",
     )
+
 
 
 
