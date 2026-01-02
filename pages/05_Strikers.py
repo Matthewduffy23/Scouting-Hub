@@ -5096,7 +5096,7 @@ else:
     if auto_source is not None and display_points < 15:
         display_points = 15
 
-    # ========= Status label logic (with Band 6 / ESC override) =========
+    # ========= Status label logic (Band 1–5 vs Band 6; ESC) =========
     if auto_source == "home":
         status = "Automatic Pass – UK / Irish route"
         status_color = "#16a34a"
@@ -5105,23 +5105,23 @@ else:
         status_color = "#16a34a"
     else:
         if player_band == 6:
-            # Band 6: ignore normal pass/points labels, go Fail vs ESC
+            # Band 6: ESC vs straight Fail
             if esc_eligible:
-                status = "ESC slot – Eligible (Band 6 league)"
+                status = "Fail / ESC"
                 status_color = "#ea580c"
             else:
-                status = "Fail – Band 6 league (ESC only)"
+                status = "Fail"
                 status_color = "#b91c1c"
         else:
             # Normal band 1–5 logic
             if display_points >= 15:
-                status = "Pass (15+ points)"
+                status = "Pass"
                 status_color = "#16a34a"
             elif display_points >= 10:
-                status = "Exceptions Panel (10–14 points)"
+                status = "Fail / ESC"
                 status_color = "#ea580c"
             else:
-                status = "Fail / ESC slot (0–9 points)"
+                status = "Fail"
                 status_color = "#b91c1c"
 
     bg_color = "#0b1220"
@@ -5133,7 +5133,7 @@ else:
         f"Continental progression: {cprog_points} pts; "
         f"League band: {lq_points} pts."
     )
-    points_band_str = "0–9 = Fail / ESC, 10–14 = Exceptions Panel, 15+ = Pass."
+    points_band_str = "0–9 = Fail, 10–14 = Fail / ESC, 15+ = Pass."
 
     auto_reason_html = ""
     if auto_reason:
@@ -5151,14 +5151,30 @@ else:
             f"</div>"
         )
 
-    if player_band == 6 and esc_eligible and esc_reasons:
-        esc_reason_html = (
-            f"<div style='margin-top:0.3rem; font-size:0.8rem; color:#fbbf24;'>"
-            f"<strong>ESC criteria met:</strong> {', '.join(esc_reasons)}"
-            f"</div>"
-        )
-    else:
-        esc_reason_html = ""
+    # ESC label at bottom
+    esc_reason_html = ""
+    if auto_source is None:
+        # Band 6 players
+        if player_band == 6:
+            if esc_eligible and esc_reasons:
+                esc_reason_html = (
+                    f"<div style='margin-top:0.3rem; font-size:0.8rem; color:#fbbf24;'>"
+                    f"<strong>ESC criteria met:</strong> {', '.join(esc_reasons)}"
+                    f"</div>"
+                )
+            else:
+                esc_reason_html = (
+                    f"<div style='margin-top:0.3rem; font-size:0.8rem; color:#f97373;'>"
+                    f"<strong>ESC criteria not met:</strong>"
+                    f"</div>"
+                )
+        # Band 1–5 players who are Fail / ESC
+        elif status == "Fail / ESC":
+            esc_reason_html = (
+                f"<div style='margin-top:0.3rem; font-size:0.8rem; color:#fbbf24;'>"
+                f"<strong>ESC criteria met:</strong> Domestic senior (Band 1–5)"
+                f"</div>"
+            )
 
     # ========= Flag helper – Twemoji SVG for ALL flags (aligned) =========
     import unicodedata
@@ -5474,6 +5490,7 @@ else:
         mime="image/png",
         key="gbe_download_image_btn",
     )
+
 
 
 
