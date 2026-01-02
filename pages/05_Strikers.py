@@ -5119,7 +5119,7 @@ else:
                 status_color = "#16a34a"
             elif display_points >= 10:
                 status = "Exceptions Panel"
-                status_color = "#ea580c"  # yellow/orange
+                status_color = "#fbbf24"  # yellow background for Exceptions Panel
             else:
                 status = "Fail"
                 status_color = "#b91c1c"
@@ -5490,6 +5490,7 @@ else:
         mime="image/png",
         key="gbe_download_image_btn",
     )
+
 
 
 
