@@ -5071,13 +5071,14 @@ else:
             f"</div>"
         )
 
-    # ========= Tiny local flag helper for the league country (with Czech/Saudi fixed) =========
+    # ========= Tiny local flag helper for the league country =========
     import unicodedata
 
     LOCAL_TWEMOJI_SPECIAL = {
-        "eng": "1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
-        "sct": "1f3f4-e0067-e0062-e0073-e0063-e0074-e007f",
-        "wls": "1f3f4-e0067-e0062-e006c-e0073-e007f",
+        "eng": "1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",  # England
+        "sct": "1f3f4-e0067-e0062-e0073-e0063-e0074-e007f",  # Scotland
+        "wls": "1f3f4-e0067-e0062-e006c-e0073-e007f",        # Wales
+        "nir": "1f3f4-e0067-e0062-e006e-e0069-e0072-e007f",  # Northern Ireland
     }
 
     LOCAL_COUNTRY_TO_CC = {
@@ -5085,70 +5086,37 @@ else:
         "england": "eng",
         "scotland": "sct",
         "wales": "wls",
-        "northern ireland": "gb",
+        "northern ireland": "nir",
         "ireland": "ie",
         "republic of ireland": "ie",
 
-        # Common league countries (including the ones you listed)
+        # Europe
         "spain": "es",
         "germany": "de",
         "italy": "it",
         "france": "fr",
         "belgium": "be",
-        "brazil": "br",
-        "portugal": "pt",
-        "argentina": "ar",
-        "usa": "us",
-        "united states": "us",
         "denmark": "dk",
         "poland": "pl",
         "turkey": "tr",
         "netherlands": "nl",
         "croatia": "hr",
-        "japan": "jp",
         "switzerland": "ch",
         "norway": "no",
-        "mexico": "mx",
         "sweden": "se",
-        "colombia": "co",
         "cyprus": "cy",
         "czech": "cz",
         "czech republic": "cz",
-        "ecuador": "ec",
         "greece": "gr",
-        "saudi": "sa",
-        "saudi arabia": "sa",
-        "hungary": "hu",
         "austria": "at",
-        "morocco": "ma",
-        "korea": "kr",
-        "south korea": "kr",
-        "paraguay": "py",
         "romania": "ro",
-        "scotland": "sct",
-        "algeria": "dz",
-        "uruguay": "uy",
-        "chile": "cl",
-        "egypt": "eg",
-        "israel": "il",
-        "slovenia": "si",
-        "bolivia": "bo",
-        "slovakia": "sk",
-        "azerbaijan": "az",
-        "south africa": "za",
-        "uae": "ae",
-        "united arab emirates": "ae",
-        "costa rica": "cr",
-        "peru": "pe",
-        "ukraine": "ua",
-        "bulgaria": "bg",
         "albania": "al",
         "bosnia": "ba",
+        "bosnia and herzegovina": "ba",
         "kosovo": "xk",
-        "kazakhstan": "kz",
-        "nigeria": "ng",
-        "tunisia": "tn",
-        "venezuela": "ve",
+        "slovenia": "si",
+        "slovakia": "sk",
+        "bulgaria": "bg",
         "finland": "fi",
         "armenia": "am",
         "georgia": "ge",
@@ -5159,9 +5127,50 @@ else:
         "moldova": "md",
         "latvia": "lv",
         "montenegro": "me",
-        "canada": "ca",
         "estonia": "ee",
         "russia": "ru",
+
+        # Middle East & Asia
+        "saudi": "sa",
+        "saudi arabia": "sa",
+        "uae": "ae",
+        "united arab emirates": "ae",
+        "qatar": "qa",
+        "uzbekistan": "uz",
+        "kazakhstan": "kz",
+        "israel": "il",
+        "japan": "jp",
+        "korea": "kr",
+        "south korea": "kr",
+        "china": "cn",
+
+        # Africa
+        "morocco": "ma",
+        "algeria": "dz",
+        "egypt": "eg",
+        "south africa": "za",
+        "nigeria": "ng",
+        "tunisia": "tn",
+
+        # North & South America
+        "brazil": "br",
+        "argentina": "ar",
+        "mexico": "mx",
+        "colombia": "co",
+        "ecuador": "ec",
+        "paraguay": "py",
+        "uruguay": "uy",
+        "chile": "cl",
+        "bolivia": "bo",
+        "peru": "pe",
+        "venezuela": "ve",
+        "costa rica": "cr",
+        "canada": "ca",
+        "usa": "us",
+        "united states": "us",
+
+        # Oceania
+        "australia": "au",
     }
 
     def _norm_local(s: str) -> str:
@@ -5183,6 +5192,8 @@ else:
         cc = LOCAL_COUNTRY_TO_CC.get(n, "")
         if not cc:
             return ""
+
+        # Home nations & special flags → Twemoji SVGs
         if cc in LOCAL_TWEMOJI_SPECIAL:
             code = LOCAL_TWEMOJI_SPECIAL[cc]
             src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
@@ -5191,12 +5202,16 @@ else:
                 f"margin-left:0.35rem;'><img src='{src}' "
                 f"style='height:1.05rem;vertical-align:middle;' alt='{country}'></span>"
             )
+
+        # Normal ISO 2-letter flags → PNGs (avoids the 'letter only' emoji issue)
         if len(cc) == 2:
-            emoji = _iso_to_flag_emoji(cc)
+            src = f"https://flagcdn.com/24x18/{cc.lower()}.png"
             return (
-                f"<span style='margin-left:0.35rem;font-size:1.05rem;"
-                f"vertical-align:middle;'>{emoji}</span>"
+                f"<span style='display:inline-flex;align-items:center;"
+                f"margin-left:0.35rem;'><img src='{src}' "
+                f"style='height:1.05rem;vertical-align:middle;' alt='{country}'></span>"
             )
+
         return ""
 
     league_flag_snippet = league_flag_html(player_league)
@@ -5375,6 +5390,7 @@ else:
         mime="image/png",
         key="gbe_download_image_btn",
     )
+
 
 
 
