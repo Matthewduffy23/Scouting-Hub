@@ -5133,7 +5133,7 @@ else:
         f"Continental progression: {cprog_points} pts; "
         f"League band: {lq_points} pts."
     )
-    points_band_str = "0–9 = Fail, 10–14 = Exceptions Panel, 15+ = Pass."
+    points_band_str = "0–9 = Fail/ESC, 10–14 = Exceptions Panel, 15+ = Pass."
 
     auto_reason_html = ""
     if auto_reason:
@@ -5159,7 +5159,7 @@ else:
             if esc_eligible and esc_reasons:
                 esc_reason_html = (
                     f"<div style='margin-top:0.3rem; font-size:0.8rem; color:#fbbf24;'>"
-                    f"<strong>ESC criteria met:</strong> {', '.join(esc_reasons)}"
+                    f"<strong>ESC criteria met</strong> {', '.join(esc_reasons)}"
                     f"</div>"
                 )
             else:
