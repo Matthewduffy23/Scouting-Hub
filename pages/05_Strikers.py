@@ -5071,7 +5071,7 @@ else:
             f"</div>"
         )
 
-    # ========= Tiny local flag helper for the league country (all image flags) =========
+    # ========= Flag helper – Twemoji SVG for ALL flags =========
     import unicodedata
 
     LOCAL_TWEMOJI_SPECIAL = {
@@ -5178,6 +5178,13 @@ else:
             return ""
         return unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode("ascii").strip().lower()
 
+    def _iso_to_twemoji_hex(cc: str) -> str:
+        # Turn "cz" → "1f1e8-1f1ff" style hex for Twemoji flag SVGs
+        base = 0x1F1E6
+        c1 = base + (ord(cc[0].upper()) - ord("A"))
+        c2 = base + (ord(cc[1].upper()) - ord("A"))
+        return f"{c1:x}-{c2:x}"
+
     def league_flag_html(league_name: str) -> str:
         country = extract_country(league_name)
         n = _norm_local(country)
@@ -5185,26 +5192,21 @@ else:
         if not cc:
             return ""
 
-        # Home nations & special flags → Twemoji SVGs
+        # Home nations with special TAG-sequence flags
         if cc in LOCAL_TWEMOJI_SPECIAL:
             code = LOCAL_TWEMOJI_SPECIAL[cc]
-            src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
-            return (
-                f"<span style='display:inline-flex;align-items:center;"
-                f"margin-left:0.35rem;'><img src='{src}' "
-                f"style='height:1.05rem;vertical-align:middle;' alt='{country}'></span>"
-            )
+        else:
+            # All normal ISO country codes use flag regional indicators → Twemoji
+            if len(cc) != 2:
+                return ""
+            code = _iso_to_twemoji_hex(cc)
 
-        # Normal ISO 2-letter flags → PNGs (flat images)
-        if len(cc) == 2:
-            src = f"https://flagcdn.com/24x18/{cc.lower()}.png"
-            return (
-                f"<span style='display:inline-flex;align-items:center;"
-                f"margin-left:0.35rem;'><img src='{src}' "
-                f"style='height:1.05rem;vertical-align:middle;' alt='{country}'></span>"
-            )
-
-        return ""
+        src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
+        return (
+            f"<span style='display:inline-flex;align-items:center;margin-left:0.35rem;'>"
+            f"<img src='{src}' style='height:1.05rem;vertical-align:middle;' alt='{country}'>"
+            f"</span>"
+        )
 
     league_flag_snippet = league_flag_html(player_league)
 
@@ -5223,7 +5225,7 @@ else:
   <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:0.75rem; margin-bottom:0.45rem;">
     <div style="font-size:1.05rem; color:#cbd5f5;">
       <div style="font-weight:600;">GBE / Visa points</div>
-      <div style="white-space:nowrap; display:inline-flex; align-items:center;">
+      <div style="white-space:nowrap;">
         <span style="font-weight:800; color:#f9fafb; font-size:1.05rem;">
           {player_name}
         </span>
@@ -5382,6 +5384,7 @@ else:
         mime="image/png",
         key="gbe_download_image_btn",
     )
+
 
 
 
