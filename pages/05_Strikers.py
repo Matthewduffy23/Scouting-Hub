@@ -5169,13 +5169,34 @@ else:
             return ""
         return unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode("ascii").strip().lower()
 
-    def _iso_to_flag_emoji(cc: str) -> str:
-        if not cc or len(cc) != 2:
-            return ""
-        base = 0x1F1E6
-        return chr(base + (ord(cc[0].upper()) - ord("A"))) + chr(
-            base + (ord(cc[1].upper()) - ord("A"))
+def league_flag_html(league_name: str) -> str:
+    country = extract_country(league_name)
+    n = _norm_local(country)
+    cc = LOCAL_COUNTRY_TO_CC.get(n, "")
+    if not cc:
+        return ""
+
+    # Home nations that already use Twemoji SVG sequences
+    if cc in LOCAL_TWEMOJI_SPECIAL:
+        code = LOCAL_TWEMOJI_SPECIAL[cc]
+        src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
+        return (
+            f"<span style='display:inline-flex;align-items:center;"
+            f"margin-left:0.35rem;'><img src='{src}' "
+            f"style='height:1.05rem;vertical-align:middle;' alt='{country}'></span>"
         )
+
+    # All normal 2-letter country codes → use a PNG flag image
+    if len(cc) == 2:
+        src = f"https://flagcdn.com/24x18/{cc.lower()}.png"
+        return (
+            f"<span style='display:inline-flex;align-items:center;"
+            f"margin-left:0.35rem;'><img src='{src}' "
+            f"style='height:1.05rem;vertical-align:middle;' alt='{country}'></span>"
+        )
+
+    return ""
+
 
     def league_flag_html(league_name: str) -> str:
         country = extract_country(league_name)
