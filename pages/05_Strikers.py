@@ -5006,6 +5006,76 @@ else:
         + lq_points
     )
 
+    # ---- ESC eligibility (checkboxes, Band 6 focus) ----
+    esc_eligible = False
+    esc_reasons = []
+
+    if player_band == 6:
+        st.markdown("### ESC eligibility checks (Band 6 league)")
+        st.caption(
+            "Band 6 leagues do not count as Domestic Senior Competition Matches under the FA definitions. "
+            "Players here usually proceed via an ESC slot if they are exceptional. "
+            "Tick any ESC criteria this player actually meets in the reference period."
+        )
+
+        esc_youth_top50 = st.checkbox(
+            "≥1 youth competitive international (Top-50 nation)",
+            key="esc_youth_top50",
+        )
+        esc_youth_outside = st.checkbox(
+            "≥5 youth competitive internationals (outside Top-50)",
+            key="esc_youth_outside",
+        )
+        esc_youth_cont = st.checkbox(
+            "≥1 youth continental club match",
+            key="esc_youth_cont",
+        )
+        esc_youth_dom = st.checkbox(
+            "≥5 domestic youth competition matches (played)",
+            key="esc_youth_dom",
+        )
+        esc_senior_top50 = st.checkbox(
+            "≥1 senior competitive international (Top-50 nation)",
+            key="esc_senior_top50",
+        )
+        esc_senior_outside = st.checkbox(
+            "≥5 senior competitive internationals (outside Top-50)",
+            key="esc_senior_outside",
+        )
+        esc_senior_cont = st.checkbox(
+            "≥1 senior continental club match",
+            key="esc_senior_cont",
+        )
+        esc_senior_dom = st.checkbox(
+            "≥5 domestic senior league matches in Band 1–5 (played, any club in reference period)",
+            key="esc_senior_dom",
+        )
+
+        if esc_youth_top50:
+            esc_eligible = True
+            esc_reasons.append("Youth intl (Top-50)")
+        if esc_youth_outside:
+            esc_eligible = True
+            esc_reasons.append("Youth intl (outside Top-50)")
+        if esc_youth_cont:
+            esc_eligible = True
+            esc_reasons.append("Youth continental")
+        if esc_youth_dom:
+            esc_eligible = True
+            esc_reasons.append("Domestic youth matches")
+        if esc_senior_top50:
+            esc_eligible = True
+            esc_reasons.append("Senior intl (Top-50)")
+        if esc_senior_outside:
+            esc_eligible = True
+            esc_reasons.append("Senior intl (outside Top-50)")
+        if esc_senior_cont:
+            esc_eligible = True
+            esc_reasons.append("Senior continental")
+        if esc_senior_dom:
+            esc_eligible = True
+            esc_reasons.append("Domestic senior (Band 1–5)")
+
     # Home-nation / Ireland auto-pass
     auto_reason = ""
     auto_source = None  # "home" or "intl"
@@ -5026,6 +5096,7 @@ else:
     if auto_source is not None and display_points < 15:
         display_points = 15
 
+    # ========= Status label logic (with Band 6 / ESC override) =========
     if auto_source == "home":
         status = "Automatic Pass – UK / Irish route"
         status_color = "#16a34a"
@@ -5033,15 +5104,25 @@ else:
         status = "Automatic Pass – Senior international"
         status_color = "#16a34a"
     else:
-        if display_points >= 15:
-            status = "Pass (15+ points)"
-            status_color = "#16a34a"
-        elif display_points >= 10:
-            status = "Exceptions Panel (10–14 points)"
-            status_color = "#ea580c"
+        if player_band == 6:
+            # Band 6: ignore normal pass/points labels, go Fail vs ESC
+            if esc_eligible:
+                status = "ESC slot – Eligible (Band 6 league)"
+                status_color = "#ea580c"
+            else:
+                status = "Fail – Band 6 league (ESC only)"
+                status_color = "#b91c1c"
         else:
-            status = "Fail / ESC slot (0–9 points)"
-            status_color = "#b91c1c"
+            # Normal band 1–5 logic
+            if display_points >= 15:
+                status = "Pass (15+ points)"
+                status_color = "#16a34a"
+            elif display_points >= 10:
+                status = "Exceptions Panel (10–14 points)"
+                status_color = "#ea580c"
+            else:
+                status = "Fail / ESC slot (0–9 points)"
+                status_color = "#b91c1c"
 
     bg_color = "#0b1220"
     breakdown_str = (
@@ -5069,6 +5150,15 @@ else:
             f"{youth_caption.strip()}"
             f"</div>"
         )
+
+    if player_band == 6 and esc_eligible and esc_reasons:
+        esc_reason_html = (
+            f"<div style='margin-top:0.3rem; font-size:0.8rem; color:#fbbf24;'>"
+            f"<strong>ESC criteria met:</strong> {', '.join(esc_reasons)}"
+            f"</div>"
+        )
+    else:
+        esc_reason_html = ""
 
     # ========= Flag helper – Twemoji SVG for ALL flags (aligned) =========
     import unicodedata
@@ -5282,6 +5372,7 @@ else:
 
   {auto_reason_html}
   {youth_html}
+  {esc_reason_html}
 </div>
 """,
         unsafe_allow_html=True,
