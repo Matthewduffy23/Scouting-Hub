@@ -5071,7 +5071,7 @@ else:
             f"</div>"
         )
 
-    # ========= Tiny local flag helper for the league country =========
+    # ========= Tiny local flag helper for the league country (all image flags) =========
     import unicodedata
 
     LOCAL_TWEMOJI_SPECIAL = {
@@ -5178,14 +5178,6 @@ else:
             return ""
         return unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode("ascii").strip().lower()
 
-    def _iso_to_flag_emoji(cc: str) -> str:
-        if not cc or len(cc) != 2:
-            return ""
-        base = 0x1F1E6
-        return chr(base + (ord(cc[0].upper()) - ord("A"))) + chr(
-            base + (ord(cc[1].upper()) - ord("A"))
-        )
-
     def league_flag_html(league_name: str) -> str:
         country = extract_country(league_name)
         n = _norm_local(country)
@@ -5203,7 +5195,7 @@ else:
                 f"style='height:1.05rem;vertical-align:middle;' alt='{country}'></span>"
             )
 
-        # Normal ISO 2-letter flags → PNGs (avoids the 'letter only' emoji issue)
+        # Normal ISO 2-letter flags → PNGs (flat images)
         if len(cc) == 2:
             src = f"https://flagcdn.com/24x18/{cc.lower()}.png"
             return (
@@ -5231,11 +5223,11 @@ else:
   <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:0.75rem; margin-bottom:0.45rem;">
     <div style="font-size:1.05rem; color:#cbd5f5;">
       <div style="font-weight:600;">GBE / Visa points</div>
-      <div style="white-space:nowrap;">
+      <div style="white-space:nowrap; display:inline-flex; align-items:center;">
         <span style="font-weight:800; color:#f9fafb; font-size:1.05rem;">
           {player_name}
         </span>
-        <span style="opacity:0.85; font-size:1.05rem;">
+        <span style="opacity:0.85; font-size:1.05rem; margin-left:0.15rem;">
           ({player_team})
         </span>
         {league_flag_snippet}
@@ -5390,6 +5382,7 @@ else:
         mime="image/png",
         key="gbe_download_image_btn",
     )
+
 
 
 
