@@ -4444,7 +4444,6 @@ if player_row.empty:
     st.info("Select a player in the Single Player Role Profile above to see their GBE snapshot.")
 else:
     # ========= Helper: league → FA Band (1–6) =========
-    # Mapping follows the FA band definitions (see PDF – summary only)
     LEAGUE_TO_GBE_BAND = {
         # Band 1 – Big 5
         "England 1.": 1,
@@ -4495,8 +4494,7 @@ else:
         "Korea 1.": 5,
         "Australia 1.": 5,
         "England 3.": 5,
-
-        # All others → Band 6
+        # all others => Band 6
     }
 
     def gbe_band_for_league(league_name: str) -> int:
@@ -4506,7 +4504,7 @@ else:
     def intl_points_and_auto(fifa_rank: int, pct: int) -> tuple[int, bool]:
         """
         Returns (points, auto_pass) according to Table 1
-        (Aggregated FIFA rank band × % of competitive senior internationals).
+        (FIFA ranking band × % of competitive senior internationals).
         """
         if fifa_rank <= 10:
             band = "1-10"
@@ -4586,6 +4584,10 @@ else:
 
     # ========= Helper: Domestic league minutes (Table 2) =========
     def table2_minutes_points(band: int, pct: int, youth_debut: bool) -> int:
+        """
+        Domestic league minutes points, including Youth Player debut override
+        per para 35 (final row of Table 2). :contentReference[oaicite:1]{index=1}
+        """
         band = int(band)
         p = int(pct)
         # rows: 90–100, 80–89, 70–79, 60–69, 50–59, 40–49, 30–39
@@ -4617,6 +4619,7 @@ else:
             base = row_30[idx]
 
         debut_pts = debut[idx] if youth_debut else 0
+        # Para 36: if eligible in multiple columns, grant the higher value. :contentReference[oaicite:2]{index=2}
         return int(max(base, debut_pts))
 
     # ========= Helper: Continental minutes (Table 3) =========
@@ -4661,7 +4664,7 @@ else:
         "Band2 qualifiers":            [2, 1, 0, 0, 0, 0],
         "Mid-table":                   [1, 0, 0, 0, 0, 0],
         "Relegation":                  [0, 0, 0, 0, 0, 0],
-        "Promotion":                   [0, 1, 1, 1, 1, 1],  # Band1 → 0
+        "Promotion":                   [0, 1, 1, 1, 1, 1],  # Band1 => 0
     }
 
     def final_position_points(band: int, category: str) -> int:
@@ -4694,7 +4697,7 @@ else:
         idx = max(0, min(5, int(band) - 1))
         return int(LEAGUE_BAND_POINTS[idx])
 
-    # ========= Quick reference =========
+    # ========= Quick reference (helpers back in) =========
     with st.expander("📚 GBE helper – what gives points? (short version)", expanded=False):
         st.markdown(
             """
@@ -4704,12 +4707,12 @@ else:
 - **Domestic league minutes (Table 2)** – up to **12 pts** from:
   - **League band (1–6)** × % of **available league minutes** played.  
 - **Continental minutes (Table 3)** – up to **10 pts**:
-  - Band 1: UCL / Libertadores;  
-  - Band 2: UEL / UECL / Sudamericana / Club WC;  
-  - Band 3: all other continental.
-- **Final league position (Table 4)** – up to **6 pts** (title winner, qualifiers, mid-table, promotion / relegation).
-- **Continental progression (Table 5)** – up to **10 pts** (stage reached).
-- **League quality – current club (Table 6)** – up to **12 pts** from league band.
+  - **Band 1**: Major top-tier cups (e.g. UEFA Champions League, Copa Libertadores).  
+  - **Band 2**: Second-tier cups (e.g. UEFA Europa League, UEFA Conference League, Copa Sudamericana, major confederation CLs, Club World Cup).  
+  - **Band 3**: All other recognised senior continental club competitions.
+- **Final league position (Table 4)** – up to **6 pts** for title / continental places / promotions.
+- **Continental progression (Table 5)** – up to **10 pts** for stage reached (Final → Group).  
+- **League quality – current club (Table 6)** – up to **12 pts** from league band.  
 - **Youth internationals** – used for ESC / Youth routes, **no points** in the standard 15-point total.
             """
         )
@@ -4732,7 +4735,7 @@ else:
     birth_norm = birth_country.lower()
     is_home_nation_player = birth_norm in home_nation_names
 
-    # Use global extract_country() (defined earlier) to read league country
+    # League country via extract_country helper
     try:
         league_country = extract_country(player_league)
     except Exception:
@@ -4753,14 +4756,13 @@ else:
 
     player_band = gbe_band_for_league(player_league)
 
-    # Simple display row
     st.markdown(
         f"**League / Band:** {player_league}  →  **Band {player_band}**  "
         f"&nbsp;&nbsp;|&nbsp;&nbsp; **Minutes:** {int(player_minutes)} "
         f"({domestic_minutes_pct}% of max minutes in this league sample)"
     )
 
-    # ========= 2) Inputs for the rest of the criteria =========
+    # ========= 2) Inputs =========
     st.markdown("### Inputs")
 
     col_intl, col_dom, col_other = st.columns([1.2, 1.0, 1.2])
@@ -4793,20 +4795,33 @@ else:
     # ---- Domestic minutes (Table 2) ----
     with col_dom:
         st.markdown("**Domestic League Minutes (Table 2)**")
-        is_youth_debut = st.checkbox(
-            "Youth Player – first senior league debut in reference period",
+
+        # NEW: explicit Youth Player toggle (U21) and debut override (para 35). :contentReference[oaicite:3]{index=3}
+        is_youth_player = st.checkbox(
+            "Player is a Youth Player (U21 – born on or after 1 Jan 2004)",
             value=False,
-            key="gbe_youth_debut",
+            key="gbe_is_youth_player",
+            help="Only Youth Players (U21) can receive the special debut points in the final row of Table 2.",
         )
-        domestic_points = table2_minutes_points(player_band, domestic_minutes_pct, is_youth_debut)
+
+        youth_debut = False
+        if is_youth_player:
+            youth_debut = st.checkbox(
+                "Made first senior league appearance during the Reference Period (apply Youth debut points)",
+                value=False,
+                key="gbe_youth_debut",
+                help="If ticked, the Table 2 'Debut for Youth Player' row is applied and can override minutes-based points.",
+            )
+
+        domestic_points = table2_minutes_points(player_band, domestic_minutes_pct, youth_debut)
+
         st.write(f"Domestic minutes % (auto): **{domestic_minutes_pct}%**")
         st.write(f"Domestic minutes points (Table 2): **{domestic_points}**")
 
-    # ---- Other criteria (user-assigned) ----
+    # ---- Other criteria (Tables 3–6) ----
     with col_other:
         st.markdown("**Other criteria (Tables 3–6)**")
 
-        # Continental minutes (Table 3)
         use_cont = st.checkbox("Add continental minutes (Table 3)", value=False, key="gbe_use_cont")
         cont_points = 0
         if use_cont:
@@ -4822,7 +4837,6 @@ else:
             )
             cont_points = table3_continental_points(cont_band, cont_pct)
 
-        # Final league position (Table 4)
         use_finish = st.checkbox("Add final league position (Table 4)", value=False, key="gbe_use_finish")
         finish_points = 0
         if use_finish:
@@ -4842,7 +4856,6 @@ else:
             )
             finish_points = final_position_points(player_band, finish_cat)
 
-        # Continental progression (Table 5)
         use_cprog = st.checkbox("Add continental progression (Table 5)", value=False, key="gbe_use_cprog")
         cprog_points = 0
         if use_cprog:
@@ -4867,20 +4880,37 @@ else:
             )
             cprog_points = continental_progression_points(cprog_band, cprog_stage)
 
-        # League quality of current club (Table 6)
-        use_lq = st.checkbox("Add league band points – current club (Table 6)", value=True, key="gbe_use_lq")
-        lq_points = league_quality_points(player_band) if use_lq else 0
+        # --- League band override (Table 6 points only) ---
+        band_override_label = st.selectbox(
+            "League band override (Table 6 only)",
+            options=["Use mapped league band", "Band 1", "Band 2", "Band 3", "Band 4", "Band 5", "Band 6"],
+            key="gbe_band_override",
+            help="Use this if you want to credit points using a parent club's league band. "
+                 "Domestic minutes still use the original band shown above.",
+        )
 
-    # ==== Youth internationals – info only (ESC / Youth Player routes) ====
-    st.markdown("**Youth competitive internationals (info only)**")
-    st.caption("Used for ESC / Youth Player routes – **no points in the standard 15-point total.**")
+        if band_override_label == "Use mapped league band":
+            band_for_league_points = player_band
+        else:
+            band_for_league_points = int(band_override_label.split()[-1])
+
+        use_lq = st.checkbox(
+            "Add league band points – current club (Table 6)",
+            value=True,
+            key="gbe_use_lq",
+        )
+        lq_points = league_quality_points(band_for_league_points) if use_lq else 0
+
+    # ==== Youth / extra notes – info only ====
+    st.markdown("**Youth competitive internationals / extra notes (info only)**")
+    st.caption("Used for ESC / Youth Player routes – **no points** in the standard 15-point total.")
     youth_int_caps = st.number_input(
         "Number of youth competitive international matches in reference period",
         min_value=0, max_value=100, value=0, step=1,
         key="gbe_youth_caps",
     )
     youth_caption = st.text_input(
-        "Youth international caption (optional, e.g. 'Slovakia U21 International')",
+        "Additional notes (optional)",
         value="",
         key="gbe_youth_caption",
     )
@@ -4895,7 +4925,77 @@ else:
         + lq_points
     )
 
-    # Home-nations / Ireland auto-pass logic
+    # ---- ESC eligibility (checkboxes, Band 6 focus) ----
+    esc_eligible = False
+    esc_reasons = []
+
+    if player_band == 6:
+        st.markdown("### ESC eligibility checks (Band 6 league)")
+        st.caption(
+            "Band 6 leagues do not count as Domestic Senior Competition Matches under the FA definitions. "
+            "Players here usually proceed via an ESC slot if they are exceptional. "
+            "Tick any ESC criteria this player actually meets in the reference period."
+        )
+
+        esc_youth_top50 = st.checkbox(
+            "≥1 youth competitive international (Top-50 nation)",
+            key="esc_youth_top50",
+        )
+        esc_youth_outside = st.checkbox(
+            "≥5 youth competitive internationals (outside Top-50)",
+            key="esc_youth_outside",
+        )
+        esc_youth_cont = st.checkbox(
+            "≥1 youth continental club match",
+            key="esc_youth_cont",
+        )
+        esc_youth_dom = st.checkbox(
+            "≥5 domestic youth competition matches (played)",
+            key="esc_youth_dom",
+        )
+        esc_senior_top50 = st.checkbox(
+            "≥1 senior competitive international (Top-50 nation)",
+            key="esc_senior_top50",
+        )
+        esc_senior_outside = st.checkbox(
+            "≥5 senior competitive internationals (outside Top-50)",
+            key="esc_senior_outside",
+        )
+        esc_senior_cont = st.checkbox(
+            "≥1 senior continental club match",
+            key="esc_senior_cont",
+        )
+        esc_senior_dom = st.checkbox(
+            "≥5 domestic senior league matches in Band 1–5 (played, any club in reference period)",
+            key="esc_senior_dom",
+        )
+
+        if esc_youth_top50:
+            esc_eligible = True
+            esc_reasons.append("Youth intl (Top-50)")
+        if esc_youth_outside:
+            esc_eligible = True
+            esc_reasons.append("Youth intl (outside Top-50)")
+        if esc_youth_cont:
+            esc_eligible = True
+            esc_reasons.append("Youth continental")
+        if esc_youth_dom:
+            esc_eligible = True
+            esc_reasons.append("Domestic youth matches")
+        if esc_senior_top50:
+            esc_eligible = True
+            esc_reasons.append("Senior intl (Top-50)")
+        if esc_senior_outside:
+            esc_eligible = True
+            esc_reasons.append("Senior intl (outside Top-50)")
+        if esc_senior_cont:
+            esc_eligible = True
+            esc_reasons.append("Senior continental")
+        if esc_senior_dom:
+            esc_eligible = True
+            esc_reasons.append("Domestic senior (Band 1–5)")
+
+    # Home-nation / Ireland auto-pass
     auto_reason = ""
     auto_source = None  # "home" or "intl"
 
@@ -4911,12 +5011,11 @@ else:
         auto_source = "intl"
         auto_reason = "Meets automatic pass threshold via senior international appearances."
 
-    # Points shown on the card (auto-pass treated as at least 15)
     display_points = base_total_points
     if auto_source is not None and display_points < 15:
         display_points = 15
 
-    # Status label + colour
+    # ========= Status label logic (Band 1–5 vs Band 6; ESC) =========
     if auto_source == "home":
         status = "Automatic Pass – UK / Irish route"
         status_color = "#16a34a"
@@ -4924,18 +5023,27 @@ else:
         status = "Automatic Pass – Senior international"
         status_color = "#16a34a"
     else:
-        if display_points >= 15:
-            status = "Pass (15+ points)"
-            status_color = "#16a34a"
-        elif display_points >= 10:
-            status = "Exceptions Panel range (10–14 points)"
-            status_color = "#ea580c"
+        if player_band == 6:
+            # Band 6: ESC vs straight Fail
+            if esc_eligible:
+                status = "Fail / ESC"
+                status_color = "#ea580c"
+            else:
+                status = "Fail"
+                status_color = "#b91c1c"
         else:
-            status = "Fail / ESC territory (0–9 points)"
-            status_color = "#b91c1c"
+            # Normal band 1–5 logic
+            if display_points >= 15:
+                status = "Pass"
+                status_color = "#16a34a"
+            elif display_points >= 10:
+                status = "Exceptions Panel"
+                status_color = "#fbbf24"  # yellow background for Exceptions Panel
+            else:
+                status = "Fail"
+                status_color = "#b91c1c"
 
-    # ========= Card layout =========
-    bg_color = "#0b1220"  # dark navy
+    bg_color = "#0b1220"
     breakdown_str = (
         f"Domestic minutes: {domestic_points} pts; "
         f"International: {intl_points} pts; "
@@ -4944,7 +5052,7 @@ else:
         f"Continental progression: {cprog_points} pts; "
         f"League band: {lq_points} pts."
     )
-    points_band_str = "Points: 0–9 = Fail / ESC, 10–14 = Exceptions Panel, 15+ = Pass."
+    points_band_str = "0–9 = Fail/ESC, 10–14 = Exceptions Panel, 15+ = Pass."
 
     auto_reason_html = ""
     if auto_reason:
@@ -4958,11 +5066,175 @@ else:
     if youth_caption.strip():
         youth_html = (
             f"<div style='margin-top:0.3rem; font-size:0.8rem; color:#cbd5f5;'>"
-            f"Youth international: {youth_caption.strip()} "
-            f"({youth_int_caps} competitive youth caps in period)"
+            f"{youth_caption.strip()}"
             f"</div>"
         )
 
+    # ESC label at bottom
+    esc_reason_html = ""
+    if auto_source is None:
+        # Band 6 players
+        if player_band == 6:
+            if esc_eligible and esc_reasons:
+                esc_reason_html = (
+                    f"<div style='margin-top:0.3rem; font-size:0.8rem; color:#fbbf24;'>"
+                    f"<strong>ESC criteria met</strong> {', '.join(esc_reasons)}"
+                    f"</div>"
+                )
+            else:
+                esc_reason_html = (
+                    f"<div style='margin-top:0.3rem; font-size:0.8rem; color:#f97373;'>"
+                    f"<strong>ESC criteria not met</strong>"
+                    f"</div>"
+                )
+        # Band 1–5 players who are in Exceptions Panel range (10–14 pts)
+        elif 10 <= display_points < 15:
+            esc_reason_html = (
+                f"<div style='margin-top:0.3rem; font-size:0.8rem; color:#fbbf24;'>"
+                f"<strong>ESC criteria met:</strong> Domestic senior (Band 1–5)"
+                f"</div>"
+            )
+
+    # ========= Flag helper – Twemoji SVG for ALL flags (aligned) =========
+    import unicodedata
+
+    LOCAL_TWEMOJI_SPECIAL = {
+        "eng": "1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",  # England
+        "sct": "1f3f4-e0067-e0062-e0073-e0063-e0074-e007f",  # Scotland
+        "wls": "1f3f4-e0067-e0062-e006c-e0073-e007f",        # Wales
+        "nir": "1f3f4-e0067-e0062-e006e-e0069-e0072-e007f",  # Northern Ireland
+    }
+
+    LOCAL_COUNTRY_TO_CC = {
+        # Home nations + Ireland
+        "england": "eng",
+        "scotland": "sct",
+        "wales": "wls",
+        "northern ireland": "nir",
+        "ireland": "ie",
+        "republic of ireland": "ie",
+
+        # Europe
+        "spain": "es",
+        "germany": "de",
+        "italy": "it",
+        "france": "fr",
+        "belgium": "be",
+        "denmark": "dk",
+        "poland": "pl",
+        "turkey": "tr",
+        "netherlands": "nl",
+        "croatia": "hr",
+        "switzerland": "ch",
+        "norway": "no",
+        "sweden": "se",
+        "cyprus": "cy",
+        "czech": "cz",
+        "czech republic": "cz",
+        "greece": "gr",
+        "austria": "at",
+        "romania": "ro",
+        "albania": "al",
+        "bosnia": "ba",
+        "bosnia and herzegovina": "ba",
+        "kosovo": "xk",
+        "slovenia": "si",
+        "slovakia": "sk",
+        "bulgaria": "bg",
+        "finland": "fi",
+        "armenia": "am",
+        "georgia": "ge",
+        "iceland": "is",
+        "north macedonia": "mk",
+        "lithuania": "lt",
+        "malta": "mt",
+        "moldova": "md",
+        "latvia": "lv",
+        "montenegro": "me",
+        "estonia": "ee",
+        "russia": "ru",
+
+        # Middle East & Asia
+        "saudi": "sa",
+        "saudi arabia": "sa",
+        "uae": "ae",
+        "united arab emirates": "ae",
+        "qatar": "qa",
+        "uzbekistan": "uz",
+        "kazakhstan": "kz",
+        "israel": "il",
+        "japan": "jp",
+        "korea": "kr",
+        "south korea": "kr",
+        "china": "cn",
+
+        # Africa
+        "morocco": "ma",
+        "algeria": "dz",
+        "egypt": "eg",
+        "south africa": "za",
+        "nigeria": "ng",
+        "tunisia": "tn",
+
+        # North & South America
+        "brazil": "br",
+        "argentina": "ar",
+        "mexico": "mx",
+        "colombia": "co",
+        "ecuador": "ec",
+        "paraguay": "py",
+        "uruguay": "uy",
+        "chile": "cl",
+        "bolivia": "bo",
+        "peru": "pe",
+        "venezuela": "ve",
+        "costa rica": "cr",
+        "canada": "ca",
+        "usa": "us",
+        "united states": "us",
+
+        # Oceania
+        "australia": "au",
+    }
+
+    def _norm_local(s: str) -> str:
+        if not s:
+            return ""
+        return unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode("ascii").strip().lower()
+
+    def _iso_to_twemoji_hex(cc: str) -> str:
+        # Turn "cz" → "1f1e8-1f1ff" style hex for Twemoji flag SVGs
+        base = 0x1F1E6
+        c1 = base + (ord(cc[0].upper()) - ord("A"))
+        c2 = base + (ord(cc[1].upper()) - ord("A"))
+        return f"{c1:x}-{c2:x}"
+
+    def league_flag_html(league_name: str) -> str:
+        country = extract_country(league_name)
+        n = _norm_local(country)
+        cc = LOCAL_COUNTRY_TO_CC.get(n, "")
+        if not cc:
+            return ""
+
+        # Home nations with special TAG-sequence flags
+        if cc in LOCAL_TWEMOJI_SPECIAL:
+            code = LOCAL_TWEMOJI_SPECIAL[cc]
+        else:
+            # All normal ISO country codes use flag regional indicators → Twemoji
+            if len(cc) != 2:
+                return ""
+            code = _iso_to_twemoji_hex(cc)
+
+        src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
+        return (
+            f"<span style='display:inline-block;vertical-align:middle;margin-left:0.35rem;'>"
+            f"<img src='{src}' style='height:1.05rem;display:block;' alt='{country}'>"
+            f"</span>"
+        )
+
+    league_flag_snippet = league_flag_html(player_league)
+
+    # ========= Card layout (tweaked for mobile) =========
     st.markdown(
         f"""
 <div style="
@@ -4974,19 +5246,40 @@ else:
     color: #e5e7eb;
     font-size: 0.94rem;
 ">
-  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:0.75rem; margin-bottom:0.4rem;">
-    <div style="font-weight:600; font-size:0.95rem; color:#cbd5f5;">
-      GBE / Visa points – <span style="font-weight:800; color:#f9fafb;">{player_name}</span>
-      <span style="opacity:0.85;">({player_team})</span>
+  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:0.75rem; margin-bottom:0.45rem;">
+    <div style="font-size:1.05rem; color:#cbd5f5;">
+      <div style="font-weight:600;">GBE / Visa points</div>
+      <div style="white-space:nowrap;">
+        <span style="font-weight:800; color:#f9fafb; font-size:1.05rem;">
+          {player_name}
+        </span>
+        <span style="opacity:0.85; font-size:1.05rem; margin-left:0.15rem;">
+          ({player_team})
+        </span>
+        {league_flag_snippet}
+      </div>
     </div>
-    <div style="font-size:0.82rem; color:#9ca3af; white-space:nowrap; text-align:right;">
-      League: {player_league} · Band {player_band}
+    <div style="
+        font-size:0.82rem;
+        color:#9ca3af;
+        text-align:right;
+        max-width:40%;
+        line-height:1.3;
+        word-wrap:break-word;
+    ">
+      {player_league}<br>
+      Band {player_band}
     </div>
   </div>
 
-  <div style="display:flex; align-items:center; gap:1.0rem; margin:0.2rem 0 0.55rem 0;">
-    <div style="font-size:2.35rem; font-weight:800; line-height:1; letter-spacing:0.02em;">
-      {display_points}
+  <div style="display:flex; align-items:center; gap:1.0rem; margin:0.2rem 0 0.6rem 0;">
+    <div>
+      <div style="font-size:2.35rem; font-weight:800; line-height:1; letter-spacing:0.02em;">
+        {display_points}
+      </div>
+      <div style="font-size:0.8rem; color:#9ca3af; margin-top:0.18rem; white-space:nowrap;">
+        Est. points
+      </div>
     </div>
     <div style="
         padding:0.45rem 0.95rem;
@@ -5001,50 +5294,120 @@ else:
     </div>
   </div>
 
-  <div style="font-size:0.82rem; margin-bottom:0.55rem; color:#cbd5f5;">
+  <div style="font-size:0.82rem; margin-bottom:0.45rem; color:#cbd5f5;">
     {points_band_str}
   </div>
 
-  <div style="margin-top:0.1rem; font-size:0.9rem;">
-    <span style="font-weight:700;">Breakdown</span> – {breakdown_str}
+  <!-- subtle divider line above Breakdown -->
+  <div style="height:1px; background:rgba(148,163,184,0.35); margin:0.4rem 0 0.35rem 0;"></div>
+
+  <div style="margin-top:0.05rem; font-size:0.82rem; color:#cbd5f5;">
+    <span style="font-weight:700; color:#f9fafb;">Breakdown</span> – {breakdown_str}
   </div>
+
   {auto_reason_html}
   {youth_html}
+  {esc_reason_html}
 </div>
 """,
         unsafe_allow_html=True,
     )
 
-    # ========= Download snapshot =========
-    snapshot_text = f"""GBE / Visa snapshot – {player_name} ({player_team})
+    # ========= Download snapshot AS IMAGE (PNG) =========
+    import io
 
-League: {player_league} (Band {player_band})
-Minutes: {int(player_minutes)} ({domestic_minutes_pct}% of max minutes in league sample)
+    fig, ax = plt.subplots(figsize=(6.5, 3.4), dpi=150)
+    fig.patch.set_facecolor("#0b1220")
+    ax.set_facecolor("#0b1220")
+    ax.axis("off")
 
-Displayed points: {display_points}
-Base total (before auto-pass adjustment): {base_total_points}
-Status: {status}
+    # Left: big score
+    ax.text(
+        0.05, 0.7, str(display_points),
+        transform=ax.transAxes,
+        fontsize=36,
+        fontweight="bold",
+        color="white",
+        va="center",
+    )
+    ax.text(
+        0.05, 0.5, "Est. points",
+        transform=ax.transAxes,
+        fontsize=10,
+        color="#9ca3af",
+        va="center",
+    )
 
-Breakdown
-- Domestic league minutes (Table 2): {domestic_points} pts
-- Senior internationals (Table 1): {intl_points} pts
-- Continental minutes (Table 3): {cont_points} pts
-- Final league position (Table 4): {finish_points} pts
-- Continental progression (Table 5): {cprog_points} pts
-- League band – current club (Table 6): {lq_points} pts
+    # Title & player
+    ax.text(
+        0.25, 0.85, "GBE / Visa points",
+        transform=ax.transAxes,
+        fontsize=13,
+        fontweight="semibold",
+        color="#cbd5f5",
+        va="center",
+    )
+    ax.text(
+        0.25, 0.7, f"{player_name} ({player_team})",
+        transform=ax.transAxes,
+        fontsize=11,
+        fontweight="bold",
+        color="white",
+        va="center",
+    )
+    ax.text(
+        0.25, 0.55, f"{player_league} • Band {player_band}",
+        transform=ax.transAxes,
+        fontsize=9,
+        color="#9ca3af",
+        va="center",
+    )
 
-Youth internationals (info only)
-- Competitive youth caps in period: {youth_int_caps}
-- Caption: {youth_caption}
+    # Status bar
+    ax.text(
+        0.25, 0.35, status,
+        transform=ax.transAxes,
+        fontsize=10,
+        fontweight="bold",
+        color="white",
+        va="center",
+        bbox=dict(
+            boxstyle="round,pad=0.35",
+            facecolor=status_color,
+            edgecolor="none",
+        ),
+    )
 
-Auto-pass reason: {auto_reason if auto_reason else 'None'}
-"""
+    # Points band line
+    ax.text(
+        0.05, 0.25, points_band_str,
+        transform=ax.transAxes,
+        fontsize=9,
+        color="#cbd5f5",
+        va="center",
+    )
+
+    # Breakdown (single wrapped line)
+    ax.text(
+        0.05, 0.11, f"Breakdown – {breakdown_str}",
+        transform=ax.transAxes,
+        fontsize=8.5,
+        color="#cbd5f5",
+        va="center",
+        wrap=True,
+    )
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight")
+    plt.close(fig)
+    img_bytes = buf.getvalue()
 
     st.download_button(
-        "⬇️ Download GBE / Visa snapshot (.txt)",
-        data=snapshot_text.encode("utf-8"),
-        file_name=f"gbe_snapshot_{player_name.replace(' ', '_')}.txt",
-        mime="text/plain",
-        key="gbe_download_btn",
+        "⬇️ Download GBE / Visa snapshot (.png)",
+        data=img_bytes,
+        file_name=f"gbe_snapshot_{player_name.replace(' ', '_')}.png",
+        mime="image/png",
+        key="gbe_download_image_btn",
     )
+
 
