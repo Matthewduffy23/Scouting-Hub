@@ -592,7 +592,7 @@ if st.session_state.get("fb_leagues_sel"):
 # --- GBE band filter (NO auto-pass) ---
 df_f["GBE Band"] = df_f["League"].apply(gbe_league_band).astype(int)
 
-bands_sel = st.session_state.get(f"cb_gbe_bands_{selected_file}", [1, 2, 3, 4, 5, 6])
+bands_sel = st.session_state.get(f"fb_gbe_bands_{selected_file}", [1, 2, 3, 4, 5, 6])
 if bands_sel:
     df_f = df_f[df_f["GBE Band"].isin(bands_sel)]
 
