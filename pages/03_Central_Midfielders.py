@@ -287,6 +287,50 @@ LEAGUE_STRENGTHS = {
 
 }
 
+# ---- GBE league bands (custom: all UK & Ireland leagues in Band 1) ----
+GBE_LEAGUE_BANDS = {
+    # Band 1 – Top 5 + all England / Scotland / Wales / Ireland / Northern Ireland leagues
+    "England 1.": 1, "England 2.": 1, "England 3.": 1, "England 4.": 1,
+    "England 5.": 1, "England 6.": 1, "England 7.": 1, "England 8.": 1,
+    "England 9.": 1, "England 10.": 1,
+    "Scotland 1.": 1, "Scotland 2.": 1, "Scotland 3.": 1,
+    "Wales 1.": 1,
+    "Ireland 1.": 1,
+    "Northern Ireland 1.": 1,
+
+    "Spain 1.": 1, "Germany 1.": 1, "Italy 1.": 1, "France 1.": 1,
+
+    # Band 2
+    "Portugal 1.": 2, "Netherlands 1.": 2, "Belgium 1.": 2, "Turkey 1.": 2,
+    # You can keep England 2./3. here as well if you want, but they’re already Band 1 above.
+
+    # Band 3
+    "USA 1.": 3, "Brazil 1.": 3, "Argentina 1.": 3, "Mexico 1.": 3,
+
+    # Band 4
+    "Czech 1.": 4, "Croatia 1.": 4, "Switzerland 1.": 4,
+    "Spain 2.": 4, "Germany 2.": 4,
+    "Ukraine 1.": 4, "Greece 1.": 4, "Colombia 1.": 4,
+    "Austria 1.": 4, "Denmark 1.": 4, "France 2.": 4, "Russia 1.": 4,
+
+    # Band 5
+    "Serbia 1.": 5, "Poland 1.": 5, "Slovenia 1.": 5, "Chile 1.": 5, "Uruguay 1.": 5,
+    "Sweden 1.": 5, "Norway 1.": 5, "Italy 2.": 5, "Hungary 1.": 5, "Japan 1.": 5,
+    "Korea 1.": 5, "Australia 1.": 5, "Brazil 2.": 5,
+
+    # Everything else defaults to Band 6
+}
+
+def gbe_league_band(league_name: str) -> int:
+    """
+    Map 'Country N.' league name to custom GBE band 1–6.
+    Unlisted leagues default to Band 6.
+    """
+    league_name = str(league_name).strip()
+    return int(GBE_LEAGUE_BANDS.get(league_name, 6))
+
+
+
 import re
 
 # --- Youth leagues: excluded by default, optional toggle to include ---
@@ -408,6 +452,31 @@ with st.sidebar:
         seed |= PRESET_LEAGUES["Top 20 Europe"]
     if use_efl:
         seed |= PRESET_LEAGUES["EFL (England 2–4)"]
+
+
+    # --- GBE Band presets (1–6) ---
+    st.markdown("### GBE Bands")
+
+    b1, b2, b3 = st.columns(3)
+    use_band1 = b1.checkbox("Band 1", value=True,  key=f"cm_band1_{selected_file}")
+    use_band2 = b2.checkbox("Band 2", value=True,  key=f"cm_band2_{selected_file}")
+    use_band3 = b3.checkbox("Band 3", value=True,  key=f"cm_band3_{selected_file}")
+
+    c4, c5, c6 = st.columns(3)
+    use_band4 = c4.checkbox("Band 4", value=True,  key=f"cm_band4_{selected_file}")
+    use_band5 = c5.checkbox("Band 5", value=True,  key=f"cm_band5_{selected_file}")
+    use_band6 = c6.checkbox("Band 6", value=True,  key=f"cm_band6_{selected_file}")
+
+    selected_bands: list[int] = []
+    if use_band1: selected_bands.append(1)
+    if use_band2: selected_bands.append(2)
+    if use_band3: selected_bands.append(3)
+    if use_band4: selected_bands.append(4)
+    if use_band5: selected_bands.append(5)
+    if use_band6: selected_bands.append(6)
+
+    st.session_state[f"cm_gbe_bands_{selected_file}"] = selected_bands
+
 
     # --- Leagues present in this dataset ---
     leagues_in_df = sorted(
@@ -550,6 +619,14 @@ df_f = df.copy()
 # leagues
 if st.session_state.get("cm_leagues_sel"):
     df_f = df_f[df_f["League"].isin(st.session_state["cm_leagues_sel"])]
+
+# --- GBE band filter (NO auto-pass) ---
+df_f["GBE Band"] = df_f["League"].apply(gbe_league_band).astype(int)
+
+bands_sel = st.session_state.get(f"cm_gbe_bands_{selected_file}", [1, 2, 3, 4, 5, 6])
+if bands_sel:
+    df_f = df_f[df_f["GBE Band"].isin(bands_sel)]
+
 
 # positions (hard-coded CM prefixes)
 df_f = df_f[df_f["Position"].astype(str).apply(position_filter)]
