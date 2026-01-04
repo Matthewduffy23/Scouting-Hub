@@ -4684,6 +4684,10 @@ else:
 
     # ========= Helper: Domestic league minutes (Table 2) =========
     def table2_minutes_points(band: int, pct: int, youth_debut: bool) -> int:
+        """
+        Domestic league minutes points, including Youth Player debut override
+        per para 35 (final row of Table 2). :contentReference[oaicite:1]{index=1}
+        """
         band = int(band)
         p = int(pct)
         # rows: 90–100, 80–89, 70–79, 60–69, 50–59, 40–49, 30–39
@@ -4715,6 +4719,7 @@ else:
             base = row_30[idx]
 
         debut_pts = debut[idx] if youth_debut else 0
+        # Para 36: if eligible in multiple columns, grant the higher value. :contentReference[oaicite:2]{index=2}
         return int(max(base, debut_pts))
 
     # ========= Helper: Continental minutes (Table 3) =========
@@ -4890,12 +4895,26 @@ else:
     # ---- Domestic minutes (Table 2) ----
     with col_dom:
         st.markdown("**Domestic League Minutes (Table 2)**")
-        is_youth_debut = st.checkbox(
-            "Youth Player – first senior league debut in reference period",
+
+        # NEW: explicit Youth Player toggle (U21) and debut override (para 35). :contentReference[oaicite:3]{index=3}
+        is_youth_player = st.checkbox(
+            "Player is a Youth Player (U21 – born on or after 1 Jan 2004)",
             value=False,
-            key="gbe_youth_debut",
+            key="gbe_is_youth_player",
+            help="Only Youth Players (U21) can receive the special debut points in the final row of Table 2.",
         )
-        domestic_points = table2_minutes_points(player_band, domestic_minutes_pct, is_youth_debut)
+
+        youth_debut = False
+        if is_youth_player:
+            youth_debut = st.checkbox(
+                "Made first senior league appearance during the Reference Period (apply Youth debut points)",
+                value=False,
+                key="gbe_youth_debut",
+                help="If ticked, the Table 2 'Debut for Youth Player' row is applied and can override minutes-based points.",
+            )
+
+        domestic_points = table2_minutes_points(player_band, domestic_minutes_pct, youth_debut)
+
         st.write(f"Domestic minutes % (auto): **{domestic_minutes_pct}%**")
         st.write(f"Domestic minutes points (Table 2): **{domestic_points}**")
 
@@ -5490,6 +5509,7 @@ else:
         mime="image/png",
         key="gbe_download_image_btn",
     )
+
 
 
 
