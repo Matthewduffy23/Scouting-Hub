@@ -5331,6 +5331,11 @@ else:
         "montenegro": "me",
         "estonia": "ee",
         "russia": "ru",
+                  "portugal": "pt",
+                  "hungary": "hu",
+                  "ukraine": "ua",
+                 "serbia": "rs",
+                 "azerbaijan": "az",
 
         # Middle East & Asia
         "saudi": "sa",
@@ -5373,6 +5378,7 @@ else:
 
         # Oceania
         "australia": "au",
+
     }
 
     def _norm_local(s: str) -> str:
