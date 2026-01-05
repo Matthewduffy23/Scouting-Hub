@@ -1827,8 +1827,7 @@ st.pyplot(fig, use_container_width=True)
 
    # ---------- 2) NOTES: Style / Strengths / Weaknesses ----------
 
-EXTRA_METRICS = [
-    'Successful defensive actions per 90', 'Defensive duels per 90', 'Defensive duels won, %',
+EXTRA_METRICS = [ 'Defensive duels per 90', 'Defensive duels won, %',
     'Aerial duels per 90', 'Aerial duels won, %', 'Shots blocked per 90',
     'PAdj Interceptions', 'Non-penalty goals per 90', 'xG per 90', 
     'Shots per 90', 'Shots on target, %', 'Crosses per 90',
@@ -2369,7 +2368,6 @@ else:
         ("Defensive Duel %", "Defensive duels won, %"),
         ("PAdj Interceptions", "PAdj Interceptions"),
         ("Shots blocked", "Shots blocked per 90"),
-        ("Succ. def acts", "Successful defensive actions per 90"),
     ]: DEFENSIVE.append((lab, pct_of(met), val_of(met)[1]))
 
     POSSESSION = []
@@ -2802,7 +2800,6 @@ else:
         ("Defensive Duel Success %", "Defensive duels won, %"),
         ("PAdj. Interceptions", "PAdj Interceptions"),
         ("Shots blocked", "Shots blocked per 90"),
-        ("Succesful Defensive Actions", "Successful defensive actions per 90"),
     ]:
         DEFENSIVE.append((lab, float(np.nan_to_num(pct_of(met), nan=0.0)), val_of(met)[1]))
 
@@ -4065,7 +4062,7 @@ st.header("🧭 Similar players (within adjustable pool)")
 
 # --- Feature basket declared FIRST so UI can use it ---
 SIM_FEATURES = [
-    'Successful defensive actions per 90','Defensive duels per 90','Defensive duels won, %','Aerial duels per 90',
+    'Defensive duels per 90','Defensive duels won, %','Aerial duels per 90',
     'Aerial duels won, %','Shots blocked per 90','PAdj Interceptions','Non-penalty goals per 90','xG per 90',
     'Shots per 90','Dribbles per 90','Successful dribbles, %','Offensive duels per 90','Offensive duels won, %',
     'Touches in box per 90','Progressive runs per 90','Accelerations per 90','Passes per 90','Accurate passes, %',
@@ -4304,7 +4301,7 @@ DEFAULT_LEAGUE_WEIGHT = 0.5
 DEFAULT_MARKET_WEIGHT = 0.2
 
 CF_FEATURES = [
-    'Successful defensive actions per 90','Defensive duels per 90','Defensive duels won, %','Aerial duels per 90',
+    'Defensive duels per 90','Defensive duels won, %','Aerial duels per 90',
     'Aerial duels won, %','Shots blocked per 90','PAdj Interceptions','Non-penalty goals per 90','xG per 90',
     'Shots per 90','Dribbles per 90','Successful dribbles, %','Offensive duels per 90','Offensive duels won, %',
     'Touches in box per 90','Progressive runs per 90','Accelerations per 90','Passes per 90','Accurate passes, %',
