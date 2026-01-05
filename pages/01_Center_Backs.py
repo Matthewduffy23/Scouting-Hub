@@ -74,6 +74,14 @@ st.caption("Use the sidebar to shape your pool. Each section explains what youâ€
 selected_file = st.selectbox("Select dataset to load:", csv_files, key="cb_dataset_select")
 df = load_df(selected_file)
 
+# --- Ensure optional metrics exist so the app doesn't crash ---
+OPTIONAL_METRICS = ["Successful defensive actions per 90"]
+
+for col in OPTIONAL_METRICS:
+    if col not in df.columns:
+        df[col] = 0.0
+
+
 # If dataset changes, clear dataset-scoped widget state
 if st.session_state.get("_active_dataset_cb") != selected_file:
     for k in [
