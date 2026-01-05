@@ -661,6 +661,7 @@ df_f["Pass Ratio Percentile"] = (
 #   - Dark theme option (#0a0f1c)
 #   - Raw metric mode prints RAW values on image (bars scaled vs pool)
 #   - More flags via RestCountries fallback → ISO2 → Twemoji (cached)
+#   - NEW: Complete Score composite metric
 # ===================================================================
 
 import io
@@ -700,93 +701,130 @@ def scale_0_100(s: pd.Series, default: float = 50.0) -> pd.Series:
 
 
 # ---------------------------------------------------------
-# 1) ENSURE IMPACT / BUCKET SCORES EXIST
+# 1) ENSURE IMPACT / BUCKET SCORES EXIST (+ COMPLETE SCORE)
 # ---------------------------------------------------------
 
 def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataFrame:
+    """
+    Ensure all CB-derived metrics exist: sub-scores, impact scores, league context,
+    and the new Complete Score.
+    """
+
     required_cols = [
         "Impact Score", "Impact Score (no league)",
         "Aerial Score", "Ground Score", "Retention Score",
         "Carrying Score", "Playmaking Score", "Positioning Score",
         "League Factor"
     ]
-    if all(c in df_f.columns for c in required_cols):
-        return df_f
+
+    # If all existing impact-related fields exist, we still want to ensure Complete Score
+    # (new metric), so don't early-return until we've checked/added it.
+    has_all_old = all(c in df_f.columns for c in required_cols)
 
     df_f = df_f.copy()
 
     def pct(m: str) -> str:
         return f"{m} Percentile"
 
-    df_f["Aerial Score"] = (
-        0.30 * df_f[pct("Aerial duels per 90")] +
-        0.70 * df_f[pct("Aerial duels won, %")]
-    )
-    df_f["Ground Score"] = (
-        0.30 * df_f[pct("Defensive duels per 90")] +
-        0.70 * df_f[pct("Defensive duels won, %")]
-    )
-    df_f["Retention Score"] = (
-        0.25 * df_f[pct("Accurate passes, %")] +
-        0.25 * df_f[pct("Accurate forward passes, %")] +
-        0.25 * df_f[pct("Accurate progressive passes, %")] +
-        0.25 * df_f[pct("Accurate long passes, %")]
-    )
-    df_f["Carrying Score"] = (
-        0.40 * df_f[pct("Dribbles per 90")] +
-        0.20 * df_f[pct("Successful dribbles, %")] +
-        0.40 * df_f[pct("Progressive runs per 90")]
-    )
-    df_f["Playmaking Score"] = (
-        0.50 * df_f[pct("Progressive passes per 90")] +
-        0.25 * df_f[pct("Forward passes per 90")] +
-        0.25 * df_f[pct("Passes to final third per 90")]
-    )
-    df_f["Positioning Score"] = (
-        0.70 * df_f[pct("PAdj Interceptions")] +
-        0.30 * df_f[pct("Shots blocked per 90")]
-    )
+    if not has_all_old:
+        # ----- Sub-scores -----
+        df_f["Aerial Score"] = (
+            0.30 * df_f[pct("Aerial duels per 90")] +
+            0.70 * df_f[pct("Aerial duels won, %")]
+        )
 
-    sub_scores = [
-        "Aerial Score", "Ground Score", "Retention Score",
-        "Carrying Score", "Playmaking Score", "Positioning Score",
-    ]
-    df_f["Base CB Score"] = df_f[sub_scores].mean(axis=1)
+        df_f["Ground Score"] = (
+            0.30 * df_f[pct("Defensive duels per 90")] +
+            0.70 * df_f[pct("Defensive duels won, %")]
+        )
 
-    minutes_pct = df_f.groupby("League")["Minutes played"].rank(pct=True)
-    df_f["Minutes Factor"] = 0.90 + 0.20 * minutes_pct
+        df_f["Retention Score"] = (
+            0.25 * df_f[pct("Accurate passes, %")] +
+            0.25 * df_f[pct("Accurate forward passes, %")] +
+            0.25 * df_f[pct("Accurate progressive passes, %")] +
+            0.25 * df_f[pct("Accurate long passes, %")]
+        )
 
-    league_avg = df_f.groupby("League")["Base CB Score"].transform("mean")
-    team_avg   = df_f.groupby(["League", "Team"])["Base CB Score"].transform("mean")
+        df_f["Carrying Score"] = (
+            0.40 * df_f[pct("Dribbles per 90")] +
+            0.20 * df_f[pct("Successful dribbles, %")] +
+            0.40 * df_f[pct("Progressive runs per 90")]
+        )
 
-    with np.errstate(divide="ignore", invalid="ignore"):
-        strength_ratio = team_avg / league_avg.replace(0, np.nan)
+        df_f["Playmaking Score"] = (
+            0.50 * df_f[pct("Progressive passes per 90")] +
+            0.25 * df_f[pct("Forward passes per 90")] +
+            0.25 * df_f[pct("Passes to final third per 90")]
+        )
 
-    raw_team_factor = np.where(strength_ratio > 0, 1.0 / strength_ratio, 1.0)
-    df_f["Team Context Factor"] = np.clip(raw_team_factor, 0.90, 1.10)
-    df_f["Team Context Factor"] = df_f["Team Context Factor"].fillna(1.0)
+        df_f["Positioning Score"] = (
+            0.70 * df_f[pct("PAdj Interceptions")] +
+            0.30 * df_f[pct("Shots blocked per 90")]
+        )
 
-    df_f["Raw Impact No League"] = (
-        df_f["Base CB Score"] *
-        df_f["Minutes Factor"] *
-        df_f["Team Context Factor"]
-    )
+        sub_scores = [
+            "Aerial Score", "Ground Score", "Retention Score",
+            "Carrying Score", "Playmaking Score", "Positioning Score",
+        ]
+        df_f["Base CB Score"] = df_f[sub_scores].mean(axis=1)
 
-    ls_norm = df_f["League Strength"].fillna(50.0).astype(float) / 100.0
-    ls_norm = np.clip(ls_norm, 0.30, 1.00)
+        # ----- Minutes factor -----
+        minutes_pct = df_f.groupby("League")["Minutes played"].rank(pct=True)
+        df_f["Minutes Factor"] = 0.90 + 0.20 * minutes_pct
 
-    beta_league = float(st.session_state.get(f"cb_beta_{selected_file}", 0.40))
-    gamma = 1.0 + 1.5 * beta_league
+        # ----- Team context factor -----
+        league_avg = df_f.groupby("League")["Base CB Score"].transform("mean")
+        team_avg   = df_f.groupby(["League", "Team"])["Base CB Score"].transform("mean")
 
-    df_f["League Factor"] = ls_norm ** gamma
-    df_f["Raw Impact Score"] = df_f["Raw Impact No League"] * df_f["League Factor"]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            strength_ratio = team_avg / league_avg.replace(0, np.nan)
 
-    df_f["Impact Score"]             = scale_0_100(df_f["Raw Impact Score"]).astype(float)
-    df_f["Impact Score (no league)"] = scale_0_100(df_f["Raw Impact No League"]).astype(float)
+        raw_team_factor = np.where(strength_ratio > 0, 1.0 / strength_ratio, 1.0)
+        df_f["Team Context Factor"] = np.clip(raw_team_factor, 0.90, 1.10)
+        df_f["Team Context Factor"] = df_f["Team Context Factor"].fillna(1.0)
+
+        # ----- Raw impact (no league) -----
+        df_f["Raw Impact No League"] = (
+            df_f["Base CB Score"] *
+            df_f["Minutes Factor"] *
+            df_f["Team Context Factor"]
+        )
+
+        # ----- League factor -----
+        ls_norm = df_f["League Strength"].fillna(50.0).astype(float) / 100.0
+        ls_norm = np.clip(ls_norm, 0.30, 1.00)
+
+        beta_league = float(st.session_state.get(f"cb_beta_{selected_file}", 0.40))
+        gamma = 1.0 + 1.5 * beta_league
+
+        df_f["League Factor"] = ls_norm ** gamma
+
+        # ----- Raw impact with league -----
+        df_f["Raw Impact Score"] = df_f["Raw Impact No League"] * df_f["League Factor"]
+
+        # ----- 0–100 scaling of impact -----
+        df_f["Impact Score"]             = scale_0_100(df_f["Raw Impact Score"]).astype(float)
+        df_f["Impact Score (no league)"] = scale_0_100(df_f["Raw Impact No League"]).astype(float)
+
+    # -----------------------------------------------------
+    # 1b) COMPLETE SCORE (always ensure this exists)
+    # -----------------------------------------------------
+    if "Complete Score" not in df_f.columns:
+        df_f["Complete Score"] = (
+            0.15 * df_f[pct("Aerial duels won, %")] +
+            0.15 * df_f[pct("Defensive duels won, %")] +
+            0.10 * df_f[pct("Accurate passes, %")] +
+            0.10 * df_f[pct("Accurate forward passes, %")] +
+            0.05 * df_f[pct("Dribbles per 90")] +
+            0.15 * df_f[pct("Progressive runs per 90")] +
+            0.15 * df_f[pct("Progressive passes per 90")] +
+            0.15 * df_f[pct("PAdj Interceptions")]
+        )
 
     return df_f
 
 
+# df_f and selected_file assumed to be defined elsewhere in your app
 df_f = ensure_cb_impact_metrics(df_f, selected_file)
 
 
@@ -810,6 +848,7 @@ RANK_OPTIONS = {
     "Carrying Score": "Carrying Score",
     "Playmaking Score": "Playmaking Score",
     "Positioning Score": "Positioning Score",
+    "Complete Score": "Complete Score",  # NEW
 }
 
 def _raw_metric_candidates(df: pd.DataFrame) -> list[str]:
@@ -819,6 +858,7 @@ def _raw_metric_candidates(df: pd.DataFrame) -> list[str]:
         "Playmaking Score", "Positioning Score",
         "Base CB Score", "Raw Impact Score", "Raw Impact No League",
         "Minutes Factor", "Team Context Factor", "League Factor",
+        "Complete Score",  # treat as composite, not raw
     }
     numeric_cols = []
     for c in df.columns:
@@ -974,6 +1014,8 @@ if selected_display_league != "All leagues":
 
 df_display = df_display.dropna(subset=[display_metric_col]).sort_values(display_metric_col, ascending=False).copy()
 
+# You should define top_n somewhere in your app, e.g.:
+top_n = 10
 st.dataframe(df_display.head(top_n), use_container_width=True)
 
 
@@ -1114,6 +1156,12 @@ def footer_lines_for_metric(metric_label: str, show_ls: bool) -> list[str]:
             "Displayed 0–100 vs the full selected pool "
             + ("(league strength applied)." if show_ls else "(no league-strength adjustment)."),
         ]
+    if metric_label == "Complete Score":
+        return [
+            "Complete Score: weighted blend of duels, passing, carrying, progression and positioning.",
+            "Displayed 0–100 vs the full selected pool "
+            + ("(league strength applied)." if show_ls else "(no league-strength adjustment)."),
+        ]
     return [
         f"{metric_label}: ranks this metric only.",
         "Displayed 0–100 vs the full selected pool "
@@ -1122,7 +1170,7 @@ def footer_lines_for_metric(metric_label: str, show_ls: bool) -> list[str]:
 
 
 # ---------------------------------------------------------
-# 8) RANKING IMAGE (Standard + 1920×1080) – updated bars + banner grid
+# 8) RANKING IMAGE (Standard + 1920×1080)
 # ---------------------------------------------------------
 
 def _format_value(v) -> str:
@@ -1163,26 +1211,9 @@ def make_ranking_image(
         return b""
 
     hi_set = {str(x).strip().lower() for x in (highlight_players or []) if str(x).strip()}
+
     def is_hi(row: pd.Series) -> bool:
         return str(row.get("Player", "")).strip().lower() in hi_set
-
-    def _format_value(v) -> str:
-        if v is None:
-            return "—"
-        try:
-            v = float(v)
-        except Exception:
-            return str(v)
-        if np.isnan(v):
-            return "—"
-        av = abs(v)
-        if av >= 100:
-            return f"{v:.0f}"
-        if av >= 10:
-            return f"{v:.1f}"
-        if av >= 1:
-            return f"{v:.2f}"
-        return f"{v:.3f}"
 
     # theme palette
     if theme == "Dark":
@@ -1206,7 +1237,7 @@ def make_ranking_image(
     max_score = float(scores.max()) if scores.notna().any() else 1.0
 
     # =====================================================
-    # 1920×880 banner – FIXED (bigger table, better title spacing, footer pinned low)
+    # 1920×1080 banner (fixed)
     # =====================================================
     if export_mode == "1920×1080 (banner)":
         DPI = 100
@@ -1219,9 +1250,7 @@ def make_ranking_image(
 
         LEFT, RIGHT = 0.045, 0.955
 
-        # -----------------------
-        # TITLES (spaced)
-        # -----------------------
+        # Titles
         t1 = title_lines[0].upper() if len(title_lines) > 0 else ""
         t2 = title_lines[1].upper() if len(title_lines) > 1 else ""
         t3 = title_lines[2].upper() if len(title_lines) > 2 else ""
@@ -1233,21 +1262,17 @@ def make_ranking_image(
         header_div_y = 0.835
         ax.plot([LEFT, RIGHT], [header_div_y, header_div_y], color=DIV, lw=2.2)
 
-        # -----------------------
-        # FOOTER: single abbreviated line ON the bottom divider line
-        # + push divider lower
-        # -----------------------
-        footer_div_y = 0.040  # lower than before
+        # Footer divider + single line
+        footer_div_y = 0.040
         ax.plot([LEFT, RIGHT], [footer_div_y, footer_div_y], color=DIV, lw=2.2)
 
-        # One-liner footer, anchored starting at the divider
         footer_one = (
-            "Impact Score: aerial+ground+retention+carry+playmaking+positioning | "
+            "Impact/Composite Score: weighted metrics for CB contribution | "
             + ("0–100 (LS applied)" if show_ls else "0–100 (no LS)")
         )
         ax.text(
             LEFT,
-            footer_div_y - 0.018,   # starts just under the divider
+            footer_div_y - 0.018,
             footer_one,
             fontsize=13,
             color=FOOT,
@@ -1256,16 +1281,12 @@ def make_ranking_image(
             zorder=10,
         )
 
-        # -----------------------
-        # TABLE: extend down to the footer divider (no extra vertical gap)
-        # -----------------------
+        # Table rows
         ROW_TOP = header_div_y - 0.022
-        ROW_BOT = footer_div_y + 0.010   # VERY close to divider line
-
+        ROW_BOT = footer_div_y + 0.010
         row_gap = (ROW_TOP - ROW_BOT) / 10.0
         row_h   = row_gap * 0.99
 
-        # Columns
         RANK_X  = LEFT + 0.024
         CREST_X = LEFT + 0.112
         NAME_X  = LEFT + 0.190
@@ -1277,7 +1298,6 @@ def make_ranking_image(
 
         VAL_X   = RIGHT - 0.030
 
-        # Typography
         NAME_FS = 28
         TEAM_FS = 19
         NAME_DY = row_h * 0.20
@@ -1370,14 +1390,8 @@ def make_ranking_image(
         buf.seek(0)
         return buf.getvalue()
 
-
-
-
-
-
-
     # =====================================================
-    # Standard (auto height) – team line moved DOWN slightly
+    # Standard (auto height) – bar moved right, thinner, half width
     # =====================================================
     N        = len(df_top)
     ROW_H    = 0.82
@@ -1407,97 +1421,6 @@ def make_ranking_image(
     BAR_W = BAR_R - BAR_L
     BAR_H = 0.14
     VAL_X = 0.94
-    crest_x = 0.14
-
-    for i, (_, row) in enumerate(df_top.iterrows()):
-        y = base_y - i * ROW_H
-
-        ax.add_patch(Rectangle((LEFT, y - ROW_H/2), RIGHT - LEFT, ROW_H,
-                               color=(ROW_A if i % 2 == 0 else ROW_B), zorder=1))
-
-        if is_hi(row):
-            ax.add_patch(Rectangle((LEFT, y - ROW_H/2), RIGHT - LEFT, ROW_H,
-                                   color=HILITE, alpha=0.25, zorder=2))
-            ax.add_patch(Rectangle((LEFT, y - ROW_H/2), RIGHT - LEFT, ROW_H,
-                                   fill=False, edgecolor=HILITE_EDGE, lw=1.3, zorder=3))
-
-        ax.scatter([0.07], [y], s=520, facecolor=RANK_BG,
-                   edgecolor=(HILITE_EDGE if is_hi(row) else RANK_EDGE),
-                   linewidths=1.2, zorder=4)
-        ax.text(0.07, y, str(i+1), fontsize=10, fontweight="bold",
-                color=TXT, ha="center", va="center", zorder=5)
-
-        badge = get_team_badge(row)
-        if badge is not None:
-            ax.add_artist(AnnotationBbox(OffsetImage(badge, zoom=0.55),
-                                         (crest_x, y), frameon=False, zorder=5))
-
-        ax.text(0.21, y + 0.13, str(row.get("Player", "")).upper(),
-                fontsize=16, fontweight="bold", color=TXT, ha="left", va="center", zorder=5)
-
-        team = str(row.get("Team", ""))
-        league = str(row.get("League", ""))
-        # >>> moved DOWN slightly vs before (fix overlap)
-        ax.text(0.21, y - 0.125, f"{team} ({league})",
-                fontsize=12, color=SUB, ha="left", va="center", zorder=5)
-
-        ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W, BAR_H, color=BAR_BG, zorder=2))
-        v_bar = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
-        frac = (v_bar / max_score) if max_score else 0.0
-        ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W * frac, BAR_H, color=BAR_FG, zorder=3))
-
-        v_lab = row.get(value_label_col)
-        ax.text(VAL_X, y, _format_value(v_lab),
-                fontsize=16, fontweight="bold", color=TXT, ha="right", va="center", zorder=6)
-
-    ax.plot([LEFT, RIGHT], [0.82]*2, color=DIV, lw=0.9, zorder=2)
-    lines = footer_lines_for_metric(metric_label, show_ls)
-    for j, line in enumerate(lines):
-        ax.text(LEFT, 0.62 - j*0.18, line, fontsize=9.5, color=FOOT, ha="left", va="top", zorder=4)
-
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=220, bbox_inches="tight", facecolor=BG)
-    plt.close(fig)
-    buf.seek(0)
-    return buf.getvalue()
-
-    # =====================================================
-    # Standard (auto height) – bar moved right, thinner, half width
-    # =====================================================
-    N        = len(df_top)
-    ROW_H    = 0.82
-    HEADER_H = 1.70
-    FOOT_H   = 0.70
-    TOTAL_H  = HEADER_H + N * ROW_H + FOOT_H
-
-    fig, ax = plt.subplots(figsize=(8.3, TOTAL_H), dpi=220)
-    ax.set_xlim(0, 1.0)
-    ax.set_ylim(0, TOTAL_H)
-    ax.axis("off")
-    ax.add_patch(Rectangle((0, 0), 1.0, TOTAL_H, color=BG, zorder=0))
-
-    t1 = title_lines[0].upper() if len(title_lines) > 0 else ""
-    t2 = title_lines[1].upper() if len(title_lines) > 1 else ""
-    t3 = title_lines[2].upper() if len(title_lines) > 2 else ""
-    title_y = TOTAL_H - 0.25
-    ax.text(0.04, title_y,        t1, fontsize=19, fontweight="bold", color=TXT, ha="left", va="top")
-    ax.text(0.04, title_y - 0.34, t2, fontsize=14, fontweight="bold", color=TXT, ha="left", va="top")
-    ax.text(0.04, title_y - 0.62, t3, fontsize=11, color=SUB, ha="left", va="top")
-
-    base_y = TOTAL_H - HEADER_H
-    ax.plot([0.04, 0.96], [base_y + ROW_H/2 + 0.02]*2, color=DIV, lw=1.1, zorder=2)
-
-    # FULL-WIDTH row cards + bar moved right and half width
-    LEFT, RIGHT = 0.04, 0.96
-
-    # --- BAR: moved right so it NEVER clashes with team text; about half width ---
-    BAR_L, BAR_R = 0.66, 0.82
-    BAR_W = BAR_R - BAR_L
-    BAR_H = 0.14  # thinner than before
-
-    # value gap / placement
-    VAL_X = 0.94
-
     crest_x = 0.14
 
     for i, (_, row) in enumerate(df_top.iterrows()):
@@ -1593,25 +1516,7 @@ if img_bytes:
     st.image(img_bytes, use_column_width=True)
     st.download_button("Download PNG", data=img_bytes, file_name="cb_ranking.png", mime="image/png")
 else:
-    st.info("No data to generate image.")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    st.info("No data to generate image.")  # how does this work
 
 
 
