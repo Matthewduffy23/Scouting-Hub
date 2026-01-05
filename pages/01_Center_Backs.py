@@ -2193,8 +2193,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 ("Defensive Duels", "Defensive duels per 90"),
                 ("Defensive Duel Success %", "Defensive duels won, %"),
                 ("PAdj Interceptions", "PAdj Interceptions"),
-                ("Shots Blocked", "Shots blocked per 90"),
-                ("Suc. Defensive Actions", "Successful defensive actions per 90")]
+                ("Shots Blocked", "Shots blocked per 90"),]
 
             POS = [
                 ("Accelerations", "Accelerations per 90"),
@@ -2720,8 +2719,7 @@ st.pyplot(fig, use_container_width=True)
 
    # ---------- 2) NOTES: Style / Strengths / Weaknesses ----------
 
-EXTRA_METRICS = [
-    'Successful defensive actions per 90', 'Defensive duels per 90', 'Defensive duels won, %',
+EXTRA_METRICS = ['Defensive duels per 90', 'Defensive duels won, %',
     'Aerial duels per 90', 'Aerial duels won, %', 'Shots blocked per 90',
     'PAdj Interceptions', 'Non-penalty goals per 90', 'xG per 90', 
     'Shots per 90', 'Shots on target, %', 'Crosses per 90',
@@ -3322,7 +3320,6 @@ else:
         ("Defensive Duel %", "Defensive duels won, %"),
         ("PAdj Interceptions", "PAdj Interceptions"),
         ("Shots Blocked", "Shots blocked per 90"),
-        ("Successful Def. Actions", "Successful defensive actions per 90"),
     ]:
         DEFENSIVE.append((lab, float(np.nan_to_num(pct_of(met), nan=0.0)), val_of(met)[1]))
 
@@ -3647,7 +3644,6 @@ else:
         ("Defensive Duel Success %", "Defensive duels won, %"),
         ("PAdj Interceptions", "PAdj Interceptions"),
         ("Shots Blocked", "Shots blocked per 90"),
-        ("Successful Defensive Actions", "Successful defensive actions per 90"),
     ]:
         DEFENSIVE.append((lab, float(np.nan_to_num(pct_of(met), nan=0.0)), val_of(met)[1]))
 
@@ -4900,7 +4896,6 @@ st.header("🧭 Similar players (within adjustable pool)")
 
 # --- Feature basket declared FIRST so UI can use it ---
 SIM_FEATURES = [
-       'Successful defensive actions per 90',
        'Defensive duels per 90', 'Defensive duels won, %',
        'Aerial duels per 90', 'Aerial duels won, %', 'Shots blocked per 90',
        'PAdj Interceptions', 'Dribbles per 90',
@@ -5156,7 +5151,6 @@ DEFAULT_LEAGUE_WEIGHT = 0.5
 DEFAULT_MARKET_WEIGHT = 0.2
 
 CF_FEATURES = [
-       'Successful defensive actions per 90',
        'Defensive duels per 90', 'Defensive duels won, %',
        'Aerial duels per 90', 'Aerial duels won, %', 'Shots blocked per 90',
        'PAdj Interceptions', 'Dribbles per 90',
