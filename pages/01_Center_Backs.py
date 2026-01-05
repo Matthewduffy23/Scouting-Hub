@@ -273,7 +273,7 @@ GBE_LEAGUE_BANDS = {
     # Band 5
     "Serbia 1.": 5, "Poland 1.": 5, "Slovenia 1.": 5, "Chile 1.": 5, "Uruguay 1.": 5,
     "Sweden 1.": 5, "Norway 1.": 5, "Italy 2.": 5, "Hungary 1.": 5, "Japan 1.": 5,
-    "Korea 1.": 5, "Australia 1.": 5, "Brazil 2.": 5,
+    "Korea 1.": 5, "Australia 1.": 5, 
 
     # Everything else defaults to Band 6
 }
