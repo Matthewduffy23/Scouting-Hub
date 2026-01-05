@@ -123,8 +123,7 @@ PRESET_LEAGUES = {
     "EFL (England 2–4)": {'England 2.','England 3.','England 4.'}
 }
 
-FEATURES = [
-    'Successful defensive actions per 90', 'Defensive duels per 90', 'Defensive duels won, %',
+FEATURES = ['Defensive duels per 90', 'Defensive duels won, %',
     'Aerial duels per 90', 'Aerial duels won, %', 'Shots blocked per 90',
     'PAdj Interceptions', 'Non-penalty goals per 90', 'xG per 90',
     'Shots per 90', 'Shots on target, %', 'Crosses per 90',

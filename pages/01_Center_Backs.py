@@ -123,7 +123,6 @@ PRESET_LEAGUES = {
 }
 
 FEATURES = [
-    'Successful defensive actions per 90',
     'Defensive duels per 90', 'Defensive duels won, %',
     'Aerial duels per 90', 'Aerial duels won, %', 'Shots blocked per 90',
     'PAdj Interceptions', 'Dribbles per 90',
