@@ -108,7 +108,7 @@ INCLUDED_LEAGUES = [
 'Estonia 1.','England 9.','Northern Ireland 1.','Serbia 2.','Denmark 3.',
 'Sweden 3.','Slovenia 2.','Slovakia 2.','Greece 2.','Wales 1.',
 'USA 3.','Scotland 3.','England 6.','England 8.','England 10.',
-'Estonia 2.'
+'Estonia 2.', 'China 1.'
 ]
 
 PRESET_LEAGUES = {
@@ -203,7 +203,7 @@ LEAGUE_STRENGTHS = {
 'Ireland 1.':50.59,'Russia 1.':62.41,'Kazakhstan 1.':50.39,'Nigeria 1.':50.00,'France 3.':49.61,
 'Tunisia 1.':49.22,'Venezuela 1.':48.63,'Belgium 2.':48.43,'Finland 1.':48.43,'Armenia 1.':47.84,
 'Georgia 1.':47.65,'Switzerland 2.':46.47,'Qatar 1.':46.27,'Uzbekistan 1.':46.27,'Poland 2.':46.27,
-'Iceland 1.':46.08,'Norway 2.':45.88,'Sweden 2.':45.69,'North Macedonia 1.':44.71,'Turkey 2.':44.51,
+'Iceland 1.':46.08,'Norway 2.':45.88,'Sweden 2.':45.69,'North Macedonia 1.':44.71,'China 1.':44.7,            'Turkey 2.':44.51,
 'Korea 2.':43.53,'Czech 2.':43.33,'Brazil 3.':43.14,'Lithuania 1.':42.35,'Netherlands 2.':42.16,
 'Malta 1.':41.96,'Italy 3.':45,'Denmark 2.':40.39,'Moldova 1.':40.39,'USA 2.':40.00,
 'Latvia 1.':40.00,'Montenegro 1.':39.80,'Scotland 2.':38.63,'Canada 1.':38.24,'Austria 2.':38.24,
