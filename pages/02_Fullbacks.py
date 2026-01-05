@@ -5224,6 +5224,11 @@ else:
         "montenegro": "me",
         "estonia": "ee",
         "russia": "ru",
+         "portugal": "pt",
+                    "hungary": "hu",
+                    "ukraine": "ua",
+                    "serbia": "rs",
+                    "azerbaijan": "az",
 
         # Middle East & Asia
         "saudi": "sa",

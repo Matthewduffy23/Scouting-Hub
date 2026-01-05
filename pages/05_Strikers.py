@@ -2480,7 +2480,6 @@ if isinstance(role_scores, dict) and role_scores:
         ("Defensive Duels", "Defensive duels per 90"),
         ("Defensive Duel %", "Defensive duels won, %"),
         ("PAdj Interceptions", "PAdj Interceptions"),
-        ("Succ. def acts", "Successful defensive actions per 90"),
     ]: DEFENSIVE.append((lab, pct_of(met), val_of(met)[1]))
 
     POSSESSION = []
@@ -2573,7 +2572,6 @@ else:
         ("Defensive Duels", "Defensive duels per 90"),
         ("Defensive Duel Success %", "Defensive duels won, %"),
         ("PAdj. Interceptions", "PAdj Interceptions"),
-        ("Successful Def. Actions", "Successful defensive actions per 90"),
     ]:
         DEFENSIVE.append((lab, float(np.nan_to_num(pct_of(met), nan=0.0)), val_of(met)[1]))
 
