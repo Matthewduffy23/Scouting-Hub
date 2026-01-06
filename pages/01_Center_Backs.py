@@ -286,6 +286,27 @@ def gbe_league_band(league_name: str) -> int:
     league_name = str(league_name).strip()
     return int(GBE_LEAGUE_BANDS.get(league_name, 6))
 
+@st.cache_data(show_spinner=False)
+def league_strength_band_df(max_band: int = 6) -> pd.DataFrame:
+    """
+    Return a dataframe with League, League Strength, and GBE Band,
+    filtered to bands <= max_band.
+    """
+    rows = []
+    for league, strength in LEAGUE_STRENGTHS.items():
+        band = gbe_league_band(league)
+        if band <= max_band:
+            rows.append({
+                "League": league,
+                "League strength": strength,
+                "GBE band": band,
+            })
+
+    df_ls = pd.DataFrame(rows)
+    df_ls = df_ls.sort_values(["League strength"], ascending=[True, False])
+    return df_ls
+
+
 
 
 import re
@@ -422,6 +443,11 @@ with st.sidebar:
     use_band4 = c4.checkbox("Band 4", value=True,  key=f"cb_band4_{selected_file}")
     use_band5 = c5.checkbox("Band 5", value=True,  key=f"cb_band5_{selected_file}")
     use_band6 = c6.checkbox("Band 6", value=True,  key=f"cb_band6_{selected_file}")
+
+    with st.expander("📋 League strengths & GBE bands (1–6)"):
+    df_ls = league_strength_band_df(max_band=5)
+    st.dataframe(df_ls, use_container_width=True)
+
 
     selected_bands: list[int] = []
     if use_band1: selected_bands.append(1)
