@@ -675,15 +675,6 @@ df_f["Pass Ratio Percentile"] = (
 # ===================================================================
 #  CB IMPACT FEATURE BLOCK – METRICS + CRESTS + CIES-STYLE IMAGE
 #  (Pool defined by sidebar; display filters do NOT change pool)
-#
-#  Includes:
-#   - Impact Score + sub-metrics
-#   - Complete Score composite metric
-#   - Custom Combo Score – user-chosen equal-weight blend of base scores
-#   - Custom footer text
-#   - Country→flag mapping based on dataset names
-#   - FIX: Custom Combo uses the exact same 0–100 bar-scaling path
-#   - FIX: Slightly larger vertical gap between player name & team name
 # ===================================================================
 
 import io
@@ -727,11 +718,6 @@ def scale_0_100(s: pd.Series, default: float = 50.0) -> pd.Series:
 # ---------------------------------------------------------
 
 def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataFrame:
-    """
-    Ensure all CB-derived metrics exist: sub-scores, impact scores, league context,
-    and the Complete Score.
-    """
-
     required_cols = [
         "Impact Score", "Impact Score (no league)",
         "Aerial Score", "Ground Score", "Retention Score",
@@ -825,9 +811,7 @@ def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataF
         df_f["Impact Score"]             = scale_0_100(df_f["Raw Impact Score"]).astype(float)
         df_f["Impact Score (no league)"] = scale_0_100(df_f["Raw Impact No League"]).astype(float)
 
-    # -----------------------------------------------------
-    # COMPLETE SCORE (always ensure this exists)
-    # -----------------------------------------------------
+    # ----- Complete Score -----
     if "Complete Score" not in df_f.columns:
         df_f["Complete Score"] = (
             0.15 * df_f[pct("Aerial duels won, %")] +
@@ -1021,12 +1005,10 @@ if enable_highlight_players:
 
 df_pool = df_f.copy()
 
-# base_for_display = raw numbers (may include league factor)
-# metric_label_for_image = string shown in header
-# value_label_col = what gets printed on the right side
+# base_for_display → numbers used for ranking/bars (maybe LS-adjusted)
+# value_label_col → numbers printed at right
 if rank_mode == "Composite (CB scores)":
     if use_custom_combo:
-        # equal-weight blend of chosen base scores
         if custom_combo_components:
             valid_components = [c for c in custom_combo_components if c in df_pool.columns]
         else:
@@ -1036,28 +1018,35 @@ if rank_mode == "Composite (CB scores)":
         else:
             df_pool["Custom Combo Raw"] = df_pool["Base CB Score"]
 
+        # keep combo in 0–100 range
+        df_pool["Custom Combo Raw"] = df_pool["Custom Combo Raw"].clip(0, 100)
+
         if display_with_league_strength:
             base_for_display = df_pool["Custom Combo Raw"] * df_pool["League Factor"]
         else:
             base_for_display = df_pool["Custom Combo Raw"]
 
         metric_label_for_image = "Custom Combo"
-        value_label_col = "_MetricForBars"   # show 0–100
+        value_label_col = "Custom Combo Raw"   # show actual combo, not re-scaled
 
     else:
         if rank_label == "Impact Score":
-            base_for_display = (
-                df_pool["Impact Score"] if display_with_league_strength
-                else df_pool["Impact Score (no league)"]
-            )
+            # use existing impact columns
+            if display_with_league_strength:
+                base_for_display = df_pool["Impact Score"]
+                value_label_col = "Impact Score"
+            else:
+                base_for_display = df_pool["Impact Score (no league)"]
+                value_label_col = "Impact Score (no league)"
         else:
             base_col = RANK_OPTIONS[rank_label]
             if display_with_league_strength:
                 base_for_display = df_pool[base_col] * df_pool["League Factor"]
             else:
                 base_for_display = df_pool[base_col]
+            value_label_col = base_col  # show original 0–100 bucket score
+
         metric_label_for_image = rank_label
-        value_label_col = "_MetricForBars"   # show 0–100 for composites
 
 else:
     # RAW METRIC MODE
@@ -1116,8 +1105,8 @@ _SPECIAL_FLAG_URLS = {
     "FLAG_NIR": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Ulster_banner.svg/200px-Ulster_banner.svg.png"
 }
 
-# KEEP EXPANDING THIS WITH YOUR FULL LIST – just a few examples here
 _COUNTRY_OVERRIDES = {
+    # paste your big mapping here – examples:
     "netherlands": "nl",
     "spain": "es",
     "serbia": "rs",
@@ -1127,8 +1116,7 @@ _COUNTRY_OVERRIDES = {
     "slovakia": "sk",
     "italy": "it",
     "switzerland": "ch",
-    "wales": "gb",       # you still get proper home-nations via _CC_MAP
-    # ... paste the rest of your overrides here ...
+    # ...
 }
 
 
@@ -1416,8 +1404,8 @@ def make_ranking_image(
 
         NAME_FS = 28
         TEAM_FS = 19
-        NAME_DY = row_h * 0.24      # a bit higher
-        TEAM_DY = row_h * 0.34      # a bit lower → more gap
+        NAME_DY = row_h * 0.24
+        TEAM_DY = row_h * 0.34
         crest_zoom = 0.88
 
         for i, (_, row) in enumerate(df_top.iterrows()):
@@ -1653,6 +1641,7 @@ if img_bytes:
     st.download_button("Download PNG", data=img_bytes, file_name="cb_ranking.png", mime="image/png")
 else:
     st.info("No data to generate image.")
+
 
 
 
