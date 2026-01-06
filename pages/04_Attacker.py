@@ -1243,7 +1243,8 @@ def att_get_team_badge(row: pd.Series):
     if img is not None:
         return img
     birth = row.get("Birth country") or row.get("Birth Country") or row.get("Nationality")
-    return att_birth_country_flag_image(birth)
+    # FIX: call the existing cm_birth_country_flag_image instead of undefined att_birth_country_flag_image
+    return cm_birth_country_flag_image(birth)
 
 
 # ---------------------------------------------------------
@@ -1648,6 +1649,7 @@ if img_bytes_att:
                        file_name="attacker_ranking.png", mime="image/png")
 else:
     st.info("No data to generate image for attackers.")
+
 
 
 # ----------------- ROLE SCORING (tables) -----------------
