@@ -688,6 +688,7 @@ df_f["Pass Ratio Percentile"] = (
 #   - Raw metric mode prints RAW values on image (bars scaled vs pool)
 #   - More flags via RestCountries fallback → ISO2 → Twemoji (cached)
 #   - NEW: Complete Score composite metric
+#   - NEW: Custom Combo Score – user-selected equal-weight combo of base scores
 # ===================================================================
 
 import io
@@ -877,6 +878,15 @@ RANK_OPTIONS = {
     "Complete Score": "Complete Score",  # NEW
 }
 
+BASE_COMPOSITE_COLS = [
+    "Aerial Score",
+    "Ground Score",
+    "Retention Score",
+    "Carrying Score",
+    "Playmaking Score",
+    "Positioning Score",
+]
+
 def _raw_metric_candidates(df: pd.DataFrame) -> list[str]:
     bad = {
         "Impact Score", "Impact Score (no league)",
@@ -885,6 +895,7 @@ def _raw_metric_candidates(df: pd.DataFrame) -> list[str]:
         "Base CB Score", "Raw Impact Score", "Raw Impact No League",
         "Minutes Factor", "Team Context Factor", "League Factor",
         "Complete Score",  # treat as composite, not raw
+        "Custom Combo Score",  # internal composite
     }
     numeric_cols = []
     for c in df.columns:
@@ -896,15 +907,39 @@ def _raw_metric_candidates(df: pd.DataFrame) -> list[str]:
 
 raw_metric_list = _raw_metric_candidates(df_f)
 
+# --- Composite / Raw mode UI ---
+
+use_custom_combo = False
+custom_combo_components: list[str] = []
+
 if rank_mode == "Composite (CB scores)":
-    rank_label = st.selectbox(
-        "Ranking metric",
-        list(RANK_OPTIONS.keys()),
-        index=0,
-        key=f"cb_rank_metric_{selected_file}",
+    use_custom_combo = st.checkbox(
+        "Use custom combination of base scores (equal weights)",
+        value=False,
+        key=f"cb_use_custom_combo_{selected_file}",
+        help="Combine any of Aerial/Ground/Retention/Carrying/Playmaking/Positioning into a single equal-weight score.",
     )
+    if use_custom_combo:
+        custom_combo_components = st.multiselect(
+            "Base scores to include in custom combo",
+            BASE_COMPOSITE_COLS,
+            default=["Aerial Score", "Ground Score", "Positioning Score"],
+            key=f"cb_custom_combo_components_{selected_file}",
+        )
+        rank_label = "Custom Combo"
+    else:
+        rank_label = st.selectbox(
+            "Ranking metric",
+            list(RANK_OPTIONS.keys()),
+            index=0,
+            key=f"cb_rank_metric_{selected_file}",
+        )
 else:
-    default_raw = "Progressive passes per 90" if "Progressive passes per 90" in raw_metric_list else (raw_metric_list[0] if raw_metric_list else None)
+    default_raw = (
+        "Progressive passes per 90"
+        if "Progressive passes per 90" in raw_metric_list
+        else (raw_metric_list[0] if raw_metric_list else None)
+    )
     rank_label = st.selectbox(
         "Ranking metric (raw column)",
         raw_metric_list,
@@ -997,9 +1032,23 @@ df_pool = df_f.copy()
 
 if rank_mode == "Composite (CB scores)":
     metric_to_display_cols = {}
+
+    # If using custom combo, create the Custom Combo Score column first
+    if use_custom_combo and custom_combo_components:
+        valid_components = [c for c in custom_combo_components if c in df_pool.columns]
+        if valid_components:
+            df_pool["Custom Combo Score"] = df_pool[valid_components].mean(axis=1)
+        else:
+            # Fallback: if nothing valid selected, just use Base CB Score
+            df_pool["Custom Combo Score"] = df_pool["Base CB Score"]
+
+    # Build display columns for all composite options
     for label, base_col in RANK_OPTIONS.items():
         if base_col == "Impact Score":
-            metric_to_display_cols[label] = {"no_ls": "Impact Score (no league)", "ls": "Impact Score"}
+            metric_to_display_cols[label] = {
+                "no_ls": "Impact Score (no league)",
+                "ls": "Impact Score",
+            }
         else:
             col_no = f"{base_col} (Display NL)"
             df_pool[col_no] = scale_0_100(df_pool[base_col])
@@ -1009,9 +1058,29 @@ if rank_mode == "Composite (CB scores)":
 
             metric_to_display_cols[label] = {"no_ls": col_no, "ls": col_ls}
 
-    display_metric_col = metric_to_display_cols[rank_label]["ls" if display_with_league_strength else "no_ls"]
-    metric_label_for_image = rank_label
+    # Also wire in the custom combo if we're using it
+    if use_custom_combo:
+        base_col = "Custom Combo Score"
+        col_no = "Custom Combo Score (Display NL)"
+        col_ls = "Custom Combo Score (Display LS)"
+        df_pool[col_no] = scale_0_100(df_pool[base_col])
+        df_pool[col_ls] = scale_0_100(df_pool[base_col] * df_pool["League Factor"])
+        metric_to_display_cols["Custom Combo"] = {"no_ls": col_no, "ls": col_ls}
+
+    # Choose which metric column to display
+    if use_custom_combo:
+        display_metric_col = metric_to_display_cols["Custom Combo"]["ls" if display_with_league_strength else "no_ls"]
+        # Label: show which components were selected
+        if custom_combo_components:
+            metric_label_for_image = "Custom Combo: " + ", ".join(custom_combo_components)
+        else:
+            metric_label_for_image = "Custom Combo"
+    else:
+        display_metric_col = metric_to_display_cols[rank_label]["ls" if display_with_league_strength else "no_ls"]
+        metric_label_for_image = rank_label
+
     value_label_col = display_metric_col
+
 else:
     raw_col = rank_label
     col_no = f"{raw_col} (Display NL)"
@@ -1182,9 +1251,15 @@ def footer_lines_for_metric(metric_label: str, show_ls: bool) -> list[str]:
             "Displayed 0–100 vs the full selected pool "
             + ("(league strength applied)." if show_ls else "(no league-strength adjustment)."),
         ]
-    if metric_label == "Complete Score":
+    if metric_label.startswith("Complete Score"):
         return [
             "Complete Score: weighted blend of duels, passing, carrying, progression and positioning.",
+            "Displayed 0–100 vs the full selected pool "
+            + ("(league strength applied)." if show_ls else "(no league-strength adjustment)."),
+        ]
+    if metric_label.startswith("Custom Combo"):
+        return [
+            "Custom Combo: equal-weight blend of selected base scores (Aerial/Ground/Retention/Carrying/Playmaking/Positioning).",
             "Displayed 0–100 vs the full selected pool "
             + ("(league strength applied)." if show_ls else "(no league-strength adjustment)."),
         ]
@@ -1542,7 +1617,7 @@ if img_bytes:
     st.image(img_bytes, use_column_width=True)
     st.download_button("Download PNG", data=img_bytes, file_name="cb_ranking.png", mime="image/png")
 else:
-    st.info("No data to generate image.")  # how does this work
+    st.info("No data to generate image.")  # uses an info box when no rows
 
 
 
