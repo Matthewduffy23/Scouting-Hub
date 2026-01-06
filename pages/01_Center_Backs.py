@@ -682,7 +682,9 @@ df_f["Pass Ratio Percentile"] = (
 #   - Custom Combo Score – user-chosen equal-weight blend of base scores
 #   - Custom footer text
 #   - Improved country→flag mapping based on dataset names
-#   - FIX: composite/custom bars use 0–100 (percent-style) scaling
+#   - FIXES:
+#       * Custom combo bars: no shrinking; bars consistent with 0–100 scale
+#       * Slightly larger vertical gap between player name and team line
 # ===================================================================
 
 import io
@@ -1020,10 +1022,7 @@ if enable_highlight_players:
 df_pool = df_f.copy()
 
 if rank_mode == "Composite (CB scores)":
-    # All these are already on a 0–100-ish scale
-    # (Impact Score, Aerial/Ground/etc, Complete Score, Custom Combo).
-
-    # --- 3a) Custom combo raw score (0–100 blend of base scores) ---
+    # --- 3a) Custom combo raw score 0–100 (simple mean of base scores) ---
     if use_custom_combo and custom_combo_components:
         valid_components = [c for c in custom_combo_components if c in df_pool.columns]
         if valid_components:
@@ -1031,7 +1030,7 @@ if rank_mode == "Composite (CB scores)":
         else:
             df_pool["Custom Combo Score"] = df_pool["Base CB Score"]
 
-    # --- 3b) Impact Score is special: we already computed league/no-league versions ---
+    # --- 3b) Impact Score special: already league/no-league versions ---
     metric_to_display_cols = {
         "Impact Score": {
             "no_ls": "Impact Score (no league)",
@@ -1044,8 +1043,8 @@ if rank_mode == "Composite (CB scores)":
         if base_col == "Impact Score":
             continue  # already handled above
 
-        # base_col itself is the 0–100 version with NO league strength
-        col_no = base_col  # e.g. "Aerial Score"
+        # base_col itself is 0–100-ish without league strength
+        col_no = base_col
 
         # league-strength adjusted version
         col_ls = f"{base_col} * LeagueFactor"
@@ -1053,7 +1052,7 @@ if rank_mode == "Composite (CB scores)":
 
         metric_to_display_cols[label] = {"no_ls": col_no, "ls": col_ls}
 
-    # --- 3d) Custom combo: mirror the same pattern as above ---
+    # --- 3d) Custom combo: mirror pattern above ---
     if use_custom_combo:
         raw_custom_col = "Custom Combo Score"
 
@@ -1061,6 +1060,7 @@ if rank_mode == "Composite (CB scores)":
             display_metric_col = "Custom Combo Score * LeagueFactor"
             df_pool[display_metric_col] = df_pool[raw_custom_col] * df_pool["League Factor"]
         else:
+            # non-league version: bars should correspond directly to 0–100
             display_metric_col = raw_custom_col
 
         metric_label_for_image = "Custom Combo"
@@ -1131,8 +1131,199 @@ _SPECIAL_FLAG_URLS = {
 
 # Overrides based on your dataset names (keys are normalized ascii)
 _COUNTRY_OVERRIDES = {
-    # ...  (keep exactly as in your last message – omitted here for brevity)
+    "netherlands": "nl",
+    "spain": "es",
+    "serbia": "rs",
+    "germany": "de",
+    "republic of ireland": "ie",
+    "france": "fr",
+    "slovakia": "sk",
+    "italy": "it",
+    "switzerland": "ch",
+    "wales": "gb-wls",
+    "belgium": "be",
+    "hungary": "hu",
+    "cote d'ivoire": "ci",
+    "cote divoire": "ci",
+    "portugal": "pt",
+    "brazil": "br",
+    "argentina": "ar",
+    "denmark": "dk",
+    "sierra leone": "sl",
+    "norway": "no",
+    "sweden": "se",
+    "united states": "us",
+    "gambia": "gm",
+    "ukraine": "ua",
+    "ghana": "gh",
+    "paraguay": "py",
+    "senegal": "sn",
+    "uruguay": "uy",
+    "czech republic": "cz",
+    "guernsey": "gg",
+    "croatia": "hr",
+    "nigeria": "ng",
+    "ecuador": "ec",
+    "colombia": "co",
+    "mexico": "mx",
+    "egypt": "eg",
+    "angola": "ao",
+    "french guiana": "gf",
+    "japan": "jp",
+    "burkina faso": "bf",
+    "mozambique": "mz",
+    "greece": "gr",
+    "slovenia": "si",
+    "guinea-bissau": "gw",
+    "guinea bissau": "gw",
+    "zimbabwe": "zw",
+    "cameroon": "cm",
+    "south africa": "za",
+    "korea republic": "kr",
+    "chad": "td",
+    "congo dr": "cd",
+    "austria": "at",
+    "bulgaria": "bg",
+    "turkiye": "tr",
+    "new zealand": "nz",
+    "georgia": "ge",
+    "uzbekistan": "uz",
+    "morocco": "ma",
+    "bosnia and herzegovina": "ba",
+    "poland": "pl",
+    "australia": "au",
+    "saudi arabia": "sa",
+    "chile": "cl",
+    "mali": "ml",
+    "tanzania": "tz",
+    "canada": "ca",
+    "montenegro": "me",
+    "zambia": "zm",
+    "panama": "pa",
+    "jersey": "je",
+    "iceland": "is",
+    "algeria": "dz",
+    "curacao": "cw",
+    "finland": "fi",
+    "bermuda": "bm",
+    "barbados": "bb",
+    "congo": "cg",
+    "grenada": "gd",
+    "montserrat": "ms",
+    "liberia": "lr",
+    "jamaica": "jm",
+    "lithuania": "lt",
+    "afghanistan": "af",
+    "malawi": "mw",
+    "belize": "bz",
+    "guadeloupe": "gp",
+    "albania": "al",
+    "somalia": "so",
+    "guyana": "gy",
+    "british virgin islands": "vg",
+    "suriname": "sr",
+    "gibraltar": "gi",
+    "honduras": "hn",
+    "mauritius": "mu",
+    "great britain": "gb",
+    "russia": "ru",
+    "cyprus": "cy",
+    "fiji": "fj",
+    "thailand": "th",
+    "hong kong": "hk",
+    "latvia": "lv",
+    "trinidad and tobago": "tt",
+    "eritrea": "er",
+    "north macedonia": "mk",
+    "kosovo": "xk",
+    "azerbaijan": "az",
+    "luxembourg": "lu",
+    "venezuela": "ve",
+    "peru": "pe",
+    "israel": "il",
+    "moldova": "md",
+    "estonia": "ee",
+    "costa rica": "cr",
+    "armenia": "am",
+    "guinea": "gn",
+    "comoros": "km",
+    "kenya": "ke",
+    "vanuatu": "vu",
+    "malta": "mt",
+    "iraq": "iq",
+    "dominica": "dm",
+    "reunion": "re",
+    "cape verde islands": "cv",
+    "cape verde": "cv",
+    "romania": "ro",
+    "liechtenstein": "li",
+    "kazakhstan": "kz",
+    "belarus": "by",
+    "benin": "bj",
+    "rwanda": "rw",
+    "dominican republic": "do",
+    "iran": "ir",
+    "niger": "ne",
+    "singapore": "sg",
+    "burundi": "bi",
+    "madagascar": "mg",
+    "togo": "tg",
+    "central african republic": "cf",
+    "bolivia": "bo",
+    "tajikistan": "tj",
+    "martinique": "mq",
+    "cuba": "cu",
+    "china pr": "cn",
+    "equatorial guinea": "gq",
+    "gabon": "ga",
+    "chinese taipei": "tw",
+    "guatemala": "gt",
+    "tunisia": "tn",
+    "lebanon": "lb",
+    "bahrain": "bh",
+    "uganda": "ug",
+    "oman": "om",
+    "faroe islands": "fo",
+    "jordan": "jo",
+    "haiti": "ht",
+    "africa": None,
+    "syria": "sy",
+    "st. lucia": "lc",
+    "st lucia": "lc",
+    "indonesia": "id",
+    "ethiopia": "et",
+    "philippines": "ph",
+    "mauritania": "mr",
+    "palestine": "ps",
+    "libya": "ly",
+    "malaysia": "my",
+    "korea dpr": "kp",
+    "nicaragua": "ni",
+    "south sudan": "ss",
+    "bonaire": "bq",
+    "sao tome e principe": "st",
+    "st. kitts and nevis": "kn",
+    "st kitts and nevis": "kn",
+    "el salvador": "sv",
+    "new caledonia": "nc",
+    "kyrgyzstan": "kg",
+    "isle of man": "im",
+    "lesotho": "ls",
+    "united arab emirates": "ae",
+    "andorra": "ad",
+    "mongolia": "mn",
+    "namibia": "na",
+    "eswatini": "sz",
+    "swaziland": "sz",
+    "pakistan": "pk",
+    "djibouti": "dj",
+    "antigua and barbuda": "ag",
+    "puerto rico": "pr",
+    "cayman islands": "ky",
+    "st. vincent and the grenadines": "vc",
+    "st vincent and the grenadines": "vc",
 }
+
 
 def _norm_country(name: str) -> str:
     return unicodedata.normalize("NFKD", str(name)).encode("ascii", "ignore").decode("ascii").strip().lower()
@@ -1325,7 +1516,7 @@ def make_ranking_image(
     export_mode: str = "Standard (auto)",
     theme: str = "Light",
     custom_footer_text: str | None = None,
-    metric_is_percent: bool = False,   # <<< NEW
+    metric_is_percent: bool = False,    # <<< used for Custom Combo (0–100)
 ) -> bytes:
 
     df_top = df_show.head(10).copy()
@@ -1420,10 +1611,11 @@ def make_ranking_image(
 
         VAL_X   = RIGHT - 0.030
 
+        # slightly bigger vertical gap between name & team
         NAME_FS = 28
         TEAM_FS = 19
-        NAME_DY = row_h * 0.20
-        TEAM_DY = row_h * 0.24
+        NAME_DY = row_h * 0.24   # was 0.20
+        TEAM_DY = row_h * 0.30   # was 0.24
         crest_zoom = 0.88
 
         for i, (_, row) in enumerate(df_top.iterrows()):
@@ -1494,7 +1686,6 @@ def make_ranking_image(
                 ha="left", va="center", zorder=6
             )
 
-            # --- BAR ---
             ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W, BAR_H, color=BAR_BG, zorder=2))
             try:
                 v_bar = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
@@ -1577,15 +1768,15 @@ def make_ranking_image(
             ax.add_artist(AnnotationBbox(OffsetImage(badge, zoom=0.55),
                                          (crest_x, y), frameon=False, zorder=5))
 
-        ax.text(0.21, y + 0.13, str(row.get("Player", "")).upper(),
+        # slightly larger gap between player + team lines
+        ax.text(0.21, y + 0.17, str(row.get("Player", "")).upper(),
                 fontsize=16, fontweight="bold", color=TXT, ha="left", va="center", zorder=5)
 
         team = str(row.get("Team", ""))
         league = str(row.get("League", ""))
-        ax.text(0.21, y - 0.10, f"{team} ({league})",
+        ax.text(0.21, y - 0.13, f"{team} ({league})",
                 fontsize=12, color=SUB, ha="left", va="center", zorder=5)
 
-        # --- BAR ---
         ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W, BAR_H, color=BAR_BG, zorder=2))
         try:
             v_bar = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
@@ -1653,9 +1844,9 @@ export_mode = st.selectbox(
 
 brand_logo_url = "https://image.pitchbook.com/1xOUzrEhnsKrJbNbN8Asf3LND2u1605464042293_200x200"
 
-# Composite (0–100) metrics WITHOUT league-strength applied use percent-style bars.
+# Composite custom combo in non-LS mode should behave like a 0–100 percent bar
 metric_is_percent = (
-    rank_mode == "Composite (CB scores)" and not display_with_league_strength
+    rank_mode == "Composite (CB scores)" and use_custom_combo and not display_with_league_strength
 )
 
 img_bytes = make_ranking_image(
