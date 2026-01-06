@@ -1968,7 +1968,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         [
             "All",
             "U18","U20","U21","U22","U23","U25","U30",   # <=
-            "30+","32+","35+"                            # >=
+            "30+","25+","28+"                            # >=
         ],
         index=0,
         key="pro_age_filter",
