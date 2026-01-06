@@ -444,10 +444,10 @@ with st.sidebar:
     use_band5 = c5.checkbox("Band 5", value=True,  key=f"cb_band5_{selected_file}")
     use_band6 = c6.checkbox("Band 6", value=True,  key=f"cb_band6_{selected_file}")
 
+    # 👇 THIS 'with' MUST HAVE AN INDENTED BODY UNDER IT
     with st.expander("📋 League strengths & GBE bands (1–6)"):
-    df_ls = league_strength_band_df(max_band=5)
-    st.dataframe(df_ls, use_container_width=True)
-
+        df_ls = league_strength_band_df(max_band=6)
+        st.dataframe(df_ls, use_container_width=True)
 
     selected_bands: list[int] = []
     if use_band1: selected_bands.append(1)
