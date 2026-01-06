@@ -1129,6 +1129,7 @@ _CM_COUNTRY_OVERRIDES = {
     # Key = normalised lower-case name (ASCII); value = ISO2 or None
     "republic of ireland": "ie",
     "cote d'ivoire": "ci",
+    "united states": "us",
     "cote divoire": "ci",
     "korea republic": "kr",
     "korea dpr": "kp",

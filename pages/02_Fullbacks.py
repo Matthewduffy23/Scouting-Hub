@@ -1116,6 +1116,7 @@ _FB_COUNTRY_OVERRIDES = {
     "argentina": "ar",
     "denmark": "dk",
     "sierra leone": "sl",
+    "united states": "us",
     "norway": "no",
     "sweden": "se",
     "united states": "us",
