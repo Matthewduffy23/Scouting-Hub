@@ -1478,90 +1478,29 @@ def make_ranking_image(
         buf.seek(0)
         return buf.getvalue()
 
-    # =====================================================
-    # Standard (auto height)
-    # =====================================================
-    N        = len(df_top)
-    ROW_H    = 0.82
-    HEADER_H = 1.70
-    FOOT_H   = 0.70
-    TOTAL_H  = HEADER_H + N * ROW_H + FOOT_H
+# =====================================================
+# Standard (auto height)
+# =====================================================
+N        = len(df_top)
+ROW_H    = 0.82
+HEADER_H = 1.70
+FOOT_H   = 0.70
+TOTAL_H  = HEADER_H + N * ROW_H + FOOT_H
 
-    fig, ax = plt.subplots(figsize=(8.3, TOTAL_H), dpi=220)
-    ax.set_xlim(0, 1.0)
-    ax.set_ylim(0, TOTAL_H)
-    ax.axis("off")
-    ax.add_patch(Rectangle((0, 0), 1.0, TOTAL_H, color=BG, zorder=0))
+fig = plt.figure(figsize=(8.3, TOTAL_H), dpi=220)
+ax = fig.add_axes([0, 0, 1, 1])   # full canvas
+ax.set_xlim(0, 1.0)
+ax.set_ylim(0, TOTAL_H)
+ax.axis("off")
+ax.add_patch(Rectangle((0, 0), 1.0, TOTAL_H, color=BG, zorder=0))
 
-    t1 = title_lines[0].upper() if len(title_lines) > 0 else ""
-    t2 = title_lines[1].upper() if len(title_lines) > 1 else ""
-    t3 = title_lines[2].upper() if len(title_lines) > 2 else ""
-    title_y = TOTAL_H - 0.25
-    ax.text(0.04, title_y,        t1, fontsize=19, fontweight="bold", color=TXT, ha="left", va="top")
-    ax.text(0.04, title_y - 0.34, t2, fontsize=14, fontweight="bold", color=TXT, ha="left", va="top")
-    ax.text(0.04, title_y - 0.62, t3, fontsize=11, color=SUB, ha="left", va="top")
+...
+buf = io.BytesIO()
+fig.savefig(buf, format="png", dpi=220, facecolor=BG)  # <-- remove bbox_inches="tight"
+plt.close(fig)
+buf.seek(0)
+return buf.getvalue()
 
-    base_y = TOTAL_H - HEADER_H
-    ax.plot([0.04, 0.96], [base_y + ROW_H/2 + 0.02]*2, color=DIV, lw=1.1, zorder=2)
-
-    LEFT, RIGHT = 0.04, 0.96
-    BAR_L, BAR_R = 0.66, 0.82
-    BAR_W = BAR_R - BAR_L
-    BAR_H = 0.14
-    VAL_X = 0.94
-    crest_x = 0.14
-
-    for i, (_, row) in enumerate(df_top.iterrows()):
-        y = base_y - i * ROW_H
-
-        ax.add_patch(Rectangle((LEFT, y - ROW_H/2), RIGHT - LEFT, ROW_H,
-                               color=(ROW_A if i % 2 == 0 else ROW_B), zorder=1))
-
-        if is_hi(row):
-            ax.add_patch(Rectangle((LEFT, y - ROW_H/2), RIGHT - LEFT, ROW_H,
-                                   color=HILITE, alpha=0.25, zorder=2))
-            ax.add_patch(Rectangle((LEFT, y - ROW_H/2), RIGHT - LEFT, ROW_H,
-                                   fill=False, edgecolor=HILITE_EDGE, lw=1.3, zorder=3))
-
-        ax.scatter([0.07], [y], s=520, facecolor=RANK_BG,
-                   edgecolor=(HILITE_EDGE if is_hi(row) else RANK_EDGE),
-                   linewidths=1.2, zorder=4)
-        ax.text(0.07, y, str(i+1), fontsize=10, fontweight="bold",
-                color=TXT, ha="center", va="center", zorder=5)
-
-        badge = get_team_badge(row)
-        if badge is not None:
-            ax.add_artist(AnnotationBbox(OffsetImage(badge, zoom=0.55),
-                                         (crest_x, y), frameon=False, zorder=5))
-
-        ax.text(0.21, y + 0.18, str(row.get("Player", "")).upper(),
-                fontsize=16, fontweight="bold", color=TXT, ha="left", va="center", zorder=5)
-
-        team = str(row.get("Team", ""))
-        league = str(row.get("League", ""))
-        ax.text(0.21, y - 0.16, f"{team} ({league})",
-                fontsize=12, color=SUB, ha="left", va="center", zorder=5)
-
-        v_bar = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
-        frac = (v_bar / max_score) if max_score else 0.0
-        frac = max(0.0, min(1.0, frac))
-
-        ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W, BAR_H, color=BAR_BG, zorder=2))
-        ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W * frac, BAR_H, color=BAR_FG, zorder=3))
-
-        v_lab = row.get(value_label_col)
-        ax.text(VAL_X, y, _format_value(v_lab),
-                fontsize=16, fontweight="bold", color=TXT, ha="right", va="center", zorder=6)
-
-    ax.plot([LEFT, RIGHT], [0.82]*2, color=DIV, lw=0.9, zorder=2)
-    for j, line in enumerate(footer_lines):
-        ax.text(LEFT, 0.62 - j*0.18, line, fontsize=9.5, color=FOOT, ha="left", va="top", zorder=4)
-
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=220, bbox_inches="tight", facecolor=BG)
-    plt.close(fig)
-    buf.seek(0)
-    return buf.getvalue()
 
 
 # ---------------------------------------------------------
