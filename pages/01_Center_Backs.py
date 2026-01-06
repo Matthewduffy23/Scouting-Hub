@@ -682,9 +682,8 @@ df_f["Pass Ratio Percentile"] = (
 #   - Custom Combo Score – user-chosen equal-weight blend of base scores
 #   - Custom footer text
 #   - Country→flag mapping based on dataset names
-#   - FIX: Custom Combo goes through same 0–100 "(Display NL)/(Display LS)"
-#          scaling as other composites, so bars never "shrink"
-#   - FIX: Slightly larger vertical gap between player name and team line
+#   - FIX: Custom Combo uses the exact same 0–100 bar-scaling path
+#   - FIX: Slightly larger vertical gap between player name & team name
 # ===================================================================
 
 import io
@@ -887,8 +886,8 @@ def _raw_metric_candidates(df: pd.DataFrame) -> list[str]:
         "Playmaking Score", "Positioning Score",
         "Base CB Score", "Raw Impact Score", "Raw Impact No League",
         "Minutes Factor", "Team Context Factor", "League Factor",
-        "Complete Score", "Custom Combo Raw",
-        "Custom Combo (Display NL)", "Custom Combo (Display LS)",
+        "Complete Score",
+        "Custom Combo Raw", "_MetricForBars",
     }
     numeric_cols = []
     for c in df.columns:
@@ -1017,71 +1016,63 @@ if enable_highlight_players:
 
 
 # ---------------------------------------------------------
-# 3) BUILD DISPLAY METRIC COLUMNS (pool scaling)
+# 3) BUILD DISPLAY METRIC COLUMN – ONE NORMALISED COLUMN
 # ---------------------------------------------------------
 
 df_pool = df_f.copy()
 
+# base_for_display = raw numbers (may include league factor)
+# metric_label_for_image = string shown in header
+# value_label_col = what gets printed on the right side
 if rank_mode == "Composite (CB scores)":
-    # --- 3a) Build (Display NL)/(Display LS) columns for all base composites ---
-    metric_to_display_cols: dict[str, dict[str, str]] = {}
-
-    for label, base_col in RANK_OPTIONS.items():
-        if base_col == "Impact Score":
-            # Impact Score already has both versions
-            metric_to_display_cols[label] = {
-                "no_ls": "Impact Score (no league)",
-                "ls": "Impact Score",
-            }
-        else:
-            col_no = f"{base_col} (Display NL)"
-            col_ls = f"{base_col} (Display LS)"
-            df_pool[col_no] = scale_0_100(df_pool[base_col])
-            df_pool[col_ls] = scale_0_100(df_pool[base_col] * df_pool["League Factor"])
-            metric_to_display_cols[label] = {"no_ls": col_no, "ls": col_ls}
-
-    # --- 3b) Custom combo raw + display columns (same pattern) ---
     if use_custom_combo:
+        # equal-weight blend of chosen base scores
         if custom_combo_components:
             valid_components = [c for c in custom_combo_components if c in df_pool.columns]
         else:
             valid_components = []
-
         if valid_components:
             df_pool["Custom Combo Raw"] = df_pool[valid_components].mean(axis=1)
         else:
             df_pool["Custom Combo Raw"] = df_pool["Base CB Score"]
 
-        df_pool["Custom Combo (Display NL)"] = scale_0_100(df_pool["Custom Combo Raw"])
-        df_pool["Custom Combo (Display LS)"] = scale_0_100(
-            df_pool["Custom Combo Raw"] * df_pool["League Factor"]
-        )
+        if display_with_league_strength:
+            base_for_display = df_pool["Custom Combo Raw"] * df_pool["League Factor"]
+        else:
+            base_for_display = df_pool["Custom Combo Raw"]
 
-        display_metric_col = (
-            "Custom Combo (Display LS)"
-            if display_with_league_strength
-            else "Custom Combo (Display NL)"
-        )
         metric_label_for_image = "Custom Combo"
-        value_label_col = display_metric_col
+        value_label_col = "_MetricForBars"   # show 0–100
 
     else:
-        display_metric_col = metric_to_display_cols[rank_label]["ls" if display_with_league_strength else "no_ls"]
+        if rank_label == "Impact Score":
+            base_for_display = (
+                df_pool["Impact Score"] if display_with_league_strength
+                else df_pool["Impact Score (no league)"]
+            )
+        else:
+            base_col = RANK_OPTIONS[rank_label]
+            if display_with_league_strength:
+                base_for_display = df_pool[base_col] * df_pool["League Factor"]
+            else:
+                base_for_display = df_pool[base_col]
         metric_label_for_image = rank_label
-        value_label_col = display_metric_col
+        value_label_col = "_MetricForBars"   # show 0–100 for composites
 
 else:
-    # RAW METRIC MODE – scale to 0–100 for nice bars
+    # RAW METRIC MODE
     raw_col = rank_label
-    col_no = f"{raw_col} (Display NL)"
-    df_pool[col_no] = scale_0_100(df_pool[raw_col])
+    if display_with_league_strength:
+        base_for_display = df_pool[raw_col] * df_pool["League Factor"]
+    else:
+        base_for_display = df_pool[raw_col]
 
-    col_ls = f"{raw_col} (Display LS)"
-    df_pool[col_ls] = scale_0_100(df_pool[raw_col] * df_pool["League Factor"])
-
-    display_metric_col = col_ls if display_with_league_strength else col_no
     metric_label_for_image = raw_col
-    value_label_col = raw_col
+    value_label_col = raw_col          # raw numbers on the right
+
+# single normalised column used for bars & ranking
+df_pool["_MetricForBars"] = scale_0_100(base_for_display)
+display_metric_col = "_MetricForBars"
 
 
 # ---------------------------------------------------------
@@ -1125,10 +1116,19 @@ _SPECIAL_FLAG_URLS = {
     "FLAG_NIR": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Ulster_banner.svg/200px-Ulster_banner.svg.png"
 }
 
-# >>> IMPORTANT: keep your big _COUNTRY_OVERRIDES mapping block here
-#     exactly as you already have it (the long dict with all dataset names).
+# KEEP EXPANDING THIS WITH YOUR FULL LIST – just a few examples here
 _COUNTRY_OVERRIDES = {
-    # paste your existing mapping here
+    "netherlands": "nl",
+    "spain": "es",
+    "serbia": "rs",
+    "germany": "de",
+    "republic of ireland": "ie",
+    "france": "fr",
+    "slovakia": "sk",
+    "italy": "it",
+    "switzerland": "ch",
+    "wales": "gb",       # you still get proper home-nations via _CC_MAP
+    # ... paste the rest of your overrides here ...
 }
 
 
@@ -1187,17 +1187,14 @@ def birth_country_flag_image(birth_country: str | None):
         return None
     norm = _norm_country(birth_country)
 
-    # UK home nations first
     key = _CC_MAP.get(norm)
 
-    # Dataset overrides
     if key is None and norm in _COUNTRY_OVERRIDES:
         cc = _COUNTRY_OVERRIDES[norm]
         if cc is None:
             return None
         key = cc
 
-    # Generic fallback via RestCountries
     if key is None:
         iso2 = country_to_iso2_soft(birth_country)
         if iso2:
@@ -1419,8 +1416,8 @@ def make_ranking_image(
 
         NAME_FS = 28
         TEAM_FS = 19
-        NAME_DY = row_h * 0.22          # slightly higher
-        TEAM_DY = row_h * 0.32          # slightly lower for more gap
+        NAME_DY = row_h * 0.24      # a bit higher
+        TEAM_DY = row_h * 0.34      # a bit lower → more gap
         crest_zoom = 0.88
 
         for i, (_, row) in enumerate(df_top.iterrows()):
@@ -1567,12 +1564,12 @@ def make_ranking_image(
             ax.add_artist(AnnotationBbox(OffsetImage(badge, zoom=0.55),
                                          (crest_x, y), frameon=False, zorder=5))
 
-        ax.text(0.21, y + 0.16, str(row.get("Player", "")).upper(),
+        ax.text(0.21, y + 0.18, str(row.get("Player", "")).upper(),
                 fontsize=16, fontweight="bold", color=TXT, ha="left", va="center", zorder=5)
 
         team = str(row.get("Team", ""))
         league = str(row.get("League", ""))
-        ax.text(0.21, y - 0.14, f"{team} ({league})",
+        ax.text(0.21, y - 0.16, f"{team} ({league})",
                 fontsize=12, color=SUB, ha="left", va="center", zorder=5)
 
         v_bar = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
@@ -1656,6 +1653,7 @@ if img_bytes:
     st.download_button("Download PNG", data=img_bytes, file_name="cb_ranking.png", mime="image/png")
 else:
     st.info("No data to generate image.")
+
 
 
 
