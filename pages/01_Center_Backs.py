@@ -303,7 +303,7 @@ def league_strength_band_df(max_band: int = 6) -> pd.DataFrame:
             })
 
     df_ls = pd.DataFrame(rows)
-    df_ls = df_ls.sort_values(["League strength"], ascending=[True, False])
+    df_ls = df_ls.sort_values(["League strength"], ascending=[False])
     return df_ls
 
 
