@@ -611,6 +611,944 @@ for feat in FEATURES:
         )
 
 
+# ===================================================================
+#  GK IMPACT FEATURE BLOCK – METRICS + CRESTS + CIES-STYLE IMAGE
+#  (Pool defined by sidebar; display filters do NOT change pool)
+# ===================================================================
+
+import io
+import re
+import unicodedata
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import requests
+import streamlit as st
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+
+# ---------------------------------------------------------
+# 0) REMOTE PNG LOADER (logos + special flags)
+# ---------------------------------------------------------
+
+@st.cache_data(show_spinner=False)
+def gk_load_remote_png(url: str):
+    try:
+        r = requests.get(url, timeout=6)
+        r.raise_for_status()
+        return plt.imread(io.BytesIO(r.content))
+    except Exception:
+        return None
+
+
+def gk_scale_0_100(s: pd.Series, default: float = 50.0) -> pd.Series:
+    s = pd.to_numeric(s, errors="coerce")
+    lo, hi = s.min(), s.max()
+    if pd.notna(lo) and pd.notna(hi) and hi > lo:
+        return 100.0 * (s - lo) / (hi - lo)
+    return pd.Series(default, index=s.index, dtype=float)
+
+
+# ---------------------------------------------------------
+# 1) ENSURE IMPACT / BUCKET SCORES EXIST (+ COMPLETE SCORE)
+# ---------------------------------------------------------
+
+def gk_pct(m: str) -> str:
+    return f"{m} Percentile"
+
+
+def ensure_gk_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataFrame:
+    """
+    Make sure GK impact scores exist.
+    Re-uses existing columns if present, otherwise computes them.
+    """
+    required_cols = [
+        "Impact Score", "Impact Score (no league)",
+        "Shot Stopping Score", "Distribution Score", "Sweeper Score",
+        "League Factor",
+        "Raw Impact Score", "Raw Impact No League",
+        "Complete Score",
+    ]
+
+    df_f = df_f.copy()
+    has_all = all(c in df_f.columns for c in required_cols)
+
+    if not has_all:
+        # ---- Sub-scores ----
+        df_f["Shot Stopping Score"] = (
+            0.80 * df_f[gk_pct("Prevented goals per 90")] +
+            0.20 * df_f[gk_pct("Save rate, %")]
+        )
+
+        df_f["Distribution Score"] = (
+            0.02 * df_f[gk_pct("Passes per 90")] +
+            0.30 * df_f[gk_pct("Accurate long passes, %")] +
+            0.50 * df_f[gk_pct("Accurate passes, %")]
+        )
+
+        df_f["Sweeper Score"] = (
+            1.00 * df_f[gk_pct("Exits per 90")]
+        )
+
+        # ---- Complete GK profile (technical) ----
+        df_f["Complete Score"] = (
+            0.35 * df_f[gk_pct("Prevented goals per 90")] +
+            0.05 * df_f[gk_pct("Save rate, %")] +
+            0.10 * df_f[gk_pct("Passes per 90")] +
+            0.10 * df_f[gk_pct("Accurate long passes, %")] +
+            0.20 * df_f[gk_pct("Accurate passes, %")] +
+            0.20 * df_f[gk_pct("Exits per 90")]
+        )
+
+        # ---- Base GK score (blend of sub-boards) ----
+        sub_scores = [
+            "Shot Stopping Score",
+            "Distribution Score",
+            "Sweeper Score",
+        ]
+        df_f["Base GK Score"] = df_f[sub_scores].mean(axis=1)
+
+        # ---- Minutes factor (within league) ----
+        minutes_pct = df_f.groupby("League")["Minutes played"].rank(pct=True)
+        df_f["Minutes Factor"] = (0.90 + 0.20 * minutes_pct).fillna(0.90)
+
+        # ---- Raw Impact (no league) ----
+        df_f["Raw Impact No League"] = df_f["Base GK Score"] * df_f["Minutes Factor"]
+
+        # ---- League factor (uses SAME beta as GK sidebar – cb_beta_*) ----
+        if "League Strength" not in df_f.columns:
+            df_f["League Strength"] = df_f["League"].map(LEAGUE_STRENGTHS).fillna(50.0)
+
+        ls_norm = df_f["League Strength"].astype(float) / 100.0
+        ls_norm = np.clip(ls_norm, 0.30, 1.00)
+
+        beta_league = float(st.session_state.get(f"cb_beta_{selected_file}", 0.40))
+        gamma = 1.0 + 1.5 * beta_league
+
+        df_f["League Factor"] = np.power(ls_norm, gamma)
+
+        # ---- Raw Impact with league ----
+        df_f["Raw Impact Score"] = df_f["Raw Impact No League"] * df_f["League Factor"]
+
+        # ---- 0–100 scaling ----
+        df_f["Impact Score"]             = gk_scale_0_100(df_f["Raw Impact Score"]).astype(float)
+        df_f["Impact Score (no league)"] = gk_scale_0_100(df_f["Raw Impact No League"]).astype(float)
+
+    return df_f
+
+
+df_f = ensure_gk_impact_metrics(df_f, selected_file)
+
+# ---------------------------------------------------------
+# 2) RANKING / DISPLAY CONTROLS
+# ---------------------------------------------------------
+
+rank_mode_gk = st.radio(
+    "Ranking mode (GK)",
+    ["Composite (GK scores)", "Raw metric (any numeric column)"],
+    index=0,
+    horizontal=True,
+    key=f"gk_rank_mode_{selected_file}",
+)
+
+GK_RANK_OPTIONS = {
+    "Impact Score": "Impact Score",
+    "Shot Stopping Score": "Shot Stopping Score",
+    "Distribution Score": "Distribution Score",
+    "Sweeper Score": "Sweeper Score",
+    "Complete Score": "Complete Score",
+}
+
+GK_BASE_COMPOSITE_COLS = [
+    "Shot Stopping Score",
+    "Distribution Score",
+    "Sweeper Score",
+]
+
+def gk_raw_metric_candidates(df: pd.DataFrame):
+    bad = {
+        "Impact Score", "Impact Score (no league)",
+        "Shot Stopping Score", "Distribution Score", "Sweeper Score",
+        "Base GK Score", "Raw Impact Score", "Raw Impact No League",
+        "Minutes Factor", "League Factor",
+        "Complete Score",
+        "Custom Combo Raw", "_MetricForBars",
+    }
+    numeric_cols = []
+    for c in df.columns:
+        if c in bad:
+            continue
+        if df[c].dtype.kind in ("i", "u", "f"):
+            numeric_cols.append(c)
+    return sorted(numeric_cols)
+
+
+raw_metric_list_gk = gk_raw_metric_candidates(df_f)
+
+use_custom_combo_gk = False
+custom_combo_components_gk = []
+
+if rank_mode_gk == "Composite (GK scores)":
+    use_custom_combo_gk = st.checkbox(
+        "Use custom combination of GK scores (equal weights)",
+        value=False,
+        key=f"gk_use_custom_combo_{selected_file}",
+        help="Combine any of Shot Stopping / Distribution / Sweeper into a single equal-weight score.",
+    )
+    if use_custom_combo_gk:
+        custom_combo_components_gk = st.multiselect(
+            "GK scores to include in custom combo",
+            GK_BASE_COMPOSITE_COLS,
+            default=["Shot Stopping Score", "Distribution Score"],
+            key=f"gk_custom_combo_components_{selected_file}",
+        )
+        rank_label_gk = "Custom Combo"
+    else:
+        rank_label_gk = st.selectbox(
+            "Ranking metric (GK composite)",
+            list(GK_RANK_OPTIONS.keys()),
+            index=0,
+            key=f"gk_rank_metric_{selected_file}",
+        )
+else:
+    default_raw_gk = (
+        "Prevented goals per 90"
+        if "Prevented goals per 90" in raw_metric_list_gk
+        else (raw_metric_list_gk[0] if raw_metric_list_gk else None)
+    )
+    rank_label_gk = st.selectbox(
+        "Ranking metric (raw column, GK)",
+        raw_metric_list_gk,
+        index=(raw_metric_list_gk.index(default_raw_gk) if default_raw_gk in raw_metric_list_gk else 0),
+        key=f"gk_rank_raw_metric_{selected_file}",
+        help="Bars/ranks are scaled vs pool; printed value is also scaled 0–100.",
+    )
+
+display_with_league_strength_gk = st.checkbox(
+    "Display league-strength adjusted (0–100) – GK",
+    value=False,
+    key=f"gk_display_ls_{selected_file}",
+)
+
+all_leagues_in_pool_gk = sorted([x for x in df_f["League"].dropna().unique()])
+selected_display_league_gk = st.selectbox(
+    "Display league (does not change pool, GK)",
+    ["All leagues"] + all_leagues_in_pool_gk,
+    index=0,
+    key=f"gk_display_league_dd_{selected_file}",
+)
+
+selected_display_team_gk = "All teams"
+if selected_display_league_gk != "All leagues":
+    teams_in_league_gk = sorted(
+        df_f.loc[df_f["League"] == selected_display_league_gk, "Team"].dropna().unique().tolist()
+    )
+    selected_display_team_gk = st.selectbox(
+        "Display team (does not change pool, GK)",
+        ["All teams"] + teams_in_league_gk,
+        index=0,
+        key=f"gk_display_team_dd_{selected_file}",
+    )
+
+display_ls_min_gk, display_ls_max_gk = st.slider(
+    "Display league strength range (does not change pool, GK)",
+    min_value=0,
+    max_value=100,
+    value=(0, 100),
+    step=1,
+    key=f"gk_display_ls_range_{selected_file}",
+)
+
+max_rank_age_gk = st.number_input(
+    "Max age in displayed list/image (does not change pool, GK)",
+    min_value=16, max_value=45, value=28, step=1,
+    key=f"gk_display_age_{selected_file}",
+)
+
+show_age_in_image_gk = st.checkbox(
+    "Show age in ranking image (GK)",
+    value=False,
+    key=f"gk_show_age_img_{selected_file}",
+)
+
+show_league_strength_col_gk = st.checkbox(
+    "Show League Strength column in table (GK)",
+    value=True,
+    key=f"gk_show_ls_col_{selected_file}",
+)
+
+gk_image_theme = st.selectbox(
+    "Image theme (GK)",
+    ["Light", "Dark"],
+    index=0,
+    key=f"gk_img_theme_{selected_file}",
+)
+
+enable_highlight_players_gk = st.checkbox(
+    "Highlight players in the ranking image (GK)",
+    value=False,
+    key=f"gk_enable_highlight_{selected_file}",
+)
+highlight_player_names_gk = []
+if enable_highlight_players_gk:
+    player_opts_gk = sorted(df_f["Player"].dropna().astype(str).unique().tolist())
+    highlight_player_names_gk = st.multiselect(
+        "Players to highlight (GK)",
+        options=player_opts_gk,
+        default=[],
+        key=f"gk_highlight_players_{selected_file}",
+    )
+
+
+# ---------------------------------------------------------
+# 3) BUILD DISPLAY METRIC COLUMN – ONE NORMALISED COLUMN
+# ---------------------------------------------------------
+
+df_pool_gk = df_f.copy()
+
+# base_for_display_raw_gk → underlying metric BEFORE scaling to 0–100
+if rank_mode_gk == "Composite (GK scores)":
+    if use_custom_combo_gk:
+        if custom_combo_components_gk:
+            valid_components_gk = [c for c in custom_combo_components_gk if c in df_pool_gk.columns]
+        else:
+            valid_components_gk = []
+        if valid_components_gk:
+            df_pool_gk["Custom Combo Raw"] = df_pool_gk[valid_components_gk].mean(axis=1)
+        else:
+            df_pool_gk["Custom Combo Raw"] = df_pool_gk["Base GK Score"]
+
+        base_for_display_raw_gk = df_pool_gk["Custom Combo Raw"]
+
+        if display_with_league_strength_gk:
+            base_for_display_raw_gk = base_for_display_raw_gk * df_pool_gk["League Factor"]
+
+        metric_label_for_image_gk = "Custom Combo"
+
+    else:
+        if rank_label_gk == "Impact Score":
+            # Use raw impact so LS on/off mirrors other metrics
+            if display_with_league_strength_gk:
+                base_for_display_raw_gk = df_pool_gk["Raw Impact Score"]
+            else:
+                base_for_display_raw_gk = df_pool_gk["Raw Impact No League"]
+        else:
+            base_col_gk = GK_RANK_OPTIONS[rank_label_gk]
+            base_for_display_raw_gk = df_pool_gk[base_col_gk]
+            if display_with_league_strength_gk:
+                base_for_display_raw_gk = base_for_display_raw_gk * df_pool_gk["League Factor"]
+
+        metric_label_for_image_gk = rank_label_gk
+
+else:
+    raw_col_gk = rank_label_gk
+    base_for_display_raw_gk = df_pool_gk[raw_col_gk]
+    if display_with_league_strength_gk:
+        base_for_display_raw_gk = base_for_display_raw_gk * df_pool_gk["League Factor"]
+    metric_label_for_image_gk = raw_col_gk
+
+# Single 0–100 column used for:
+#   - sorting
+#   - bar lengths
+#   - printed value
+df_pool_gk["_MetricForBars"] = gk_scale_0_100(base_for_display_raw_gk)
+display_metric_col_gk = "_MetricForBars"
+value_label_col_gk = "_MetricForBars"
+
+
+# ---------------------------------------------------------
+# 4) DISPLAY FILTERS (do not change pool scaling)
+# ---------------------------------------------------------
+
+df_display_gk = df_pool_gk.copy()
+df_display_gk = df_display_gk[df_display_gk["Age"] <= max_rank_age_gk]
+df_display_gk = df_display_gk[df_display_gk["League Strength"].between(display_ls_min_gk, display_ls_max_gk)]
+
+if selected_display_league_gk != "All leagues":
+    df_display_gk = df_display_gk[df_display_gk["League"] == selected_display_league_gk]
+    if selected_display_team_gk != "All teams":
+        df_display_gk = df_display_gk[df_display_gk["Team"] == selected_display_team_gk]
+
+df_display_gk = df_display_gk.dropna(subset=[display_metric_col_gk]).sort_values(
+    display_metric_col_gk, ascending=False
+).copy()
+
+top_n_gk = 10
+
+cols_to_show_gk = [
+    "Player", "Age", "Team", "League",
+    display_metric_col_gk,
+    "Shot Stopping Score", "Distribution Score", "Sweeper Score", "Complete Score",
+]
+if not show_league_strength_col_gk:
+    if "League Strength" in cols_to_show_gk:
+        cols_to_show_gk.remove("League Strength")
+else:
+    cols_to_show_gk.append("League Strength")
+
+st.dataframe(
+    df_display_gk[cols_to_show_gk].head(top_n_gk),
+    use_container_width=True,
+)
+
+
+# ---------------------------------------------------------
+# 5) FLAGS (Twemoji) + UK HOME NATIONS + RestCountries fallback
+# ---------------------------------------------------------
+
+_GK_CC_MAP = {
+    "england": "FLAG_ENG",
+    "scotland": "FLAG_SCT",
+    "wales": "FLAG_WLS",
+    "northern ireland": "gb",
+    "north ireland": "gb",
+}
+
+_GK_TWEMOJI_SPECIAL = {
+    "FLAG_ENG": "1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
+    "FLAG_SCT": "1f3f4-e0067-e0062-e0073-e0063-e0074-e007f",
+    "FLAG_WLS": "1f3f4-e0067-e0062-e0077-e006c-e0073-e007f",
+}
+
+_GK_SPECIAL_FLAG_URLS = {
+    "FLAG_NIR": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Ulster_banner.svg/200px-Ulster_banner.svg.png"
+}
+
+# NOTE: keys are gk-normalised (ASCII, lowercased) versions of your Birth country values
+_GK_COUNTRY_OVERRIDES = {
+    # (same mapping as your FB block – omitted here for brevity, but you can copy it 1:1)
+    # You can paste the entire _FB_COUNTRY_OVERRIDES dict here and rename to _GK_COUNTRY_OVERRIDES
+}
+
+def _gk_norm_country(name: str) -> str:
+    return unicodedata.normalize("NFKD", str(name)).encode("ascii", "ignore").decode("ascii").strip().lower()
+
+
+def _gk_twemoji_code_from_cc(cc: str) -> str:
+    a, b = cc.upper()
+    cp1 = 0x1F1E6 + (ord(a) - ord("A"))
+    cp2 = 0x1F1E6 + (ord(b) - ord("A"))
+    return "%x-%x" % (cp1, cp2)
+
+
+@st.cache_data(show_spinner=False)
+def gk_load_twemoji_png_by_code(code: str):
+    try:
+        url = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/{code}.png"
+        r = requests.get(url, timeout=4)
+        r.raise_for_status()
+        return plt.imread(io.BytesIO(r.content))
+    except Exception:
+        return None
+
+
+@st.cache_data(show_spinner=False)
+def gk_country_to_iso2_soft(name: str):
+    n = _gk_norm_country(name)
+    if not n:
+        return None
+
+    if n in _GK_COUNTRY_OVERRIDES:
+        return _GK_COUNTRY_OVERRIDES[n]
+
+    try:
+        r = requests.get(
+            "https://restcountries.com/v3.1/name/" + requests.utils.quote(n),
+            params={"fields": "cca2,name"},
+            timeout=4,
+        )
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        if not isinstance(data, list) or not data:
+            return None
+        cca2 = data[0].get("cca2")
+        if isinstance(cca2, str) and len(cca2) == 2:
+            return cca2.lower()
+    except Exception:
+        return None
+    return None
+
+
+def gk_birth_country_flag_image(birth_country):
+    if not birth_country:
+        return None
+    norm = _gk_norm_country(birth_country)
+
+    key = _GK_CC_MAP.get(norm)
+
+    if key is None and norm in _GK_COUNTRY_OVERRIDES:
+        cc = _GK_COUNTRY_OVERRIDES[norm]
+        if cc is None:
+            return None
+        key = cc
+
+    if key is None:
+        iso2 = gk_country_to_iso2_soft(birth_country)
+        if iso2:
+            key = iso2
+
+    if key is None:
+        return None
+
+    if key in _GK_TWEMOJI_SPECIAL:
+        return gk_load_twemoji_png_by_code(_GK_TWEMOJI_SPECIAL[key])
+    if key in _GK_SPECIAL_FLAG_URLS:
+        return gk_load_remote_png(_GK_SPECIAL_FLAG_URLS[key])
+    if isinstance(key, str) and len(key) == 2:
+        return gk_load_twemoji_png_by_code(_gk_twemoji_code_from_cc(key))
+    return None
+
+
+# ---------------------------------------------------------
+# 6) CREST / BADGE PIPELINE
+# ---------------------------------------------------------
+
+GK_BADGE_DIRS = [
+    Path(__file__).resolve().parent / "badges",
+    Path(__file__).resolve().parent / "crests",
+]
+for d in GK_BADGE_DIRS:
+    d.mkdir(exist_ok=True)
+
+
+def _gk_clean_filename(name: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9]+", "_", (name or "").lower()).strip("_")
+
+
+@st.cache_data(show_spinner=False)
+def gk_load_local_badge(team: str):
+    key = _gk_clean_filename(team)
+    if not key:
+        return None
+    for folder in GK_BADGE_DIRS:
+        for ext in (".png", ".jpg", ".jpeg", ".webp"):
+            p = folder / f"{key}{ext}"
+            if p.exists():
+                try:
+                    return plt.imread(str(p))
+                except Exception:
+                    continue
+    return None
+
+
+def gk_get_team_badge(row: pd.Series):
+    team = str(row.get("Team", "")).strip()
+    img = gk_load_local_badge(team)
+    if img is not None:
+        return img
+    birth = row.get("Birth country") or row.get("Birth Country") or row.get("Nationality")
+    return gk_birth_country_flag_image(birth)
+
+
+# ---------------------------------------------------------
+# 7) FOOTER LINES
+# ---------------------------------------------------------
+
+def gk_footer_lines_for_metric(metric_label: str, show_ls: bool):
+    if metric_label == "Impact Score" or metric_label.startswith("Impact Score"):
+        return [
+            "Impact Score (GK): blends Shot Stopping, Distribution and Sweeper activity.",
+            "Adjusted for minutes played and league strength.",
+            "Displayed 0–100 vs the full selected pool "
+            + ("(league strength applied)." if show_ls else "(no league-strength adjustment)."),
+        ]
+    if metric_label.startswith("Complete Score"):
+        return [
+            "Complete Score (GK): weighted mix of shot-stopping, distribution and sweeping.",
+            "Displayed 0–100 vs the full selected pool "
+            + ("(league strength applied)." if show_ls else "(no league-strength adjustment)."),
+        ]
+    if metric_label.startswith("Custom Combo"):
+        return [
+            "Custom Combo (GK): equal-weight blend of selected GK profiles.",
+            "Displayed vs the selected pool "
+            + ("(league strength applied)." if show_ls else "(no league-strength adjustment)."),
+        ]
+    return [
+        f"{metric_label} (GK): ranks this metric only.",
+        "Displayed 0–100 vs the full selected pool "
+        + ("(league strength applied)." if show_ls else "(no league-strength adjustment)."),
+    ]
+
+
+# ---------------------------------------------------------
+# 8) RANKING IMAGE (Standard + 1920×1080)
+# ---------------------------------------------------------
+
+def gk_format_value(v):
+    if v is None:
+        return "—"
+    try:
+        v = float(v)
+    except Exception:
+        return str(v)
+    if np.isnan(v):
+        return "—"
+    av = abs(v)
+    if av >= 100:
+        return "%.0f" % v
+    if av >= 10:
+        return "%.1f" % v
+    if av >= 1:
+        return "%.2f" % v
+    return "%.3f" % v
+
+
+def gk_make_ranking_image(
+    df_show: pd.DataFrame,
+    metric_col: str,
+    value_label_col: str,
+    metric_label: str,
+    title_lines,
+    brand_logo_url=None,
+    show_ls: bool = False,
+    show_age: bool = False,
+    highlight_players=None,
+    export_mode: str = "Standard (auto)",
+    theme: str = "Light",
+    custom_footer_text: str = None,
+) -> bytes:
+
+    df_top = df_show.head(10).copy()
+    if df_top.empty:
+        return b""
+
+    hi_set = set()
+    if highlight_players:
+        hi_set = {str(x).strip().lower() for x in highlight_players if str(x).strip()}
+
+    def is_hi(row: pd.Series) -> bool:
+        return str(row.get("Player", "")).strip().lower() in hi_set
+
+    # theme palette
+    if theme == "Dark":
+        BG = "#0a0f1c"
+        ROW_A, ROW_B = "#0f1628", "#0b1222"
+        TXT, SUB, FOOT = "#ffffff", "#b8c0cf", "#9aa6bd"
+        DIV = "#23304a"
+        BAR_BG, BAR_FG = "#1a2540", "#6b7cff"
+        RANK_BG, RANK_EDGE = "#111a2e", "#2b3a5a"
+        HILITE, HILITE_EDGE = "#f6d46b", "#d2a100"
+    else:
+        BG = "#ffffff"
+        ROW_A, ROW_B = "#f7f7f7", "#ffffff"
+        TXT, SUB, FOOT = "#111111", "#777777", "#9b9b9b"
+        DIV = "#e2e2e2"
+        BAR_BG, BAR_FG = "#e1e1e1", "#bfbfbf"
+        RANK_BG, RANK_EDGE = "#f3f3f3", "#c0c0c0"
+        HILITE, HILITE_EDGE = "#f6d46b", "#d2a100"
+
+    scores = pd.to_numeric(df_top[metric_col], errors="coerce")
+    max_score = float(scores.max()) if scores.notna().any() else 1.0
+
+    # Footer lines (auto vs custom)
+    if custom_footer_text:
+        footer_lines = [ln.strip() for ln in custom_footer_text.split("\n") if ln.strip()]
+    else:
+        footer_lines = gk_footer_lines_for_metric(metric_label, show_ls)
+
+    # =====================================================
+    # 1920×1080 banner
+    # =====================================================
+    if export_mode == "1920×1080 (banner)":
+        DPI = 100
+        fig = plt.figure(figsize=(1920.0 / DPI, 1080.0 / DPI), dpi=DPI)
+        ax = fig.add_axes([0, 0, 1, 1])
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.axis("off")
+        ax.add_patch(Rectangle((0, 0), 1, 1, color=BG, zorder=0))
+
+        LEFT, RIGHT = 0.045, 0.955
+
+        t1 = title_lines[0].upper() if len(title_lines) > 0 else ""
+        t2 = title_lines[1].upper() if len(title_lines) > 1 else ""
+        t3 = title_lines[2].upper() if len(title_lines) > 2 else ""
+
+        ax.text(LEFT, 0.972, t1, fontsize=48, fontweight="bold", color=TXT, ha="left", va="top")
+        ax.text(LEFT, 0.912, t2, fontsize=34, fontweight="bold", color=TXT, ha="left", va="top")
+        ax.text(LEFT, 0.870, t3, fontsize=20, color=SUB, ha="left", va="top")
+
+        header_div_y = 0.835
+        ax.plot([LEFT, RIGHT], [header_div_y, header_div_y], color=DIV, lw=2.2)
+
+        footer_div_y = 0.040
+        ax.plot([LEFT, RIGHT], [footer_div_y, footer_div_y], color=DIV, lw=2.2)
+
+        for i, line in enumerate(footer_lines):
+            ax.text(
+                LEFT,
+                footer_div_y - 0.018 - i * 0.024,
+                line,
+                fontsize=13,
+                color=FOOT,
+                ha="left",
+                va="top",
+                zorder=10,
+            )
+
+        ROW_TOP = header_div_y - 0.022
+        ROW_BOT = footer_div_y + 0.010
+        row_gap = (ROW_TOP - ROW_BOT) / 10.0
+        row_h   = row_gap * 0.99
+
+        RANK_X  = LEFT + 0.024
+        CREST_X = LEFT + 0.112
+        NAME_X  = LEFT + 0.190
+
+        BAR_L   = LEFT + 0.63
+        BAR_R   = RIGHT - 0.155
+        BAR_W   = BAR_R - BAR_L
+        BAR_H   = row_h * 0.26
+
+        VAL_X   = RIGHT - 0.030
+
+        NAME_FS = 28
+        TEAM_FS = 19
+        NAME_DY = row_h * 0.24
+        TEAM_DY = row_h * 0.34
+        crest_zoom = 0.88
+
+        for i, (_, row) in enumerate(df_top.iterrows()):
+            y = ROW_TOP - (i + 0.5) * row_gap
+
+            ax.add_patch(Rectangle(
+                (LEFT, y - row_h / 2),
+                RIGHT - LEFT,
+                row_h,
+                color=(ROW_A if i % 2 == 0 else ROW_B),
+                zorder=1,
+            ))
+
+            if is_hi(row):
+                ax.add_patch(Rectangle(
+                    (LEFT, y - row_h / 2),
+                    RIGHT - LEFT,
+                    row_h,
+                    color=HILITE,
+                    alpha=0.22,
+                    zorder=2,
+                ))
+                ax.add_patch(Rectangle(
+                    (LEFT, y - row_h / 2),
+                    RIGHT - LEFT,
+                    row_h,
+                    fill=False,
+                    edgecolor=HILITE_EDGE,
+                    lw=2.2,
+                    zorder=3,
+                ))
+
+            ax.scatter(
+                [RANK_X], [y],
+                s=1320,
+                facecolor=RANK_BG,
+                edgecolor=(HILITE_EDGE if is_hi(row) else RANK_EDGE),
+                linewidths=2.2,
+                zorder=4,
+            )
+            ax.text(
+                RANK_X, y, str(i + 1),
+                fontsize=16, fontweight="bold", color=TXT,
+                ha="center", va="center", zorder=5
+            )
+
+            badge = gk_get_team_badge(row)
+            if badge is not None:
+                ax.add_artist(AnnotationBbox(
+                    OffsetImage(badge, zoom=crest_zoom),
+                    (CREST_X, y),
+                    frameon=False,
+                    zorder=5,
+                ))
+
+            player = str(row.get("Player", "")).upper()
+            team   = str(row.get("Team", ""))
+            league = str(row.get("League", ""))
+
+            ax.text(
+                NAME_X, y + NAME_DY, player,
+                fontsize=NAME_FS, fontweight="bold", color=TXT,
+                ha="left", va="center", zorder=6
+            )
+            ax.text(
+                NAME_X, y - TEAM_DY, f"{team} ({league})",
+                fontsize=TEAM_FS, color=SUB,
+                ha="left", va="center", zorder=6
+            )
+
+            v_bar = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
+            frac  = (v_bar / max_score) if max_score else 0.0
+            frac  = max(0.0, min(1.0, frac))
+
+            ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W, BAR_H, color=BAR_BG, zorder=2))
+            ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W * frac, BAR_H, color=BAR_FG, zorder=3))
+
+            v_lab = row.get(value_label_col)
+            ax.text(
+                VAL_X, y, gk_format_value(v_lab),
+                fontsize=29, fontweight="bold", color=TXT,
+                ha="right", va="center", zorder=6
+            )
+
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=DPI, facecolor=BG)
+        plt.close(fig)
+        buf.seek(0)
+        return buf.getvalue()
+
+    # =====================================================
+    # Standard (auto height)
+    # =====================================================
+    N        = len(df_top)
+    ROW_H    = 0.82
+    HEADER_H = 1.70
+    FOOT_H   = 0.70
+    TOTAL_H  = HEADER_H + N * ROW_H + FOOT_H
+
+    fig = plt.figure(figsize=(8.3, TOTAL_H), dpi=220)
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_xlim(0, 1.0)
+    ax.set_ylim(0, TOTAL_H)
+    ax.axis("off")
+    ax.add_patch(Rectangle((0, 0), 1.0, TOTAL_H, color=BG, zorder=0))
+
+    t1 = title_lines[0].upper() if len(title_lines) > 0 else ""
+    t2 = title_lines[1].upper() if len(title_lines) > 1 else ""
+    t3 = title_lines[2].upper() if len(title_lines) > 2 else ""
+    title_y = TOTAL_H - 0.25
+    ax.text(0.04, title_y,        t1, fontsize=19, fontweight="bold", color=TXT, ha="left", va="top")
+    ax.text(0.04, title_y - 0.34, t2, fontsize=14, fontweight="bold", color=TXT, ha="left", va="top")
+    ax.text(0.04, title_y - 0.62, t3, fontsize=11, color=SUB, ha="left", va="top")
+
+    base_y = TOTAL_H - HEADER_H
+    ax.plot([0.04, 0.96], [base_y + ROW_H/2 + 0.02]*2, color=DIV, lw=1.1, zorder=2)
+
+    LEFT, RIGHT = 0.04, 0.96
+    BAR_L, BAR_R = 0.66, 0.82
+    BAR_W = BAR_R - BAR_L
+    BAR_H = 0.14
+    VAL_X = 0.94
+    crest_x = 0.14
+
+    for i, (_, row) in enumerate(df_top.iterrows()):
+        y = base_y - i * ROW_H
+
+        ax.add_patch(Rectangle((LEFT, y - ROW_H/2), RIGHT - LEFT, ROW_H,
+                               color=(ROW_A if i % 2 == 0 else ROW_B), zorder=1))
+
+        if is_hi(row):
+            ax.add_patch(Rectangle((LEFT, y - ROW_H/2), RIGHT - LEFT, ROW_H,
+                                   color=HILITE, alpha=0.25, zorder=2))
+            ax.add_patch(Rectangle((LEFT, y - ROW_H/2), RIGHT - LEFT, ROW_H,
+                                   fill=False, edgecolor=HILITE_EDGE, lw=1.3, zorder=3))
+
+        ax.scatter([0.07], [y], s=520, facecolor=RANK_BG,
+                   edgecolor=(HILITE_EDGE if is_hi(row) else RANK_EDGE),
+                   linewidths=1.2, zorder=4)
+        ax.text(0.07, y, str(i+1), fontsize=10, fontweight="bold",
+                color=TXT, ha="center", va="center", zorder=5)
+
+        badge = gk_get_team_badge(row)
+        if badge is not None:
+            ax.add_artist(AnnotationBbox(OffsetImage(badge, zoom=0.55),
+                                         (crest_x, y), frameon=False, zorder=5))
+
+        ax.text(0.21, y + 0.18, str(row.get("Player", "")).upper(),
+                fontsize=16, fontweight="bold", color=TXT, ha="left", va="center", zorder=5)
+
+        team = str(row.get("Team", ""))
+        league = str(row.get("League", ""))
+        ax.text(0.21, y - 0.16, f"{team} ({league})",
+                fontsize=12, color=SUB, ha="left", va="center", zorder=5)
+
+        v_bar = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
+        frac = (v_bar / max_score) if max_score else 0.0
+        frac = max(0.0, min(1.0, frac))
+
+        ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W, BAR_H, color=BAR_BG, zorder=2))
+        ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W * frac, BAR_H, color=BAR_FG, zorder=3))
+
+        v_lab = row.get(value_label_col)
+        ax.text(VAL_X, y, gk_format_value(v_lab),
+                fontsize=16, fontweight="bold", color=TXT, ha="right", va="center", zorder=6)
+
+    ax.plot([LEFT, RIGHT], [0.82]*2, color=DIV, lw=0.9, zorder=2)
+    for j, line in enumerate(footer_lines):
+        ax.text(LEFT, 0.62 - j*0.18, line, fontsize=9.5, color=FOOT, ha="left", va="top", zorder=4)
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=220, facecolor=BG)
+    plt.close(fig)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------
+# 9) STREAMLIT OUTPUT – IMAGE
+# ---------------------------------------------------------
+
+st.subheader("🖼 Exportable CIES-style ranking image – Goalkeepers")
+
+default_t1_gk = "TOP GOALKEEPERS"
+default_t2_gk = str(metric_label_for_image_gk).upper()
+default_t3_gk = "PERFORMANCE INDEX  |  Wyscout"
+
+t1_gk = st.text_input("Title line 1 (GK)", default_t1_gk, key=f"gk_title1_{selected_file}")
+t2_gk = st.text_input("Title line 2 (GK)", default_t2_gk, key=f"gk_title2_{selected_file}")
+t3_gk = st.text_input("Title line 3 (GK)", default_t3_gk, key=f"gk_title3_{selected_file}")
+
+use_custom_footer_gk = st.checkbox(
+    "Custom footer text (GK)",
+    value=False,
+    key=f"gk_use_custom_footer_{selected_file}",
+    help="Override the default footer description for this image.",
+)
+
+custom_footer_text_gk = ""
+if use_custom_footer_gk:
+    custom_footer_text_gk = st.text_area(
+        "Footer text (multi-line, optional) – GK",
+        value="",
+        key=f"gk_footer_text_{selected_file}",
+        help="Each line here will appear as a separate footer line under the graphic.",
+    )
+
+export_mode_gk = st.selectbox(
+    "Export format (GK)",
+    ["Standard (auto)", "1920×1080 (banner)"],
+    index=0,
+    key=f"gk_export_mode_{selected_file}",
+)
+
+gk_brand_logo_url = "https://image.pitchbook.com/1xOUzrEhnsKrJbNbN8Asf3LND2u1605464042293_200x200"
+
+img_bytes_gk = gk_make_ranking_image(
+    df_show=df_display_gk,
+    metric_col=display_metric_col_gk,
+    value_label_col=value_label_col_gk,
+    metric_label=str(metric_label_for_image_gk),
+    title_lines=[t1_gk, t2_gk, t3_gk],
+    brand_logo_url=gk_brand_logo_url,
+    show_ls=display_with_league_strength_gk,
+    show_age=show_age_in_image_gk,
+    highlight_players=(highlight_player_names_gk if enable_highlight_players_gk else None),
+    export_mode=export_mode_gk,
+    theme=gk_image_theme,
+    custom_footer_text=custom_footer_text_gk if use_custom_footer_gk else None,
+)
+
+if img_bytes_gk:
+    st.image(img_bytes_gk, use_column_width=True)
+    st.download_button("Download PNG (GK)", data=img_bytes_gk, file_name="gk_ranking.png", mime="image/png")
+else:
+    st.info("No data to generate image for goalkeepers.")
+
+
+
 # ----------------- ROLE SCORING (tables) -----------------
 def compute_weighted_role_score(df_in: pd.DataFrame, metrics: dict, beta: float, league_weighting: bool) -> pd.Series:
     total_w = sum(metrics.values()) if metrics else 1.0

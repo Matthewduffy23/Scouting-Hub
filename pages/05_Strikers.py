@@ -1099,72 +1099,65 @@ st.dataframe(df_display.head(top_n_cf), use_container_width=True)
 
 
 # ---------------------------------------------------------
-# 5) FLAGS (Twemoji) + UK HOME NATIONS (NI → GB) + RestCountries
+# 5) FLAGS (Twemoji) + UK HOME NATIONS + RestCountries fallback
 # ---------------------------------------------------------
 
-_CF_CC_MAP = {
-    "england": "gb",
-    "scotland": "gb",
-    "wales": "gb",
-    "northern ireland": "gb",   # 👉 NI as GB flag
-    "great britain": "gb",
+_CM_CC_MAP = {
+    "england": "FLAG_ENG",
+    "scotland": "FLAG_SCT",
+    "wales": "FLAG_WLS",
+    "northern ireland": "gb",  # ✅ Union Jack
+    "north ireland": "gb",
 }
 
-_CF_TWEMOJI_SPECIAL = {
-    # none right now – GB uses normal ISO2 "gb"
+_CM_TWEMOJI_SPECIAL = {
+    "FLAG_ENG": "1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
+    "FLAG_SCT": "1f3f4-e0067-e0062-e0073-e0063-e0074-e007f",
+    "FLAG_WLS": "1f3f4-e0067-e0062-e0077-e006c-e0073-e007f",
 }
 
-_CF_SPECIAL_FLAG_URLS = {
-    # keep empty for strikers (no custom PNGs needed right now)
+_CM_SPECIAL_FLAG_URLS = {
+    # none needed now; NI uses GB code
 }
 
-# Country name overrides → ISO2 codes (lowercase)
-_CF_COUNTRY_OVERRIDES = {
-    "england": "gb",
-    "scotland": "gb",
-    "wales": "gb",
-    "northern ireland": "gb",
-    "great britain": "gb",
+_CM_COUNTRY_OVERRIDES = {
+    # Key = normalised lower-case name (ASCII); value = ISO2 or None
     "republic of ireland": "ie",
-    "ireland": "ie",
     "cote d'ivoire": "ci",
-    "côte d'ivoire": "ci",
-    "korea republic": "kr",
-    "korea, republic of": "kr",
-    "south korea": "kr",
-    "korea dpr": "kp",
-    "north korea": "kp",
-    "china pr": "cn",
-    "china": "cn",
-    "czech republic": "cz",
-    "dr congo": "cd",
-    "congo dr": "cd",
-    "democratic republic of the congo": "cd",
-    "congo": "cg",
-    "russia": "ru",
-    "russian federation": "ru",
     "united states": "us",
-    "united states of america": "us",
-    "usa": "us",
-    "australia": "au",
-    "new zealand": "nz",
-    "cape verde islands": "cv",
-    "curacao": "cw",
-    "curaçao": "cw",
-    "guinea-bissau": "gw",
+    "cote divoire": "ci",
+    "korea republic": "kr",
+    "korea dpr": "kp",
+    "china pr": "cn",
+    "chinese taipei": "tw",
     "sao tome e principe": "st",
-    "são tomé e príncipe": "st",
+    "congo dr": "cd",
+    "congo": "cg",
+    "great britain": "gb",
+    "africa": "gb",  # or None if you prefer no flag
+    "curacao": "cw",
     "british virgin islands": "vg",
-    "cayman islands": "ky",
-    "puerto rico": "pr",
+    "cape verde islands": "cv",
+    "st. kitts and nevis": "kn",
+    "st kitts and nevis": "kn",
+    "st. lucia": "lc",
+    "st lucia": "lc",
+    "st. vincent and the grenadines": "vc",
+    "st vincent and the grenadines": "vc",
+    "new caledonia": "nc",
+    "bonaire": "bq",
+    "guadeloupe": "gp",
+    "martinique": "mq",
+    "reunion": "re",
+    "australia": "au",
 }
 
 
-def _cf_norm_country(name: str) -> str:
+def _cm_norm_country(name: str) -> str:
     return unicodedata.normalize("NFKD", str(name)).encode("ascii", "ignore").decode("ascii").strip().lower()
 
 
-def _cf_twemoji_code_from_cc(cc: str) -> str:
+def _cm_twemoji_code_from_cc(cc: str) -> str:
     a, b = cc.upper()
     cp1 = 0x1F1E6 + (ord(a) - ord("A"))
     cp2 = 0x1F1E6 + (ord(b) - ord("A"))
@@ -1172,7 +1165,7 @@ def _cf_twemoji_code_from_cc(cc: str) -> str:
 
 
 @st.cache_data(show_spinner=False)
-def cf_load_twemoji_png_by_code(code: str):
+def cm_load_twemoji_png_by_code(code: str):
     try:
         url = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/{code}.png"
         r = requests.get(url, timeout=4)
@@ -1183,17 +1176,17 @@ def cf_load_twemoji_png_by_code(code: str):
 
 
 @st.cache_data(show_spinner=False)
-def cf_country_to_iso2_soft(name: str):
-    n = _cf_norm_country(name)
+def cm_country_to_iso2_soft(name: str):
+    n = _cm_norm_country(name)
     if not n:
         return None
 
-    if n in _CF_COUNTRY_OVERRIDES:
-        return _CF_COUNTRY_OVERRIDES[n]
+    if n in _CM_COUNTRY_OVERRIDES:
+        return _CM_COUNTRY_OVERRIDES[n]
 
     try:
         r = requests.get(
-            "https://restcountries.com/v3.1/name/" + requests.utils.quote(n),
+            f"https://restcountries.com/v3.1/name/{requests.utils.quote(n)}",
             params={"fields": "cca2,name"},
             timeout=4,
         )
@@ -1210,33 +1203,33 @@ def cf_country_to_iso2_soft(name: str):
     return None
 
 
-def cf_birth_country_flag_image(birth_country):
+def cm_birth_country_flag_image(birth_country):
     if not birth_country:
         return None
-    norm = _cf_norm_country(birth_country)
+    norm = _cm_norm_country(birth_country)
 
-    key = _CF_CC_MAP.get(norm)
+    key = _CM_CC_MAP.get(norm)
 
-    if key is None and norm in _CF_COUNTRY_OVERRIDES:
-        cc = _CF_COUNTRY_OVERRIDES[norm]
+    if key is None and norm in _CM_COUNTRY_OVERRIDES:
+        cc = _CM_COUNTRY_OVERRIDES[norm]
         if cc is None:
             return None
         key = cc
 
     if key is None:
-        iso2 = cf_country_to_iso2_soft(birth_country)
+        iso2 = cm_country_to_iso2_soft(birth_country)
         if iso2:
             key = iso2
 
     if key is None:
         return None
 
-    if key in _CF_TWEMOJI_SPECIAL:
-        return cf_load_twemoji_png_by_code(_CF_TWEMOJI_SPECIAL[key])
-    if key in _CF_SPECIAL_FLAG_URLS:
-        return cf_load_remote_png(_CF_SPECIAL_FLAG_URLS[key])
+    if key in _CM_TWEMOJI_SPECIAL:
+        return cm_load_twemoji_png_by_code(_CM_TWEMOJI_SPECIAL[key])
+    if key in _CM_SPECIAL_FLAG_URLS:
+        return cm_load_remote_png(_CM_SPECIAL_FLAG_URLS[key])
     if isinstance(key, str) and len(key) == 2:
-        return cf_load_twemoji_png_by_code(_cf_twemoji_code_from_cc(key))
+        return cm_load_twemoji_png_by_code(_cm_twemoji_code_from_cc(key))
     return None
 
 
