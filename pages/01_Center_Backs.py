@@ -722,7 +722,8 @@ def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataF
         "Impact Score", "Impact Score (no league)",
         "Aerial Score", "Ground Score", "Retention Score",
         "Carrying Score", "Playmaking Score", "Positioning Score",
-        "League Factor"
+        "League Factor",
+        "Raw Impact Score", "Raw Impact No League"
     ]
 
     has_all_old = all(c in df_f.columns for c in required_cols)
@@ -807,7 +808,7 @@ def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataF
         # ----- Raw impact with league -----
         df_f["Raw Impact Score"] = df_f["Raw Impact No League"] * df_f["League Factor"]
 
-        # ----- 0–100 scaling of impact -----
+        # ----- 0–100 scaling of impact (global) -----
         df_f["Impact Score"]             = scale_0_100(df_f["Raw Impact Score"]).astype(float)
         df_f["Impact Score (no league)"] = scale_0_100(df_f["Raw Impact No League"]).astype(float)
 
@@ -920,7 +921,7 @@ else:
         raw_metric_list,
         index=(raw_metric_list.index(default_raw) if default_raw in raw_metric_list else 0),
         key=f"cb_rank_raw_metric_{selected_file}",
-        help="Bars/ranks are scaled vs pool; printed value is RAW.",
+        help="Bars/ranks are scaled vs pool; printed value is also scaled 0–100.",
     )
 
 display_with_league_strength = st.checkbox(
@@ -1005,8 +1006,7 @@ if enable_highlight_players:
 
 df_pool = df_f.copy()
 
-# base_for_display → numbers used for ranking/bars (maybe LS-adjusted)
-# value_label_col → numbers printed at right
+# base_for_display_raw → underlying metric BEFORE scaling to 0–100
 if rank_mode == "Composite (CB scores)":
     if use_custom_combo:
         if custom_combo_components:
@@ -1018,50 +1018,42 @@ if rank_mode == "Composite (CB scores)":
         else:
             df_pool["Custom Combo Raw"] = df_pool["Base CB Score"]
 
-        # keep combo in 0–100 range
-        df_pool["Custom Combo Raw"] = df_pool["Custom Combo Raw"].clip(0, 100)
+        base_for_display_raw = df_pool["Custom Combo Raw"]
 
         if display_with_league_strength:
-            base_for_display = df_pool["Custom Combo Raw"] * df_pool["League Factor"]
-        else:
-            base_for_display = df_pool["Custom Combo Raw"]
+            base_for_display_raw = base_for_display_raw * df_pool["League Factor"]
 
         metric_label_for_image = "Custom Combo"
-        value_label_col = "Custom Combo Raw"   # show actual combo, not re-scaled
 
     else:
         if rank_label == "Impact Score":
-            # use existing impact columns
+            # Use raw impact so LS on/off behaves exactly like for other metrics
             if display_with_league_strength:
-                base_for_display = df_pool["Impact Score"]
-                value_label_col = "Impact Score"
+                base_for_display_raw = df_pool["Raw Impact Score"]
             else:
-                base_for_display = df_pool["Impact Score (no league)"]
-                value_label_col = "Impact Score (no league)"
+                base_for_display_raw = df_pool["Raw Impact No League"]
         else:
             base_col = RANK_OPTIONS[rank_label]
+            base_for_display_raw = df_pool[base_col]
             if display_with_league_strength:
-                base_for_display = df_pool[base_col] * df_pool["League Factor"]
-            else:
-                base_for_display = df_pool[base_col]
-            value_label_col = base_col  # show original 0–100 bucket score
+                base_for_display_raw = base_for_display_raw * df_pool["League Factor"]
 
         metric_label_for_image = rank_label
 
 else:
-    # RAW METRIC MODE
     raw_col = rank_label
+    base_for_display_raw = df_pool[raw_col]
     if display_with_league_strength:
-        base_for_display = df_pool[raw_col] * df_pool["League Factor"]
-    else:
-        base_for_display = df_pool[raw_col]
-
+        base_for_display_raw = base_for_display_raw * df_pool["League Factor"]
     metric_label_for_image = raw_col
-    value_label_col = raw_col          # raw numbers on the right
 
-# single normalised column used for bars & ranking
-df_pool["_MetricForBars"] = scale_0_100(base_for_display)
+# Single 0–100 column used for:
+#   - sorting
+#   - bar lengths
+#   - printed value
+df_pool["_MetricForBars"] = scale_0_100(base_for_display_raw)
 display_metric_col = "_MetricForBars"
+value_label_col = "_MetricForBars"
 
 
 # ---------------------------------------------------------
@@ -1106,17 +1098,7 @@ _SPECIAL_FLAG_URLS = {
 }
 
 _COUNTRY_OVERRIDES = {
-    # paste your big mapping here – examples:
-    "netherlands": "nl",
-    "spain": "es",
-    "serbia": "rs",
-    "germany": "de",
-    "republic of ireland": "ie",
-    "france": "fr",
-    "slovakia": "sk",
-    "italy": "it",
-    "switzerland": "ch",
-    # ...
+    # >>> paste your full mapping here (same as you already have) <<<
 }
 
 
