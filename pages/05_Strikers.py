@@ -1226,10 +1226,15 @@ def cm_birth_country_flag_image(birth_country):
     if key in _CM_TWEMOJI_SPECIAL:
         return cm_load_twemoji_png_by_code(_CM_TWEMOJI_SPECIAL[key])
     if key in _CM_SPECIAL_FLAG_URLS:
-        return cm_load_remote_png(_CM_SPECIAL_FLAG_URLS[key])
+        return cf_load_remote_png(_CM_SPECIAL_FLAG_URLS[key])
     if isinstance(key, str) and len(key) == 2:
         return cm_load_twemoji_png_by_code(_cm_twemoji_code_from_cc(key))
     return None
+
+
+# ✅ wrapper used by cf_get_team_badge to avoid NameError
+def cf_birth_country_flag_image(birth_country):
+    return cm_birth_country_flag_image(birth_country)
 
 
 # ---------------------------------------------------------
@@ -1679,6 +1684,7 @@ if img_bytes_cf:
     )
 else:
     st.info("No data to generate image for strikers.")
+
 
 
 # ----------------- ROLE SCORING (tables) -----------------
