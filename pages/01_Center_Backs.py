@@ -687,8 +687,10 @@ df_f["Pass Ratio Percentile"] = (
 #   - Dark theme option (#0a0f1c)
 #   - Raw metric mode prints RAW values on image (bars scaled vs pool)
 #   - More flags via RestCountries fallback → ISO2 → Twemoji (cached)
-#   - NEW: Complete Score composite metric
-#   - NEW: Custom Combo Score – user-selected equal-weight combo of base scores
+#   - Complete Score composite metric
+#   - Custom Combo Score – user-selected equal-weight combo of base scores
+#   - NEW: Custom footer text for images
+#   - UPDATED: Stronger country→flag mapping based on dataset names
 # ===================================================================
 
 import io
@@ -744,10 +746,7 @@ def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataF
         "League Factor"
     ]
 
-    # If all existing impact-related fields exist, we still want to ensure Complete Score
-    # (new metric), so don't early-return until we've checked/added it.
     has_all_old = all(c in df_f.columns for c in required_cols)
-
     df_f = df_f.copy()
 
     def pct(m: str) -> str:
@@ -834,7 +833,7 @@ def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataF
         df_f["Impact Score (no league)"] = scale_0_100(df_f["Raw Impact No League"]).astype(float)
 
     # -----------------------------------------------------
-    # 1b) COMPLETE SCORE (always ensure this exists)
+    # COMPLETE SCORE (always ensure this exists)
     # -----------------------------------------------------
     if "Complete Score" not in df_f.columns:
         df_f["Complete Score"] = (
@@ -875,7 +874,7 @@ RANK_OPTIONS = {
     "Carrying Score": "Carrying Score",
     "Playmaking Score": "Playmaking Score",
     "Positioning Score": "Positioning Score",
-    "Complete Score": "Complete Score",  # NEW
+    "Complete Score": "Complete Score",
 }
 
 BASE_COMPOSITE_COLS = [
@@ -894,8 +893,8 @@ def _raw_metric_candidates(df: pd.DataFrame) -> list[str]:
         "Playmaking Score", "Positioning Score",
         "Base CB Score", "Raw Impact Score", "Raw Impact No League",
         "Minutes Factor", "Team Context Factor", "League Factor",
-        "Complete Score",  # treat as composite, not raw
-        "Custom Combo Score",  # internal composite
+        "Complete Score",
+        "Custom Combo Score",
     }
     numeric_cols = []
     for c in df.columns:
@@ -906,8 +905,6 @@ def _raw_metric_candidates(df: pd.DataFrame) -> list[str]:
     return sorted(numeric_cols)
 
 raw_metric_list = _raw_metric_candidates(df_f)
-
-# --- Composite / Raw mode UI ---
 
 use_custom_combo = False
 custom_combo_components: list[str] = []
@@ -1033,16 +1030,15 @@ df_pool = df_f.copy()
 if rank_mode == "Composite (CB scores)":
     metric_to_display_cols = {}
 
-    # If using custom combo, create the Custom Combo Score column first
+    # Build custom combo raw score (0–100 blend of 0–100 base scores)
     if use_custom_combo and custom_combo_components:
         valid_components = [c for c in custom_combo_components if c in df_pool.columns]
         if valid_components:
             df_pool["Custom Combo Score"] = df_pool[valid_components].mean(axis=1)
         else:
-            # Fallback: if nothing valid selected, just use Base CB Score
             df_pool["Custom Combo Score"] = df_pool["Base CB Score"]
 
-    # Build display columns for all composite options
+    # Normal composite metrics (Impact / sub-scores / Complete Score)
     for label, base_col in RANK_OPTIONS.items():
         if base_col == "Impact Score":
             metric_to_display_cols[label] = {
@@ -1058,28 +1054,24 @@ if rank_mode == "Composite (CB scores)":
 
             metric_to_display_cols[label] = {"no_ls": col_no, "ls": col_ls}
 
-    # Also wire in the custom combo if we're using it
+    # Custom combo: DO NOT re-scale to 0–100 again – use raw 0–100 combo directly
     if use_custom_combo:
-        base_col = "Custom Combo Score"
-        col_no = "Custom Combo Score (Display NL)"
-        col_ls = "Custom Combo Score (Display LS)"
-        df_pool[col_no] = scale_0_100(df_pool[base_col])
-        df_pool[col_ls] = scale_0_100(df_pool[base_col] * df_pool["League Factor"])
-        metric_to_display_cols["Custom Combo"] = {"no_ls": col_no, "ls": col_ls}
+        if display_with_league_strength:
+            df_pool["Custom Combo Score LS"] = df_pool["Custom Combo Score"] * df_pool["League Factor"]
+            display_metric_col = "Custom Combo Score LS"
+        else:
+            display_metric_col = "Custom Combo Score"
 
-    # Choose which metric column to display
-    if use_custom_combo:
-        display_metric_col = metric_to_display_cols["Custom Combo"]["ls" if display_with_league_strength else "no_ls"]
-        # Label: show which components were selected
         if custom_combo_components:
             metric_label_for_image = "Custom Combo: " + ", ".join(custom_combo_components)
         else:
             metric_label_for_image = "Custom Combo"
+
+        value_label_col = display_metric_col
     else:
         display_metric_col = metric_to_display_cols[rank_label]["ls" if display_with_league_strength else "no_ls"]
         metric_label_for_image = rank_label
-
-    value_label_col = display_metric_col
+        value_label_col = display_metric_col
 
 else:
     raw_col = rank_label
@@ -1109,7 +1101,6 @@ if selected_display_league != "All leagues":
 
 df_display = df_display.dropna(subset=[display_metric_col]).sort_values(display_metric_col, ascending=False).copy()
 
-# You should define top_n somewhere in your app, e.g.:
 top_n = 10
 st.dataframe(df_display.head(top_n), use_container_width=True)
 
@@ -1136,6 +1127,44 @@ _SPECIAL_FLAG_URLS = {
     "FLAG_NIR": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Ulster_banner.svg/200px-Ulster_banner.svg.png"
 }
 
+# Overrides based on the dataset country naming
+_COUNTRY_OVERRIDES = {
+    # Name variants / special forms
+    "china pr": "cn",
+    "czech republic": "cz",
+    "congo dr": "cd",
+    "congo": "cg",
+    "republic of ireland": "ie",
+    "palestine": "ps",
+    "turkiye": "tr",
+    "great britain": "gb",
+    "hong kong": "hk",
+    "korea republic": "kr",
+    "korea dpr": "kp",
+    "kosovo": "xk",  # non-ISO but widely used in emoji sets
+    "curacao": "cw",
+    "bonaire": "bq",
+    "british virgin islands": "vg",
+    "cape verde islands": "cv",
+    "cayman islands": "ky",
+    "chinese taipei": "tw",
+    "french guiana": "gf",
+    "guadeloupe": "gp",
+    "isle of man": "im",
+    "martinique": "mq",
+    "montserrat": "ms",
+    "new caledonia": "nc",
+    "reunion": "re",
+    "sao tome e principe": "st",
+    "st. kitts and nevis": "kn",
+    "st. lucia": "lc",
+    "st. vincent and the grenadines": "vc",
+    "st kitts and nevis": "kn",
+    "st lucia": "lc",
+    "st vincent and the grenadines": "vc",
+    "africa": None,  # no single flag
+}
+
 def _norm_country(name: str) -> str:
     return unicodedata.normalize("NFKD", str(name)).encode("ascii", "ignore").decode("ascii").strip().lower()
 
@@ -1160,6 +1189,11 @@ def country_to_iso2_soft(name: str) -> str | None:
     n = _norm_country(name)
     if not n:
         return None
+
+    # 1) Explicit overrides based on your dataset
+    if n in _COUNTRY_OVERRIDES:
+        return _COUNTRY_OVERRIDES[n]
+
     try:
         r = requests.get(
             f"https://restcountries.com/v3.1/name/{requests.utils.quote(n)}",
@@ -1182,8 +1216,18 @@ def birth_country_flag_image(birth_country: str | None):
     if not birth_country:
         return None
     norm = _norm_country(birth_country)
+    # UK home nations first
     key = _CC_MAP.get(norm)
 
+    # Then explicit override mapping
+    if not key:
+        override = _COUNTRY_OVERRIDES.get(norm)
+        if override is None:
+            return None
+        if isinstance(override, str) and len(override) == 2:
+            key = override
+
+    # Then generic country → ISO
     if not key:
         iso2 = country_to_iso2_soft(birth_country)
         if iso2:
@@ -1244,7 +1288,7 @@ def get_team_badge(row: pd.Series):
 # ---------------------------------------------------------
 
 def footer_lines_for_metric(metric_label: str, show_ls: bool) -> list[str]:
-    if metric_label == "Impact Score":
+    if metric_label == "Impact Score" or metric_label.startswith("Impact Score"):
         return [
             "Impact Score: combines Aerial, Ground, Retention, Carrying, Playmaking and Positioning.",
             "Adjusted for minutes played and team context vs league.",
@@ -1260,7 +1304,7 @@ def footer_lines_for_metric(metric_label: str, show_ls: bool) -> list[str]:
     if metric_label.startswith("Custom Combo"):
         return [
             "Custom Combo: equal-weight blend of selected base scores (Aerial/Ground/Retention/Carrying/Playmaking/Positioning).",
-            "Displayed 0–100 vs the full selected pool "
+            "Displayed vs the selected pool "
             + ("(league strength applied)." if show_ls else "(no league-strength adjustment)."),
         ]
     return [
@@ -1305,6 +1349,7 @@ def make_ranking_image(
     highlight_players: list[str] | None = None,
     export_mode: str = "Standard (auto)",
     theme: str = "Light",
+    custom_footer_text: str | None = None,
 ) -> bytes:
 
     df_top = df_show.head(10).copy()
@@ -1337,6 +1382,12 @@ def make_ranking_image(
     scores = pd.to_numeric(df_top[metric_col], errors="coerce")
     max_score = float(scores.max()) if scores.notna().any() else 1.0
 
+    # Decide footer lines (auto vs custom)
+    if custom_footer_text:
+        footer_lines = [ln.strip() for ln in custom_footer_text.split("\n") if ln.strip()]
+    else:
+        footer_lines = footer_lines_for_metric(metric_label, show_ls)
+
     # =====================================================
     # 1920×1080 banner (fixed)
     # =====================================================
@@ -1363,24 +1414,22 @@ def make_ranking_image(
         header_div_y = 0.835
         ax.plot([LEFT, RIGHT], [header_div_y, header_div_y], color=DIV, lw=2.2)
 
-        # Footer divider + single line
+        # Footer divider
         footer_div_y = 0.040
         ax.plot([LEFT, RIGHT], [footer_div_y, footer_div_y], color=DIV, lw=2.2)
 
-        footer_one = (
-            "Impact/Composite Score: weighted metrics for CB contribution | "
-            + ("0–100 (LS applied)" if show_ls else "0–100 (no LS)")
-        )
-        ax.text(
-            LEFT,
-            footer_div_y - 0.018,
-            footer_one,
-            fontsize=13,
-            color=FOOT,
-            ha="left",
-            va="top",
-            zorder=10,
-        )
+        # Footer lines (multi-line if needed)
+        for i, line in enumerate(footer_lines):
+            ax.text(
+                LEFT,
+                footer_div_y - 0.018 - i * 0.024,
+                line,
+                fontsize=13,
+                color=FOOT,
+                ha="left",
+                va="top",
+                zorder=10,
+            )
 
         # Table rows
         ROW_TOP = header_div_y - 0.022
@@ -1565,8 +1614,7 @@ def make_ranking_image(
                 fontsize=16, fontweight="bold", color=TXT, ha="right", va="center", zorder=6)
 
     ax.plot([LEFT, RIGHT], [0.82]*2, color=DIV, lw=0.9, zorder=2)
-    lines = footer_lines_for_metric(metric_label, show_ls)
-    for j, line in enumerate(lines):
+    for j, line in enumerate(footer_lines):
         ax.text(LEFT, 0.62 - j*0.18, line, fontsize=9.5, color=FOOT, ha="left", va="top", zorder=4)
 
     buf = io.BytesIO()
@@ -1590,6 +1638,22 @@ t1 = st.text_input("Title line 1", default_t1, key=f"cb_title1_{selected_file}")
 t2 = st.text_input("Title line 2", default_t2, key=f"cb_title2_{selected_file}")
 t3 = st.text_input("Title line 3", default_t3, key=f"cb_title3_{selected_file}")
 
+use_custom_footer = st.checkbox(
+    "Custom footer text",
+    value=False,
+    key=f"cb_use_custom_footer_{selected_file}",
+    help="Override the default footer description for this image.",
+)
+
+custom_footer_text = ""
+if use_custom_footer:
+    custom_footer_text = st.text_area(
+        "Footer text (multi-line, optional)",
+        value="",
+        key=f"cb_footer_text_{selected_file}",
+        help="Each line here will appear as a separate footer line under the graphic.",
+    )
+
 export_mode = st.selectbox(
     "Export format",
     ["Standard (auto)", "1920×1080 (banner)"],
@@ -1611,13 +1675,15 @@ img_bytes = make_ranking_image(
     highlight_players=(highlight_player_names if enable_highlight_players else []),
     export_mode=export_mode,
     theme=image_theme,
+    custom_footer_text=custom_footer_text if use_custom_footer else None,
 )
 
 if img_bytes:
     st.image(img_bytes, use_column_width=True)
     st.download_button("Download PNG", data=img_bytes, file_name="cb_ranking.png", mime="image/png")
 else:
-    st.info("No data to generate image.")  # uses an info box when no rows
+    st.info("No data to generate image.")
+
 
 
 
