@@ -1019,56 +1019,62 @@ if enable_highlight_players:
 df_pool = df_f.copy()
 
 if rank_mode == "Composite (CB scores)":
-    metric_to_display_cols = {}
+    # All these are already on a 0–100-ish scale
+    # (Impact Score, Aerial/Ground/etc, Complete Score, Custom Combo).
 
     # --- 3a) Custom combo raw score (0–100 blend of base scores) ---
     if use_custom_combo and custom_combo_components:
         valid_components = [c for c in custom_combo_components if c in df_pool.columns]
         if valid_components:
-            # Average of already-0–100 base scores
             df_pool["Custom Combo Score"] = df_pool[valid_components].mean(axis=1)
         else:
             df_pool["Custom Combo Score"] = df_pool["Base CB Score"]
 
-    # --- 3b) Normal composite metrics (Impact, Complete, etc.) ---
+    # --- 3b) Impact Score is special: we already computed league/no-league versions ---
+    metric_to_display_cols = {
+        "Impact Score": {
+            "no_ls": "Impact Score (no league)",
+            "ls": "Impact Score",
+        }
+    }
+
+    # --- 3c) Other composite scores: Aerial/Ground/…/Complete ---
     for label, base_col in RANK_OPTIONS.items():
         if base_col == "Impact Score":
-            metric_to_display_cols[label] = {
-                "no_ls": "Impact Score (no league)",
-                "ls": "Impact Score",
-            }
-        else:
-            col_no = f"{base_col} (Display NL)"
-            df_pool[col_no] = scale_0_100(df_pool[base_col])
+            continue  # already handled above
 
-            col_ls = f"{base_col} (Display LS)"
-            df_pool[col_ls] = scale_0_100(df_pool[base_col] * df_pool["League Factor"])
+        # base_col itself is the 0–100 version with NO league strength
+        col_no = base_col  # e.g. "Aerial Score"
 
-            metric_to_display_cols[label] = {"no_ls": col_no, "ls": col_ls}
+        # league-strength adjusted version
+        col_ls = f"{base_col} * LeagueFactor"
+        df_pool[col_ls] = df_pool[base_col] * df_pool["League Factor"]
 
-    # --- 3c) Choose display columns for the ranking ---
+        metric_to_display_cols[label] = {"no_ls": col_no, "ls": col_ls}
+
+    # --- 3d) Custom combo: mirror the same pattern as above ---
     if use_custom_combo:
-        # Bars are pool-scaled; printed value is raw 0–100 Custom Combo Score
         raw_custom_col = "Custom Combo Score"
 
         if display_with_league_strength:
-            disp_ls = "Custom Combo Score (Display LS)"
-            df_pool[disp_ls] = scale_0_100(df_pool[raw_custom_col] * df_pool["League Factor"])
-            display_metric_col = disp_ls
+            display_metric_col = "Custom Combo Score * LeagueFactor"
+            df_pool[display_metric_col] = df_pool[raw_custom_col] * df_pool["League Factor"]
         else:
-            disp_nl = "Custom Combo Score (Display NL)"
-            df_pool[disp_nl] = scale_0_100(df_pool[raw_custom_col])
-            display_metric_col = disp_nl
+            display_metric_col = raw_custom_col
 
         metric_label_for_image = "Custom Combo"
-        value_label_col = raw_custom_col   # numbers shown on the right
+        # Bars use display_metric_col; printed number is the raw 0–100 combo
+        value_label_col = raw_custom_col
+
     else:
         display_metric_col = metric_to_display_cols[rank_label]["ls" if display_with_league_strength else "no_ls"]
         metric_label_for_image = rank_label
         value_label_col = display_metric_col
 
 else:
-    # Raw metric mode: bars pool-scaled, value is RAW
+    # -----------------------------------------------------
+    # RAW METRIC MODE – scale to 0–100 for nice bars
+    # -----------------------------------------------------
     raw_col = rank_label
     col_no = f"{raw_col} (Display NL)"
     df_pool[col_no] = scale_0_100(df_pool[raw_col])
@@ -1079,6 +1085,7 @@ else:
     display_metric_col = col_ls if display_with_league_strength else col_no
     metric_label_for_image = raw_col
     value_label_col = raw_col
+
 
 
 # ---------------------------------------------------------
