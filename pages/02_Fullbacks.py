@@ -1083,8 +1083,8 @@ _FB_CC_MAP = {
     "england": "FLAG_ENG",
     "scotland": "FLAG_SCT",
     "wales": "FLAG_WLS",
-    "northern ireland": "FLAG_NIR",
-    "north ireland": "FLAG_NIR",
+    "northern ireland": "gb",
+    "north ireland": "gb",
 }
 
 _FB_TWEMOJI_SPECIAL = {
