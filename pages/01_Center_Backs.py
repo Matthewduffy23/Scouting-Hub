@@ -681,10 +681,10 @@ df_f["Pass Ratio Percentile"] = (
 #   - Complete Score composite metric
 #   - Custom Combo Score – user-chosen equal-weight blend of base scores
 #   - Custom footer text
-#   - Improved country→flag mapping based on dataset names
-#   - FIX: bars always scaled vs current top-10 (works for ALL metrics,
-#          including Custom Combo, LS on/off)
-#   - FIX: slightly bigger vertical gap between player name and team line
+#   - Country→flag mapping based on dataset names
+#   - FIX: Custom Combo goes through same 0–100 "(Display NL)/(Display LS)"
+#          scaling as other composites, so bars never "shrink"
+#   - FIX: Slightly larger vertical gap between player name and team line
 # ===================================================================
 
 import io
@@ -887,7 +887,8 @@ def _raw_metric_candidates(df: pd.DataFrame) -> list[str]:
         "Playmaking Score", "Positioning Score",
         "Base CB Score", "Raw Impact Score", "Raw Impact No League",
         "Minutes Factor", "Team Context Factor", "League Factor",
-        "Complete Score", "Custom Combo Score",
+        "Complete Score", "Custom Combo Raw",
+        "Custom Combo (Display NL)", "Custom Combo (Display LS)",
     }
     numeric_cols = []
     for c in df.columns:
@@ -1022,44 +1023,48 @@ if enable_highlight_players:
 df_pool = df_f.copy()
 
 if rank_mode == "Composite (CB scores)":
-    # --- 3a) Custom combo raw score (0–100 blend of base scores) ---
-    if use_custom_combo and custom_combo_components:
-        valid_components = [c for c in custom_combo_components if c in df_pool.columns]
-        if valid_components:
-            df_pool["Custom Combo Score"] = df_pool[valid_components].mean(axis=1)
-        else:
-            df_pool["Custom Combo Score"] = df_pool["Base CB Score"]
+    # --- 3a) Build (Display NL)/(Display LS) columns for all base composites ---
+    metric_to_display_cols: dict[str, dict[str, str]] = {}
 
-    # --- 3b) Impact Score is special: we already computed league/no-league versions ---
-    metric_to_display_cols = {
-        "Impact Score": {
-            "no_ls": "Impact Score (no league)",
-            "ls": "Impact Score",
-        }
-    }
-
-    # --- 3c) Other composite scores: Aerial/Ground/…/Complete ---
     for label, base_col in RANK_OPTIONS.items():
         if base_col == "Impact Score":
-            continue  # already handled
-
-        col_no = base_col  # already 0–100-ish
-        col_ls = f"{base_col} * LeagueFactor"
-        df_pool[col_ls] = df_pool[base_col] * df_pool["League Factor"]
-
-        metric_to_display_cols[label] = {"no_ls": col_no, "ls": col_ls}
-
-    # --- 3d) Custom combo display columns ---
-    if use_custom_combo:
-        raw_custom_col = "Custom Combo Score"
-        if display_with_league_strength:
-            display_metric_col = "Custom Combo Score * LeagueFactor"
-            df_pool[display_metric_col] = df_pool[raw_custom_col] * df_pool["League Factor"]
+            # Impact Score already has both versions
+            metric_to_display_cols[label] = {
+                "no_ls": "Impact Score (no league)",
+                "ls": "Impact Score",
+            }
         else:
-            display_metric_col = raw_custom_col
+            col_no = f"{base_col} (Display NL)"
+            col_ls = f"{base_col} (Display LS)"
+            df_pool[col_no] = scale_0_100(df_pool[base_col])
+            df_pool[col_ls] = scale_0_100(df_pool[base_col] * df_pool["League Factor"])
+            metric_to_display_cols[label] = {"no_ls": col_no, "ls": col_ls}
 
+    # --- 3b) Custom combo raw + display columns (same pattern) ---
+    if use_custom_combo:
+        if custom_combo_components:
+            valid_components = [c for c in custom_combo_components if c in df_pool.columns]
+        else:
+            valid_components = []
+
+        if valid_components:
+            df_pool["Custom Combo Raw"] = df_pool[valid_components].mean(axis=1)
+        else:
+            df_pool["Custom Combo Raw"] = df_pool["Base CB Score"]
+
+        df_pool["Custom Combo (Display NL)"] = scale_0_100(df_pool["Custom Combo Raw"])
+        df_pool["Custom Combo (Display LS)"] = scale_0_100(
+            df_pool["Custom Combo Raw"] * df_pool["League Factor"]
+        )
+
+        display_metric_col = (
+            "Custom Combo (Display LS)"
+            if display_with_league_strength
+            else "Custom Combo (Display NL)"
+        )
         metric_label_for_image = "Custom Combo"
-        value_label_col = raw_custom_col
+        value_label_col = display_metric_col
+
     else:
         display_metric_col = metric_to_display_cols[rank_label]["ls" if display_with_league_strength else "no_ls"]
         metric_label_for_image = rank_label
@@ -1120,11 +1125,12 @@ _SPECIAL_FLAG_URLS = {
     "FLAG_NIR": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Ulster_banner.svg/200px-Ulster_banner.svg.png"
 }
 
-# Overrides based on your dataset names (keys are normalized ascii)
+# >>> IMPORTANT: keep your big _COUNTRY_OVERRIDES mapping block here
+#     exactly as you already have it (the long dict with all dataset names).
 _COUNTRY_OVERRIDES = {
-    # ... your big mapping dict from the previous message ...
-    # (I’m leaving it exactly as you pasted – no changes)
+    # paste your existing mapping here
 }
+
 
 def _norm_country(name: str) -> str:
     return unicodedata.normalize("NFKD", str(name)).encode("ascii", "ignore").decode("ascii").strip().lower()
@@ -1346,12 +1352,8 @@ def make_ranking_image(
         RANK_BG, RANK_EDGE = "#f3f3f3", "#c0c0c0"
         HILITE, HILITE_EDGE = "#f6d46b", "#d2a100"
 
-    # ----- KEY FIX: bars always scaled vs top-10 -----
-    raw_scores = pd.to_numeric(df_top[metric_col], errors="coerce")
-    if raw_scores.notna().any():
-        scaled_scores = scale_0_100(raw_scores, default=50.0)
-    else:
-        scaled_scores = pd.Series(50.0, index=df_top.index, dtype=float)
+    scores = pd.to_numeric(df_top[metric_col], errors="coerce")
+    max_score = float(scores.max()) if scores.notna().any() else 1.0
 
     # Footer lines (auto vs custom)
     if custom_footer_text:
@@ -1417,11 +1419,11 @@ def make_ranking_image(
 
         NAME_FS = 28
         TEAM_FS = 19
-        NAME_DY = row_h * 0.20
-        TEAM_DY = row_h * 0.30  # slightly further below name
+        NAME_DY = row_h * 0.22          # slightly higher
+        TEAM_DY = row_h * 0.32          # slightly lower for more gap
         crest_zoom = 0.88
 
-        for i, (idx, row) in enumerate(df_top.iterrows()):
+        for i, (_, row) in enumerate(df_top.iterrows()):
             y = ROW_TOP - (i + 0.5) * row_gap
 
             ax.add_patch(Rectangle(
@@ -1489,9 +1491,9 @@ def make_ranking_image(
                 ha="left", va="center", zorder=6
             )
 
-            # use scaled scores for bar length
-            v_scaled = scaled_scores.loc[idx]
-            frac  = max(0.0, min(1.0, v_scaled / 100.0))
+            v_bar = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
+            frac  = (v_bar / max_score) if max_score else 0.0
+            frac  = max(0.0, min(1.0, frac))
 
             ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W, BAR_H, color=BAR_BG, zorder=2))
             ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W * frac, BAR_H, color=BAR_FG, zorder=3))
@@ -1542,7 +1544,7 @@ def make_ranking_image(
     VAL_X = 0.94
     crest_x = 0.14
 
-    for i, (idx, row) in enumerate(df_top.iterrows()):
+    for i, (_, row) in enumerate(df_top.iterrows()):
         y = base_y - i * ROW_H
 
         ax.add_patch(Rectangle((LEFT, y - ROW_H/2), RIGHT - LEFT, ROW_H,
@@ -1565,16 +1567,17 @@ def make_ranking_image(
             ax.add_artist(AnnotationBbox(OffsetImage(badge, zoom=0.55),
                                          (crest_x, y), frameon=False, zorder=5))
 
-        ax.text(0.21, y + 0.14, str(row.get("Player", "")).upper(),
+        ax.text(0.21, y + 0.16, str(row.get("Player", "")).upper(),
                 fontsize=16, fontweight="bold", color=TXT, ha="left", va="center", zorder=5)
 
         team = str(row.get("Team", ""))
         league = str(row.get("League", ""))
-        ax.text(0.21, y - 0.12, f"{team} ({league})",
+        ax.text(0.21, y - 0.14, f"{team} ({league})",
                 fontsize=12, color=SUB, ha="left", va="center", zorder=5)
 
-        v_scaled = scaled_scores.loc[idx]
-        frac = max(0.0, min(1.0, v_scaled / 100.0))
+        v_bar = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
+        frac = (v_bar / max_score) if max_score else 0.0
+        frac = max(0.0, min(1.0, frac))
 
         ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W, BAR_H, color=BAR_BG, zorder=2))
         ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W * frac, BAR_H, color=BAR_FG, zorder=3))
@@ -1653,6 +1656,7 @@ if img_bytes:
     st.download_button("Download PNG", data=img_bytes, file_name="cb_ranking.png", mime="image/png")
 else:
     st.info("No data to generate image.")
+
 
 
 
