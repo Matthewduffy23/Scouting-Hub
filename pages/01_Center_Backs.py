@@ -1060,11 +1060,10 @@ if rank_mode == "Composite (CB scores)":
             display_metric_col = "Custom Combo Score * LeagueFactor"
             df_pool[display_metric_col] = df_pool[raw_custom_col] * df_pool["League Factor"]
         else:
-            # non-league version: bars should correspond directly to 0–100
+            # non-league version: bars correspond directly to 0–100
             display_metric_col = raw_custom_col
 
         metric_label_for_image = "Custom Combo"
-        # Bars use display_metric_col; printed number is the raw 0–100 combo
         value_label_col = raw_custom_col
 
     else:
@@ -1129,8 +1128,9 @@ _SPECIAL_FLAG_URLS = {
     "FLAG_NIR": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Ulster_banner.svg/200px-Ulster_banner.svg.png"
 }
 
-# Overrides based on your dataset names (keys are normalized ascii)
 _COUNTRY_OVERRIDES = {
+    # (same mapping as before – omitted here for brevity in this explanation,
+    #  but keep your full dictionary exactly as in the previous message)
     "netherlands": "nl",
     "spain": "es",
     "serbia": "rs",
@@ -1516,7 +1516,7 @@ def make_ranking_image(
     export_mode: str = "Standard (auto)",
     theme: str = "Light",
     custom_footer_text: str | None = None,
-    metric_is_percent: bool = False,    # <<< used for Custom Combo (0–100)
+    metric_is_percent: bool = False,    # <<< key for custom combo: always vs 100
 ) -> bytes:
 
     df_top = df_show.head(10).copy()
@@ -1611,11 +1611,10 @@ def make_ranking_image(
 
         VAL_X   = RIGHT - 0.030
 
-        # slightly bigger vertical gap between name & team
         NAME_FS = 28
         TEAM_FS = 19
-        NAME_DY = row_h * 0.24   # was 0.20
-        TEAM_DY = row_h * 0.30   # was 0.24
+        NAME_DY = row_h * 0.24   # slightly bigger gap
+        TEAM_DY = row_h * 0.30
         crest_zoom = 0.88
 
         for i, (_, row) in enumerate(df_top.iterrows()):
@@ -1844,10 +1843,8 @@ export_mode = st.selectbox(
 
 brand_logo_url = "https://image.pitchbook.com/1xOUzrEhnsKrJbNbN8Asf3LND2u1605464042293_200x200"
 
-# Composite custom combo in non-LS mode should behave like a 0–100 percent bar
-metric_is_percent = (
-    rank_mode == "Composite (CB scores)" and use_custom_combo and not display_with_league_strength
-)
+# >>> KEY: for any Custom Combo (LS on or off), treat metric as 0–100 percent.
+metric_is_percent = (rank_mode == "Composite (CB scores)" and use_custom_combo)
 
 img_bytes = make_ranking_image(
     df_show=df_display,
@@ -1870,6 +1867,7 @@ if img_bytes:
     st.download_button("Download PNG", data=img_bytes, file_name="cb_ranking.png", mime="image/png")
 else:
     st.info("No data to generate image.")
+
 
 
 
