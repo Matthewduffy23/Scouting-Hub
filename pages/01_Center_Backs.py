@@ -683,8 +683,8 @@ df_f["Pass Ratio Percentile"] = (
 #   - Custom footer text
 #   - Improved country→flag mapping based on dataset names
 #   - FIXES:
-#       * Custom combo bars: no shrinking; bars consistent with 0–100 scale
-#       * Slightly larger vertical gap between player name and team line
+#       * Custom combo bars use same scaling as all other metrics
+#       * Slightly larger gap between player name and team line
 # ===================================================================
 
 import io
@@ -1060,7 +1060,6 @@ if rank_mode == "Composite (CB scores)":
             display_metric_col = "Custom Combo Score * LeagueFactor"
             df_pool[display_metric_col] = df_pool[raw_custom_col] * df_pool["League Factor"]
         else:
-            # non-league version: bars correspond directly to 0–100
             display_metric_col = raw_custom_col
 
         metric_label_for_image = "Custom Combo"
@@ -1072,9 +1071,7 @@ if rank_mode == "Composite (CB scores)":
         value_label_col = display_metric_col
 
 else:
-    # -----------------------------------------------------
     # RAW METRIC MODE – scale to 0–100 for nice bars
-    # -----------------------------------------------------
     raw_col = rank_label
     col_no = f"{raw_col} (Display NL)"
     df_pool[col_no] = scale_0_100(df_pool[raw_col])
@@ -1128,9 +1125,8 @@ _SPECIAL_FLAG_URLS = {
     "FLAG_NIR": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Ulster_banner.svg/200px-Ulster_banner.svg.png"
 }
 
+# full overrides dictionary – keep exactly as in your previous working version
 _COUNTRY_OVERRIDES = {
-    # (same mapping as before – omitted here for brevity in this explanation,
-    #  but keep your full dictionary exactly as in the previous message)
     "netherlands": "nl",
     "spain": "es",
     "serbia": "rs",
@@ -1144,6 +1140,7 @@ _COUNTRY_OVERRIDES = {
     "belgium": "be",
     "hungary": "hu",
     "cote d'ivoire": "ci",
+    "cote d'ivoire ": "ci",
     "cote divoire": "ci",
     "portugal": "pt",
     "brazil": "br",
@@ -1156,6 +1153,7 @@ _COUNTRY_OVERRIDES = {
     "gambia": "gm",
     "ukraine": "ua",
     "ghana": "gh",
+    "scotland": "gb-sct",
     "paraguay": "py",
     "senegal": "sn",
     "uruguay": "uy",
@@ -1516,7 +1514,6 @@ def make_ranking_image(
     export_mode: str = "Standard (auto)",
     theme: str = "Light",
     custom_footer_text: str | None = None,
-    metric_is_percent: bool = False,    # <<< key for custom combo: always vs 100
 ) -> bytes:
 
     df_top = df_show.head(10).copy()
@@ -1613,7 +1610,7 @@ def make_ranking_image(
 
         NAME_FS = 28
         TEAM_FS = 19
-        NAME_DY = row_h * 0.24   # slightly bigger gap
+        NAME_DY = row_h * 0.24   # bigger gap
         TEAM_DY = row_h * 0.30
         crest_zoom = 0.88
 
@@ -1691,10 +1688,7 @@ def make_ranking_image(
             except Exception:
                 v_bar = 0.0
 
-            if metric_is_percent:
-                frac = max(0.0, min(v_bar, 100.0)) / 100.0
-            else:
-                frac = (v_bar / max_score) if max_score else 0.0
+            frac = (max(0.0, v_bar) / max_score) if max_score > 0 else 0.0
 
             ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W * frac, BAR_H, color=BAR_FG, zorder=3))
 
@@ -1782,10 +1776,7 @@ def make_ranking_image(
         except Exception:
             v_bar = 0.0
 
-        if metric_is_percent:
-            frac = max(0.0, min(v_bar, 100.0)) / 100.0
-        else:
-            frac = (v_bar / max_score) if max_score else 0.0
+        frac = (max(0.0, v_bar) / max_score) if max_score > 0 else 0.0
 
         ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W * frac, BAR_H, color=BAR_FG, zorder=3))
 
@@ -1843,9 +1834,6 @@ export_mode = st.selectbox(
 
 brand_logo_url = "https://image.pitchbook.com/1xOUzrEhnsKrJbNbN8Asf3LND2u1605464042293_200x200"
 
-# >>> KEY: for any Custom Combo (LS on or off), treat metric as 0–100 percent.
-metric_is_percent = (rank_mode == "Composite (CB scores)" and use_custom_combo)
-
 img_bytes = make_ranking_image(
     df_show=df_display,
     metric_col=display_metric_col,
@@ -1859,7 +1847,6 @@ img_bytes = make_ranking_image(
     export_mode=export_mode,
     theme=image_theme,
     custom_footer_text=custom_footer_text if use_custom_footer else None,
-    metric_is_percent=metric_is_percent,
 )
 
 if img_bytes:
@@ -1867,6 +1854,7 @@ if img_bytes:
     st.download_button("Download PNG", data=img_bytes, file_name="cb_ranking.png", mime="image/png")
 else:
     st.info("No data to generate image.")
+
 
 
 
