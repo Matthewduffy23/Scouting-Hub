@@ -676,21 +676,12 @@ df_f["Pass Ratio Percentile"] = (
 #  CB IMPACT FEATURE BLOCK – METRICS + CRESTS + CIES-STYLE IMAGE
 #  (Pool defined by sidebar; display filters do NOT change pool)
 #
-#  Changes included:
-#   - Standard: bar no longer clashes with team name (bar moved right,
-#              ~half width, thinner)
-#   - 1920×1080: true full-bleed canvas, fixed grid + font sizes
-#              (no overlap / "off" look)
-#   - Value always OUTSIDE bar with clean gap (like your 3rd image)
-#   - Row blocks span full width (covers value area)
-#   - Multi-player highlight optional (gold overlay)
-#   - Dark theme option (#0a0f1c)
-#   - Raw metric mode prints RAW values on image (bars scaled vs pool)
-#   - More flags via RestCountries fallback → ISO2 → Twemoji (cached)
+#  Includes:
+#   - Impact Score + sub-metrics
 #   - Complete Score composite metric
-#   - Custom Combo Score – user-selected equal-weight combo of base scores
-#   - NEW: Custom footer text for images
-#   - UPDATED: Stronger country→flag mapping based on dataset names
+#   - Custom Combo Score – user-chosen equal-weight blend of base scores
+#   - Custom footer text
+#   - Improved country→flag mapping based on dataset names
 # ===================================================================
 
 import io
@@ -736,7 +727,7 @@ def scale_0_100(s: pd.Series, default: float = 50.0) -> pd.Series:
 def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataFrame:
     """
     Ensure all CB-derived metrics exist: sub-scores, impact scores, league context,
-    and the new Complete Score.
+    and the Complete Score.
     """
 
     required_cols = [
@@ -850,7 +841,6 @@ def ensure_cb_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataF
     return df_f
 
 
-# df_f and selected_file assumed to be defined elsewhere in your app
 df_f = ensure_cb_impact_metrics(df_f, selected_file)
 
 
@@ -886,6 +876,7 @@ BASE_COMPOSITE_COLS = [
     "Positioning Score",
 ]
 
+
 def _raw_metric_candidates(df: pd.DataFrame) -> list[str]:
     bad = {
         "Impact Score", "Impact Score (no league)",
@@ -893,8 +884,7 @@ def _raw_metric_candidates(df: pd.DataFrame) -> list[str]:
         "Playmaking Score", "Positioning Score",
         "Base CB Score", "Raw Impact Score", "Raw Impact No League",
         "Minutes Factor", "Team Context Factor", "League Factor",
-        "Complete Score",
-        "Custom Combo Score",
+        "Complete Score", "Custom Combo Score",
     }
     numeric_cols = []
     for c in df.columns:
@@ -903,6 +893,7 @@ def _raw_metric_candidates(df: pd.DataFrame) -> list[str]:
         if df[c].dtype.kind in ("i", "u", "f"):
             numeric_cols.append(c)
     return sorted(numeric_cols)
+
 
 raw_metric_list = _raw_metric_candidates(df_f)
 
@@ -1030,7 +1021,7 @@ df_pool = df_f.copy()
 if rank_mode == "Composite (CB scores)":
     metric_to_display_cols = {}
 
-    # Build custom combo raw score (0–100 blend of 0–100 base scores)
+    # Custom combo raw score (0–100 blend of 0–100 base scores)
     if use_custom_combo and custom_combo_components:
         valid_components = [c for c in custom_combo_components if c in df_pool.columns]
         if valid_components:
@@ -1038,7 +1029,7 @@ if rank_mode == "Composite (CB scores)":
         else:
             df_pool["Custom Combo Score"] = df_pool["Base CB Score"]
 
-    # Normal composite metrics (Impact / sub-scores / Complete Score)
+    # Normal composite metrics
     for label, base_col in RANK_OPTIONS.items():
         if base_col == "Impact Score":
             metric_to_display_cols[label] = {
@@ -1054,7 +1045,7 @@ if rank_mode == "Composite (CB scores)":
 
             metric_to_display_cols[label] = {"no_ls": col_no, "ls": col_ls}
 
-    # Custom combo: DO NOT re-scale to 0–100 again – use raw 0–100 combo directly
+    # Custom combo display metric
     if use_custom_combo:
         if display_with_league_strength:
             df_pool["Custom Combo Score LS"] = df_pool["Custom Combo Score"] * df_pool["League Factor"]
@@ -1062,11 +1053,7 @@ if rank_mode == "Composite (CB scores)":
         else:
             display_metric_col = "Custom Combo Score"
 
-        if custom_combo_components:
-            metric_label_for_image = "Custom Combo: " + ", ".join(custom_combo_components)
-        else:
-            metric_label_for_image = "Custom Combo"
-
+        metric_label_for_image = "Custom Combo"
         value_label_col = display_metric_col
     else:
         display_metric_col = metric_to_display_cols[rank_label]["ls" if display_with_league_strength else "no_ls"]
@@ -1127,52 +1114,214 @@ _SPECIAL_FLAG_URLS = {
     "FLAG_NIR": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Ulster_banner.svg/200px-Ulster_banner.svg.png"
 }
 
-# Overrides based on the dataset country naming
+# Overrides based on your dataset names (keys are normalized ascii)
 _COUNTRY_OVERRIDES = {
-    # Name variants / special forms
-    "china pr": "cn",
-    "czech republic": "cz",
-    "congo dr": "cd",
-    "congo": "cg",
+    "netherlands": "nl",
+    "spain": "es",
+    "serbia": "rs",
+    "germany": "de",
     "republic of ireland": "ie",
-    "palestine": "ps",
-    "turkiye": "tr",
-    "great britain": "gb",
-    "hong kong": "hk",
-    "korea republic": "kr",
-    "korea dpr": "kp",
-    "kosovo": "xk",  # non-ISO but widely used in emoji sets
-    "curacao": "cw",
-    "bonaire": "bq",
-    "british virgin islands": "vg",
-    "cape verde islands": "cv",
-    "cayman islands": "ky",
-    "chinese taipei": "tw",
+    "france": "fr",
+    "slovakia": "sk",
+    "italy": "it",
+    "switzerland": "ch",
+    "belgium": "be",
+    "hungary": "hu",
+    "cote d'ivoire": "ci",
+    "cote d'ivoire ": "ci",
+    "cote divoire": "ci",
+    "portugal": "pt",
+    "brazil": "br",
+    "argentina": "ar",
+    "denmark": "dk",
+    "sierra leone": "sl",
+    "norway": "no",
+    "sweden": "se",
+    "united states": "us",
+    "gambia": "gm",
+    "ukraine": "ua",
+    "ghana": "gh",
+    "paraguay": "py",
+    "senegal": "sn",
+    "uruguay": "uy",
+    "czech republic": "cz",
+    "guernsey": "gg",
+    "croatia": "hr",
+    "nigeria": "ng",
+    "ecuador": "ec",
+    "colombia": "co",
+    "mexico": "mx",
+    "egypt": "eg",
+    "angola": "ao",
     "french guiana": "gf",
-    "guadeloupe": "gp",
-    "isle of man": "im",
-    "martinique": "mq",
+    "japan": "jp",
+    "burkina faso": "bf",
+    "mozambique": "mz",
+    "greece": "gr",
+    "slovenia": "si",
+    "guinea-bissau": "gw",
+    "guinea bissau": "gw",
+    "zimbabwe": "zw",
+    "cameroon": "cm",
+    "south africa": "za",
+    "korea republic": "kr",
+    "chad": "td",
+    "congo dr": "cd",
+    "austria": "at",
+    "bulgaria": "bg",
+    "turkiye": "tr",
+    "new zealand": "nz",
+    "georgia": "ge",
+    "uzbekistan": "uz",
+    "morocco": "ma",
+    "bosnia and herzegovina": "ba",
+    "poland": "pl",
+    "australia": "au",
+    "saudi arabia": "sa",
+    "chile": "cl",
+    "mali": "ml",
+    "tanzania": "tz",
+    "canada": "ca",
+    "montenegro": "me",
+    "zambia": "zm",
+    "panama": "pa",
+    "jersey": "je",
+    "iceland": "is",
+    "algeria": "dz",
+    "curacao": "cw",
+    "finland": "fi",
+    "bermuda": "bm",
+    "barbados": "bb",
+    "congo": "cg",
+    "grenada": "gd",
     "montserrat": "ms",
-    "new caledonia": "nc",
+    "liberia": "lr",
+    "jamaica": "jm",
+    "lithuania": "lt",
+    "afghanistan": "af",
+    "malawi": "mw",
+    "belize": "bz",
+    "guadeloupe": "gp",
+    "albania": "al",
+    "somalia": "so",
+    "guyana": "gy",
+    "british virgin islands": "vg",
+    "suriname": "sr",
+    "gibraltar": "gi",
+    "honduras": "hn",
+    "mauritius": "mu",
+    "great britain": "gb",
+    "russia": "ru",
+    "cyprus": "cy",
+    "fiji": "fj",
+    "thailand": "th",
+    "hong kong": "hk",
+    "latvia": "lv",
+    "trinidad and tobago": "tt",
+    "eritrea": "er",
+    "north macedonia": "mk",
+    "kosovo": "xk",
+    "azerbaijan": "az",
+    "luxembourg": "lu",
+    "venezuela": "ve",
+    "peru": "pe",
+    "israel": "il",
+    "moldova": "md",
+    "estonia": "ee",
+    "costa rica": "cr",
+    "armenia": "am",
+    "guinea": "gn",
+    "comoros": "km",
+    "kenya": "ke",
+    "vanuatu": "vu",
+    "malta": "mt",
+    "iraq": "iq",
+    "dominica": "dm",
     "reunion": "re",
-    "sao tome e principe": "st",
-    "st. kitts and nevis": "kn",
+    "cape verde islands": "cv",
+    "cape verde": "cv",
+    "romania": "ro",
+    "liechtenstein": "li",
+    "kazakhstan": "kz",
+    "belarus": "by",
+    "benin": "bj",
+    "rwanda": "rw",
+    "dominican republic": "do",
+    "iran": "ir",
+    "niger": "ne",
+    "singapore": "sg",
+    "burundi": "bi",
+    "madagascar": "mg",
+    "togo": "tg",
+    "central african republic": "cf",
+    "bolivia": "bo",
+    "tajikistan": "tj",
+    "martinique": "mq",
+    "cuba": "cu",
+    "china pr": "cn",
+    "equatorial guinea": "gq",
+    "gabon": "ga",
+    "chinese taipei": "tw",
+    "guatemala": "gt",
+    "tunisia": "tn",
+    "lebanon": "lb",
+    "bahrain": "bh",
+    "uganda": "ug",
+    "oman": "om",
+    "faroe islands": "fo",
+    "jordan": "jo",
+    "haiti": "ht",
+    "africa": None,
+    "syria": "sy",
     "st. lucia": "lc",
-    "st. vincent and the grenadines": "vc",
-    "st kitts and nevis": "kn",
     "st lucia": "lc",
+    "indonesia": "id",
+    "ethiopia": "et",
+    "philippines": "ph",
+    "mauritania": "mr",
+    "palestine": "ps",
+    "libya": "ly",
+    "malaysia": "my",
+    "korea dpr": "kp",
+    "nicaragua": "ni",
+    "south sudan": "ss",
+    "bonaire": "bq",
+    "sao tome e principe": "st",
+    "sao tome e principe ": "st",
+    "sao tome e principe  ": "st",
+    "st. kitts and nevis": "kn",
+    "st kitts and nevis": "kn",
+    "el salvador": "sv",
+    "new caledonia": "nc",
+    "kyrgyzstan": "kg",
+    "isle of man": "im",
+    "lesotho": "ls",
+    "united arab emirates": "ae",
+    "andorra": "ad",
+    "mongolia": "mn",
+    "namibia": "na",
+    "eswatini": "sz",
+    "swaziland": "sz",
+    "pakistan": "pk",
+    "djibouti": "dj",
+    "antigua and barbuda": "ag",
+    "puerto rico": "pr",
+    "cayman islands": "ky",
+    "st. vincent and the grenadines": "vc",
     "st vincent and the grenadines": "vc",
-    "africa": None,  # no single flag
 }
+
 
 def _norm_country(name: str) -> str:
     return unicodedata.normalize("NFKD", str(name)).encode("ascii", "ignore").decode("ascii").strip().lower()
+
 
 def _twemoji_code_from_cc(cc: str) -> str:
     a, b = cc.upper()
     cp1 = 0x1F1E6 + (ord(a) - ord("A"))
     cp2 = 0x1F1E6 + (ord(b) - ord("A"))
     return f"{cp1:x}-{cp2:x}"
+
 
 @st.cache_data(show_spinner=False)
 def load_twemoji_png_by_code(code: str):
@@ -1184,13 +1333,13 @@ def load_twemoji_png_by_code(code: str):
     except Exception:
         return None
 
+
 @st.cache_data(show_spinner=False)
 def country_to_iso2_soft(name: str) -> str | None:
     n = _norm_country(name)
     if not n:
         return None
 
-    # 1) Explicit overrides based on your dataset
     if n in _COUNTRY_OVERRIDES:
         return _COUNTRY_OVERRIDES[n]
 
@@ -1212,28 +1361,29 @@ def country_to_iso2_soft(name: str) -> str | None:
         return None
     return None
 
+
 def birth_country_flag_image(birth_country: str | None):
     if not birth_country:
         return None
     norm = _norm_country(birth_country)
+
     # UK home nations first
     key = _CC_MAP.get(norm)
 
-    # Then explicit override mapping
-    if not key:
-        override = _COUNTRY_OVERRIDES.get(norm)
-        if override is None:
+    # Dataset overrides
+    if key is None and norm in _COUNTRY_OVERRIDES:
+        cc = _COUNTRY_OVERRIDES[norm]
+        if cc is None:
             return None
-        if isinstance(override, str) and len(override) == 2:
-            key = override
+        key = cc
 
-    # Then generic country → ISO
-    if not key:
+    # Generic fallback via RestCountries
+    if key is None:
         iso2 = country_to_iso2_soft(birth_country)
         if iso2:
             key = iso2
 
-    if not key:
+    if key is None:
         return None
 
     if key in _TWEMOJI_SPECIAL:
@@ -1246,7 +1396,7 @@ def birth_country_flag_image(birth_country: str | None):
 
 
 # ---------------------------------------------------------
-# 6) CREST / BADGE PIPELINE (local only here; can plug in your wiki/playmaker versions)
+# 6) CREST / BADGE PIPELINE
 # ---------------------------------------------------------
 
 BADGE_DIRS = [
@@ -1256,8 +1406,10 @@ BADGE_DIRS = [
 for d in BADGE_DIRS:
     d.mkdir(exist_ok=True)
 
+
 def _clean_filename(name: str) -> str:
     return re.sub(r"[^a-zA-Z0-9]+", "_", (name or "").lower()).strip("_")
+
 
 @st.cache_data(show_spinner=False)
 def load_local_badge(team: str):
@@ -1273,6 +1425,7 @@ def load_local_badge(team: str):
                 except Exception:
                     continue
     return None
+
 
 def get_team_badge(row: pd.Series):
     team = str(row.get("Team", "")).strip()
@@ -1382,19 +1535,19 @@ def make_ranking_image(
     scores = pd.to_numeric(df_top[metric_col], errors="coerce")
     max_score = float(scores.max()) if scores.notna().any() else 1.0
 
-    # Decide footer lines (auto vs custom)
+    # Footer lines (auto vs custom)
     if custom_footer_text:
         footer_lines = [ln.strip() for ln in custom_footer_text.split("\n") if ln.strip()]
     else:
         footer_lines = footer_lines_for_metric(metric_label, show_ls)
 
     # =====================================================
-    # 1920×1080 banner (fixed)
+    # 1920×1080 banner
     # =====================================================
     if export_mode == "1920×1080 (banner)":
         DPI = 100
         fig = plt.figure(figsize=(1920 / DPI, 1080 / DPI), dpi=DPI)
-        ax = fig.add_axes([0, 0, 1, 1])  # full bleed
+        ax = fig.add_axes([0, 0, 1, 1])
         ax.set_xlim(0, 1)
         ax.set_ylim(0, 1)
         ax.axis("off")
@@ -1402,7 +1555,6 @@ def make_ranking_image(
 
         LEFT, RIGHT = 0.045, 0.955
 
-        # Titles
         t1 = title_lines[0].upper() if len(title_lines) > 0 else ""
         t2 = title_lines[1].upper() if len(title_lines) > 1 else ""
         t3 = title_lines[2].upper() if len(title_lines) > 2 else ""
@@ -1414,11 +1566,9 @@ def make_ranking_image(
         header_div_y = 0.835
         ax.plot([LEFT, RIGHT], [header_div_y, header_div_y], color=DIV, lw=2.2)
 
-        # Footer divider
         footer_div_y = 0.040
         ax.plot([LEFT, RIGHT], [footer_div_y, footer_div_y], color=DIV, lw=2.2)
 
-        # Footer lines (multi-line if needed)
         for i, line in enumerate(footer_lines):
             ax.text(
                 LEFT,
@@ -1431,7 +1581,6 @@ def make_ranking_image(
                 zorder=10,
             )
 
-        # Table rows
         ROW_TOP = header_div_y - 0.022
         ROW_BOT = footer_div_y + 0.010
         row_gap = (ROW_TOP - ROW_BOT) / 10.0
@@ -1541,7 +1690,7 @@ def make_ranking_image(
         return buf.getvalue()
 
     # =====================================================
-    # Standard (auto height) – bar moved right, thinner, half width
+    # Standard (auto height)
     # =====================================================
     N        = len(df_top)
     ROW_H    = 0.82
@@ -1683,6 +1832,7 @@ if img_bytes:
     st.download_button("Download PNG", data=img_bytes, file_name="cb_ranking.png", mime="image/png")
 else:
     st.info("No data to generate image.")
+
 
 
 
