@@ -846,11 +846,10 @@ def ensure_cf_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataF
             0.10 * df_f[cf_pct("Accurate passes, %")] +
             0.15 * df_f[cf_pct("Dribbles per 90")] +
             0.10 * df_f[cf_pct("Progressive runs per 90")] +
-            0.05 * df_f[cf_pct("Passes to final third per 90")] +
-            0.20 * df_f[cf_pct("xA per 90")] +
-            0.10 * df_f[cf_pct("Passes to penalty area per 90")] +
-            0.10 * df_f[cf_pct("Non-penalty goals per 90")] +
-            0.20 * df_f[cf_pct("xG per 90")]
+            0.15 * df_f[cf_pct("xA per 90")] +
+            0.05 * df_f[cf_pct("Passes to penalty area per 90")] +
+            0.20 * df_f[cf_pct("Non-penalty goals per 90")] +
+            0.25 * df_f[cf_pct("xG per 90")]
         )
 
     return df_f
