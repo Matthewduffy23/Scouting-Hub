@@ -1314,61 +1314,67 @@ def _cfg(role_key: str):
         return dict(pos_filter=pos_ok, require_cols=require, compute_metrics=compute, agg_cols=agg_cols, label_map=label_map, title="Central Midfielders")
 
     if role_key == "attack":
-        require=['Accurate passes, %','xG per 90','Non-penalty goals per 90','Touches in box per 90','xA per 90',
-                 'Passes to penalty area per 90','Passes per 90','Progressive passes per 90','Passes to final third per 90',
-                 'Dribbles per 90','Progressive runs per 90']
+        require = [
+            'Accurate passes, %','xG per 90','Non-penalty goals per 90','Touches in box per 90','xA per 90',
+            'Passes to penalty area per 90','Passes per 90','Progressive passes per 90','Passes to final third per 90',
+            'Dribbles per 90','Progressive runs per 90'
+        ]
 
         import re
 
         def pos_ok(s: str) -> bool:
+            # normalise
             s = str(s).upper().strip()
 
-            # take the first chunk if something like "RW/LW", "RW ST", etc
+            # take the first chunk if "RW/LW", "RW, LW", "RW ST", etc.
             main = re.split(r'[/,]', s)[0].strip()
-            main = main.split()[0]
+            main = main.split()[0]  # also cut anything after a space
 
-            # allow pure wingers (RW/LW) but not wing-backs
+            # pure wingers, but NOT wing-backs
+            # RW ✅, LW ✅, RW/LW ✅, RW ST ✅
+            # RWB ❌, LWB ❌, RB ❌, LB ❌
             if main in ("RW", "LW"):
                 return True
 
-            # allow wide forwards + AM roles
+            # wide forwards + AM roles
             prefixes = ("RWF", "LWF", "LAMF", "RAMF", "AMF")
             return main.startswith(prefixes)
 
         def compute(df):
-            out=df.copy()
-            out["Retention Style"]= _pd.to_numeric(out['Accurate passes, %'],errors="coerce")
-            out["Goal Threat"]= (
-                0.4*_pd.to_numeric(out['xG per 90'],errors="coerce')
-                +0.4*_pd.to_numeric(out['Non-penalty goals per 90'],errors="coerce")
-                +0.2*_pd.to_numeric(out['Touches in box per 90'],errors="coerce")
+            out = df.copy()
+            out["Retention Style"] = _pd.to_numeric(out['Accurate passes, %'], errors="coerce")
+            out["Goal Threat"] = (
+                0.4 * _pd.to_numeric(out['xG per 90'], errors="coerce")
+                + 0.4 * _pd.to_numeric(out['Non-penalty goals per 90'], errors="coerce")
+                + 0.2 * _pd.to_numeric(out['Touches in box per 90'], errors="coerce")
             )
-            out["Creativity Threat"]= (
-                0.65*_pd.to_numeric(out['xA per 90'],errors="coerce")
-                +0.35*_pd.to_numeric(out['Passes to penalty area per 90'],errors="coerce")
+            out["Creativity Threat"] = (
+                0.65 * _pd.to_numeric(out['xA per 90'], errors="coerce")
+                + 0.35 * _pd.to_numeric(out['Passes to penalty area per 90'], errors="coerce")
             )
-            out["Passing Volume"]= _pd.to_numeric(out['Passes per 90'],errors="coerce")
-            out["Deeper Playmaking"]= (
-                0.5*_pd.to_numeric(out['Progressive passes per 90'],errors="coerce")
-                +0.5*_pd.to_numeric(out['Passes to final third per 90'],errors="coerce")
+            out["Passing Volume"] = _pd.to_numeric(out['Passes per 90'], errors="coerce")
+            out["Deeper Playmaking"] = (
+                0.5 * _pd.to_numeric(out['Progressive passes per 90'], errors="coerce")
+                + 0.5 * _pd.to_numeric(out['Passes to final third per 90'], errors="coerce")
             )
-            out["Ball Carrying"]= (
-                0.6*_pd.to_numeric(out['Dribbles per 90'],errors="coerce")
-                +0.4*_pd.to_numeric(out['Progressive runs per 90'],errors="coerce")
+            out["Ball Carrying"] = (
+                0.6 * _pd.to_numeric(out['Dribbles per 90'], errors="coerce")
+                + 0.4 * _pd.to_numeric(out['Progressive runs per 90'], errors="coerce")
             )
             return out
 
-        agg_cols=["Retention Style","Goal Threat","Creativity Threat","Passing Volume","Deeper Playmaking","Ball Carrying"]
-
-        label_map={
-            "Retention Style":"Retention Style",
-            "Goal Threat":"Goal Threat",
-            "Creativity Threat":"Creativity Threat",
-            "Passing Volume":"Passing Volume",
-            "Deeper Playmaking":"Deeper Playmaking",
-            "Ball Carrying":"Ball Carrying"
+        agg_cols = [
+            "Retention Style","Goal Threat","Creativity Threat",
+            "Passing Volume","Deeper Playmaking","Ball Carrying"
+        ]
+        label_map = {
+            "Retention Style": "Retention Style",
+            "Goal Threat": "Goal Threat",
+            "Creativity Threat": "Creativity Threat",
+            "Passing Volume": "Passing Volume",
+            "Deeper Playmaking": "Deeper Playmaking",
+            "Ball Carrying": "Ball Carrying"
         }
-
         return dict(
             pos_filter=pos_ok,
             require_cols=require,
@@ -1377,6 +1383,7 @@ def _cfg(role_key: str):
             label_map=label_map,
             title="Attackers"
         )
+
 
 
     if role_key == "cf":
