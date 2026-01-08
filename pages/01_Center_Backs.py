@@ -1389,8 +1389,8 @@ def make_ranking_image(
 
         NAME_FS = 28
         TEAM_FS = 19
-        NAME_DY = row_h * 0.24
-        TEAM_DY = row_h * 0.26
+        NAME_DY = row_h * 0.18
+        TEAM_DY = row_h * 0.22
         crest_zoom = 0.88
 
         for i, (_, row) in enumerate(df_top.iterrows()):
