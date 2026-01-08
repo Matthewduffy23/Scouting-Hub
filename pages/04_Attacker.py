@@ -1410,8 +1410,8 @@ def att_make_ranking_image(
 
         NAME_FS = 28
         TEAM_FS = 19
-        NAME_DY = row_h * 0.24
-        TEAM_DY = row_h * 0.34
+        NAME_DY = row_h * 0.2
+        TEAM_DY = row_h * 0.26
         crest_zoom = 0.88
 
         for i, (_, row) in enumerate(df_top.iterrows()):
@@ -1559,12 +1559,12 @@ def att_make_ranking_image(
             ax.add_artist(AnnotationBbox(OffsetImage(badge, zoom=0.55),
                                          (crest_x, y), frameon=False, zorder=5))
 
-        ax.text(0.21, y + 0.18, str(row.get("Player", "")).upper(),
+        ax.text(0.21, y + 0.12, str(row.get("Player", "")).upper(),
                 fontsize=16, fontweight="bold", color=TXT, ha="left", va="center", zorder=5)
 
         team = str(row.get("Team", ""))
         league = str(row.get("League", ""))
-        ax.text(0.21, y - 0.16, f"{team} ({league})",
+        ax.text(0.21, y - 0.10, f"{team} ({league})",
                 fontsize=12, color=SUB, ha="left", va="center", zorder=5)
 
         v_bar = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
