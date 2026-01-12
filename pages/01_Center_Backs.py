@@ -1841,7 +1841,7 @@ TWEMOJI_SPECIAL = {
 
 COUNTRY_TO_CC = {
     # UK home nations
-    "united kingdom":"gb","great britain":"gb","northern ireland":"nir","england":"eng","scotland":"sct","wales":"wls",
+    "united kingdom":"gb","great britain":"gb","northern ireland":"gb","england":"eng","scotland":"sct","wales":"wls",
 
     # Europe
     "ireland":"ie","republic of ireland":"ie","spain":"es","france":"fr","germany":"de","italy":"it","portugal":"pt",
@@ -1952,8 +1952,17 @@ def fotmob_photo_map(team_url: str) -> Dict[str, str]:
     try:
         if not team_url:
             return {}
-        headers = {"User-Agent": "Mozilla/5.0"}
-        html = requests.get(team_url, headers=headers, timeout=20).text
+headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Language": "en-GB,en;q=0.9",
+    "Referer": "https://www.fotmob.com/",
+}
+resp = requests.get(team_url, headers=headers, timeout=20)
+if resp.status_code != 200:
+    return {}
+html = resp.text
+
 
         ids = re.findall(r'"id"\s*:\s*(\d+)\s*,\s*"name"\s*:\s*"([^"]+)"', html)
         if not ids:
@@ -2397,7 +2406,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 ("Passes to Final 3rd  %", "Accurate passes to final third, %"),
                 ("Progessive Passes", "Progressive passes per 90"),
                 ("Progessive Passing  %", "Accurate progressive passes, %"),
-                ("Progressive Runs", "Progressive runs per 90"),
             ]
 
             def _sec_html(title, pairs):
