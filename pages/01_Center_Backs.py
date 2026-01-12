@@ -1749,16 +1749,13 @@ for role, role_def in ROLES.items():
 
 
 # ----------------- PRO LAYOUT TAB (tiles) -----------------
-# Drop-in replacement: same UI/behavior, plus:
-# 1) Team->FotMob URL lives in separate module (team_fotmob_map.py)
-# 2) FotMob photo match: full-name + surname fallback
-# 3) Keep your per-player override UI (wins over everything)
-# 4) Keep your expanded Twemoji flag dictionary (already here)
-# 5) Individual Metrics layout updated to the “other example” (label fixed 1-line + right-side compact)
-#
-# CHANGE in this version:
-# ✅ removed `imghdr` usage/import (fixes Streamlit/Python envs where imghdr is missing)
-# ✅ use uploaded_file.type + filename extension fallback for mime
+# Drop-in replacement: SAME UI/behavior, BUT:
+# ✅ You can manually add Team -> FotMob squad URLs INSIDE THIS FILE (like your working example)
+# ✅ Player photos load from FotMob (full-name + surname fallback)
+# ✅ Team badge/crest auto-loads from FotMob teamId (but your crest override still wins)
+# ✅ Keeps per-player override UI (photo + crest)
+# ✅ Keeps your Twemoji mapping + metrics layout
+# ✅ Removed imghdr; uses uploaded_file.type + extension fallback for mime
 
 import os
 import re
@@ -1773,15 +1770,25 @@ import numpy as np
 import requests
 import streamlit as st
 
+# =========================================================
+# ✅ ADD YOUR FOTMOB URLS HERE (like your working example)
+# Keys should match df Team names (case-insensitive; normalization handles it)
+# =========================================================
+FOTMOB_TEAM_URLS: Dict[str, str] = {
+    "Swansea City": "https://www.fotmob.com/teams/10003/squad/swansea-city",
+    "Arsenal": "https://www.fotmob.com/teams/9825/squad/arsenal",
+    # Add more:
+    # "Chelsea": "https://www.fotmob.com/teams/8455/squad/chelsea",
+}
+
 # -----------------
 # OPTIONAL: external team->FotMob dictionary (kept OUT of this page)
-# Create team_fotmob_map.py with get_fotmob_url(team) and optionally canon_team/team aliases.
+# If present, we’ll use it, but LOCAL dict above also works.
 # -----------------
 try:
-    from team_fotmob_map import get_fotmob_url  # returns "" if not found
+    from team_fotmob_map import get_fotmob_url as _external_get_fotmob_url  # returns "" if not found
 except Exception:
-    def get_fotmob_url(team: str) -> str:
-        return ""
+    _external_get_fotmob_url = None
 
 
 # ----------------- Colors / formatting -----------------
@@ -1830,6 +1837,43 @@ def _pro_chip_color(p:str)->str:
 def _norm(s: str) -> str:
     if not s: return ""
     return unicodedata.normalize("NFKD", str(s)).encode("ascii","ignore").decode("ascii").strip().lower()
+
+def get_fotmob_url(team: str) -> str:
+    """
+    Priority:
+    1) per-file manual dict (FOTMOB_TEAM_URLS)
+    2) external module team_fotmob_map.py if present
+    """
+    t = _norm(team)
+    # local dict lookup (normalize keys once)
+    for k, v in FOTMOB_TEAM_URLS.items():
+        if _norm(k) == t and str(v).strip():
+            return str(v).strip()
+
+    if _external_get_fotmob_url is not None:
+        try:
+            u = _external_get_fotmob_url(team) or ""
+            return str(u).strip()
+        except Exception:
+            pass
+
+    return ""
+
+def _fotmob_team_id_from_url(team_url: str) -> str:
+    """
+    https://www.fotmob.com/teams/9825/squad/arsenal -> "9825"
+    """
+    try:
+        m = re.search(r"/teams/(\d+)/", team_url or "")
+        return m.group(1) if m else ""
+    except Exception:
+        return ""
+
+def _fotmob_crest_url(team_url: str) -> str:
+    tid = _fotmob_team_id_from_url(team_url)
+    if not tid:
+        return ""
+    return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png"
 
 
 # ----------------- Flags (Twemoji) — keep your expanded mapping -----------------
@@ -1927,13 +1971,12 @@ def _get_foot(row) -> str:
 
 # -----------------
 # FotMob photo scraping + resolver
-# - Uses external team->URL dict (team_fotmob_map.py)
 # - Priority: session override -> team curated dict -> global json -> fotmob full name -> fotmob surname -> default
 # -----------------
 DEFAULT_AVATAR = "https://i.redd.it/43axcjdu59nd1.jpeg"
 PLAYER_PHOTO_OVERRIDES_JSON = "player_photos.json"
 
-# optional: curated per-team tricky-name map (keep here or move to another module if you want)
+# optional: curated per-team tricky-name map
 # key = "<norm(team)>|<norm(league)>"
 TEAM_PLAYER_PHOTOS: Dict[str, Dict[str, str]] = {
     # "swansea city|championship": {
@@ -1952,17 +1995,17 @@ def fotmob_photo_map(team_url: str) -> Dict[str, str]:
     try:
         if not team_url:
             return {}
-headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-    "Accept-Language": "en-GB,en;q=0.9",
-    "Referer": "https://www.fotmob.com/",
-}
-resp = requests.get(team_url, headers=headers, timeout=20)
-if resp.status_code != 200:
-    return {}
-html = resp.text
 
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Language": "en-GB,en;q=0.9",
+            "Referer": "https://www.fotmob.com/",
+        }
+        resp = requests.get(team_url, headers=headers, timeout=20)
+        if resp.status_code != 200:
+            return {}
+        html = resp.text
 
         ids = re.findall(r'"id"\s*:\s*(\d+)\s*,\s*"name"\s*:\s*"([^"]+)"', html)
         if not ids:
@@ -1997,7 +2040,7 @@ def resolve_player_photo(
     session_photo_map: Dict[str, str],
     global_overrides: Dict[str, str],
 ) -> str:
-    # 1) per-player UI override (your existing control)
+    # 1) per-player UI override
     if key_id in session_photo_map:
         return session_photo_map[key_id]
 
@@ -2013,8 +2056,8 @@ def resolve_player_photo(
     if n_full in global_overrides:
         return global_overrides[n_full]
 
-    # 4/5) FotMob (team URL from external dict)
-    team_url = get_fotmob_url(team)  # decoupled: comes from team_fotmob_map.py
+    # 4/5) FotMob (manual mapping inside this file)
+    team_url = get_fotmob_url(team)
     fm = fotmob_photo_map(team_url) if team_url else {}
     if n_full in fm:
         return fm[n_full]
@@ -2056,6 +2099,9 @@ def _available_metric_pairs(df: pd.DataFrame, pairs):
     return out
 
 
+# =========================================================
+# ✅ PRO LAYOUT FUNCTION (tiles)
+# =========================================================
 def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     # ---- CSS ----
     st.markdown("""
@@ -2119,8 +2165,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
     .metrics-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
     @media (min-width: 720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr);} }
-
-    .filter-label{ color:#cbd3ef; font-weight:700; font-size:13px; letter-spacing:.02em; margin-bottom:4px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -2253,12 +2297,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     # =========================
     # sort controls (roles + All In; default = All In)
     # =========================
-    ROLE_SCORE_COLS = [
-        "Ball Playing CB Score",
-        "Wide CB Score",
-        "Box Defender Score",
-        "PL Profile Score",
-    ]
     sort_candidates = [all_col] + [c for c in ROLE_SCORE_COLS if c in df_view.columns]
 
     sort_by = st.selectbox(
@@ -2326,7 +2364,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         flag=_flag_html(birth)
         contract_txt=f"{cyr}" if cyr>0 else "—"
 
-        # key & avatar (UPDATED: FotMob resolver + overrides)
+        # key & avatar (FotMob resolver + overrides)
         key_id = f"{_norm(player)}|{_norm(team)}"
         avatar_url = resolve_player_photo(
             player=player,
@@ -2337,9 +2375,14 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
             global_overrides=global_photo_overrides,
         )
 
-        # crest (stored per club), positioned absolute so text doesn’t move
+        # crest (stored per club), BUT if none set, auto from FotMob URL
         crest_store_key = f"{_norm(team)}|{_norm(league)}"
         crest_url = st.session_state.get("crest_map", {}).get(crest_store_key, "")
+
+        if not crest_url:
+            team_url = get_fotmob_url(team)
+            crest_url = _fotmob_crest_url(team_url) if team_url else ""
+
         if crest_url:
             teamline_html = (
                 f"<div class='teamline tl-wrap tl-has-crest'>"
@@ -2350,7 +2393,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         else:
             teamline_html = f"<div class='teamline'>{team} · {league}</div>"
 
-        # card (UNCHANGED)
+        # card
         st.markdown(f"""
         <div class='pro-wrap'>
           <div class='pro-card'>
@@ -2378,34 +2421,33 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         # ----- Single expander: Individual Metrics + image & crest controls -----
         with st.expander("Individual Metrics", expanded=False):
 
-            # CB metric lists (same as your Pro Layout CB, but rendered in the nicer layout)
             ATT=[("Goals: Non-Penalty", "Non-penalty goals per 90"),
-                ("xG", "xG per 90"),
-                ("Offensive Duels", "Offensive duels per 90"),
-                ("Offensive Duel Success %", "Offensive duels won, %"),
-                ("Progressive Runs", "Progressive runs per 90")]
+                 ("xG", "xG per 90"),
+                 ("Offensive Duels", "Offensive duels per 90"),
+                 ("Offensive Duel Success %", "Offensive duels won, %"),
+                 ("Progressive Runs", "Progressive runs per 90")]
 
             DEF=[("Aerial Duels", "Aerial duels per 90"),
-                ("Aerial Duel Success %", "Aerial duels won, %"),
-                ("Defensive Duels", "Defensive duels per 90"),
-                ("Defensive Duel Success %", "Defensive duels won, %"),
-                ("PAdj Interceptions", "PAdj Interceptions"),
-                ("Shots Blocked", "Shots blocked per 90")]
+                 ("Aerial Duel Success %", "Aerial duels won, %"),
+                 ("Defensive Duels", "Defensive duels per 90"),
+                 ("Defensive Duel Success %", "Defensive duels won, %"),
+                 ("PAdj Interceptions", "PAdj Interceptions"),
+                 ("Shots Blocked", "Shots blocked per 90")]
 
-            POS = [
-                ("Accelerations", "Accelerations per 90"),
-                ("Dribbles", "Dribbles per 90"),
-                ("Dribbling  %", "Successful dribbles, %"),
-                ("Forward Passes", "Forward passes per 90"),
-                ("Forward Passing  %", "Accurate forward passes, %"),
-                ("Long Passes", "Long passes per 90"),
-                ("Long Passing  %", "Accurate long passes, %"),
-                ("Passes", "Passes per 90"),
-                ("Passing Accuracy %", "Accurate passes, %"),
-                ("Passes to Final 3rd", "Passes to final third per 90"),
-                ("Passes to Final 3rd  %", "Accurate passes to final third, %"),
-                ("Progessive Passes", "Progressive passes per 90"),
-                ("Progessive Passing  %", "Accurate progressive passes, %"),
+            POSM=[
+                 ("Accelerations", "Accelerations per 90"),
+                 ("Dribbles", "Dribbles per 90"),
+                 ("Dribbling  %", "Successful dribbles, %"),
+                 ("Forward Passes", "Forward passes per 90"),
+                 ("Forward Passing  %", "Accurate forward passes, %"),
+                 ("Long Passes", "Long passes per 90"),
+                 ("Long Passing  %", "Accurate long passes, %"),
+                 ("Passes", "Passes per 90"),
+                 ("Passing Accuracy %", "Accurate passes, %"),
+                 ("Passes to Final 3rd", "Passes to final third per 90"),
+                 ("Passes to Final 3rd  %", "Accurate passes to final third, %"),
+                 ("Progessive Passes", "Progressive passes per 90"),
+                 ("Progessive Passing  %", "Accurate progressive passes, %"),
             ]
 
             def _sec_html(title, pairs):
@@ -2417,11 +2459,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                     ptxt=_fmt2(p)
 
                     raw = _metric_val(row, met)
-                    # compact raw formatting
-                    if pd.isna(raw):
-                        raw_txt = "—"
-                    else:
-                        raw_txt = f"{raw:.2f}".rstrip("0").rstrip(".")
+                    raw_txt = "—" if pd.isna(raw) else f"{raw:.2f}".rstrip("0").rstrip(".")
 
                     rows.append(
                         f"<div class='m-row'>"
@@ -2438,12 +2476,12 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 "<div class='metrics-grid'>"
                 + _sec_html("ATTACKING", ATT)
                 + _sec_html("DEFENSIVE", DEF)
-                + _sec_html("POSSESSION", POS)
+                + _sec_html("POSSESSION", POSM)
                 + "</div>",
                 unsafe_allow_html=True
             )
 
-            # --- Player image override (per-player keys) --- (CHANGED: no imghdr)
+            # --- Player image override (per-player keys) ---
             img_key = f"imgurl_{i}_{key_id}"
             default_url = st.session_state.get("photo_map", {}).get(key_id, "")
             uploaded_file = st.file_uploader("Upload player image (PNG/JPG)", type=["png","jpg","jpeg"], key=f"upload_{i}_{key_id}")
@@ -2500,7 +2538,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                     try: st.rerun()
                     except Exception: st.experimental_rerun()
 
-            # --- Club crest override (per-player widget keys; stored per-club) --- (UNCHANGED)
+            # --- Club crest override (stored per-club) ---
             crest_widget_ns = f"{crest_store_key}|{key_id}"
             crest_default = st.session_state.get("crest_map", {}).get(crest_store_key, "")
             crest_upload = st.file_uploader("Upload club crest (SVG/PNG/JPG)", type=["svg","png","jpg","jpeg"], key=f"crest_upload_{i}_{crest_widget_ns}")
