@@ -240,7 +240,7 @@ LEAGUE_STRENGTHS = {
 'Estonia 1.':40,'England 9.':31.37,'Northern Ireland 1.':30.98,'Serbia 2.':30.39,'Denmark 3.':29.41,
 'Sweden 3.':29.41,'Slovenia 2.':28.82,'Slovakia 2.':28.24,'Greece 2.':27.06,'Wales 1.':26.67,
 'USA 3.':22.55,'Scotland 3.':20.00,'England 6.':16.08,'England 8.':15.69,'England 10.':3.92,
-'Estonia 2.':3
+'Estonia 2.':3, 'Ireland 2.':10,
 
 }
 

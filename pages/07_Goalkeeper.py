@@ -211,7 +211,7 @@ LEAGUE_STRENGTHS = {
 'Estonia 1.':40,'England 9.':31.37,'Northern Ireland 1.':30.98,'Serbia 2.':30.39,'Denmark 3.':29.41,
 'Sweden 3.':29.41,'Slovenia 2.':28.82,'Slovakia 2.':28.24,'Greece 2.':27.06,'Wales 1.':26.67,
 'USA 3.':22.55,'Scotland 3.':20.00,'England 6.':16.08,'England 8.':15.69,'England 10.':3.92,
-'Estonia 2.':3
+'Estonia 2.':3, 'Ireland 2.':10,
 }
 
 # ---- GBE league bands (custom: all UK & Ireland leagues in Band 1) ----
@@ -1308,8 +1308,8 @@ def gk_make_ranking_image(
 
         NAME_FS = 28
         TEAM_FS = 19
-        NAME_DY = row_h * 0.24
-        TEAM_DY = row_h * 0.34
+        NAME_DY = row_h * 0.2
+        TEAM_DY = row_h * 0.26
         crest_zoom = 0.88
 
         for i, (_, row) in enumerate(df_top.iterrows()):
@@ -1457,12 +1457,12 @@ def gk_make_ranking_image(
             ax.add_artist(AnnotationBbox(OffsetImage(badge, zoom=0.55),
                                          (crest_x, y), frameon=False, zorder=5))
 
-        ax.text(0.21, y + 0.18, str(row.get("Player", "")).upper(),
+        ax.text(0.21, y + 0.12, str(row.get("Player", "")).upper(),
                 fontsize=16, fontweight="bold", color=TXT, ha="left", va="center", zorder=5)
 
         team = str(row.get("Team", ""))
         league = str(row.get("League", ""))
-        ax.text(0.21, y - 0.16, f"{team} ({league})",
+        ax.text(0.21, y - 0.10, f"{team} ({league})",
                 fontsize=12, color=SUB, ha="left", va="center", zorder=5)
 
         v_bar = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
