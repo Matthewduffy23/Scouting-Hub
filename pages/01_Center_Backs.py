@@ -1755,13 +1755,15 @@ for role, role_def in ROLES.items():
 # 3) Keep your per-player override UI (wins over everything)
 # 4) Keep your expanded Twemoji flag dictionary (already here)
 # 5) Individual Metrics layout updated to the “other example” (label fixed 1-line + right-side compact)
-# 6) NEW: Club crest + curated TEAM_PLAYER_PHOTOS can be sourced from team_fotmob_map.py as defaults
+#
+# CHANGE in this version:
+# ✅ removed `imghdr` usage/import (fixes Streamlit/Python envs where imghdr is missing)
+# ✅ use uploaded_file.type + filename extension fallback for mime
 
 import os
 import re
 import json
 import base64
-import imghdr
 import io
 import unicodedata
 from typing import Dict, Optional
@@ -1772,10 +1774,8 @@ import requests
 import streamlit as st
 
 # -----------------
-# External dictionaries (kept OUT of this page)
-# - get_fotmob_url(team) -> squad URL ("" if not found)
-# - optional: get_crest_url(team) -> crest URL ("" if not found)
-# - optional: TEAM_PLAYER_PHOTOS dict (team|league -> {player->url})
+# OPTIONAL: external team->FotMob dictionary (kept OUT of this page)
+# Create team_fotmob_map.py with get_fotmob_url(team) and optionally canon_team/team aliases.
 # -----------------
 try:
     from team_fotmob_map import get_fotmob_url  # returns "" if not found
@@ -1783,18 +1783,6 @@ except Exception:
     def get_fotmob_url(team: str) -> str:
         return ""
 
-try:
-    from team_fotmob_map import get_crest_url  # returns "" if not found
-except Exception:
-    def get_crest_url(team: str) -> str:
-        return ""
-
-# If you want curated per-team player photo overrides to live in team_fotmob_map.py,
-# this import will pull them. Otherwise it falls back to empty dict.
-try:
-    from team_fotmob_map import TEAM_PLAYER_PHOTOS  # type: ignore
-except Exception:
-    TEAM_PLAYER_PHOTOS: Dict[str, Dict[str, str]] = {}
 
 # ----------------- Colors / formatting -----------------
 def _pro_rating_color(v: float) -> str:
@@ -1940,10 +1928,18 @@ def _get_foot(row) -> str:
 # -----------------
 # FotMob photo scraping + resolver
 # - Uses external team->URL dict (team_fotmob_map.py)
-# - Priority: session override -> curated TEAM_PLAYER_PHOTOS -> global json -> fotmob full name -> fotmob surname -> default
+# - Priority: session override -> team curated dict -> global json -> fotmob full name -> fotmob surname -> default
 # -----------------
 DEFAULT_AVATAR = "https://i.redd.it/43axcjdu59nd1.jpeg"
 PLAYER_PHOTO_OVERRIDES_JSON = "player_photos.json"
+
+# optional: curated per-team tricky-name map (keep here or move to another module if you want)
+# key = "<norm(team)>|<norm(league)>"
+TEAM_PLAYER_PHOTOS: Dict[str, Dict[str, str]] = {
+    # "swansea city|championship": {
+    #     "oli cooper": "https://…",
+    # },
+}
 
 def _team_key(team: str, league: str) -> str:
     return f"{_norm(team)}|{_norm(league)}"
@@ -1998,9 +1994,9 @@ def resolve_player_photo(
 
     n_full = _norm(player)
 
-    # 2) curated per-team dict (NOW can come from team_fotmob_map.py)
+    # 2) curated per-team dict
     tkey = _team_key(team, league)
-    tdict = TEAM_PLAYER_PHOTOS.get(tkey, {}) if isinstance(TEAM_PLAYER_PHOTOS, dict) else {}
+    tdict = TEAM_PLAYER_PHOTOS.get(tkey, {})
     if n_full in tdict:
         return tdict[n_full]
 
@@ -2334,14 +2330,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
         # crest (stored per club), positioned absolute so text doesn’t move
         crest_store_key = f"{_norm(team)}|{_norm(league)}"
-
-        # ✅ CHANGE: session override wins; otherwise fall back to team_fotmob_map.get_crest_url(team)
-        crest_url = (
-            st.session_state.get("crest_map", {}).get(crest_store_key, "")
-            or get_crest_url(team)
-            or ""
-        )
-
+        crest_url = st.session_state.get("crest_map", {}).get(crest_store_key, "")
         if crest_url:
             teamline_html = (
                 f"<div class='teamline tl-wrap tl-has-crest'>"
@@ -2446,7 +2435,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 unsafe_allow_html=True
             )
 
-            # --- Player image override (per-player keys) --- (UNCHANGED)
+            # --- Player image override (per-player keys) --- (CHANGED: no imghdr)
             img_key = f"imgurl_{i}_{key_id}"
             default_url = st.session_state.get("photo_map", {}).get(key_id, "")
             uploaded_file = st.file_uploader("Upload player image (PNG/JPG)", type=["png","jpg","jpeg"], key=f"upload_{i}_{key_id}")
@@ -2461,15 +2450,23 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                     if uploaded_file is not None:
                         try:
                             data = uploaded_file.getvalue()
+                            # Optional integrity check (won’t crash if PIL missing)
                             try:
                                 from PIL import Image
                                 Image.open(io.BytesIO(data))
                             except Exception:
                                 pass
-                            kind = imghdr.what(None, h=data)
-                            if kind in ("jpeg","jpg"): mime="image/jpeg"
-                            elif kind=="png": mime="image/png"
-                            else: mime = uploaded_file.type if getattr(uploaded_file,"type","").startswith("image/") else "image/png"
+
+                            # ✅ MIME detection without imghdr
+                            import os as _os
+                            mime = getattr(uploaded_file, "type", "") or ""
+                            if not mime.startswith("image/"):
+                                ext = _os.path.splitext(uploaded_file.name or "")[1].lower()
+                                if ext == ".svg": mime = "image/svg+xml"
+                                elif ext == ".png": mime = "image/png"
+                                elif ext in (".jpg",".jpeg"): mime = "image/jpeg"
+                                else: mime = "image/png"
+
                             b64 = base64.b64encode(data).decode("ascii")
                             st.session_state.setdefault("photo_map", {})[key_id] = f"data:{mime};base64,{b64}"
                             st.success("Uploaded image saved!")
@@ -2497,7 +2494,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
             # --- Club crest override (per-player widget keys; stored per-club) --- (UNCHANGED)
             crest_widget_ns = f"{crest_store_key}|{key_id}"
-            crest_default = st.session_state.get("crest_map", {}).get(crest_store_key, "") or get_crest_url(team) or ""
+            crest_default = st.session_state.get("crest_map", {}).get(crest_store_key, "")
             crest_upload = st.file_uploader("Upload club crest (SVG/PNG/JPG)", type=["svg","png","jpg","jpeg"], key=f"crest_upload_{i}_{crest_widget_ns}")
             _ = st.text_input("Custom crest URL (e.g., https://…/club.svg or .png)", value=crest_default, key=f"crest_url_{i}_{crest_widget_ns}")
             col_c, col_d = st.columns([1, 3])
@@ -2545,6 +2542,7 @@ with tabs[4]:
     st.subheader("Pro Layout — Top Tiles")
     render_pro_layout(df_f, top_n=top_n)
 # ----------------- END PRO LAYOUT TAB -----------------
+
 
 
 # ----------------- END CENTER BACK BLOCK -----------------
