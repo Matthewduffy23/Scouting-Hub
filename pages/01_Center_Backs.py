@@ -1786,7 +1786,7 @@ FOTMOB_TEAM_URLS: Dict[str, str] = {
 # If present, we’ll use it, but LOCAL dict above also works.
 # -----------------
 try:
-    from team_fotmob_map import get_fotmob_url as _external_get_fotmob_url  # returns "" if not found
+    from team_fotmob_urls import get_fotmob_url as _external_get_fotmob_url  # returns "" if not found
 except Exception:
     _external_get_fotmob_url = None
 
