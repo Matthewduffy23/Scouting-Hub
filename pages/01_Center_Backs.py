@@ -1946,19 +1946,27 @@ def _team_key(team: str, league: str) -> str:
 
 @st.cache_data(show_spinner=False, ttl=60*60*12)
 def fotmob_photo_map(team_url: str) -> Dict[str, str]:
+    """
+    Returns mapping: normalized full name -> image url
+    """
     try:
         if not team_url:
             return {}
+headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Language": "en-GB,en;q=0.9",
+    "Referer": "https://www.fotmob.com/",
+}
+resp = requests.get(team_url, headers=headers, timeout=20)
+if resp.status_code != 200:
+    return {}
+html = resp.text
 
-        headers = {"User-Agent": "Mozilla/5.0"}
-        html = requests.get(team_url, headers=headers, timeout=20).text
 
         ids = re.findall(r'"id"\s*:\s*(\d+)\s*,\s*"name"\s*:\s*"([^"]+)"', html)
         if not ids:
-            ids = re.findall(
-                r'"playerId"\s*:\s*(\d+).*?"name"\s*:\s*"([^"]+)"',
-                html, flags=re.S
-            )
+            ids = re.findall(r'"playerId"\s*:\s*(\d+).*?"name"\s*:\s*"([^"]+)"', html, flags=re.S)
 
         out = {}
         for pid, name in ids:
@@ -1966,7 +1974,6 @@ def fotmob_photo_map(team_url: str) -> Dict[str, str]:
             if nm:
                 out[nm] = f"https://images.fotmob.com/image_resources/playerimages/{pid}.png"
         return out
-
     except Exception:
         return {}
 
