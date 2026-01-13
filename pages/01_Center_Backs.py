@@ -2114,12 +2114,12 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
     .pro-wrap{ display:flex; justify-content:center; }
     .pro-card{
-      position:relative; width:min(420px,96%); display:grid; grid-template-columns:88px 1fr 48px; gap:12px; align-items:start;
+      position:relative; width:min(420px,96%); display:grid; grid-template-columns:84px 1fr 48px; gap:12px; align-items:start;
       background:var(--card); border:1px solid rgba(255,255,255,.06); border-radius:20px; padding:16px; margin-bottom:12px;
       box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 6px 24px rgba(0,0,0,.35);
     }
 
-    .pro-avatar{ width:88px; height:88px; border-radius:12px; border:1px solid #2a3145; overflow:hidden; background:#0b0d12; }
+    .pro-avatar{ width:84px; height:84px; border-radius:12px; border:1px solid #2a3145; overflow:hidden; background:#0b0d12; }
     .pro-avatar img{ width:100%; height:100%; object-fit:cover; image-rendering:auto; transform:translateZ(0); }
 
     .flagchip{ display:inline-flex; align-items:center; gap:6px; background:transparent; border:none; padding:0; height:auto;}
@@ -2145,9 +2145,27 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     .crest-icon{ height:1.35em; width:auto; object-fit:contain; image-rendering:auto; }
     .crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
 
+    /* ✅ ALIGNMENT FIX (Foot ↔ Positions, Contract ↔ Team/League) */
+    .align-row{
+      display:flex;
+      align-items:center;
+      gap:14px;
+      margin:2px 0;
+    }
+    .poswrap{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-top:0;
+    }
+    .teamwrap{ flex:1 1 auto; min-width:0; }
+    .contractchip{ min-width:42px; }
+
     /* ---- Individual Metrics (updated layout like other example) ---- */
     .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
-    .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
+    .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 
+    0; }
 
     .m-row{
       display:flex; align-items:center; gap:10px;
@@ -2401,10 +2419,22 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
               <div class='pro-avatar'>
                 <img src="{avatar_url}" srcset="{avatar_url} 1x, {avatar_url} 2x" alt="{player}" loading="lazy" />
               </div>
+
               <div class='row leftrow1'>{flag}<span class='chip'>{age_txt}</span></div>
-              <div class='row leftrow-foot'><span class='chip'>{foot}</span></div>
-              <div class='row leftrow-contract'><span class='chip'>{contract_txt}</span></div>
+
+              <!-- ✅ Foot aligned with Positions -->
+              <div class='align-row'>
+                <span class='chip'>{foot}</span>
+                <div class='poswrap'>{pos_html}</div>
+              </div>
+
+              <!-- ✅ Contract aligned with Team/League -->
+              <div class='align-row' style='margin-top:10px;'>
+                <span class='chip contractchip'>{contract_txt}</span>
+                <div class='teamwrap'>{teamline_html}</div>
+              </div>
             </div>
+
             <div>
               <div class='name'>{player}</div>
               <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(gt_i)}'>{gt_txt}</span><span class='sub'>Ball Playing CB</span></div>
@@ -2413,6 +2443,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
               <div class='row posrow'>{pos_html}</div>
               {teamline_html}
             </div>
+
             <div class='rank'>#{_fmt2(i+1)}</div>
           </div>
         </div>
