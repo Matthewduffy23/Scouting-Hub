@@ -1793,6 +1793,12 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 
+# ✅ photo / crest system (CB-style)
+import requests
+import base64
+import io
+import os
+
 # ----------------- helpers (EXACTLY as provided) -----------------
 def _pro_rating_color(v: float) -> str:
     v = float(v)
@@ -1951,6 +1957,162 @@ def _get_foot(row) -> str:
                     return s
     return ""
 
+# ==========================================================
+# ✅ PHOTO SYSTEM (same as CB/FB): overrides + FotMob squad lookup
+# ==========================================================
+PLAYER_PHOTO_OVERRIDES_JSON = "player_photo_overrides.json"
+
+def load_local_photo_overrides(path: str) -> dict:
+    try:
+        import json
+        if not path or not os.path.exists(path):
+            return {}
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f) or {}
+    except Exception:
+        return {}
+
+try:
+    from team_fotmob_urls import FOTMOB_TEAM_URLS
+except Exception:
+    FOTMOB_TEAM_URLS = {}
+
+def get_fotmob_url(team: str) -> str:
+    return (FOTMOB_TEAM_URLS.get(team) or "").strip()
+
+def _fotmob_team_id_from_url(team_url: str) -> str:
+    m = _re.search(r"/teams/(\d+)/", str(team_url or ""))
+    return m.group(1) if m else ""
+
+def _fotmob_crest_url(team_url: str) -> str:
+    tid = _fotmob_team_id_from_url(team_url)
+    return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png" if tid else ""
+
+def _player_surname(player: str) -> str:
+    p = (player or "").strip()
+    if not p:
+        return ""
+    if "," in p:
+        return p.split(",", 1)[0].strip()
+    parts = p.split()
+    return parts[-1].strip() if parts else ""
+
+def _fotmob_team_squad(team_id: str) -> list[dict]:
+    cache = st.session_state.setdefault("_fotmob_team_squad_cache", {})
+    if team_id in cache:
+        return cache[team_id] or []
+
+    squad: list[dict] = []
+    try:
+        url = f"https://www.fotmob.com/api/teams?id={team_id}"
+        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code == 200:
+            data = r.json() or {}
+            raw_squad = data.get("squad", None)
+
+            if isinstance(raw_squad, list):
+                for section in raw_squad:
+                    members = section.get("members") or section.get("players") or []
+                    if isinstance(members, list):
+                        squad.extend([m for m in members if isinstance(m, dict)])
+            elif isinstance(raw_squad, dict):
+                for k in ("members", "players"):
+                    members = raw_squad.get(k)
+                    if isinstance(members, list):
+                        squad.extend([m for m in members if isinstance(m, dict)])
+                nested = raw_squad.get("squad")
+                if isinstance(nested, list):
+                    for section in nested:
+                        members = section.get("members") or section.get("players") or []
+                        if isinstance(members, list):
+                            squad.extend([m for m in members if isinstance(m, dict)])
+    except Exception:
+        squad = []
+
+    cache[team_id] = squad
+    return squad
+
+def resolve_player_photo(player: str,
+                         team: str,
+                         league: str,
+                         key_id: str,
+                         session_photo_map: dict,
+                         global_overrides: dict) -> str:
+    # 1) session override
+    if session_photo_map.get(key_id):
+        return session_photo_map[key_id]
+    # 2) global override
+    if global_overrides.get(key_id):
+        return global_overrides[key_id]
+
+    # 3) FotMob team squad lookup (team + surname)
+    team_url = get_fotmob_url(team)
+    tid = _fotmob_team_id_from_url(team_url)
+    if tid:
+        squad = _fotmob_team_squad(tid)
+        target_surname = _norm(_player_surname(player))
+        target_full = _norm(player)
+
+        best_id = ""
+
+        if target_surname:
+            for m in squad:
+                name = m.get("name") or m.get("playerName") or ""
+                pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
+                if not pid:
+                    continue
+                if _norm(_player_surname(name)) == target_surname:
+                    best_id = str(pid)
+                    if target_full and target_full in _norm(name):
+                        break
+
+        if not best_id and target_full:
+            for m in squad:
+                name = m.get("name") or m.get("playerName") or ""
+                pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
+                if not pid:
+                    continue
+                if target_full in _norm(name):
+                    best_id = str(pid)
+                    break
+
+        if best_id and str(best_id).isdigit():
+            url = f"https://images.fotmob.com/image_resources/playerimages/{best_id}.png"
+            session_photo_map[key_id] = url
+            return url
+
+    return "https://i.redd.it/43axcjdu59nd1.jpeg"
+
+
+# ==========================================================
+# ✅ Metric label system (CB-style): raw value + percentile badge
+# ==========================================================
+def _available_metric_pairs(df_view: pd.DataFrame, pairs: list[tuple[str, str]]):
+    cols = set(df_view.columns)
+    out = []
+    for lab, met in pairs:
+        if met in cols or f"{met} Percentile" in cols:
+            out.append((lab, met))
+    return out
+
+def _metric_pct(row: pd.Series, met: str):
+    col = f"{met} Percentile"
+    if col in row.index and not pd.isna(row[col]):
+        try:
+            return float(row[col])
+        except Exception:
+            return np.nan
+    return np.nan
+
+def _metric_val(row: pd.Series, met: str):
+    if met in row.index and not pd.isna(row[met]):
+        try:
+            return float(row[met])
+        except Exception:
+            return row[met]
+    return np.nan
+
+
 # ----------------- CENTRAL MIDFIELD VERSION -----------------
 # Label → (column_name, pretty_label)
 _CM_ROLE_MAP = [
@@ -1967,6 +2129,7 @@ _CM_ROLE_MAP = [
 
 # Helper to filter to existing columns
 _def_cols = [c for c,_ in _CM_ROLE_MAP]
+
 
 def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
     # ---- CSS (EXACTLY same as base) ----
@@ -2011,12 +2174,17 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
     .crest-icon{ height:1.35em; width:auto; object-fit:contain; image-rendering:auto; }
     .crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
 
-    /* Individual metrics — compact layout */
+    /* Individual metrics — CB-style (label + raw + badge) */
     .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
     .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
-    .m-row{ display:flex; justify-content:space-between; align-items:center; padding:8px 8px; border-radius:10px; }
-    .m-label{ color:#c9d3f2; font-size:15.5px; letter-spacing:.1px; flex:1 1 auto; }
-    .m-badge{ flex:0 0 auto; min-width:44px; text-align:center; padding:2px 10px; border-radius:8px; font-weight:700; font-size:18.5px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); box-shadow:none; }
+
+    .m-row{ display:flex; align-items:center; gap:10px; padding:8px 8px; border-radius:10px; }
+    .m-label{ color:#c9d3f2; font-size:15.5px; letter-spacing:.1px; flex:1 1 0%; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .m-right{ display:flex; align-items:center; gap:10px; flex:0 0 auto; }
+    .m-val{ color:#a8b3cf; font-size:13px; opacity:.9; min-width:54px; text-align:right; }
+    .m-badge{ flex:0 0 auto; min-width:44px; text-align:center; padding:2px 10px; border-radius:8px;
+              font-weight:800; font-size:18.5px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); box-shadow:none; }
+
     .metrics-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
     @media (min-width: 720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr);} }
 
@@ -2030,9 +2198,7 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
       width:100%;
       justify-content:flex-start;
     }
-    .role-row .pill{
-      flex:0 0 auto;
-    }
+    .role-row .pill{ flex:0 0 auto; }
     .role-row .sub{
       flex:1 1 auto;
       margin-left:8px;
@@ -2042,33 +2208,28 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
     }
 
     @media (max-width: 480px){
-      .role-row .sub{
-        font-size:13px;
-      }
-      .role-row .pill{
-        min-width:32px;
-        font-size:16px;
-      }
+      .role-row .sub{ font-size:13px; }
+      .role-row .pill{ min-width:32px; font-size:16px; }
     }
     </style>
     """, unsafe_allow_html=True)
+
+    # ✅ ensure maps exist + load global overrides (same as CB)
+    global_photo_overrides = load_local_photo_overrides(PLAYER_PHOTO_OVERRIDES_JSON)
+    st.session_state.setdefault("photo_map", {})
+    st.session_state.setdefault("crest_map", {})
 
     # ---- FILTERS UI ROW ----
     c1, c2 = st.columns([1, 2])
     with c1:
         age_choice = st.selectbox(
             "Age",
-            [
-                "All",
-                "U18","U20","U21","U22","U23","U25","U30",   # <=
-                "30+","32+","35+"                            # >=
-            ],
+            ["All","U18","U20","U21","U22","U23","U25","U30","30+","32+","35+"],
             index=0,
             key="pro_age_filter_cm",
             label_visibility="visible"
         )
     with c2:
-        # Player & Team search
         search_q = st.text_input("Search player (name contains)", "", key="cm_player_search")
         team_search_q = st.text_input("Search team (name contains)", "", key="cm_team_search")
 
@@ -2102,22 +2263,16 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
     df_filtered = df_view.copy()
 
     # ---- Player search ----
-    if search_q:
+    if search_q and "Player" in df_filtered.columns:
         s = str(search_q).strip().lower()
-        if "Player" in df_filtered.columns:
-            df_filtered = df_filtered[
-                df_filtered["Player"].astype(str).str.lower().str.contains(s, na=False)
-            ]
+        df_filtered = df_filtered[df_filtered["Player"].astype(str).str.lower().str.contains(s, na=False)]
 
     # ---- Team search ----
-    if team_search_q:
+    if team_search_q and "Team" in df_filtered.columns:
         t = str(team_search_q).strip().lower()
-        if "Team" in df_filtered.columns:
-            df_filtered = df_filtered[
-                df_filtered["Team"].astype(str).str.lower().str.contains(t, na=False)
-            ]
+        df_filtered = df_filtered[df_filtered["Team"].astype(str).str.lower().str.contains(t, na=False)]
 
-    # ---- Age filter (under & over) ----
+    # ---- Age filter ----
     if "Age" in df_filtered.columns and age_choice != "All":
         try:
             df_filtered["Age_num"] = pd.to_numeric(df_filtered["Age"], errors="coerce")
@@ -2129,12 +2284,12 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
             elif age_choice == "U25": df_filtered = df_filtered[df_filtered["Age_num"] <= 25]
             elif age_choice == "U30": df_filtered = df_filtered[df_filtered["Age_num"] <= 30]
             elif age_choice == "30+": df_filtered = df_filtered[df_filtered["Age_num"] >= 30]
-            elif age_choice == "25+": df_filtered = df_filtered[df_filtered["Age_num"] >= 25]
-            elif age_choice == "28+": df_filtered = df_filtered[df_filtered["Age_num"] >= 28]
+            elif age_choice == "32+": df_filtered = df_filtered[df_filtered["Age_num"] >= 32]
+            elif age_choice == "35+": df_filtered = df_filtered[df_filtered["Age_num"] >= 35]
         except Exception:
             pass
 
-    # ---- Contract expiry filter (max year) ----
+    # ---- Contract expiry filter ----
     if "Contract expires" in df_filtered.columns:
         contract_choice = st.selectbox(
             "Contract expires (max year)",
@@ -2146,9 +2301,7 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
         if contract_choice != "Any":
             try:
                 max_year = int(contract_choice)
-                df_filtered["_contract_year"] = pd.to_datetime(
-                    df_filtered["Contract expires"], errors="coerce"
-                ).dt.year
+                df_filtered["_contract_year"] = pd.to_datetime(df_filtered["Contract expires"], errors="coerce").dt.year
                 df_filtered = df_filtered[df_filtered["_contract_year"] <= max_year]
             except Exception:
                 pass
@@ -2156,13 +2309,9 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
     # ---- Birth country filter ----
     if "Birth country" in df_filtered.columns:
         country_vals = (
-            df_filtered["Birth country"]
-            .dropna()
-            .astype(str)
-            .str.strip()
+            df_filtered["Birth country"].dropna().astype(str).str.strip()
         )
         country_vals = sorted({c for c in country_vals if c and c.lower() not in {"nan","none","null"}})
-
         selected_countries = st.multiselect(
             "Birth country",
             options=country_vals,
@@ -2175,43 +2324,24 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
     # ---- Foot filter ----
     df_filtered["__foot"] = df_filtered.apply(_get_foot, axis=1)
     foot_vals = (
-        df_filtered["__foot"]
-        .dropna()
-        .astype(str)
-        .str.strip()
+        df_filtered["__foot"].dropna().astype(str).str.strip()
     )
     foot_vals = sorted({f for f in foot_vals if f and f.lower() not in {"nan","none","null"}})
-
     if foot_vals:
-        selected_feet = st.multiselect(
-            "Foot",
-            options=foot_vals,
-            default=[],
-            key="pro_foot_filter_cm"
-        )
+        selected_feet = st.multiselect("Foot", options=foot_vals, default=[], key="pro_foot_filter_cm")
         if selected_feet:
             df_filtered = df_filtered[df_filtered["__foot"].isin(selected_feet)]
 
     # ---------- optional minimum role score filters ----------
     ROLE_SCORE_COLS_FILTER = [col for col, _ in _CM_ROLE_MAP if col in df_filtered.columns]
-
-    use_role_filters = st.checkbox(
-        "Filter by minimum role score(s)",
-        value=False,
-        key="cm_role_filter_toggle"
-    )
+    use_role_filters = st.checkbox("Filter by minimum role score(s)", value=False, key="cm_role_filter_toggle")
 
     if use_role_filters and ROLE_SCORE_COLS_FILTER:
         st.write("Set minimum scores (0–99). Any slider > 0 will filter that role.")
         minima = {}
         for col in ROLE_SCORE_COLS_FILTER:
             pretty = col.replace("Score", "").strip()
-            minima[col] = st.slider(
-                f"Min {pretty}",
-                0, 99, 0, 1,
-                key=f"cm_min_{_norm(col)}"
-            )
-
+            minima[col] = st.slider(f"Min {pretty}", 0, 99, 0, 1, key=f"cm_min_{_norm(col)}")
         for col, thr in minima.items():
             if thr > 0:
                 df_filtered[col] = pd.to_numeric(df_filtered[col], errors="coerce")
@@ -2222,7 +2352,6 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
     if all_col not in df_view.columns:
         st.info("Pro Layout needs the role scores. Make sure the table section above ran first.")
         return
-
     if df_filtered.empty:
         st.info("No players match the selected filters.")
         return
@@ -2236,7 +2365,7 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
     sort_by = st.selectbox(
         "Order by",
         options=sort_candidates,
-        index=0,  # default All In
+        index=0,
         key="pro_sort_by_cm",
         label_visibility="visible"
     )
@@ -2250,10 +2379,7 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
     asc = (sort_dir_label == "Low → High")
 
     _sort_col = "__sort_val"
-    df_filtered[_sort_col] = pd.to_numeric(
-        df_filtered.get(sort_by, pd.Series(index=df_filtered.index)),
-        errors="coerce"
-    )
+    df_filtered[_sort_col] = pd.to_numeric(df_filtered.get(sort_by, pd.Series(index=df_filtered.index)), errors="coerce")
 
     ranked = (
         df_filtered
@@ -2279,42 +2405,54 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
 
         cy = pd.to_datetime(row.get("Contract expires"), errors="coerce")
         cyr = int(cy.year) if pd.notna(cy) else 0
+        contract_txt = f"{cyr}" if cyr > 0 else "—"
+
         birth = row.get("Birth country","") if "Birth country" in row else ""
         foot = _get_foot(row) or "—"
+        flag = _flag_html(birth)
 
-        # ---- role pills (driven by selection) ----
+        # ---- role pills ----
         pill_triplet = []
         for lbl in selected_labels:
             col = label_to_col.get(lbl, "")
             val = _pro_show99(row.get(col, 0))
             pill_triplet.append((lbl, val, _fmt2(val)))
 
-        # ---- positions — preserve dataset order & de-dupe ----
+        while len(pill_triplet) < 3:
+            pill_triplet.append(("—", 0, "00"))
+        pill_triplet = pill_triplet[:3]
+        (l1,v1,t1),(l2,v2,t2),(l3,v3,t3) = pill_triplet
+
+        # ---- positions ----
         raw = (pos or "").strip().upper()
         codes = [c for c in _re.split(r"[,\s/;]+", raw) if c]
-        seen = set()
-        ordered = []
+        seen=set(); ordered=[]
         for c in codes:
             if c not in seen:
-                seen.add(c)
-                ordered.append(c)
+                seen.add(c); ordered.append(c)
         pos_html = "".join(
             f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>"
             for c in ordered
         )
 
-        # left meta
-        flag = _flag_html(birth)
-        contract_txt = f"{cyr}" if cyr > 0 else "—"
-
-        # keys & avatar
+        # ✅ photo resolver (same as CB/FB)
         key_id = f"{_norm(player)}|{_norm(team)}"
-        default_avatar = "https://i.redd.it/43axcjdu59nd1.jpeg"
-        avatar_url = st.session_state.get("photo_map", {}).get(key_id, default_avatar)
+        avatar_url = resolve_player_photo(
+            player=player,
+            team=team,
+            league=league,
+            key_id=key_id,
+            session_photo_map=st.session_state["photo_map"],
+            global_overrides=global_photo_overrides,
+        )
 
-        # crest (stored per club)
+        # ✅ crest resolver (same as CB)
         crest_store_key = f"{_norm(team)}|{_norm(league)}"
         crest_url = st.session_state.get("crest_map", {}).get(crest_store_key, "")
+        if not crest_url:
+            team_url = get_fotmob_url(team)
+            crest_url = _fotmob_crest_url(team_url) if team_url else ""
+
         if crest_url:
             teamline_html = (
                 f"<div class='teamline tl-wrap tl-has-crest'>"
@@ -2325,7 +2463,6 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
         else:
             teamline_html = f"<div class='teamline'>{team} · {league}</div>"
 
-        # card (layout same; three pills dynamic)
         _subtitle_map = {
             "Deep Playmaker":"Deep Playmaker",
             "Advanced Playmaker":"Advanced Playmaker",
@@ -2337,11 +2474,6 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
             "Ball Winner":"Ball Winner",
             "PL Profile":"PL Profile",
         }
-
-        while len(pill_triplet) < 3:
-            pill_triplet.append(("—", 0, "00"))
-        pill_triplet = pill_triplet[:3]
-        (l1,v1,t1),(l2,v2,t2),(l3,v3,t3) = pill_triplet
 
         st.markdown(f"""
         <div class='pro-wrap'>
@@ -2356,6 +2488,7 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
             </div>
             <div>
               <div class='name'>{player}</div>
+
               <div class='row role-row'>
                 <span class='pill' style='background:{_pro_rating_color(v1)}'>{t1}</span>
                 <span class='sub'>{_subtitle_map.get(l1,l1)}</span>
@@ -2368,6 +2501,7 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
                 <span class='pill' style='background:{_pro_rating_color(v3)}'>{t3}</span>
                 <span class='sub'>{_subtitle_map.get(l3,l3)}</span>
               </div>
+
               <div class='row posrow'>{pos_html}</div>
               {teamline_html}
             </div>
@@ -2376,60 +2510,57 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
         </div>
         """, unsafe_allow_html=True)
 
-        # ----- Expander: CM individual metrics (ATT/DEF/POS) -----
+        # ----- Expander: CM individual metrics (ATT/DEF/POS) — ✅ labels + raw + badge -----
         with st.expander("Individual Metrics", expanded=False):
-            def _pct(m):
-                col = f"{m} Percentile"
-                return float(row[col]) if col in row and not pd.isna(row[col]) else 0.0
 
-            ATT=[("Crosses","Crosses per 90"),
-                 ("Crossing Accuracy %","Accurate crosses, %"),
-                 ("Goals: Non-Penalty","Non-penalty goals per 90"),
-                 ("xG","xG per 90"),
-                 ("Expected Assists","xA per 90"),
-                 ("Offensive Duels","Offensive duels per 90"),
-                 ("Offensive Duel Success %","Offensive duels won, %"),
-                 ("Progressive Runs","Progressive runs per 90"),
-                 ("Shots","Shots per 90"),
-                 ("Touches in Opposition Box","Touches in box per 90")]
+            ATT=[("Goals: Non-Penalty", "Non-penalty goals per 90"),
+                 ("xG", "xG per 90"),
+                 ("Expected Assists", "xA per 90"),
+                 ("Key passes", "Key passes per 90"),
+                 ("Shots", "Shots per 90"),
+                 ("Shooting Accuracy %", "Shots on target, %")]
 
-            DEF=[("Aerial Duels","Aerial duels per 90"),
-                 ("Aerial Duel Success %","Aerial duels won, %"),
-                 ("Defensive Duels","Defensive duels per 90"),
-                 ("Defensive Duel Success %","Defensive duels won, %"),
-                 ("Shots Blocked","Shots blocked per 90"),
-                 ("PAdj. Interceptions","PAdj Interceptions")]
+            DEF=[("Aerial Duels", "Aerial duels per 90"),
+                 ("Aerial Duel Success %", "Aerial duels won, %"),
+                 ("Defensive Duels", "Defensive duels per 90"),
+                 ("Defensive Duel Success %", "Defensive duels won, %"),
+                 ("PAdj. Interceptions", "PAdj Interceptions"),
+                 ("Shots Blocked", "Shots blocked per 90")]
 
-            POS=[("Deep Completions","Deep completions per 90"),
-                 ("Dribbles","Dribbles per 90"),
-                 ("Dribbling Success %","Successful dribbles, %"),
-                 ("Forward Passes","Forward passes per 90"),
-                 ("Forward Passing %","Accurate forward passes, %"),
-                 ("Key passes","Key passes per 90"),
-                 ("Long Passes","Long passes per 90"),
-                 ("Long Passing %","Accurate long passes, %"),
-                 ("Passes","Passes per 90"),
-                 ("Passing %","Accurate passes, %"),
-                 ("Passes to Final 3rd","Passes to final third per 90"),
-                 ("Passes to Final 3rd %","Accurate passes to final third, %"),
-                 ("Passes to Penalty Area","Passes to penalty area per 90"),
-                 ("Pass to Penalty Area %","Accurate passes to penalty area, %"),
-                 ("Progessive Passes","Progressive passes per 90"),
-                 ("Progessive Passing %","Accurate progressive passes, %"),
-                 ("Smart Passes","Smart passes per 90")]
+            POS=[("Passes", "Passes per 90"),
+                 ("Passing %", "Accurate passes, %"),
+                 ("Forward Passes", "Forward passes per 90"),
+                 ("Forward Passing %", "Accurate forward passes, %"),
+                 ("Long Passes", "Long passes per 90"),
+                 ("Long Passing %", "Accurate long passes, %"),
+                 ("Passes to Final 3rd", "Passes to final third per 90"),
+                 ("Passes to Final 3rd %", "Accurate passes to final third, %"),
+                 ("Progessive Passes", "Progressive passes per 90"),
+                 ("Progessive Passing %", "Accurate progressive passes, %"),
+                 ("Dribbles", "Dribbles per 90"),
+                 ("Dribbling Success %", "Successful dribbles, %"),
+                 ("Progressive Runs", "Progressive runs per 90")]
 
             def _sec_html(title, pairs):
+                pairs = _available_metric_pairs(df_view, pairs)
                 rows = []
                 for lab, met in pairs:
-                    p = _pro_show99(_pct(met))
+                    pct = _metric_pct(row, met)
+                    p = _pro_show99(pct if not pd.isna(pct) else 0.0)
                     ptxt = _fmt2(p)
+
+                    raw = _metric_val(row, met)
+                    raw_txt = "—" if pd.isna(raw) else f"{raw:.2f}".rstrip("0").rstrip(".")
+
                     rows.append(
-                        f"<div class='m-row'>"
+                        "<div class='m-row'>"
                         f"<div class='m-label'>{lab}</div>"
+                        "<div class='m-right'>"
+                        f"<div class='m-val'>{raw_txt}</div>"
                         f"<div class='m-badge' style='background:{_pro_rating_color(p)}'>{ptxt}</div>"
-                        f"</div>"
+                        "</div></div>"
                     )
-                return f"<div class='m-sec'><div class='m-title'>{title}</div>{''.join(rows)}</div>"
+                return f"<div class='m-sec'><div class='m-title'>{title}</div>{''.join(rows) if rows else ''}</div>"
 
             st.markdown(
                 "<div class='metrics-grid'>"
@@ -2440,7 +2571,7 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
                 unsafe_allow_html=True
             )
 
-            # --- Player image override (per-player unique keys) ---
+            # --- Player image override (same UI as CB) ---
             img_key = f"imgurl_{i}_{key_id}"
             default_url = st.session_state.get("photo_map", {}).get(key_id, "")
             uploaded_file = st.file_uploader(
@@ -2459,27 +2590,26 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
                 if st.button("Apply to this player", key=f"apply_{i}_{key_id}"):
                     if uploaded_file is not None:
                         try:
-                            import base64, imghdr, io
                             data = uploaded_file.getvalue()
                             try:
                                 from PIL import Image
                                 Image.open(io.BytesIO(data))
                             except Exception:
                                 pass
-                            kind = imghdr.what(None, h=data)
-                            if kind in ("jpeg","jpg"):
-                                mime = "image/jpeg"
-                            elif kind == "png":
-                                mime = "image/png"
-                            else:
-                                mime = uploaded_file.type if getattr(uploaded_file,"type","").startswith("image/") else "image/png"
+
+                            mime = getattr(uploaded_file, "type", "") or ""
+                            if not mime.startswith("image/"):
+                                ext = os.path.splitext(uploaded_file.name or "")[1].lower()
+                                if ext == ".svg": mime = "image/svg+xml"
+                                elif ext == ".png": mime = "image/png"
+                                elif ext in (".jpg", ".jpeg"): mime = "image/jpeg"
+                                else: mime = "image/png"
+
                             b64 = base64.b64encode(data).decode("ascii")
                             st.session_state.setdefault("photo_map", {})[key_id] = f"data:{mime};base64,{b64}"
                             st.success("Uploaded image saved!")
-                            try:
-                                st.rerun()
-                            except Exception:
-                                st.experimental_rerun()
+                            try: st.rerun()
+                            except Exception: st.experimental_rerun()
                         except Exception as e:
                             st.error(f"Couldn't process the uploaded image: {e}")
                     else:
@@ -2491,20 +2621,16 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
                         else:
                             st.session_state.setdefault("photo_map", {})[key_id] = val
                             st.success("Saved!")
-                            try:
-                                st.rerun()
-                            except Exception:
-                                st.experimental_rerun()
+                            try: st.rerun()
+                            except Exception: st.experimental_rerun()
             with col_b:
                 if st.button("Clear override", key=f"clear_{i}_{key_id}"):
                     st.session_state.setdefault("photo_map", {}).pop(key_id, None)
                     st.info("Cleared.")
-                    try:
-                        st.rerun()
-                    except Exception:
-                        st.experimental_rerun()
+                    try: st.rerun()
+                    except Exception: st.experimental_rerun()
 
-            # --- Club crest override (unique widget keys) ---
+            # --- Club crest override (same UI as CB) ---
             crest_widget_ns = f"{crest_store_key}|{key_id}|{i}"
             crest_default = st.session_state.get("crest_map", {}).get(crest_store_key, "")
             crest_upload = st.file_uploader(
@@ -2517,31 +2643,25 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
                 value=crest_default,
                 key=f"crest_url_{crest_widget_ns}"
             )
+
             col_c, col_d = st.columns([1, 3])
             with col_c:
                 if st.button("Apply crest", key=f"apply_crest_{crest_widget_ns}"):
                     if crest_upload is not None:
                         try:
-                            import base64, os
                             data = crest_upload.getvalue()
                             mime = crest_upload.type or ""
                             if not mime.startswith("image/"):
                                 ext = os.path.splitext(crest_upload.name or "")[1].lower()
-                                if ext == ".svg":
-                                    mime = "image/svg+xml"
-                                elif ext == ".png":
-                                    mime = "image/png"
-                                elif ext in (".jpg",".jpeg"):
-                                    mime = "image/jpeg"
-                                else:
-                                    mime = "image/png"
+                                if ext == ".svg": mime = "image/svg+xml"
+                                elif ext == ".png": mime = "image/png"
+                                elif ext in (".jpg",".jpeg"): mime = "image/jpeg"
+                                else: mime = "image/png"
                             b64 = base64.b64encode(data).decode("ascii")
                             st.session_state.setdefault("crest_map", {})[crest_store_key] = f"data:{mime};base64,{b64}"
                             st.success("Crest saved!")
-                            try:
-                                st.rerun()
-                            except Exception:
-                                st.experimental_rerun()
+                            try: st.rerun()
+                            except Exception: st.experimental_rerun()
                         except Exception as e:
                             st.error(f"Couldn't process crest: {e}")
                     else:
@@ -2553,18 +2673,14 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
                         else:
                             st.session_state.setdefault("crest_map", {})[crest_store_key] = val
                             st.success("Crest URL saved!")
-                            try:
-                                st.rerun()
-                            except Exception:
-                                st.experimental_rerun()
+                            try: st.rerun()
+                            except Exception: st.experimental_rerun()
             with col_d:
                 if st.button("Clear crest", key=f"clear_crest_{crest_widget_ns}"):
                     st.session_state.setdefault("crest_map", {}).pop(crest_store_key, None)
                     st.info("Crest cleared.")
-                    try:
-                        st.rerun()
-                    except Exception:
-                        st.experimental_rerun()
+                    try: st.rerun()
+                    except Exception: st.experimental_rerun()
 
 # ---- TAB HOOK ----
 with tabs[4]:
