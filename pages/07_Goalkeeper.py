@@ -1666,7 +1666,7 @@ def _pro_rating_color(v: float) -> str:
         (55, "#A7D763"),  # Green-
         (41, "#F6D645"),  # Bright yellow (improved)
         (25, "#D77A2E"),  # Orange
-        (0,  "#C63733"),  # Red
+        (0, "#C63733"),   # Red
     ]
     for threshold, color in COLORS:
         if v >= threshold:
@@ -1690,16 +1690,9 @@ def _fmt2(n: int) -> str:
 
 
 _POS_COLORS = {
-    "CF":"#6EA8FF","LWF":"#6EA8FF","LW":"#6EA8FF","LAMF":"#6EA8FF",
-    "RW":"#6EA8FF","RWF":"#6EA8FF","RAMF":"#6EA8FF",
-
-    "AMF":"#7FE28A","LCMF":"#5FD37A","RCMF":"#5FD37A",
-    "RDMF":"#31B56B","LDMF":"#31B56B","DMF":"#31B56B",
-
-    "LWB":"#FFD34D","RWB":"#FFD34D",
-    "LB":"#FF9A3C","RB":"#FF9A3C",
-
-    "RCB":"#D1763A","CB":"#D1763A","GK":"#D1763A",
+    "CF":"#6EA8FF","LWF":"#6EA8FF","LW":"#6EA8FF","LAMF":"#6EA8FF","RW":"#6EA8FF","RWF":"#6EA8FF","RAMF":"#6EA8FF",
+    "AMF":"#7FE28A","LCMF":"#5FD37A","RCMF":"#5FD37A","RDMF":"#31B56B","LDMF":"#31B56B","DMF":"#31B56B",
+    "LWB":"#FFD34D","RWB":"#FFD34D","LB":"#FF9A3C","RB":"#FF9A3C","RCB":"#D1763A","CB":"#D1763A","GK":"#D1763A",
 }
 
 
@@ -1715,8 +1708,9 @@ TWEMOJI_SPECIAL = {
     "wls":"1f3f4-e0067-e0062-e0077-e006c-e0073-e007f",
 }
 
-
+# Expanded country-name -> ISO-2 code map (many African additions + aliases)
 COUNTRY_TO_CC = {
+    # UK home nations (kept as before)
     "united kingdom":"gb",
     "great britain":"gb",
     "northern ireland":"nir",
@@ -1742,8 +1736,8 @@ def _cc_to_twemoji(cc: str) -> str | None:
     if not cc or len(cc) != 2:
         return None
     a, b = cc.upper()
-    cp1 = 0x1F1E6 + (ord(a) - ord('A'))
-    cp2 = 0x1F1E6 + (ord(b) - ord('A'))
+    cp1 = 0x1F1E6 + (ord(a) - ord("A"))
+    cp2 = 0x1F1E6 + (ord(b) - ord("A"))
     return f"{cp1:04x}-{cp2:04x}"
 
 
@@ -1762,7 +1756,7 @@ def _flag_html(country_name: str) -> str:
         src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
         return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
 
-    code = _cc_to_twemoji(cc)
+    code = _cc_to_twemoji(cc) if len(cc) == 2 else None
     if code:
         src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
         return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
@@ -1771,12 +1765,10 @@ def _flag_html(country_name: str) -> str:
 
 
 # --- SAFE foot extractor ---
-
 def _get_foot(row) -> str:
-    for col in ("Foot","Preferred foot","Preferred Foot"):
+    for col in ("Foot", "Preferred foot", "Preferred Foot"):
         if col in row.index:
             val = row[col]
-
             try:
                 import pandas as _pd
                 if _pd.isna(val):
@@ -1784,20 +1776,21 @@ def _get_foot(row) -> str:
             except Exception:
                 pass
 
-            if isinstance(val,str):
+            if isinstance(val, str):
                 s = val.strip()
+                if s and s.lower() not in {"nan", "none", "null"}:
+                    return s
             else:
                 s = str(val).strip()
-
-            if s and s.lower() not in {"nan","none","null"}:
-                return s
+                if s and s.lower() not in {"nan", "none", "null"}:
+                    return s
     return ""
 
 
-def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
-
+def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
     # ---- CSS ----
-    st.markdown("""
+    st.markdown(
+        """
 <style>
 html, body, .block-container *{
  -webkit-font-smoothing:antialiased;
@@ -1806,38 +1799,98 @@ html, body, .block-container *{
  font-feature-settings:"liga","kern","tnum";
  font-variant-numeric:tabular-nums;
 }
-:root {
- --bg:#0c0e13;
- --card:#141823;
- --soft:#1e2533;
+:root { --bg:#0c0e13; --card:#141823; --soft:#1e2533; }
+.pro-wrap{ display:flex; justify-content:center; }
+.pro-card{
+ position:relative;
+ width:min(420px,96%);
+ display:grid;
+ grid-template-columns:96px 1fr 48px;
+ gap:12px;
+ align-items:start;
+ background:var(--card);
+ border:1px solid rgba(255,255,255,.06);
+ border-radius:20px;
+ padding:16px;
+ margin-bottom:12px;
+ box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 6px 24px rgba(0,0,0,.35);
 }
-...
+.pro-avatar{
+ width:96px; height:96px; border-radius:12px; border:1px solid #2a3145;
+ overflow:hidden; background:#0b0d12;
+}
+.pro-avatar img{ width:100%; height:100%; object-fit:cover; image-rendering:auto; transform:translateZ(0); }
+.flagchip{ display:inline-flex; align-items:center; gap:6px; background:transparent; border:none; padding:0; height:auto;}
+.flagchip img{ width:26px; height:18px; border-radius:2px; display:block; }
+.chip{
+ background:transparent; color:#a6a6a6; border:none; padding:0;
+ border-radius:0; font-size:15px; line-height:18px; opacity:.92;
+}
+.row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:2px 0; }
+.leftrow1{ margin-top:6px; }
+.leftrow-foot{ margin-top:2px; }
+.leftrow-contract{ margin-top:10px; }
+.pill{
+ padding:2px 6px; min-width:36px; border-radius:6px; font-weight:700;
+ font-size:18px; line-height:1; color:#0b0d12; text-align:center;
+ display:inline-block; box-shadow:none;
+}
+.name{
+ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px;
+ letter-spacing:.2px; line-height:1.15;
+}
+.sub{ color:#a8b3cf; font-size:15px; opacity:.9; }
+.posrow{ margin-top:13.5px; }
+.postext{ font-weight:600; font-size:14.5px; letter-spacing:.2px; margin-right:11px; }
+.rank{
+ position:absolute; top:10.5px; right:14px; color:#b7bfe1;
+ font-weight:800; font-size:18px; text-align:right; pointer-events:none;
+}
+.teamline{
+ color:#dbe3ff; font-size:14px; font-weight:600; margin-top:6.5px;
+ letter-spacing:.05px; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.tl-wrap{ position:relative; }
+.tl-has-crest{ padding-left:24px; }
+.crest-icon{ height:1.35em; width:auto; object-fit:contain; image-rendering:auto; }
+.crest-abs{
+ position:absolute; left:0; top:50%;
+ transform:translateY(-50%); pointer-events:none;
+}
+.m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
+.m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
+.m-row{ display:flex; justify-content:space-between; align-items:center; padding:8px 8px; border-radius:10px; }
+.m-label{ color:#c9d3f2; font-size:15.5px; letter-spacing:.1px; flex:1 1 auto; }
+.m-badge{
+ flex:0 0 auto; min-width:44px; text-align:center; padding:2px 10px;
+ border-radius:8px; font-weight:700; font-size:18.5px; color:#0b0d12;
+ border:1px solid rgba(0,0,0,.15); box-shadow:none;
+}
+.metrics-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
+@media (min-width: 720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr);} }
+.filter-label{ color:#cbd3ef; font-weight:700; font-size:13px; letter-spacing:.02em; margin-bottom:4px; }
 </style>
-""", unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True
+    )
 
-    # ---- Filters ----
+    # ---- Filters: Age buckets ----
     age_choice = st.selectbox(
         "Age",
         ["All","U18","U20","U21","U22","U23","U25","U30"],
         index=0,
-        key="pro_age_filter"
+        key="pro_age_filter",
+        label_visibility="visible",
     )
 
-    search_q = st.text_input(
-        "🔎 Search player / team / league",
-        "",
-        key="cb_search_bar"
-    )
+    # 🔎 Global search (Player / Team / League)
+    search_q = st.text_input("🔎 Search player / team / league", "", key="cb_search_bar")
 
     df_filtered = df_view.copy()
 
-    # ---- Age filter ----
     if "Age" in df_filtered.columns and age_choice != "All":
         try:
-            df_filtered["Age_num"] = pd.to_numeric(
-                df_filtered["Age"], errors="coerce"
-            )
-
+            df_filtered["Age_num"] = pd.to_numeric(df_filtered["Age"], errors="coerce")
             if age_choice == "U18":
                 df_filtered = df_filtered[df_filtered["Age_num"] <= 18]
             elif age_choice == "U20":
@@ -1855,90 +1908,373 @@ html, body, .block-container *{
         except Exception:
             pass
 
-    # ---- Search ----
+    # Apply search (case-insensitive; match ANY of Player/Team/League)
     if search_q:
         s = str(search_q).strip().lower()
         cols = [c for c in ("Player","Team","League") if c in df_filtered.columns]
-
         if cols:
             mask_any = pd.Series(False, index=df_filtered.index)
             for c in cols:
-                mask_any |= (
-                    df_filtered[c]
-                    .astype(str)
-                    .str.lower()
-                    .str.contains(s, na=False)
-                )
+                mask_any = mask_any | df_filtered[c].astype(str).str.lower().str.contains(s, na=False)
             df_filtered = df_filtered[mask_any]
 
-    # ---- Checks ----
+    # ---- data check ----
     all_col = "All In Score"
     if all_col not in df_view.columns:
-        st.info("Pro Layout needs the role scores.")
+        st.info("Pro Layout needs the role scores. Make sure the table section above ran first.")
         return
 
     if df_filtered.empty:
         st.info("No players match the selected filters.")
         return
 
-    # ---- Sorting ----
+    # =========================
+    # NEW — sort controls (ONLY roles + All In; default = All In)
+    # =========================
     ROLE_SCORE_COLS = [
         "Shot Stopper GK Score",
         "Ball Playing GK Score",
         "Sweeper GK Score",
     ]
-
-    sort_candidates = [all_col] + [
-        c for c in ROLE_SCORE_COLS if c in df_view.columns
-    ]
+    sort_candidates = [all_col] + [c for c in ROLE_SCORE_COLS if c in df_view.columns]
 
     sort_by = st.selectbox(
         "Order by",
         options=sort_candidates,
-        index=0,
-        key="pro_sort_by"
+        index=0,  # default All In
+        key="pro_sort_by",
+        label_visibility="visible",
     )
 
     sort_dir_label = st.radio(
         "Direction",
-        ["High → Low","Low → High"],
+        options=["High → Low", "Low → High"],
         index=0,
         key="pro_sort_dir",
-        horizontal=True
+        horizontal=True,
     )
-
     asc = (sort_dir_label == "Low → High")
 
+    # Numeric helper column for robust sorting
     _sort_col = "__sort_val"
-    df_filtered[_sort_col] = pd.to_numeric(
-        df_filtered.get(sort_by),
-        errors="coerce"
-    )
+    df_filtered[_sort_col] = pd.to_numeric(df_filtered.get(sort_by, pd.Series(index=df_filtered.index)), errors="coerce")
 
+    # Tie-break on All In Score (desc) to preserve previous behavior
     ranked = (
         df_filtered
-        .sort_values([_sort_col, all_col],
-                     ascending=[asc, False],
-                     na_position="last")
+        .sort_values([_sort_col, all_col], ascending=[asc, False], na_position="last")
         .drop(columns=[_sort_col])
         .head(top_n)
         .reset_index(drop=True)
     )
 
-    # ---- Render cards ----
-    for i,row in ranked.iterrows():
-        ...
-        # (Full card rendering block preserved)
-        ...
+    for i, row in ranked.iterrows():
+        player = str(row.get("Player","")) or ""
+        team = str(row.get("Team","")) or ""
+        league = str(row.get("League","")) or ""
+        pos = str(row.get("Position","")) or ""
+
+        # Age text
+        try:
+            age_val = int(row.get("Age")) if not pd.isna(row.get("Age", None)) else int(row.get("Age_num", 0))
+        except Exception:
+            age_val = 0
+        age_txt = f"{age_val}y.o." if age_val > 0 else "—"
+
+        cy = pd.to_datetime(row.get("Contract expires"), errors="coerce")
+        cyr = int(cy.year) if pd.notna(cy) else 0
+
+        birth = row.get("Birth country","") if "Birth country" in row else ""
+        foot = _get_foot(row) or "—"
+
+        # role scores
+        gt_i = _pro_show99(row.get("Shot Stopper GK Score", 0))
+        lu_i = _pro_show99(row.get("Ball Playing GK Score", 0))
+        tm_i = _pro_show99(row.get("Sweeper GK Score", 0))
+
+        gt_txt = _fmt2(gt_i)
+        lu_txt = _fmt2(lu_i)
+        tm_txt = _fmt2(tm_i)
+
+        # positions
+        import re as _re
+        codes = [c for c in _re.split(r"[,/; ]+", pos.strip().upper()) if c]
+        if "CF" in codes:
+            codes = ["CF"] + [c for c in codes if c != "CF"]
+        pos_html = "".join(
+            f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>"
+            for c in dict.fromkeys(codes)
+        )
+
+        # left meta
+        flag = _flag_html(birth)
+        contract_txt = f"{cyr}" if cyr > 0 else "—"
+        rank_txt = _fmt2(i + 1)
+
+        # keys & avatar
+        key_id = f"{_norm(player)}|{_norm(team)}"
+        default_avatar = "https://i.redd.it/43axcjdu59nd1.jpeg"
+        avatar_url = st.session_state.get("photo_map", {}).get(key_id, default_avatar)
+
+        # crest (stored per club), positioned absolute so text doesn’t move
+        crest_store_key = f"{_norm(team)}|{_norm(league)}"
+        crest_url = st.session_state.get("crest_map", {}).get(crest_store_key, "")
+
+        if crest_url:
+            teamline_html = (
+                f"<div class='teamline tl-wrap tl-has-crest'>"
+                f"<img class='crest-icon crest-abs' src='{crest_url}' alt=''>"
+                f"<span class='teamtext'>{team} · {league}</span>"
+                f"</div>"
+            )
+        else:
+            teamline_html = f"<div class='teamline'>{team} · {league}</div>"
+
+        # card
+        st.markdown(
+            f"""
+<div class='pro-wrap'>
+  <div class='pro-card'>
+    <div class='leftcol'>
+      <div class='pro-avatar'>
+        <img src="{avatar_url}" srcset="{avatar_url} 1x, {avatar_url} 2x" alt="{player}" loading="lazy" />
+      </div>
+      <div class='row leftrow1'>{flag}<span class='chip'>{age_txt}</span></div>
+      <div class='row leftrow-foot'><span class='chip'>{foot}</span></div>
+      <div class='row leftrow-contract'><span class='chip'>{contract_txt}</span></div>
+    </div>
+
+    <div>
+      <div class='name'>{player}</div>
+
+      <div class='row' style='align-items:center;'>
+        <span class='pill' style='background:{_pro_rating_color(gt_i)}'>{gt_txt}</span>
+        <span class='sub'>Shot Stopper GK</span>
+      </div>
+
+      <div class='row' style='align-items:center;'>
+        <span class='pill' style='background:{_pro_rating_color(lu_i)}'>{lu_txt}</span>
+        <span class='sub'>Ball Playing GK</span>
+      </div>
+
+      <div class='row' style='align-items:center;'>
+        <span class='pill' style='background:{_pro_rating_color(tm_i)}'>{tm_txt}</span>
+        <span class='sub'>Sweeper GK</span>
+      </div>
+
+      <div class='row posrow'>{pos_html}</div>
+      {teamline_html}
+    </div>
+
+    <div class='rank'>#{rank_txt}</div>
+  </div>
+</div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        # ----- Single expander: Individual Metrics + image & crest controls -----
+        with st.expander("Individual Metrics", expanded=False):
+
+            def _pct(m):
+                """
+                Percentile helper for Individual Metrics.
+                df_f percentiles already handle INVERSE_METRICS, so we do NOT invert anything again here.
+                """
+                col = f"{m} Percentile"
+                if col in row and not pd.isna(row[col]):
+                    return float(row[col])
+                return 0.0
+
+            GK = [
+                ("Exits", "Exits per 90"),
+                ("Goals Prevented", "Prevented goals per 90"),
+                ("Goals Conceded", "Conceded goals per 90"),
+                ("Save Rate", "Save rate, %"),
+                ("Shots Against", "Shots against per 90"),
+                ("xG Against", "xG against per 90"),
+            ]
+
+            POS = [
+                ("Long Passes", "Long passes per 90"),
+                ("Long Passing %", "Accurate long passes, %"),
+                ("Passes", "Passes per 90"),
+                ("Passing Accuracy %", "Accurate passes, %"),
+            ]
+
+            def _sec_html(title, pairs):
+                rows = []
+                for lab, met in pairs:
+                    p = _pro_show99(_pct(met))
+                    ptxt = _fmt2(p)
+                    rows.append(
+                        f"<div class='m-row'>"
+                        f"<div class='m-label'>{lab}</div>"
+                        f"<div class='m-badge' style='background:{_pro_rating_color(p)}'>{ptxt}</div>"
+                        f"</div>"
+                    )
+                return f"<div class='m-sec'><div class='m-title'>{title}</div>{''.join(rows)}</div>"
+
+            st.markdown(
+                "<div class='metrics-grid'>"
+                + _sec_html("GOALKEEPING", GK)
+                + _sec_html("POSSESSION", POS)
+                + "</div>",
+                unsafe_allow_html=True
+            )
+
+            # --- Player image override (per-player keys) ---
+            img_key = f"imgurl_{i}_{key_id}"
+            default_url = st.session_state.get("photo_map", {}).get(key_id, "")
+
+            uploaded_file = st.file_uploader(
+                "Upload player image (PNG/JPG)",
+                type=["png", "jpg", "jpeg"],
+                key=f"upload_{i}_{key_id}",
+            )
+
+            _ = st.text_input(
+                "Custom image URL (override avatar — e.g., https://images.fotmob.com/image_resources/playerimages/1199383.png)",
+                value=default_url,
+                key=img_key,
+            )
+
+            col_a, col_b = st.columns([1, 3])
+
+            with col_a:
+                if st.button("Apply to this player", key=f"apply_{i}_{key_id}"):
+                    if uploaded_file is not None:
+                        try:
+                            import base64, imghdr, io
+                            data = uploaded_file.getvalue()
+
+                            # Basic sanity check
+                            try:
+                                from PIL import Image
+                                Image.open(io.BytesIO(data))
+                            except Exception:
+                                pass
+
+                            kind = imghdr.what(None, h=data)
+                            if kind in ("jpeg", "jpg"):
+                                mime = "image/jpeg"
+                            elif kind == "png":
+                                mime = "image/png"
+                            else:
+                                mime = (
+                                    uploaded_file.type
+                                    if getattr(uploaded_file, "type", "").startswith("image/")
+                                    else "image/png"
+                                )
+
+                            b64 = base64.b64encode(data).decode("ascii")
+                            st.session_state.setdefault("photo_map", {})[key_id] = f"data:{mime};base64,{b64}"
+                            st.success("Uploaded image saved!")
+                            try:
+                                st.rerun()
+                            except Exception:
+                                st.experimental_rerun()
+                        except Exception as e:
+                            st.error(f"Couldn't process the uploaded image: {e}")
+                    else:
+                        val = (st.session_state.get(img_key, "") or "").strip()
+                        if not val:
+                            st.error("Please upload an image or paste an image URL.")
+                        elif not (val.startswith("http://") or val.startswith("https://") or val.startswith("data:image/")):
+                            st.error("Image URL must start with http://, https://, or data:image/…")
+                        else:
+                            st.session_state.setdefault("photo_map", {})[key_id] = val
+                            st.success("Saved!")
+                            try:
+                                st.rerun()
+                            except Exception:
+                                st.experimental_rerun()
+
+            with col_b:
+                if st.button("Clear override", key=f"clear_{i}_{key_id}"):
+                    st.session_state.setdefault("photo_map", {}).pop(key_id, None)
+                    st.info("Cleared.")
+                    try:
+                        st.rerun()
+                    except Exception:
+                        st.experimental_rerun()
+
+            # --- Club crest override (per-player widget keys; stored per-club) ---
+            crest_widget_ns = f"{crest_store_key}|{key_id}"
+            crest_default = st.session_state.get("crest_map", {}).get(crest_store_key, "")
+
+            crest_upload = st.file_uploader(
+                "Upload club crest (SVG/PNG/JPG)",
+                type=["svg", "png", "jpg", "jpeg"],
+                key=f"crest_upload_{i}_{crest_widget_ns}",
+            )
+
+            _ = st.text_input(
+                "Custom crest URL (e.g., https://…/club.svg or .png)",
+                value=crest_default,
+                key=f"crest_url_{i}_{crest_widget_ns}",
+            )
+
+            col_c, col_d = st.columns([1, 3])
+
+            with col_c:
+                if st.button("Apply crest", key=f"apply_crest_{i}_{crest_widget_ns}"):
+                    if crest_upload is not None:
+                        try:
+                            import base64, os
+                            data = crest_upload.getvalue()
+                            mime = crest_upload.type or ""
+                            if not mime.startswith("image/"):
+                                ext = os.path.splitext(crest_upload.name or "")[1].lower()
+                                if ext == ".svg":
+                                    mime = "image/svg+xml"
+                                elif ext == ".png":
+                                    mime = "image/png"
+                                elif ext in (".jpg", ".jpeg"):
+                                    mime = "image/jpeg"
+                                else:
+                                    mime = "image/png"
+
+                            b64 = base64.b64encode(data).decode("ascii")
+                            st.session_state.setdefault("crest_map", {})[crest_store_key] = f"data:{mime};base64,{b64}"
+                            st.success("Crest saved!")
+                            try:
+                                st.rerun()
+                            except Exception:
+                                st.experimental_rerun()
+                        except Exception as e:
+                            st.error(f"Couldn't process crest: {e}")
+                    else:
+                        val = (st.session_state.get(f"crest_url_{i}_{crest_widget_ns}", "") or "").strip()
+                        if not val:
+                            st.error("Upload a crest or paste a crest URL.")
+                        elif not (val.startswith("http://") or val.startswith("https://") or val.startswith("data:image/")):
+                            st.error("Crest URL must start with http://, https://, or data:image/…")
+                        else:
+                            st.session_state.setdefault("crest_map", {})[crest_store_key] = val
+                            st.success("Crest URL saved!")
+                            try:
+                                st.rerun()
+                            except Exception:
+                                st.experimental_rerun()
+
+            with col_d:
+                if st.button("Clear crest", key=f"clear_crest_{i}_{crest_widget_ns}"):
+                    st.session_state.setdefault("crest_map", {}).pop(crest_store_key, None)
+                    st.info("Crest cleared.")
+                    try:
+                        st.rerun()
+                    except Exception:
+                        st.experimental_rerun()
 
 
 with tabs[4]:
     st.subheader("Pro Layout — Top Tiles")
     render_pro_layout(df_f, top_n=top_n)
 
-
 # ----------------- END PRO LAYOUT TAB -----------------
 # ----------------- END GOALKEEPER BLOCK -----------------
+
 
 
 
