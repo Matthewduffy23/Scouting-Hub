@@ -1667,7 +1667,7 @@ import unicodedata
 import re as _re
 import textwrap
 
-# ----------------- helpers (keep as provided) -----------------
+# ----------------- helpers -----------------
 def _pro_rating_color(v: float) -> str:
     v = float(v)
     COLORS = [
@@ -1717,7 +1717,7 @@ TWEMOJI_SPECIAL = {
     "wls":"1f3f4-e0067-e0062-e0077-e006c-e0073-e007f",
 }
 
-# You can keep your big COUNTRY_TO_CC map; here’s a minimal safe set.
+# NOTE: If you already have a full COUNTRY_TO_CC map elsewhere, keep yours and delete this mini map.
 COUNTRY_TO_CC = {
     "united kingdom":"gb","great britain":"gb","northern ireland":"nir","england":"eng","scotland":"sct","wales":"wls",
     "ireland":"ie","spain":"es","france":"fr","germany":"de","italy":"it","portugal":"pt","netherlands":"nl","belgium":"be",
@@ -1778,7 +1778,7 @@ def _get_foot(row) -> str:
 
 
 # ==========================================================
-# ✅ URL photo system (same as your working attacker version)
+# ✅ URL photo system (matches your working attacker template)
 # ==========================================================
 PLAYER_PHOTO_OVERRIDES_JSON = "player_photo_overrides.json"
 
@@ -1870,6 +1870,7 @@ def resolve_player_photo(player: str,
     tid = _fotmob_team_id_from_url(team_url)
     if tid:
         squad = _fotmob_team_squad(tid)
+
         target_surname = _norm(_player_surname(player))
         target_full = _norm(player)
 
@@ -1904,7 +1905,7 @@ def resolve_player_photo(player: str,
     return "https://i.redd.it/43axcjdu59nd1.jpeg"
 
 
-# ✅ Metric helpers (raw value + percentile badge like your attacker/FB)
+# ✅ Metric helpers (raw + percentile badge)
 def _available_metric_pairs(df_view: pd.DataFrame, pairs: list[tuple[str, str]]):
     cols = set(df_view.columns)
     out = []
@@ -1997,7 +1998,7 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
     </style>
     """), unsafe_allow_html=True)
 
-    # init caches
+    # init caches like your attacker template
     global_photo_overrides = load_local_photo_overrides(PLAYER_PHOTO_OVERRIDES_JSON)
     st.session_state.setdefault("photo_map", {})
     st.session_state.setdefault("crest_map", {})
@@ -2090,6 +2091,7 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
         if selected_feet:
             df_filtered = df_filtered[df_filtered["__foot"].isin(selected_feet)]
 
+    # ---- data check ----
     all_col = "All In Score"
     if all_col not in df_view.columns:
         st.info("Pro Layout needs the role scores. Make sure the table section above ran first.")
@@ -2098,14 +2100,13 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
         st.info("No players match the selected filters/search.")
         return
 
-    # ---- sorting (GK roles + All In) ----
+    # ---- sorting (All In + GK roles) ----
     GK_ROLE_COLS = [
         "Shot Stopper GK Score",
         "Ball Playing GK Score",
         "Sweeper GK Score",
     ]
     sort_candidates = [all_col] + [c for c in GK_ROLE_COLS if c in df_view.columns]
-
     sort_by = st.selectbox("Order by", options=sort_candidates, index=0, key="pro_sort_by_gk", label_visibility="visible")
     sort_dir_label = st.radio("Direction", options=["High → Low","Low → High"], index=0, key="pro_sort_dir_gk", horizontal=True)
     asc = (sort_dir_label == "Low → High")
@@ -2121,6 +2122,7 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
         .reset_index(drop=True)
     )
 
+    # ---- cards ----
     for i, row in ranked.iterrows():
         player = str(row.get("Player","")) or ""
         team   = str(row.get("Team","")) or ""
@@ -2148,7 +2150,11 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
                 ordered.append(c)
         if "GK" not in ordered:
             ordered = ["GK"] + ordered
-        pos_html = "".join(f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>" for c in ordered)
+
+        pos_html = "".join(
+            f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>"
+            for c in ordered
+        )
 
         flag = _flag_html(birth)
         contract_txt = f"{cyr}" if cyr > 0 else "—"
@@ -2177,13 +2183,13 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
         else:
             teamline_html = f"<div class='teamline'>{team} · {league}</div>"
 
-        # GK pills (3 fixed like old GK)
-        gt = _pro_show99(row.get("Shot Stopper GK Score", 0))
+        # GK pills
+        ss = _pro_show99(row.get("Shot Stopper GK Score", 0))
         bp = _pro_show99(row.get("Ball Playing GK Score", 0))
         sw = _pro_show99(row.get("Sweeper GK Score", 0))
 
         pills_html = "".join([
-            f"<div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(gt)}'>{_fmt2(gt)}</span><span class='sub'>Shot Stopper GK</span></div>",
+            f"<div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(ss)}'>{_fmt2(ss)}</span><span class='sub'>Shot Stopper GK</span></div>",
             f"<div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(bp)}'>{_fmt2(bp)}</span><span class='sub'>Ball Playing GK</span></div>",
             f"<div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(sw)}'>{_fmt2(sw)}</span><span class='sub'>Sweeper GK</span></div>",
         ])
@@ -2217,7 +2223,7 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
         # ----- Expander: metrics + overrides -----
         with st.expander("Individual Metrics", expanded=False):
 
-            GK = [
+            GK_METRICS = [
                 ("Exits", "Exits per 90"),
                 ("Goals Prevented", "Prevented goals per 90"),
                 ("Goals Conceded", "Conceded goals per 90"),
@@ -2226,7 +2232,7 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
                 ("xG Against", "xG against per 90"),
             ]
 
-            POS = [
+            POS_METRICS = [
                 ("Long Passes", "Long passes per 90"),
                 ("Long Passing %", "Accurate long passes, %"),
                 ("Passes", "Passes per 90"),
@@ -2256,8 +2262,8 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
 
             st.markdown(
                 "<div class='metrics-grid'>"
-                + _sec_html("GOALKEEPING", GK)
-                + _sec_html("POSSESSION", POS)
+                + _sec_html("GOALKEEPING", GK_METRICS)
+                + _sec_html("POSSESSION", POS_METRICS)
                 + "</div>",
                 unsafe_allow_html=True
             )
@@ -2375,12 +2381,13 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
                     except Exception: st.experimental_rerun()
 
 
-# Usage (same style as your attacker tab)
+# ---- call site (match your attacker usage) ----
 # with tabs[4]:
 #     st.subheader("Pro Layout — Top Tiles")
 #     render_pro_layout_gk(df_f, top_n=top_n)
 
 # ----------------- END PRO LAYOUT TAB — GOALKEEPERS -----------------
+
 
 
 
