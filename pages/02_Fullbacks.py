@@ -1918,7 +1918,7 @@ for role, role_def in ROLES.items():
         st.dataframe(top_table(filtered_view(df_f, value_max=v_max), role, top_n), use_container_width=True)
         st.divider()
 
-## ----------------- PRO LAYOUT TAB (tiles) — FULLBACKS -----------------
+## ----------------- PRO LAYOUT TAB (tiles) — FULLBACKS (WITH CB PHOTO+CREST FETCH + RAW METRIC VALUES) -----------------
 import re as _re
 import unicodedata
 import pandas as pd
@@ -2056,11 +2056,8 @@ _FB_ROLE_MAP = [
     ("PL Profile Score", "PL Profile"),
 ]
 
-# Helper to filter to existing columns
-_def_cols_fb = [c for c,_ in _FB_ROLE_MAP]
-
 def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
-    # ---- CSS (EXACTLY same as CM) ----
+    # ---- CSS (kept the same, but metrics now include raw value column + fetching badge) ----
     st.markdown("""
     <style>
     html, body, .block-container *{
@@ -2076,8 +2073,17 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
       box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 6px 24px rgba(0,0,0,.35);
     }
 
-    .pro-avatar{ width:96px; height:96px; border-radius:12px; border:1px solid #2a3145; overflow:hidden; background:#0b0d12; }
+    .pro-avatar{ width:96px; height:96px; border-radius:12px; border:1px solid #2a3145; overflow:hidden; background:#0b0d12; position:relative; }
     .pro-avatar img{ width:100%; height:100%; object-fit:cover; image-rendering:auto; transform:translateZ(0); }
+
+    .fetch-badge{
+      position:absolute; left:8px; bottom:8px;
+      padding:3px 8px; border-radius:10px;
+      background:rgba(0,0,0,.55);
+      border:1px solid rgba(255,255,255,.12);
+      color:#e8ecff; font-weight:800; font-size:11px; letter-spacing:.02em;
+      pointer-events:none;
+    }
 
     .flagchip{ display:inline-flex; align-items:center; gap:6px; background:transparent; border:none; padding:0; height:auto;}
     .flagchip img{ width:26px; height:18px; border-radius:2px; display:block; }
@@ -2102,12 +2108,16 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
     .crest-icon{ height:1.35em; width:auto; object-fit:contain; image-rendering:auto; }
     .crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
 
-    /* Individual metrics — compact layout */
+    /* Individual metrics — CB style (raw value + badge) */
     .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
     .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
-    .m-row{ display:flex; justify-content:space-between; align-items:center; padding:8px 8px; border-radius:10px; }
-    .m-label{ color:#c9d3f2; font-size:15.5px; letter-spacing:.1px; flex:1 1 auto; }
-    .m-badge{ flex:0 0 auto; min-width:44px; text-align:center; padding:2px 10px; border-radius:8px; font-weight:700; font-size:18.5px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); box-shadow:none; }
+    .m-row{ display:flex; align-items:center; gap:10px; padding:8px 8px; border-radius:10px; }
+    .m-label{ color:#c9d3f2; font-size:15.5px; letter-spacing:.1px; flex:1 1 0%; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .m-right{ display:flex; align-items:center; gap:10px; flex:0 0 auto; }
+    .m-val{ color:#a8b3cf; font-size:13px; opacity:.9; min-width:54px; text-align:right; }
+    .m-badge{ flex:0 0 auto; min-width:44px; text-align:center; padding:2px 10px; border-radius:8px;
+              font-weight:800; font-size:18.5px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); box-shadow:none; }
+
     .metrics-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
     @media (min-width: 720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr);} }
 
@@ -2294,13 +2304,6 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
                 df_filtered[col] = pd.to_numeric(df_filtered[col], errors="coerce")
                 df_filtered = df_filtered[df_filtered[col] >= thr]
 
-    # ---- from here down, keep your existing: ----
-    # - data check for "All In Score"
-    # - sort by sort_by (All In or a role), with asc/desc
-    # - take head(top_n)
-    # - render cards using selected_labels / label_to_col
-    # - avatar & crest overrides, metrics expander, etc.
-
     # ---- data check ----
     all_col = "All In Score"
     if all_col not in df_view.columns:
@@ -2322,20 +2325,32 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
         .reset_index(drop=True)
     )
 
+    # ========================= PHOTO+CREST SYSTEM (FROM CB) =========================
+    # Requires your existing CB helpers in scope:
+    # - load_local_photo_overrides(PLAYER_PHOTO_OVERRIDES_JSON)
+    # - resolve_player_photo(...)
+    # - get_fotmob_url(team) and _fotmob_crest_url(team_url)
+    global_photo_overrides = load_local_photo_overrides(PLAYER_PHOTO_OVERRIDES_JSON)
+    st.session_state.setdefault("photo_map", {})
+    st.session_state.setdefault("crest_map", {})
+
     # ========================= RENDER CARDS =========================
     for i,row in ranked.iterrows():
         player = str(row.get("Player","")) or ""
         team = str(row.get("Team","")) or ""
         league = str(row.get("League","")) or ""
         pos = str(row.get("Position","")) or ""
+
         # Age text
         try:
             age_val = int(row.get("Age")) if not pd.isna(row.get("Age", None)) else int(row.get("Age_num", 0))
         except Exception:
             age_val = 0
         age_txt = f"{age_val}y.o." if age_val>0 else "—"
+
         cy = pd.to_datetime(row.get("Contract expires"), errors="coerce")
         cyr = int(cy.year) if pd.notna(cy) else 0
+
         birth = row.get("Birth country","") if "Birth country" in row else ""
         foot = _get_foot(row) or "—"
 
@@ -2363,14 +2378,32 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
         flag=_flag_html(birth)
         contract_txt=f"{cyr}" if cyr>0 else "—"
 
-        # keys & avatar
+        # keys & avatar (CB resolver + overrides)
         key_id = f"{_norm(player)}|{_norm(team)}"
-        default_avatar="https://i.redd.it/43axcjdu59nd1.jpeg"
-        avatar_url=st.session_state.get("photo_map", {}).get(key_id, default_avatar)
+        avatar_url = resolve_player_photo(
+            player=player,
+            team=team,
+            league=league,
+            key_id=key_id,
+            session_photo_map=st.session_state["photo_map"],
+            global_overrides=global_photo_overrides,
+        )
 
-        # crest (stored per club)
+        # simple fetching badge heuristic (shows only when avatar looks empty/placeholder)
+        fetch_badge_html = ""
+        if not avatar_url or str(avatar_url).strip() in {"", "None", "nan"}:
+            fetch_badge_html = "<div class='fetch-badge'>FETCHING</div>"
+
+        # crest (CB-style: fetch from FotMob if not overridden)
         crest_store_key = f"{_norm(team)}|{_norm(league)}"
         crest_url = st.session_state.get("crest_map", {}).get(crest_store_key, "")
+        if not crest_url:
+            try:
+                team_url = get_fotmob_url(team)
+                crest_url = _fotmob_crest_url(team_url) if team_url else ""
+            except Exception:
+                crest_url = ""
+
         if crest_url:
             teamline_html = (
                 f"<div class='teamline tl-wrap tl-has-crest'>"
@@ -2402,6 +2435,7 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
             <div class='leftcol'>
               <div class='pro-avatar'>
                 <img src="{avatar_url}" srcset="{avatar_url} 1x, {avatar_url} 2x" alt="{player}" loading="lazy" />
+                {fetch_badge_html}
               </div>
               <div class='row leftrow1'>{flag}<span class='chip'>{age_txt}</span></div>
               <div class='row leftrow-foot'><span class='chip'>{foot}</span></div>
@@ -2420,11 +2454,13 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
         </div>
         """, unsafe_allow_html=True)
 
-        # ----- Expander: FB individual metrics (ATT/DEF/POS) -----
+        # ----- Expander: FB individual metrics (ATT/DEF/POS) WITH RAW VALUES + PCT BADGE -----
         with st.expander("Individual Metrics", expanded=False):
-            def _pct(m):
-                col=f"{m} Percentile"
-                return float(row[col]) if col in row and not pd.isna(row[col]) else 0.0
+
+            # Uses CB helpers in scope:
+            # - _available_metric_pairs(df_view, pairs)
+            # - _metric_pct(row, metric_name)
+            # - _metric_val(row, metric_name)
 
             ATT=[("Crosses","Crosses per 90"),
                  ("Crossing Accuracy %","Accurate crosses, %"),
@@ -2465,16 +2501,25 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
                  ("Smart Passes","Smart passes per 90")]
 
             def _sec_html(title, pairs):
+                pairs = _available_metric_pairs(df_view, pairs)
                 rows=[]
-                for lab,met in pairs:
-                    p=_pro_show99(_pct(met)); ptxt=_fmt2(p)
+                for lab, met in pairs:
+                    pct = _metric_pct(row, met)
+                    p = _pro_show99(pct if not pd.isna(pct) else 0.0)
+                    ptxt = _fmt2(p)
+
+                    raw = _metric_val(row, met)
+                    raw_txt = "—" if pd.isna(raw) else f"{raw:.2f}".rstrip("0").rstrip(".")
+
                     rows.append(
-                        f"<div class='m-row'>"
+                        "<div class='m-row'>"
                         f"<div class='m-label'>{lab}</div>"
+                        "<div class='m-right'>"
+                        f"<div class='m-val'>{raw_txt}</div>"
                         f"<div class='m-badge' style='background:{_pro_rating_color(p)}'>{ptxt}</div>"
-                        f"</div>"
+                        "</div></div>"
                     )
-                return f"<div class='m-sec'><div class='m-title'>{title}</div>{''.join(rows)}</div>"
+                return f"<div class='m-sec'><div class='m-title'>{title}</div>{''.join(rows) if rows else ''}</div>"
 
             st.markdown(
                 "<div class='metrics-grid'>"
@@ -2489,24 +2534,33 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
             img_key = f"imgurl_{i}_{key_id}"
             default_url = st.session_state.get("photo_map", {}).get(key_id, "")
             uploaded_file = st.file_uploader("Upload player image (PNG/JPG)", type=["png","jpg","jpeg"], key=f"upload_{i}_{key_id}")
-            _ = st.text_input("Custom image URL (override avatar — e.g., https://images.fotmob.com/image_resources/playerimages/1199383.png)", value=default_url, key=img_key)
+            _ = st.text_input(
+                "Custom image URL (override avatar — e.g., https://images.fotmob.com/image_resources/playerimages/1199383.png)",
+                value=default_url,
+                key=img_key
+            )
 
             col_a, col_b = st.columns([1, 3])
             with col_a:
                 if st.button("Apply to this player", key=f"apply_{i}_{key_id}"):
                     if uploaded_file is not None:
                         try:
-                            import base64, imghdr, io
+                            import base64, io, os
                             data = uploaded_file.getvalue()
                             try:
                                 from PIL import Image
                                 Image.open(io.BytesIO(data))
                             except Exception:
                                 pass
-                            kind = imghdr.what(None, h=data)
-                            if kind in ("jpeg","jpg"): mime="image/jpeg"
-                            elif kind=="png": mime="image/png"
-                            else: mime = uploaded_file.type if getattr(uploaded_file,"type","").startswith("image/") else "image/png"
+
+                            mime = getattr(uploaded_file, "type", "") or ""
+                            if not mime.startswith("image/"):
+                                ext = os.path.splitext(uploaded_file.name or "")[1].lower()
+                                if ext == ".svg": mime = "image/svg+xml"
+                                elif ext == ".png": mime = "image/png"
+                                elif ext in (".jpg",".jpeg"): mime = "image/jpeg"
+                                else: mime = "image/png"
+
                             b64 = base64.b64encode(data).decode("ascii")
                             st.session_state.setdefault("photo_map", {})[key_id] = f"data:{mime};base64,{b64}"
                             st.success("Uploaded image saved!")
@@ -2581,7 +2635,6 @@ with tabs[4]:
     st.subheader("Pro Layout — Top Fullbacks (Tiles)")
     render_pro_layout_fb(df_f, top_n=top_n)
 # ----------------- END PRO LAYOUT TAB — FULLBACKS -----------------
-
 
 
 
