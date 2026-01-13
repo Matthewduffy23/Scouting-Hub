@@ -133,7 +133,7 @@ FOTMOB_TEAM_URLS = {
     "Scunthorpe United": "https://www.fotmob.com/teams/8412/squad/scunthorpe-united",
 
     # --- ALBANIA ---
-    "Flamurtari Vlorë": "https://www.fotmob.com/teams/8041/overview/fk-vardar-skopje",
+    "Flamurtari Vlorë": "https://www.fotmob.com/teams/10030/overview/flamurtari",
     "AF Elbasani": "https://www.fotmob.com/teams/10038/overview/elbasani",
     "Teuta Durrës": "https://www.fotmob.com/teams/10037/overview/teuta-durres",
     "Egnatia Rrogozhinë": "https://www.fotmob.com/teams/10039/overview/egnatia",
@@ -405,7 +405,7 @@ FOTMOB_TEAM_URLS = {
     "Envigado": "https://www.fotmob.com/teams/4402/overview/envigado",
 
     # --- CROATIA ---
-    "Slaven Belupo": https://www.fotmob.com/teams/1581/squad/slaven"",
+    "Slaven Belupo": "https://www.fotmob.com/teams/1581/squad/slaven",
     "Gorica": "https://www.fotmob.com/teams/206560/squad/hnk-gorica",
     "Osijek": "https://www.fotmob.com/teams/10157/squad/osijek",
     "Vukovar": "https://www.fotmob.com/teams/45228/squad/vukovar-91",
