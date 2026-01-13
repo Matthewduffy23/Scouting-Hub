@@ -1756,7 +1756,6 @@ for role, role_def in ROLES.items():
 # ✅ Keeps per-player override UI (photo + crest)
 # ✅ Keeps your Twemoji mapping + metrics layout
 # ✅ Removed imghdr; uses uploaded_file.type + extension fallback for mime
-# ✅ ALIGNMENT FIX: Foot ↔ Positions and Contract ↔ Team/League share same Y-axis (ATT-style)
 
 import os
 import re
@@ -1846,6 +1845,7 @@ def get_fotmob_url(team: str) -> str:
     2) external module team_fotmob_map.py if present
     """
     t = _norm(team)
+    # local dict lookup (normalize keys once)
     for k, v in FOTMOB_TEAM_URLS.items():
         if _norm(k) == t and str(v).strip():
             return str(v).strip()
@@ -1971,17 +1971,27 @@ def _get_foot(row) -> str:
 
 # -----------------
 # FotMob photo scraping + resolver
+# - Priority: session override -> team curated dict -> global json -> fotmob full name -> fotmob surname -> default
 # -----------------
 DEFAULT_AVATAR = "https://i.redd.it/43axcjdu59nd1.jpeg"
 PLAYER_PHOTO_OVERRIDES_JSON = "player_photos.json"
 
-TEAM_PLAYER_PHOTOS: Dict[str, Dict[str, str]] = {}
+# optional: curated per-team tricky-name map
+# key = "<norm(team)>|<norm(league)>"
+TEAM_PLAYER_PHOTOS: Dict[str, Dict[str, str]] = {
+    # "swansea city|championship": {
+    #     "oli cooper": "https://…",
+    # },
+}
 
 def _team_key(team: str, league: str) -> str:
     return f"{_norm(team)}|{_norm(league)}"
 
 @st.cache_data(show_spinner=False, ttl=60*60*12)
 def fotmob_photo_map(team_url: str) -> Dict[str, str]:
+    """
+    Returns mapping: normalized full name -> image url
+    """
     try:
         if not team_url:
             return {}
@@ -2030,19 +2040,23 @@ def resolve_player_photo(
     session_photo_map: Dict[str, str],
     global_overrides: Dict[str, str],
 ) -> str:
+    # 1) per-player UI override
     if key_id in session_photo_map:
         return session_photo_map[key_id]
 
     n_full = _norm(player)
 
+    # 2) curated per-team dict
     tkey = _team_key(team, league)
     tdict = TEAM_PLAYER_PHOTOS.get(tkey, {})
     if n_full in tdict:
         return tdict[n_full]
 
+    # 3) hidden global overrides json
     if n_full in global_overrides:
         return global_overrides[n_full]
 
+    # 4/5) FotMob (manual mapping inside this file)
     team_url = get_fotmob_url(team)
     fm = fotmob_photo_map(team_url) if team_url else {}
     if n_full in fm:
@@ -2060,7 +2074,7 @@ def resolve_player_photo(
 
 
 # -----------------
-# Metric helpers
+# Metric helpers (layout like your other example)
 # -----------------
 def _metric_pct(row: pd.Series, metric: str) -> float:
     try:
@@ -2113,40 +2127,25 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
     .chip{ background:transparent; color:#a6a6a6; border:none; padding:0; border-radius:0; font-size:15px; line-height:18px; opacity:.92; }
     .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:2px 0; }
-
-    /* --------- OLD margin hacks removed (alignment fix) --------- */
-    .leftrow1, .leftrow-foot, .leftrow-contract, .posrow, .teamline { margin-top:0 !important; }
-
-    /* ✅ ATT-style paired alignment blocks */
-    .left-bottom{
-      display:grid;
-      grid-template-rows:auto auto;  /* foot, contract */
-      gap:6px;
-      margin-top:6px;
-    }
-    .right-bottom{
-      display:grid;
-      grid-template-rows:auto auto;  /* positions, teamline */
-      gap:6px;
-      margin-top:6px;
-    }
+    .leftrow1{ margin-top:6px; } .leftrow-foot{ margin-top:2px; } .leftrow-contract{ margin-top:10px; }
 
     .pill{ padding:2px 6px; min-width:36px; border-radius:6px; font-weight:700; font-size:18px; line-height:1; color:#0b0d12; text-align:center; display:inline-block; box-shadow:none; }
 
     .name{ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px; letter-spacing:.2px; line-height:1.15; }
     .sub{ color:#a8b3cf; font-size:15px; opacity:.9; }
 
+    .posrow{ margin-top:13.5px; }
     .postext{ font-weight:600; font-size:14.5px; letter-spacing:.2px; margin-right:11px; }
 
     .rank{ position:absolute; top:10.5px; right:14px; color:#b7bfe1; font-weight:800; font-size:18px; text-align:right; pointer-events:none; }
 
-    .teamline{ color:#dbe3ff; font-size:14px; font-weight:600; letter-spacing:.05px; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .teamline{ color:#dbe3ff; font-size:14px; font-weight:600; margin-top:6.5px; letter-spacing:.05px; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .tl-wrap{ position:relative; }
     .tl-has-crest{ padding-left:24px; }
     .crest-icon{ height:1.35em; width:auto; object-fit:contain; image-rendering:auto; }
     .crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
 
-    /* ---- Individual Metrics ---- */
+    /* ---- Individual Metrics (updated layout like other example) ---- */
     .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
     .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
 
@@ -2394,7 +2393,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         else:
             teamline_html = f"<div class='teamline'>{team} · {league}</div>"
 
-        # ✅ CARD (alignment fix: paired blocks)
+        # card
         st.markdown(f"""
         <div class='pro-wrap'>
           <div class='pro-card'>
@@ -2403,27 +2402,17 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 <img src="{avatar_url}" srcset="{avatar_url} 1x, {avatar_url} 2x" alt="{player}" loading="lazy" />
               </div>
               <div class='row leftrow1'>{flag}<span class='chip'>{age_txt}</span></div>
-
-              <!-- ✅ Paired left rows -->
-              <div class='left-bottom'>
-                <div class='row leftrow-foot'><span class='chip'>{foot}</span></div>
-                <div class='row leftrow-contract'><span class='chip'>{contract_txt}</span></div>
-              </div>
+              <div class='row leftrow-foot'><span class='chip'>{foot}</span></div>
+              <div class='row leftrow-contract'><span class='chip'>{contract_txt}</span></div>
             </div>
-
             <div>
               <div class='name'>{player}</div>
               <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(gt_i)}'>{gt_txt}</span><span class='sub'>Ball Playing CB</span></div>
               <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(lu_i)}'>{lu_txt}</span><span class='sub'>Wide CB</span></div>
               <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(tm_i)}'>{tm_txt}</span><span class='sub'>Box Defender</span></div>
-
-              <!-- ✅ Paired right rows -->
-              <div class='right-bottom'>
-                <div class='row posrow'>{pos_html}</div>
-                {teamline_html}
-              </div>
+              <div class='row posrow'>{pos_html}</div>
+              {teamline_html}
             </div>
-
             <div class='rank'>#{_fmt2(i+1)}</div>
           </div>
         </div>
@@ -2507,12 +2496,14 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                     if uploaded_file is not None:
                         try:
                             data = uploaded_file.getvalue()
+                            # Optional integrity check (won’t crash if PIL missing)
                             try:
                                 from PIL import Image
                                 Image.open(io.BytesIO(data))
                             except Exception:
                                 pass
 
+                            # ✅ MIME detection without imghdr
                             import os as _os
                             mime = getattr(uploaded_file, "type", "") or ""
                             if not mime.startswith("image/"):
