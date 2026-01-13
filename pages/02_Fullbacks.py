@@ -1925,6 +1925,86 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 
+# ==========================================================
+# ✅ CB-style imports (use if available), else local fallbacks
+# ==========================================================
+try:
+    # If you already have these in a shared utils module (same ones CB page uses),
+    # this will make FB behave IDENTICALLY to CB without redefining anything.
+    from utils.photos import resolve_player_photo, load_local_photo_overrides, PLAYER_PHOTO_OVERRIDES_JSON
+    from utils.fotmob import get_fotmob_url, _fotmob_crest_url
+    from utils.metrics import _available_metric_pairs, _metric_pct, _metric_val
+except Exception:
+    # ---- Fallbacks (only used if the CB helpers aren't importable in this page) ----
+    import json, os, re as _re2
+
+    # Adjust this if your project uses a different path constant
+    PLAYER_PHOTO_OVERRIDES_JSON = "player_photo_overrides.json"
+
+    def load_local_photo_overrides(path: str) -> dict:
+        try:
+            if not path:
+                return {}
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f) or {}
+        except Exception:
+            pass
+        return {}
+
+    def resolve_player_photo(player: str, team: str, league: str, key_id: str,
+                             session_photo_map: dict, global_overrides: dict) -> str:
+        # Priority: session override → global override → placeholder
+        if session_photo_map and key_id in session_photo_map and session_photo_map[key_id]:
+            return session_photo_map[key_id]
+        if global_overrides and key_id in global_overrides and global_overrides[key_id]:
+            return global_overrides[key_id]
+        return "https://i.redd.it/43axcjdu59nd1.jpeg"
+
+    # Try to read your FotMob team URL map if present
+    def get_fotmob_url(team: str) -> str:
+        try:
+            # If you have a module like team_fotmob_urls.py in your repo, import it.
+            from team_fotmob_urls import FOTMOB_TEAM_URLS  # type: ignore
+            return (FOTMOB_TEAM_URLS.get(team) or "").strip()
+        except Exception:
+            return ""
+
+    def _fotmob_crest_url(team_url: str) -> str:
+        # FotMob team URL pattern: https://www.fotmob.com/teams/<ID>/...
+        try:
+            m = _re2.search(r"/teams/(\d+)/", str(team_url))
+            if not m:
+                return ""
+            tid = m.group(1)
+            # Common FotMob logo endpoint
+            return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png"
+        except Exception:
+            return ""
+
+    def _available_metric_pairs(df_view: pd.DataFrame, pairs: list[tuple[str, str]]):
+        out = []
+        cols = set(df_view.columns)
+        for lab, met in pairs:
+            if met in cols or f"{met} Percentile" in cols:
+                out.append((lab, met))
+        return out
+
+    def _metric_pct(row: pd.Series, met: str):
+        col = f"{met} Percentile"
+        if col in row.index and not pd.isna(row[col]):
+            return float(row[col])
+        return np.nan
+
+    def _metric_val(row: pd.Series, met: str):
+        if met in row.index and not pd.isna(row[met]):
+            try:
+                return float(row[met])
+            except Exception:
+                return row[met]
+        return np.nan
+
+
 # ----------------- helpers (EXACTLY as provided) -----------------
 def _pro_rating_color(v: float) -> str:
     v = float(v)
@@ -2102,18 +2182,27 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
     .crest-icon{ height:1.35em; width:auto; object-fit:contain; image-rendering:auto; }
     .crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
 
-    /* Individual metrics — compact layout */
+    /* Individual metrics — CB-style (raw + badge) */
     .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
     .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
-    .m-row{ display:flex; justify-content:space-between; align-items:center; padding:8px 8px; border-radius:10px; }
-    .m-label{ color:#c9d3f2; font-size:15.5px; letter-spacing:.1px; flex:1 1 auto; }
-    .m-badge{ flex:0 0 auto; min-width:44px; text-align:center; padding:2px 10px; border-radius:8px; font-weight:700; font-size:18.5px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); box-shadow:none; }
+    .m-row{ display:flex; align-items:center; gap:10px; padding:8px 8px; border-radius:10px; }
+    .m-label{ color:#c9d3f2; font-size:15.5px; letter-spacing:.1px; flex:1 1 0%; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .m-right{ display:flex; align-items:center; gap:10px; flex:0 0 auto; }
+    .m-val{ color:#a8b3cf; font-size:13px; opacity:.9; min-width:54px; text-align:right; }
+    .m-badge{ flex:0 0 auto; min-width:44px; text-align:center; padding:2px 10px; border-radius:8px;
+              font-weight:800; font-size:18.5px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); box-shadow:none; }
+
     .metrics-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
     @media (min-width: 720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr);} }
 
     .filter-label{ color:#cbd3ef; font-weight:700; font-size:13px; letter-spacing:.02em; margin-bottom:4px; }
     </style>
     """, unsafe_allow_html=True)
+
+    # --- CB-style global overrides & caches (IDENTICAL BEHAVIOUR) ---
+    global_photo_overrides = load_local_photo_overrides(PLAYER_PHOTO_OVERRIDES_JSON)
+    st.session_state.setdefault("photo_map", {})
+    st.session_state.setdefault("crest_map", {})
 
     # ---- UI ROW 1: Age, Role sort, Search ----
     c1, c2, c3 = st.columns([1, 1.4, 2])
@@ -2122,8 +2211,8 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
             "Age",
             [
                 "All",
-                "U18","U20","U21","U22","U23","U25","U30",   # <=
-                "30+","32+","35+"                            # >=
+                "U18","U20","U21","U22","U23","U25","U30",
+                "30+","32+","35+"
             ],
             index=0,
             key="pro_age_filter_fb",
@@ -2294,13 +2383,6 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
                 df_filtered[col] = pd.to_numeric(df_filtered[col], errors="coerce")
                 df_filtered = df_filtered[df_filtered[col] >= thr]
 
-    # ---- from here down, keep your existing: ----
-    # - data check for "All In Score"
-    # - sort by sort_by (All In or a role), with asc/desc
-    # - take head(top_n)
-    # - render cards using selected_labels / label_to_col
-    # - avatar & crest overrides, metrics expander, etc.
-
     # ---- data check ----
     all_col = "All In Score"
     if all_col not in df_view.columns:
@@ -2328,14 +2410,18 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
         team = str(row.get("Team","")) or ""
         league = str(row.get("League","")) or ""
         pos = str(row.get("Position","")) or ""
+
         # Age text
         try:
             age_val = int(row.get("Age")) if not pd.isna(row.get("Age", None)) else int(row.get("Age_num", 0))
         except Exception:
             age_val = 0
         age_txt = f"{age_val}y.o." if age_val>0 else "—"
+
         cy = pd.to_datetime(row.get("Contract expires"), errors="coerce")
         cyr = int(cy.year) if pd.notna(cy) else 0
+        contract_txt = f"{cyr}" if cyr>0 else "—"
+
         birth = row.get("Birth country","") if "Birth country" in row else ""
         foot = _get_foot(row) or "—"
 
@@ -2361,16 +2447,25 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
 
         # left meta
         flag=_flag_html(birth)
-        contract_txt=f"{cyr}" if cyr>0 else "—"
 
-        # keys & avatar
+        # --- CB-style avatar resolver (IDENTICAL) ---
         key_id = f"{_norm(player)}|{_norm(team)}"
-        default_avatar="https://i.redd.it/43axcjdu59nd1.jpeg"
-        avatar_url=st.session_state.get("photo_map", {}).get(key_id, default_avatar)
+        avatar_url = resolve_player_photo(
+            player=player,
+            team=team,
+            league=league,
+            key_id=key_id,
+            session_photo_map=st.session_state["photo_map"],
+            global_overrides=global_photo_overrides,
+        )
 
-        # crest (stored per club)
+        # --- CB-style crest resolver (IDENTICAL) ---
         crest_store_key = f"{_norm(team)}|{_norm(league)}"
         crest_url = st.session_state.get("crest_map", {}).get(crest_store_key, "")
+        if not crest_url:
+            team_url = get_fotmob_url(team)
+            crest_url = _fotmob_crest_url(team_url) if team_url else ""
+
         if crest_url:
             teamline_html = (
                 f"<div class='teamline tl-wrap tl-has-crest'>"
@@ -2422,9 +2517,6 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
 
         # ----- Expander: FB individual metrics (ATT/DEF/POS) -----
         with st.expander("Individual Metrics", expanded=False):
-            def _pct(m):
-                col=f"{m} Percentile"
-                return float(row[col]) if col in row and not pd.isna(row[col]) else 0.0
 
             ATT=[("Crosses","Crosses per 90"),
                  ("Crossing Accuracy %","Accurate crosses, %"),
@@ -2465,16 +2557,25 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
                  ("Smart Passes","Smart passes per 90")]
 
             def _sec_html(title, pairs):
+                pairs = _available_metric_pairs(df_view, pairs)
                 rows=[]
-                for lab,met in pairs:
-                    p=_pro_show99(_pct(met)); ptxt=_fmt2(p)
+                for lab, met in pairs:
+                    pct = _metric_pct(row, met)
+                    p = _pro_show99(pct if not pd.isna(pct) else 0.0)
+                    ptxt = _fmt2(p)
+
+                    raw = _metric_val(row, met)
+                    raw_txt = "—" if pd.isna(raw) else f"{raw:.2f}".rstrip("0").rstrip(".")
+
                     rows.append(
-                        f"<div class='m-row'>"
+                        "<div class='m-row'>"
                         f"<div class='m-label'>{lab}</div>"
+                        "<div class='m-right'>"
+                        f"<div class='m-val'>{raw_txt}</div>"
                         f"<div class='m-badge' style='background:{_pro_rating_color(p)}'>{ptxt}</div>"
-                        f"</div>"
+                        "</div></div>"
                     )
-                return f"<div class='m-sec'><div class='m-title'>{title}</div>{''.join(rows)}</div>"
+                return f"<div class='m-sec'><div class='m-title'>{title}</div>{''.join(rows) if rows else ''}</div>"
 
             st.markdown(
                 "<div class='metrics-grid'>"
@@ -2485,28 +2586,37 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
                 unsafe_allow_html=True
             )
 
-            # --- Player image override (unique keys) ---
+            # --- Player image override (per-player keys) ---
             img_key = f"imgurl_{i}_{key_id}"
             default_url = st.session_state.get("photo_map", {}).get(key_id, "")
             uploaded_file = st.file_uploader("Upload player image (PNG/JPG)", type=["png","jpg","jpeg"], key=f"upload_{i}_{key_id}")
-            _ = st.text_input("Custom image URL (override avatar — e.g., https://images.fotmob.com/image_resources/playerimages/1199383.png)", value=default_url, key=img_key)
+            _ = st.text_input(
+                "Custom image URL (override avatar — e.g., https://images.fotmob.com/image_resources/playerimages/1199383.png)",
+                value=default_url, key=img_key
+            )
 
             col_a, col_b = st.columns([1, 3])
             with col_a:
                 if st.button("Apply to this player", key=f"apply_{i}_{key_id}"):
                     if uploaded_file is not None:
                         try:
-                            import base64, imghdr, io
+                            import base64, io, os
                             data = uploaded_file.getvalue()
+
                             try:
                                 from PIL import Image
                                 Image.open(io.BytesIO(data))
                             except Exception:
                                 pass
-                            kind = imghdr.what(None, h=data)
-                            if kind in ("jpeg","jpg"): mime="image/jpeg"
-                            elif kind=="png": mime="image/png"
-                            else: mime = uploaded_file.type if getattr(uploaded_file,"type","").startswith("image/") else "image/png"
+
+                            mime = getattr(uploaded_file, "type", "") or ""
+                            if not mime.startswith("image/"):
+                                ext = os.path.splitext(uploaded_file.name or "")[1].lower()
+                                if ext == ".svg": mime = "image/svg+xml"
+                                elif ext == ".png": mime = "image/png"
+                                elif ext in (".jpg", ".jpeg"): mime = "image/jpeg"
+                                else: mime = "image/png"
+
                             b64 = base64.b64encode(data).decode("ascii")
                             st.session_state.setdefault("photo_map", {})[key_id] = f"data:{mime};base64,{b64}"
                             st.success("Uploaded image saved!")
@@ -2532,11 +2642,12 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
                     try: st.rerun()
                     except Exception: st.experimental_rerun()
 
-            # --- Club crest override (unique widget keys) ---
+            # --- Club crest override (stored per-club) ---
             crest_widget_ns = f"{crest_store_key}|{key_id}|{i}"
             crest_default = st.session_state.get("crest_map", {}).get(crest_store_key, "")
             crest_upload = st.file_uploader("Upload club crest (SVG/PNG/JPG)", type=["svg","png","jpg","jpeg"], key=f"crest_upload_{crest_widget_ns}")
             _ = st.text_input("Custom crest URL (e.g., https://…/club.svg or .png)", value=crest_default, key=f"crest_url_{crest_widget_ns}")
+
             col_c, col_d = st.columns([1, 3])
             with col_c:
                 if st.button("Apply crest", key=f"apply_crest_{crest_widget_ns}"):
@@ -2581,11 +2692,6 @@ with tabs[4]:
     st.subheader("Pro Layout — Top Fullbacks (Tiles)")
     render_pro_layout_fb(df_f, top_n=top_n)
 # ----------------- END PRO LAYOUT TAB — FULLBACKS -----------------
-
-
-
-
-# ----------------- END FULLBACK BLOCK -----------------
 
 
 # ----------------- METRIC LEADERBOARD — themed + palettes + custom title + highlights (UPDATED) -----------------
