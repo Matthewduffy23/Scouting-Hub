@@ -2099,11 +2099,343 @@ def _available_metric_pairs(df: pd.DataFrame, pairs):
     return out
 
 
+# ----------------- PRO LAYOUT TAB (tiles) -----------------
+# FULL FEATURE BLOCK + ALIGNMENT FIX (Foot ↔ Positions, Contract ↔ Team/League)
+# IMPORTANT:
+# - This is a DROP-IN replacement for your current file section.
+# - No markdown fences/backticks inside st.markdown strings.
+# - No HTML comments inside st.markdown strings (prevents “printed HTML” issues).
+# - Keeps: FotMob team URLs, player photo resolver, crest auto-load + override, Twemoji flags, metrics layout,
+#         per-player avatar override UI, per-club crest override UI, filters/sort/role minima.
+
+import os
+import re
+import json
+import base64
+import io
+import unicodedata
+from typing import Dict, Optional
+
+import pandas as pd
+import numpy as np
+import requests
+import streamlit as st
+
+
+# =========================================================
+# ✅ ADD YOUR FOTMOB URLS HERE
+# =========================================================
+FOTMOB_TEAM_URLS: Dict[str, str] = {
+    "Swansea City": "https://www.fotmob.com/teams/10003/squad/swansea-city",
+    "Arsenal": "https://www.fotmob.com/teams/9825/squad/arsenal",
+}
+
+try:
+    from team_fotmob_urls import get_fotmob_url as _external_get_fotmob_url
+except Exception:
+    _external_get_fotmob_url = None
+
+
+# ----------------- Colors / formatting -----------------
+def _pro_rating_color(v: float) -> str:
+    try:
+        v = float(v)
+    except Exception:
+        v = 0.0
+
+    COLORS = [
+        (85, "#2E6114"),
+        (75, "#5C9E2E"),
+        (66, "#7FBC41"),
+        (55, "#A7D763"),
+        (41, "#F6D645"),
+        (25, "#D77A2E"),
+        (0,  "#C63733"),
+    ]
+    for threshold, color in COLORS:
+        if v >= threshold:
+            return color
+    return COLORS[-1][1]
+
+
+def _pro_show99(x) -> int:
+    try:
+        return max(0, min(99, int(float(x))))
+    except Exception:
+        return 0
+
+
+def _fmt2(n: int) -> str:
+    try:
+        return f"{int(n):02d}"
+    except Exception:
+        return "00"
+
+
+_POS_COLORS = {
+    "CF":"#6EA8FF","LWF":"#6EA8FF","LW":"#6EA8FF","LAMF":"#6EA8FF","RW":"#6EA8FF","RWF":"#6EA8FF","RAMF":"#6EA8FF",
+    "AMF":"#7FE28A","LCMF":"#5FD37A","RCMF":"#5FD37A","RDMF":"#31B56B","LDMF":"#31B56B","DMF":"#31B56B","CMF":"#5FD37A",
+    "LWB":"#FFD34D","RWB":"#FFD34D","LB":"#FF9A3C","RB":"#FF9A3C","RCB":"#D1763A","CB":"#D1763A","LCB":"#D1763A",
+    "GK":"#B8A1FF",
+}
+def _pro_chip_color(p: str) -> str:
+    return _POS_COLORS.get(str(p).strip().upper(), "#2d3550")
+
+
+# ----------------- Normalization -----------------
+def _norm(s: str) -> str:
+    if not s:
+        return ""
+    return unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode("ascii").strip().lower()
+
+
+def get_fotmob_url(team: str) -> str:
+    t = _norm(team)
+
+    for k, v in FOTMOB_TEAM_URLS.items():
+        if _norm(k) == t and str(v).strip():
+            return str(v).strip()
+
+    if _external_get_fotmob_url is not None:
+        try:
+            u = _external_get_fotmob_url(team) or ""
+            return str(u).strip()
+        except Exception:
+            pass
+
+    return ""
+
+
+def _fotmob_team_id_from_url(team_url: str) -> str:
+    try:
+        m = re.search(r"/teams/(\d+)/", team_url or "")
+        return m.group(1) if m else ""
+    except Exception:
+        return ""
+
+
+def _fotmob_crest_url(team_url: str) -> str:
+    tid = _fotmob_team_id_from_url(team_url)
+    if not tid:
+        return ""
+    return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png"
+
+
+# ----------------- Flags (Twemoji) -----------------
+TWEMOJI_SPECIAL = {
+    "eng":"1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
+    "sct":"1f3f4-e0067-e0062-e0073-e0063-e0074-e007f",
+    "wls":"1f3f4-e0067-e0062-e0077-e006c-e0073-e007f",
+}
+
+COUNTRY_TO_CC = {
+    "united kingdom":"gb","great britain":"gb","northern ireland":"gb","england":"eng","scotland":"sct","wales":"wls",
+    "ireland":"ie","republic of ireland":"ie","spain":"es","france":"fr","germany":"de","italy":"it","portugal":"pt",
+    "netherlands":"nl","belgium":"be","austria":"at","switzerland":"ch","denmark":"dk","sweden":"se","norway":"no",
+    "finland":"fi","iceland":"is","poland":"pl","czech republic":"cz","czechia":"cz","slovakia":"sk","slovenia":"si",
+    "croatia":"hr","serbia":"rs","bosnia and herzegovina":"ba","bosnia":"ba","montenegro":"me","kosovo":"xk","albania":"al",
+    "greece":"gr","hungary":"hu","romania":"ro","bulgaria":"bg","russia":"ru","ukraine":"ua","georgia":"ge",
+    "kazakhstan":"kz","azerbaijan":"az","armenia":"am","turkey":"tr","cyprus":"cy","luxembourg":"lu","andorra":"ad",
+    "monaco":"mc","san marino":"sm","malta":"mt","moldova":"md","north macedonia":"mk","macedonia":"mk","estonia":"ee",
+    "latvia":"lv","lithuania":"lt",
+
+    "qatar":"qa","saudi arabia":"sa","uae":"ae","united arab emirates":"ae","israel":"il","japan":"jp","korea":"kr",
+    "south korea":"kr","korea republic":"kr","china":"cn","china pr":"cn",
+
+    "algeria":"dz","angola":"ao","benin":"bj","botswana":"bw","burkina faso":"bf","burundi":"bi","cabo verde":"cv",
+    "cape verde":"cv","cameroon":"cm","central african republic":"cf","car":"cf","chad":"td","comoros":"km",
+    "congo":"cg","republic of the congo":"cg","congo brazzaville":"cg","congo-brazzaville":"cg",
+    "dr congo":"cd","drc":"cd","democratic republic of the congo":"cd","congo kinshasa":"cd","congo-kinshasa":"cd",
+    "djibouti":"dj","egypt":"eg","equatorial guinea":"gq","eritrea":"er","eswatini":"sz","swaziland":"sz",
+    "ethiopia":"et","gabon":"ga","gambia":"gm","ghana":"gh","guinea":"gn","guinea-bissau":"gw","guinea bissau":"gw",
+    "ivory coast":"ci","cote d'ivoire":"ci","cote divoire":"ci","cote d ivoire":"ci","côte d’ivoire":"ci","côte d'ivoire":"ci",
+    "kenya":"ke","lesotho":"ls","liberia":"lr","libya":"ly","madagascar":"mg","malawi":"mw","mali":"ml","mauritania":"mr",
+    "mauritius":"mu","morocco":"ma","mozambique":"mz","namibia":"na","niger":"ne","nigeria":"ng","rwanda":"rw",
+    "sao tome and principe":"st","sao tome":"st","são tomé and príncipe":"st","são tomé":"st","sao tome & principe":"st",
+    "senegal":"sn","seychelles":"sc","sierra leone":"sl","somalia":"so","south africa":"za","south sudan":"ss","sudan":"sd",
+    "tanzania":"tz","united republic of tanzania":"tz","togo":"tg","tunisia":"tn","uganda":"ug","zambia":"zm","zimbabwe":"zw",
+    "western sahara":"eh","réunion":"re","reunion":"re","mayotte":"yt",
+
+    "maroc":"ma","algerie":"dz","tunis":"tn","egypte":"eg","cameroun":"cm","cote d’ivoire":"ci","cote-d-ivoire":"ci",
+    "somaliland":"so","ethiopie":"et","congo-kinshasa":"cd","gbissau":"gw",
+
+    "brazil":"br","argentina":"ar","uruguay":"uy","chile":"cl","colombia":"co","peru":"pe","ecuador":"ec","paraguay":"py",
+    "bolivia":"bo","mexico":"mx","canada":"ca","united states":"us","usa":"us",
+    "australia":"au","new zealand":"nz",
+    "palestine":"ps","state of palestine":"ps",
+    "hong kong":"hk","macau":"mo","macao":"mo",
+    "curacao":"cw","curaçao":"cw","cape verde islands":"cv",
+}
+
+
+def _cc_to_twemoji(cc: str) -> Optional[str]:
+    if not cc or len(cc) != 2:
+        return None
+    a, b = cc.upper()
+    cp1 = 0x1F1E6 + (ord(a) - ord('A'))
+    cp2 = 0x1F1E6 + (ord(b) - ord('A'))
+    return f"{cp1:04x}-{cp2:04x}"
+
+
+def _flag_html(country_name: str) -> str:
+    if not country_name:
+        return "<span class='chip'>—</span>"
+    n = _norm(country_name)
+    cc = COUNTRY_TO_CC.get(n, "")
+    if not cc:
+        return "<span class='chip'>—</span>"
+    if cc in TWEMOJI_SPECIAL:
+        code = TWEMOJI_SPECIAL[cc]
+        src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
+        return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
+    code = _cc_to_twemoji(cc) if len(cc) == 2 else None
+    if code:
+        src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
+        return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
+    return f"<span class='chip'>{cc.upper()}</span>"
+
+
+# ----------------- SAFE foot extractor -----------------
+def _get_foot(row) -> str:
+    for col in ("Foot", "Preferred foot", "Preferred Foot"):
+        if col in row.index:
+            val = row[col]
+            try:
+                if pd.isna(val):
+                    continue
+            except Exception:
+                pass
+            s = str(val).strip()
+            if s and s.lower() not in {"nan", "none", "null"}:
+                return s
+    return ""
+
+
+# -----------------
+# FotMob photo scraping + resolver
+# -----------------
+DEFAULT_AVATAR = "https://i.redd.it/43axcjdu59nd1.jpeg"
+PLAYER_PHOTO_OVERRIDES_JSON = "player_photos.json"
+
+TEAM_PLAYER_PHOTOS: Dict[str, Dict[str, str]] = {}
+
+def _team_key(team: str, league: str) -> str:
+    return f"{_norm(team)}|{_norm(league)}"
+
+
+@st.cache_data(show_spinner=False, ttl=60*60*12)
+def fotmob_photo_map(team_url: str) -> Dict[str, str]:
+    try:
+        if not team_url:
+            return {}
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Language": "en-GB,en;q=0.9",
+            "Referer": "https://www.fotmob.com/",
+        }
+        resp = requests.get(team_url, headers=headers, timeout=20)
+        if resp.status_code != 200:
+            return {}
+        html = resp.text
+
+        ids = re.findall(r'"id"\s*:\s*(\d+)\s*,\s*"name"\s*:\s*"([^"]+)"', html)
+        if not ids:
+            ids = re.findall(r'"playerId"\s*:\s*(\d+).*?"name"\s*:\s*"([^"]+)"', html, flags=re.S)
+
+        out = {}
+        for pid, name in ids:
+            nm = _norm(name)
+            if nm:
+                out[nm] = f"https://images.fotmob.com/image_resources/playerimages/{pid}.png"
+        return out
+    except Exception:
+        return {}
+
+
+def load_local_photo_overrides(path: str) -> Dict[str, str]:
+    if not path or not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            obj = json.load(f)
+        if isinstance(obj, dict):
+            return {_norm(k): str(v).strip() for k, v in obj.items() if str(v).strip()}
+        return {}
+    except Exception:
+        return {}
+
+
+def resolve_player_photo(
+    player: str,
+    team: str,
+    league: str,
+    key_id: str,
+    session_photo_map: Dict[str, str],
+    global_overrides: Dict[str, str],
+) -> str:
+    if key_id in session_photo_map:
+        return session_photo_map[key_id]
+
+    n_full = _norm(player)
+
+    tkey = _team_key(team, league)
+    tdict = TEAM_PLAYER_PHOTOS.get(tkey, {})
+    if n_full in tdict:
+        return tdict[n_full]
+
+    if n_full in global_overrides:
+        return global_overrides[n_full]
+
+    team_url = get_fotmob_url(team)
+    fm = fotmob_photo_map(team_url) if team_url else {}
+    if n_full in fm:
+        return fm[n_full]
+
+    parts = [p for p in n_full.split() if p]
+    surname = parts[-1] if parts else ""
+    if surname:
+        for k, url in fm.items():
+            kp = [p for p in k.split() if p]
+            if kp and kp[-1] == surname:
+                return url
+
+    return DEFAULT_AVATAR
+
+
+# -----------------
+# Metric helpers
+# -----------------
+def _metric_pct(row: pd.Series, metric: str) -> float:
+    try:
+        v = row.get(f"{metric} Percentile", np.nan)
+        return float(v) if not pd.isna(v) else np.nan
+    except Exception:
+        return np.nan
+
+
+def _metric_val(row: pd.Series, metric: str) -> float:
+    try:
+        v = row.get(metric, np.nan)
+        v = pd.to_numeric(v, errors="coerce")
+        return float(v) if not pd.isna(v) else np.nan
+    except Exception:
+        return np.nan
+
+
+def _available_metric_pairs(df: pd.DataFrame, pairs):
+    out = []
+    for lab, met in pairs:
+        if met in df.columns and f"{met} Percentile" in df.columns:
+            out.append((lab, met))
+    return out
+
+
 # =========================================================
 # ✅ PRO LAYOUT FUNCTION (tiles)
 # =========================================================
-def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
-    # ---- CSS ----
+def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
     st.markdown("""
     <style>
     html, body, .block-container *{
@@ -2114,8 +2446,10 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
     .pro-wrap{ display:flex; justify-content:center; }
     .pro-card{
-      position:relative; width:min(420px,96%); display:grid; grid-template-columns:88px 1fr 48px; gap:12px; align-items:start;
-      background:var(--card); border:1px solid rgba(255,255,255,.06); border-radius:20px; padding:16px; margin-bottom:12px;
+      position:relative; width:min(420px,96%); display:grid;
+      grid-template-columns:88px 1fr 48px; gap:12px; align-items:start;
+      background:var(--card); border:1px solid rgba(255,255,255,.06);
+      border-radius:20px; padding:16px; margin-bottom:12px;
       box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 6px 24px rgba(0,0,0,.35);
     }
 
@@ -2127,37 +2461,44 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
     .chip{ background:transparent; color:#a6a6a6; border:none; padding:0; border-radius:0; font-size:15px; line-height:18px; opacity:.92; }
     .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:2px 0; }
-    .leftrow1{ margin-top:6px; } .leftrow-foot{ margin-top:2px; } .leftrow-contract{ margin-top:10px; }
 
     .pill{ padding:2px 6px; min-width:36px; border-radius:6px; font-weight:700; font-size:18px; line-height:1; color:#0b0d12; text-align:center; display:inline-block; box-shadow:none; }
 
     .name{ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px; letter-spacing:.2px; line-height:1.15; }
     .sub{ color:#a8b3cf; font-size:15px; opacity:.9; }
 
-    .posrow{ margin-top:13.5px; }
     .postext{ font-weight:600; font-size:14.5px; letter-spacing:.2px; margin-right:11px; }
 
     .rank{ position:absolute; top:10.5px; right:14px; color:#b7bfe1; font-weight:800; font-size:18px; text-align:right; pointer-events:none; }
 
-    .teamline{ color:#dbe3ff; font-size:14px; font-weight:600; margin-top:6.5px; letter-spacing:.05px; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .teamline{ color:#dbe3ff; font-size:14px; font-weight:600; letter-spacing:.05px; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .tl-wrap{ position:relative; }
     .tl-has-crest{ padding-left:24px; }
     .crest-icon{ height:1.35em; width:auto; object-fit:contain; image-rendering:auto; }
     .crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
 
-    /* ---- Individual Metrics (updated layout like other example) ---- */
+    /* ✅ ALIGNMENT FIX (ATT-style) */
+    .leftrow1, .leftrow-foot, .leftrow-contract, .posrow, .teamline { margin-top:0 !important; }
+
+    .left-bottom{
+      display:grid;
+      grid-template-rows:auto auto;   /* foot, contract */
+      gap:6px;
+      margin-top:6px;
+    }
+    .right-bottom{
+      display:grid;
+      grid-template-rows:auto auto;   /* positions, teamline */
+      gap:6px;
+      margin-top:6px;
+    }
+
+    /* ---- Individual Metrics ---- */
     .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
     .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
 
-    .m-row{
-      display:flex; align-items:center; gap:10px;
-      padding:8px 8px; border-radius:10px;
-    }
-    .m-label{
-      color:#c9d3f2; font-size:15.5px; letter-spacing:.1px;
-      flex:1 1 0%; min-width:0;
-      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-    }
+    .m-row{ display:flex; align-items:center; gap:10px; padding:8px 8px; border-radius:10px; }
+    .m-label{ color:#c9d3f2; font-size:15.5px; letter-spacing:.1px; flex:1 1 0%; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .m-right{ display:flex; align-items:center; gap:10px; flex:0 0 auto; }
     .m-val{ color:#a8b3cf; font-size:13px; opacity:.9; min-width:54px; text-align:right; }
     .m-badge{ flex:0 0 auto; min-width:44px; text-align:center; padding:2px 10px; border-radius:8px;
@@ -2168,10 +2509,8 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     </style>
     """, unsafe_allow_html=True)
 
-    # start from full table
     df_filtered = df_view.copy()
 
-    # 🔎 Global search (Player / Team / League)
     search_q = st.text_input("🔎 Search player / team / league", "", key="cb_search_bar")
     if search_q:
         s = str(search_q).strip().lower()
@@ -2182,7 +2521,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 mask_any = mask_any | df_filtered[c].astype(str).str.lower().str.contains(s, na=False)
             df_filtered = df_filtered[mask_any]
 
-    # ---- Age filter ----
     age_choice = st.selectbox(
         "Age",
         ["All","U18","U20","U21","U22","U23","U25","U30","30+","25+","28+"],
@@ -2205,7 +2543,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         except Exception:
             pass
 
-    # ---- Contract max year ----
     if "Contract expires" in df_filtered.columns:
         contract_choice = st.selectbox(
             "Contract expires (max year)",
@@ -2223,12 +2560,8 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
             except Exception:
                 pass
 
-    # ---- Birth country ----
     if "Birth country" in df_filtered.columns:
-        country_vals = sorted(set(
-            df_filtered["Birth country"]
-            .dropna().astype(str).str.strip()
-        ))
+        country_vals = sorted(set(df_filtered["Birth country"].dropna().astype(str).str.strip()))
         selected_countries = st.multiselect(
             "Birth country",
             options=country_vals,
@@ -2238,24 +2571,12 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         if selected_countries:
             df_filtered = df_filtered[df_filtered["Birth country"].isin(selected_countries)]
 
-    # ---- Foot ----
     df_filtered["__foot"] = df_filtered.apply(_get_foot, axis=1)
-    foot_vals = sorted(set(
-        df_filtered["__foot"]
-        .dropna().astype(str).str.strip()
-    ))
-    selected_feet = st.multiselect(
-        "Foot",
-        options=foot_vals,
-        default=[],
-        key="pro_foot_filter"
-    )
+    foot_vals = sorted(set(df_filtered["__foot"].dropna().astype(str).str.strip()))
+    selected_feet = st.multiselect("Foot", options=foot_vals, default=[], key="pro_foot_filter")
     if selected_feet:
         df_filtered = df_filtered[df_filtered["__foot"].isin(selected_feet)]
 
-    # =========================
-    # Optional minimum role-score filters
-    # =========================
     ROLE_SCORE_COLS = [
         "Ball Playing CB Score",
         "Wide CB Score",
@@ -2263,29 +2584,19 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         "PL Profile Score",
     ]
 
-    use_role_filters = st.checkbox(
-        "Filter by minimum role score(s)",
-        value=False,
-        key="pro_role_filter_toggle"
-    )
-
+    use_role_filters = st.checkbox("Filter by minimum role score(s)", value=False, key="pro_role_filter_toggle")
     role_minima = {}
     if use_role_filters:
         st.write("Set minimum scores (0–99). Leave at 0 to ignore a role.")
         for col in ROLE_SCORE_COLS:
             if col in df_filtered.columns:
                 pretty = col.replace("Score", "").strip()
-                role_minima[col] = st.slider(
-                    f"Min {pretty}",
-                    0, 99, 0, 1,
-                    key=f"min_{_norm(col)}"
-                )
+                role_minima[col] = st.slider(f"Min {pretty}", 0, 99, 0, 1, key=f"min_{_norm(col)}")
         for col, thr in role_minima.items():
             if thr > 0:
                 df_filtered[col] = pd.to_numeric(df_filtered[col], errors="coerce")
                 df_filtered = df_filtered[df_filtered[col] >= thr]
 
-    # ---- data check ----
     all_col = "All In Score"
     if all_col not in df_view.columns:
         st.info("Pro Layout needs the role scores. Make sure the table section above ran first.")
@@ -2294,30 +2605,13 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         st.info("No players match the selected filters.")
         return
 
-    # =========================
-    # sort controls (roles + All In; default = All In)
-    # =========================
     sort_candidates = [all_col] + [c for c in ROLE_SCORE_COLS if c in df_view.columns]
-
-    sort_by = st.selectbox(
-        "Order by",
-        options=sort_candidates,
-        index=0,
-        key="pro_sort_by",
-        label_visibility="visible"
-    )
-    sort_dir_label = st.radio(
-        "Direction",
-        options=["High → Low", "Low → High"],
-        index=0,
-        key="pro_sort_dir",
-        horizontal=True
-    )
+    sort_by = st.selectbox("Order by", options=sort_candidates, index=0, key="pro_sort_by", label_visibility="visible")
+    sort_dir_label = st.radio("Direction", options=["High → Low", "Low → High"], index=0, key="pro_sort_dir", horizontal=True)
     asc = (sort_dir_label == "Low → High")
 
     _sort_col = "__sort_val"
     df_filtered[_sort_col] = pd.to_numeric(df_filtered.get(sort_by, pd.Series(index=df_filtered.index)), errors="coerce")
-
     ranked = (
         df_filtered
         .sort_values([_sort_col, all_col], ascending=[asc, False], na_position="last")
@@ -2326,45 +2620,41 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         .reset_index(drop=True)
     )
 
-    # load hidden global overrides (safe no-op if file not present)
     global_photo_overrides = load_local_photo_overrides(PLAYER_PHOTO_OVERRIDES_JSON)
     st.session_state.setdefault("photo_map", {})
     st.session_state.setdefault("crest_map", {})
 
-    for i,row in ranked.iterrows():
+    for i, row in ranked.iterrows():
         player = str(row.get("Player","")) or ""
         team = str(row.get("Team","")) or ""
         league = str(row.get("League","")) or ""
         pos = str(row.get("Position","")) or ""
 
-        # Age text
         try:
             age_val = int(row.get("Age")) if not pd.isna(row.get("Age", None)) else int(row.get("Age_num", 0))
         except Exception:
             age_val = 0
-        age_txt = f"{age_val}y.o." if age_val>0 else "—"
+        age_txt = f"{age_val}y.o." if age_val > 0 else "—"
 
         cy = pd.to_datetime(row.get("Contract expires"), errors="coerce")
         cyr = int(cy.year) if pd.notna(cy) else 0
+        contract_txt = f"{cyr}" if cyr > 0 else "—"
+
         birth = row.get("Birth country","") if "Birth country" in row else ""
+        flag = _flag_html(birth)
         foot = _get_foot(row) or "—"
 
-        # role scores (CB)
-        gt_i=_pro_show99(row.get("Ball Playing CB Score",0))
-        lu_i=_pro_show99(row.get("Wide CB Score",0))
-        tm_i=_pro_show99(row.get("Box Defender Score",0))
-        gt_txt=_fmt2(gt_i); lu_txt=_fmt2(lu_i); tm_txt=_fmt2(tm_i)
+        gt_i = _pro_show99(row.get("Ball Playing CB Score", 0))
+        lu_i = _pro_show99(row.get("Wide CB Score", 0))
+        tm_i = _pro_show99(row.get("Box Defender Score", 0))
+        gt_txt, lu_txt, tm_txt = _fmt2(gt_i), _fmt2(lu_i), _fmt2(tm_i)
 
-        # positions
-        codes=[c for c in re.split(r"[,/; ]+", pos.strip().upper()) if c]
-        if "CF" in codes: codes=["CF"]+[c for c in codes if c!="CF"]
-        pos_html="".join(f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>" for c in dict.fromkeys(codes))
+        codes = [c for c in re.split(r"[,/; ]+", (pos or "").strip().upper()) if c]
+        pos_html = "".join(
+            f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>"
+            for c in dict.fromkeys(codes)
+        )
 
-        # left meta
-        flag=_flag_html(birth)
-        contract_txt=f"{cyr}" if cyr>0 else "—"
-
-        # key & avatar (FotMob resolver + overrides)
         key_id = f"{_norm(player)}|{_norm(team)}"
         avatar_url = resolve_player_photo(
             player=player,
@@ -2375,10 +2665,8 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
             global_overrides=global_photo_overrides,
         )
 
-        # crest (stored per club), BUT if none set, auto from FotMob URL
         crest_store_key = f"{_norm(team)}|{_norm(league)}"
         crest_url = st.session_state.get("crest_map", {}).get(crest_store_key, "")
-
         if not crest_url:
             team_url = get_fotmob_url(team)
             crest_url = _fotmob_crest_url(team_url) if team_url else ""
@@ -2393,7 +2681,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         else:
             teamline_html = f"<div class='teamline'>{team} · {league}</div>"
 
-        # card
         st.markdown(f"""
         <div class='pro-wrap'>
           <div class='pro-card'>
@@ -2402,23 +2689,26 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 <img src="{avatar_url}" srcset="{avatar_url} 1x, {avatar_url} 2x" alt="{player}" loading="lazy" />
               </div>
               <div class='row leftrow1'>{flag}<span class='chip'>{age_txt}</span></div>
-              <div class='row leftrow-foot'><span class='chip'>{foot}</span></div>
-              <div class='row leftrow-contract'><span class='chip'>{contract_txt}</span></div>
+              <div class='left-bottom'>
+                <div class='row leftrow-foot'><span class='chip'>{foot}</span></div>
+                <div class='row leftrow-contract'><span class='chip'>{contract_txt}</span></div>
+              </div>
             </div>
             <div>
               <div class='name'>{player}</div>
               <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(gt_i)}'>{gt_txt}</span><span class='sub'>Ball Playing CB</span></div>
               <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(lu_i)}'>{lu_txt}</span><span class='sub'>Wide CB</span></div>
               <div class='row' style='align-items:center;'><span class='pill' style='background:{_pro_rating_color(tm_i)}'>{tm_txt}</span><span class='sub'>Box Defender</span></div>
-              <div class='row posrow'>{pos_html}</div>
-              {teamline_html}
+              <div class='right-bottom'>
+                <div class='row posrow'>{pos_html}</div>
+                {teamline_html}
+              </div>
             </div>
             <div class='rank'>#{_fmt2(i+1)}</div>
           </div>
         </div>
         """, unsafe_allow_html=True)
 
-        # ----- Single expander: Individual Metrics + image & crest controls -----
         with st.expander("Individual Metrics", expanded=False):
 
             ATT=[("Goals: Non-Penalty", "Non-penalty goals per 90"),
@@ -2453,22 +2743,21 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
             def _sec_html(title, pairs):
                 pairs = _available_metric_pairs(df_view, pairs)
                 rows=[]
-                for lab,met in pairs:
+                for lab, met in pairs:
                     pct = _metric_pct(row, met)
                     p = _pro_show99(pct if not pd.isna(pct) else 0.0)
-                    ptxt=_fmt2(p)
+                    ptxt = _fmt2(p)
 
                     raw = _metric_val(row, met)
                     raw_txt = "—" if pd.isna(raw) else f"{raw:.2f}".rstrip("0").rstrip(".")
 
                     rows.append(
-                        f"<div class='m-row'>"
-                          f"<div class='m-label'>{lab}</div>"
-                          f"<div class='m-right'>"
-                            f"<div class='m-val'>{raw_txt}</div>"
-                            f"<div class='m-badge' style='background:{_pro_rating_color(p)}'>{ptxt}</div>"
-                          f"</div>"
-                        f"</div>"
+                        "<div class='m-row'>"
+                        f"<div class='m-label'>{lab}</div>"
+                        "<div class='m-right'>"
+                        f"<div class='m-val'>{raw_txt}</div>"
+                        f"<div class='m-badge' style='background:{_pro_rating_color(p)}'>{ptxt}</div>"
+                        "</div></div>"
                     )
                 return f"<div class='m-sec'><div class='m-title'>{title}</div>{''.join(rows) if rows else ''}</div>"
 
@@ -2496,21 +2785,18 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                     if uploaded_file is not None:
                         try:
                             data = uploaded_file.getvalue()
-                            # Optional integrity check (won’t crash if PIL missing)
                             try:
                                 from PIL import Image
                                 Image.open(io.BytesIO(data))
                             except Exception:
                                 pass
 
-                            # ✅ MIME detection without imghdr
-                            import os as _os
                             mime = getattr(uploaded_file, "type", "") or ""
                             if not mime.startswith("image/"):
-                                ext = _os.path.splitext(uploaded_file.name or "")[1].lower()
+                                ext = os.path.splitext(uploaded_file.name or "")[1].lower()
                                 if ext == ".svg": mime = "image/svg+xml"
                                 elif ext == ".png": mime = "image/png"
-                                elif ext in (".jpg",".jpeg"): mime = "image/jpeg"
+                                elif ext in (".jpg", ".jpeg"): mime = "image/jpeg"
                                 else: mime = "image/png"
 
                             b64 = base64.b64encode(data).decode("ascii")
@@ -2543,16 +2829,16 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
             crest_default = st.session_state.get("crest_map", {}).get(crest_store_key, "")
             crest_upload = st.file_uploader("Upload club crest (SVG/PNG/JPG)", type=["svg","png","jpg","jpeg"], key=f"crest_upload_{i}_{crest_widget_ns}")
             _ = st.text_input("Custom crest URL (e.g., https://…/club.svg or .png)", value=crest_default, key=f"crest_url_{i}_{crest_widget_ns}")
+
             col_c, col_d = st.columns([1, 3])
             with col_c:
                 if st.button("Apply crest", key=f"apply_crest_{i}_{crest_widget_ns}"):
                     if crest_upload is not None:
                         try:
-                            import os as _os
                             data = crest_upload.getvalue()
                             mime = crest_upload.type or ""
                             if not mime.startswith("image/"):
-                                ext = _os.path.splitext(crest_upload.name or "")[1].lower()
+                                ext = os.path.splitext(crest_upload.name or "")[1].lower()
                                 if ext == ".svg": mime = "image/svg+xml"
                                 elif ext == ".png": mime = "image/png"
                                 elif ext in (".jpg",".jpeg"): mime = "image/jpeg"
@@ -2588,6 +2874,7 @@ with tabs[4]:
     st.subheader("Pro Layout — Top Tiles")
     render_pro_layout(df_f, top_n=top_n)
 # ----------------- END PRO LAYOUT TAB -----------------
+
 
 
 
