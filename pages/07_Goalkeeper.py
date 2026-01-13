@@ -1655,20 +1655,25 @@ for role, role_def in ROLES.items():
         st.dataframe(top_table(filtered_view(df_f, value_max=v_max), role, top_n), width="stretch")
         st.divider()
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 # ----------------- PRO LAYOUT TAB (GK tiles) -----------------
+import re
+import base64
+import imghdr
+import io
+import os
+import unicodedata
+from typing import Optional
 
 def _pro_rating_color(v: float) -> str:
     v = float(v)
     COLORS = [
-        (85, "#2E6114"),  # Deep green
-        (75, "#5C9E2E"),  # Green+
-        (66, "#7FBC41"),  # Green
-        (55, "#A7D763"),  # Green-
-        (41, "#F6D645"),  # Bright yellow
-        (25, "#D77A2E"),  # Orange
-        (0,  "#C63733"),  # Red
+        (85, "#2E6114"),
+        (75, "#5C9E2E"),
+        (66, "#7FBC41"),
+        (55, "#A7D763"),
+        (41, "#F6D645"),
+        (25, "#D77A2E"),
+        (0,  "#C63733"),
     ]
     for threshold, color in COLORS:
         if v >= threshold:
@@ -1688,22 +1693,24 @@ def _fmt2(n: int) -> str:
         return "00"
 
 _POS_COLORS = {
-    "CF":"#6EA8FF","LWF":"#6EA8FF","LW":"#6EA8FF","LAMF":"#6EA8FF","RW":"#6EA8FF","RWF":"#6EA8FF","RAMF":"#6EA8FF",
-    "AMF":"#7FE28A","LCMF":"#5FD37A","RCMF":"#5FD37A","RDMF":"#31B56B","LDMF":"#31B56B","DMF":"#31B56B",
-    "LWB":"#FFD34D","RWB":"#FFD34D","LB":"#FF9A3C","RB":"#FF9A3C","RCB":"#D1763A","CB":"#D1763A",
     "GK":"#D1763A",
+    "CB":"#D1763A","LCB":"#D1763A","RCB":"#D1763A",
+    "LB":"#FF9A3C","RB":"#FF9A3C",
+    "LWB":"#FFD34D","RWB":"#FFD34D",
+    "DMF":"#31B56B","LDMF":"#31B56B","RDMF":"#31B56B",
+    "LCMF":"#5FD37A","RCMF":"#5FD37A","AMF":"#7FE28A",
+    "CF":"#6EA8FF","LWF":"#6EA8FF","RWF":"#6EA8FF","LW":"#6EA8FF","RW":"#6EA8FF","LAMF":"#6EA8FF","RAMF":"#6EA8FF",
 }
 def _pro_chip_color(p: str) -> str:
     return _POS_COLORS.get(str(p).strip().upper(), "#2d3550")
 
-import unicodedata
 TWEMOJI_SPECIAL = {
     "eng":"1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
     "sct":"1f3f4-e0067-e0062-e0073-e0063-e0074-e007f",
     "wls":"1f3f4-e0067-e0062-e0077-e006c-e0073-e007f",
 }
 
-# (keep your full COUNTRY_TO_CC map here — using your short one is fine too)
+# Use your FULL COUNTRY_TO_CC dict here if you want (this short one is fine too)
 COUNTRY_TO_CC = {
     "united kingdom":"gb","great britain":"gb","northern ireland":"nir","england":"eng","scotland":"sct","wales":"wls",
 }
@@ -1711,9 +1718,9 @@ COUNTRY_TO_CC = {
 def _norm(s: str) -> str:
     if not s:
         return ""
-    return unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode("ascii").strip().lower()
+    return unicodedata.normalize("NFKD", str(s)).encode("ascii","ignore").decode("ascii").strip().lower()
 
-def _cc_to_twemoji(cc: str) -> str | None:
+def _cc_to_twemoji(cc: str) -> Optional[str]:
     if not cc or len(cc) != 2:
         return None
     a, b = cc.upper()
@@ -1728,18 +1735,21 @@ def _flag_html(country_name: str) -> str:
     cc = COUNTRY_TO_CC.get(n, "")
     if not cc:
         return "<span class='chip'>—</span>"
+
     if cc in TWEMOJI_SPECIAL:
         code = TWEMOJI_SPECIAL[cc]
         src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
         return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
+
     code = _cc_to_twemoji(cc) if len(cc) == 2 else None
     if code:
         src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
         return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
+
     return f"<span class='chip'>{cc.upper()}</span>"
 
 def _get_foot(row) -> str:
-    for col in ("Foot", "Preferred foot", "Preferred Foot"):
+    for col in ("Foot","Preferred foot","Preferred Foot"):
         if col in row.index:
             val = row[col]
             try:
@@ -1749,11 +1759,14 @@ def _get_foot(row) -> str:
             except Exception:
                 pass
             s = str(val).strip()
-            if s and s.lower() not in {"nan", "none", "null"}:
+            if s and s.lower() not in {"nan","none","null"}:
                 return s
     return ""
 
-def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
+def render_pro_layout_gk(df_view, top_n: int = 20):
+    import pandas as pd
+    import streamlit as st
+
     # ---- CSS ----
     st.markdown("""
     <style>
@@ -1804,9 +1817,8 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
     /* Metrics: label + raw value + percentile badge */
     .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
     .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
-
     .m-row{ display:flex; align-items:center; gap:10px; padding:8px 8px; border-radius:10px; }
-    .m-label{ color:#c9d3f2; font-size:15.5px; letter-spacing:.1px; flex:1 1 0%; min-width:0;
+    .m-label{ color:#c9d3f2; font-size:15.5px; letter-spacing:.1px; flex:1 1 0%;
               white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .m-right{ display:flex; align-items:center; gap:10px; flex:0 0 auto; }
     .m-val{ color:#a8b3cf; font-size:13px; opacity:.9; min-width:54px; text-align:right; }
@@ -1818,7 +1830,7 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
     </style>
     """, unsafe_allow_html=True)
 
-    # Ensure stores exist (same as your other pages)
+    # stores (same as other pages)
     st.session_state.setdefault("photo_map", {})
     st.session_state.setdefault("crest_map", {})
 
@@ -1830,12 +1842,7 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
         key="gk_pro_age_filter",
         label_visibility="visible"
     )
-
-    search_q = st.text_input(
-        "🔎 Search player / team / league",
-        "",
-        key="gk_pro_search_bar"
-    )
+    search_q = st.text_input("🔎 Search player / team / league", "", key="gk_pro_search_bar")
 
     df_filtered = df_view.copy()
 
@@ -1876,34 +1883,15 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
         return
 
     # Sort controls
-    ROLE_SCORE_COLS = [
-        "Shot Stopper GK Score",
-        "Ball Playing GK Score",
-        "Sweeper GK Score",
-    ]
+    ROLE_SCORE_COLS = ["Shot Stopper GK Score", "Ball Playing GK Score", "Sweeper GK Score"]
     sort_candidates = [all_col] + [c for c in ROLE_SCORE_COLS if c in df_view.columns]
 
-    sort_by = st.selectbox(
-        "Order by",
-        options=sort_candidates,
-        index=0,
-        key="gk_pro_sort_by",
-        label_visibility="visible"
-    )
-    sort_dir_label = st.radio(
-        "Direction",
-        options=["High → Low", "Low → High"],
-        index=0,
-        key="gk_pro_sort_dir",
-        horizontal=True
-    )
+    sort_by = st.selectbox("Order by", options=sort_candidates, index=0, key="gk_pro_sort_by")
+    sort_dir_label = st.radio("Direction", options=["High → Low","Low → High"], index=0, key="gk_pro_sort_dir", horizontal=True)
     asc = (sort_dir_label == "Low → High")
 
     _sort_col = "__sort_val"
-    df_filtered[_sort_col] = pd.to_numeric(
-        df_filtered.get(sort_by, pd.Series(index=df_filtered.index)),
-        errors="coerce"
-    )
+    df_filtered[_sort_col] = pd.to_numeric(df_filtered.get(sort_by, pd.Series(index=df_filtered.index)), errors="coerce")
 
     ranked = (
         df_filtered
@@ -1913,23 +1901,19 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
         .reset_index(drop=True)
     )
 
-    # =========================
-    # RENDER
-    # =========================
+    # Render
     for i, row in ranked.iterrows():
         player = str(row.get("Player","")) or ""
         team   = str(row.get("Team","")) or ""
         league = str(row.get("League","")) or ""
         pos    = str(row.get("Position","")) or ""
 
-        # Age
         try:
             age_val = int(row.get("Age")) if not pd.isna(row.get("Age", None)) else int(row.get("Age_num", 0))
         except Exception:
             age_val = 0
         age_txt = f"{age_val}y.o." if age_val > 0 else "—"
 
-        # Contract
         cy = pd.to_datetime(row.get("Contract expires"), errors="coerce")
         cyr = int(cy.year) if pd.notna(cy) else 0
         contract_txt = f"{cyr}" if cyr > 0 else "—"
@@ -1938,29 +1922,24 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
         foot  = _get_foot(row) or "—"
         flag  = _flag_html(birth)
 
-        # Role pills
         ss = _pro_show99(row.get("Shot Stopper GK Score", 0))
         bp = _pro_show99(row.get("Ball Playing GK Score", 0))
         sw = _pro_show99(row.get("Sweeper GK Score", 0))
 
-        # Positions
-        codes = [c for c in _re.split(r"[,/; ]+", (pos or "").strip().upper()) if c]
+        codes = [c for c in re.split(r"[,\s/;]+", (pos or "").strip().upper()) if c]
         seen, ordered = set(), []
         for c in codes:
             if c not in seen:
-                seen.add(c)
-                ordered.append(c)
+                seen.add(c); ordered.append(c)
         pos_html = "".join(
             f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>"
             for c in ordered
         )
 
-        # Avatar (same as other pages: session override or default)
         key_id = f"{_norm(player)}|{_norm(team)}"
         default_avatar = "https://i.redd.it/43axcjdu59nd1.jpeg"
         avatar_url = st.session_state.get("photo_map", {}).get(key_id, default_avatar)
 
-        # Crest (same as others)
         crest_store_key = f"{_norm(team)}|{_norm(league)}"
         crest_url = st.session_state.get("crest_map", {}).get(crest_store_key, "")
         if crest_url:
@@ -1973,18 +1952,18 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
         else:
             teamline_html = f"<div class='teamline'>{team} · {league}</div>"
 
-        # Card
         st.markdown(f"""
         <div class='pro-wrap'>
           <div class='pro-card'>
             <div class='leftcol'>
               <div class='pro-avatar'>
-                <img src="{avatar_url}" srcset="{avatar_url} 1x, {avatar_url} 2x" alt="{player}" loading="lazy" />
+                <img src="{avatar_url}" alt="{player}" loading="lazy" />
               </div>
               <div class='row leftrow1'>{flag}<span class='chip'>{age_txt}</span></div>
               <div class='row leftrow-foot'><span class='chip'>{foot}</span></div>
               <div class='row leftrow-contract'><span class='chip'>{contract_txt}</span></div>
             </div>
+
             <div>
               <div class='name'>{player}</div>
 
@@ -2004,14 +1983,12 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
               <div class='row posrow'>{pos_html}</div>
               {teamline_html}
             </div>
+
             <div class='rank'>#{_fmt2(i+1)}</div>
           </div>
         </div>
         """, unsafe_allow_html=True)
 
-        # =========================
-        # Expander: Metrics + URL photo system + crest system
-        # =========================
         with st.expander("Individual Metrics", expanded=False):
 
             def _pct(m):
@@ -2040,7 +2017,6 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
                 ("Shots Against", "Shots against per 90"),
                 ("xG Against", "xG against per 90"),
             ]
-
             POS = [
                 ("Long Passes", "Long passes per 90"),
                 ("Long Passing %", "Accurate long passes, %"),
@@ -2049,12 +2025,12 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
             ]
 
             def _sec_html(title, pairs):
-                rows = []
+                rows_html = []
                 for lab, met in pairs:
                     p = _pro_show99(_pct(met))
                     ptxt = _fmt2(p)
                     raw_txt = _raw(met)
-                    rows.append(
+                    rows_html.append(
                         "<div class='m-row'>"
                         f"<div class='m-label'>{lab}</div>"
                         "<div class='m-right'>"
@@ -2063,7 +2039,7 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
                         "</div>"
                         "</div>"
                     )
-                return f"<div class='m-sec'><div class='m-title'>{title}</div>{''.join(rows)}</div>"
+                return f"<div class='m-sec'><div class='m-title'>{title}</div>{''.join(rows_html)}</div>"
 
             st.markdown(
                 "<div class='metrics-grid'>"
@@ -2073,26 +2049,26 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
                 unsafe_allow_html=True
             )
 
-            # --- URL photo system (EXACT same pattern as your other pages) ---
+            # --- Player image override (URL system + uploader) ---
             img_key = f"gk_imgurl_{i}_{key_id}"
             default_url = st.session_state.get("photo_map", {}).get(key_id, "")
+
             uploaded_file = st.file_uploader(
                 "Upload player image (PNG/JPG)",
-                type=["png", "jpg", "jpeg"],
-                key=f"gk_upload_{i}_{key_id}",
+                type=["png","jpg","jpeg"],
+                key=f"gk_upload_{i}_{key_id}"
             )
             _ = st.text_input(
                 "Custom image URL (override avatar — e.g., https://images.fotmob.com/image_resources/playerimages/1199383.png)",
                 value=default_url,
-                key=img_key,
+                key=img_key
             )
 
-            col_a, col_b = st.columns([1, 3])
+            col_a, col_b = st.columns([1,3])
             with col_a:
                 if st.button("Apply to this player", key=f"gk_apply_{i}_{key_id}"):
                     if uploaded_file is not None:
                         try:
-                            import base64, imghdr, io
                             data = uploaded_file.getvalue()
                             kind = imghdr.what(None, h=data)
                             if kind in ("jpeg","jpg"):
@@ -2100,7 +2076,7 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
                             elif kind == "png":
                                 mime = "image/png"
                             else:
-                                mime = uploaded_file.type if getattr(uploaded_file, "type", "").startswith("image/") else "image/png"
+                                mime = uploaded_file.type if getattr(uploaded_file,"type","").startswith("image/") else "image/png"
                             b64 = base64.b64encode(data).decode("ascii")
                             st.session_state.setdefault("photo_map", {})[key_id] = f"data:{mime};base64,{b64}"
                             st.success("Uploaded image saved!")
@@ -2124,26 +2100,26 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
                     st.info("Cleared.")
                     st.rerun()
 
-            # --- Crest override (same as other pages) ---
+            # --- Crest override ---
             crest_widget_ns = f"gk_{i}_{crest_store_key}|{key_id}"
             crest_default = st.session_state.get("crest_map", {}).get(crest_store_key, "")
+
             crest_upload = st.file_uploader(
                 "Upload club crest (SVG/PNG/JPG)",
-                type=["svg", "png", "jpg", "jpeg"],
-                key=f"gk_crest_upload_{crest_widget_ns}",
+                type=["svg","png","jpg","jpeg"],
+                key=f"gk_crest_upload_{crest_widget_ns}"
             )
             _ = st.text_input(
                 "Custom crest URL (e.g., https://…/club.svg or .png)",
                 value=crest_default,
-                key=f"gk_crest_url_{crest_widget_ns}",
+                key=f"gk_crest_url_{crest_widget_ns}"
             )
 
-            col_c, col_d = st.columns([1, 3])
+            col_c, col_d = st.columns([1,3])
             with col_c:
                 if st.button("Apply crest", key=f"gk_apply_crest_{crest_widget_ns}"):
                     if crest_upload is not None:
                         try:
-                            import base64, os
                             data = crest_upload.getvalue()
                             mime = crest_upload.type or ""
                             if not mime.startswith("image/"):
@@ -2176,14 +2152,15 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
                     st.rerun()
 
 
-# ---- TAB RENDER (use the correct index for GK page) ----
-# If your GK page has only one tab, use tabs[0].
-# If you have multiple, set this to your GK Pro Layout tab index.
-with tabs[4]:
-    st.subheader("Pro Layout — Goalkeepers (Tiles)")
-    render_pro_layout_gk(df_f, top_n=top_n)
+# ----- WHERE YOU CALL IT -----
+# Put this in the GK pro-layout tab area (use the CORRECT index for YOUR GK file)
+# Example:
+# with tabs[0]:
+#     st.subheader("Pro Layout — Goalkeepers (Tiles)")
+#     render_pro_layout_gk(df_f, top_n=top_n)
 
 # ----------------- END PRO LAYOUT TAB (GK tiles) -----------------
+
 
 # ----------------- METRIC LEADERBOARD — themed + palettes + custom title + highlights (UPDATED) -----------------
 import re, numpy as np, matplotlib.pyplot as plt
