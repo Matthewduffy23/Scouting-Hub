@@ -78,7 +78,7 @@ PRESET_LEAGUES = {
 }
 
 FEATURES = [
-    'Defensive duels per 90','Aerial duels won, %', 'Non-penalty goals per 90', 'Aerial duels per 90', 'Defensive duels won, %', 'PAdj Interceptions'
+    'Defensive duels per 90','Aerial duels won, %', 'Non-penalty goals per 90', 'Aerial duels per 90', 'Defensive duels won, %', 'PAdj Interceptions',
     'xG per 90','Shots per 90','Shots on target, %', 'Crosses per 90','Accurate crosses, %','Dribbles per 90', 'Goal conversion, %',
     'Successful dribbles, %', 'Offensive duels per 90','Offensive duels won, %','Touches in box per 90',
     'Progressive runs per 90','Accelerations per 90','Passes per 90','Accurate passes, %', 'Forward passes per 90',
