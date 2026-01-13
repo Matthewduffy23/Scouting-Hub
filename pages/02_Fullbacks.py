@@ -2105,15 +2105,24 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
     /* Individual metrics — compact layout */
     .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
     .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
-    .m-row{ display:flex; justify-content:space-between; align-items:center; padding:8px 8px; border-radius:10px; }
-    .m-label{ color:#c9d3f2; font-size:15.5px; letter-spacing:.1px; flex:1 1 auto; }
-    .m-badge{ flex:0 0 auto; min-width:44px; text-align:center; padding:2px 10px; border-radius:8px; font-weight:700; font-size:18.5px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); box-shadow:none; }
+    .m-row{ display:flex; align-items:center; gap:10px; padding:8px 8px; border-radius:10px; }
+    .m-label{ color:#c9d3f2; font-size:15.5px; letter-spacing:.1px; flex:1 1 0%; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .m-right{ display:flex; align-items:center; gap:10px; flex:0 0 auto; }
+    .m-val{ color:#a8b3cf; font-size:13px; opacity:.9; min-width:54px; text-align:right; }
+    .m-badge{ flex:0 0 auto; min-width:44px; text-align:center; padding:2px 10px; border-radius:8px;
+              font-weight:800; font-size:18.5px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); box-shadow:none; }
+
     .metrics-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
     @media (min-width: 720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr);} }
 
     .filter-label{ color:#cbd3ef; font-weight:700; font-size:13px; letter-spacing:.02em; margin-bottom:4px; }
     </style>
     """, unsafe_allow_html=True)
+
+    # --- CB-style global overrides & caches (ADDED) ---
+    global_photo_overrides = load_local_photo_overrides(PLAYER_PHOTO_OVERRIDES_JSON)
+    st.session_state.setdefault("photo_map", {})
+    st.session_state.setdefault("crest_map", {})
 
     # ---- UI ROW 1: Age, Role sort, Search ----
     c1, c2, c3 = st.columns([1, 1.4, 2])
@@ -2294,13 +2303,6 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
                 df_filtered[col] = pd.to_numeric(df_filtered[col], errors="coerce")
                 df_filtered = df_filtered[df_filtered[col] >= thr]
 
-    # ---- from here down, keep your existing: ----
-    # - data check for "All In Score"
-    # - sort by sort_by (All In or a role), with asc/desc
-    # - take head(top_n)
-    # - render cards using selected_labels / label_to_col
-    # - avatar & crest overrides, metrics expander, etc.
-
     # ---- data check ----
     all_col = "All In Score"
     if all_col not in df_view.columns:
@@ -2328,14 +2330,18 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
         team = str(row.get("Team","")) or ""
         league = str(row.get("League","")) or ""
         pos = str(row.get("Position","")) or ""
+
         # Age text
         try:
             age_val = int(row.get("Age")) if not pd.isna(row.get("Age", None)) else int(row.get("Age_num", 0))
         except Exception:
             age_val = 0
         age_txt = f"{age_val}y.o." if age_val>0 else "—"
+
         cy = pd.to_datetime(row.get("Contract expires"), errors="coerce")
         cyr = int(cy.year) if pd.notna(cy) else 0
+        contract_txt = f"{cyr}" if cyr>0 else "—"
+
         birth = row.get("Birth country","") if "Birth country" in row else ""
         foot = _get_foot(row) or "—"
 
@@ -2361,16 +2367,25 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
 
         # left meta
         flag=_flag_html(birth)
-        contract_txt=f"{cyr}" if cyr>0 else "—"
 
-        # keys & avatar
+        # --- CB-style avatar resolver (ADDED) ---
         key_id = f"{_norm(player)}|{_norm(team)}"
-        default_avatar="https://i.redd.it/43axcjdu59nd1.jpeg"
-        avatar_url=st.session_state.get("photo_map", {}).get(key_id, default_avatar)
+        avatar_url = resolve_player_photo(
+            player=player,
+            team=team,
+            league=league,
+            key_id=key_id,
+            session_photo_map=st.session_state["photo_map"],
+            global_overrides=global_photo_overrides,
+        )
 
-        # crest (stored per club)
+        # --- CB-style crest resolver (ADDED) ---
         crest_store_key = f"{_norm(team)}|{_norm(league)}"
         crest_url = st.session_state.get("crest_map", {}).get(crest_store_key, "")
+        if not crest_url:
+            team_url = get_fotmob_url(team)
+            crest_url = _fotmob_crest_url(team_url) if team_url else ""
+
         if crest_url:
             teamline_html = (
                 f"<div class='teamline tl-wrap tl-has-crest'>"
@@ -2422,10 +2437,8 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
 
         # ----- Expander: FB individual metrics (ATT/DEF/POS) -----
         with st.expander("Individual Metrics", expanded=False):
-            def _pct(m):
-                col=f"{m} Percentile"
-                return float(row[col]) if col in row and not pd.isna(row[col]) else 0.0
 
+            # FB metric sets as (label, metric-column-name) like CB
             ATT=[("Crosses","Crosses per 90"),
                  ("Crossing Accuracy %","Accurate crosses, %"),
                  ("Goals: Non-Penalty","Non-penalty goals per 90"),
@@ -2464,17 +2477,27 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
                  ("Progessive Passing %","Accurate progressive passes, %"),
                  ("Smart Passes","Smart passes per 90")]
 
+            # CB-style section builder: raw value + percentile badge
             def _sec_html(title, pairs):
+                pairs = _available_metric_pairs(df_view, pairs)
                 rows=[]
-                for lab,met in pairs:
-                    p=_pro_show99(_pct(met)); ptxt=_fmt2(p)
+                for lab, met in pairs:
+                    pct = _metric_pct(row, met)
+                    p = _pro_show99(pct if not pd.isna(pct) else 0.0)
+                    ptxt = _fmt2(p)
+
+                    raw = _metric_val(row, met)
+                    raw_txt = "—" if pd.isna(raw) else f"{raw:.2f}".rstrip("0").rstrip(".")
+
                     rows.append(
-                        f"<div class='m-row'>"
+                        "<div class='m-row'>"
                         f"<div class='m-label'>{lab}</div>"
+                        "<div class='m-right'>"
+                        f"<div class='m-val'>{raw_txt}</div>"
                         f"<div class='m-badge' style='background:{_pro_rating_color(p)}'>{ptxt}</div>"
-                        f"</div>"
+                        "</div></div>"
                     )
-                return f"<div class='m-sec'><div class='m-title'>{title}</div>{''.join(rows)}</div>"
+                return f"<div class='m-sec'><div class='m-title'>{title}</div>{''.join(rows) if rows else ''}</div>"
 
             st.markdown(
                 "<div class='metrics-grid'>"
@@ -2489,24 +2512,34 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n:int=20):
             img_key = f"imgurl_{i}_{key_id}"
             default_url = st.session_state.get("photo_map", {}).get(key_id, "")
             uploaded_file = st.file_uploader("Upload player image (PNG/JPG)", type=["png","jpg","jpeg"], key=f"upload_{i}_{key_id}")
-            _ = st.text_input("Custom image URL (override avatar — e.g., https://images.fotmob.com/image_resources/playerimages/1199383.png)", value=default_url, key=img_key)
+            _ = st.text_input(
+                "Custom image URL (override avatar — e.g., https://images.fotmob.com/image_resources/playerimages/1199383.png)",
+                value=default_url,
+                key=img_key
+            )
 
             col_a, col_b = st.columns([1, 3])
             with col_a:
                 if st.button("Apply to this player", key=f"apply_{i}_{key_id}"):
                     if uploaded_file is not None:
                         try:
-                            import base64, imghdr, io
+                            import base64, io, os
                             data = uploaded_file.getvalue()
+
                             try:
                                 from PIL import Image
                                 Image.open(io.BytesIO(data))
                             except Exception:
                                 pass
-                            kind = imghdr.what(None, h=data)
-                            if kind in ("jpeg","jpg"): mime="image/jpeg"
-                            elif kind=="png": mime="image/png"
-                            else: mime = uploaded_file.type if getattr(uploaded_file,"type","").startswith("image/") else "image/png"
+
+                            mime = getattr(uploaded_file, "type", "") or ""
+                            if not mime.startswith("image/"):
+                                ext = os.path.splitext(uploaded_file.name or "")[1].lower()
+                                if ext == ".svg": mime = "image/svg+xml"
+                                elif ext == ".png": mime = "image/png"
+                                elif ext in (".jpg",".jpeg"): mime = "image/jpeg"
+                                else: mime = "image/png"
+
                             b64 = base64.b64encode(data).decode("ascii")
                             st.session_state.setdefault("photo_map", {})[key_id] = f"data:{mime};base64,{b64}"
                             st.success("Uploaded image saved!")
