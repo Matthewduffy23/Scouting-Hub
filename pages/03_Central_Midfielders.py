@@ -1798,7 +1798,6 @@ import requests
 import base64
 import io
 import os
-import textwrap  # ✅ FIX: prevents Streamlit rendering HTML as code blocks
 
 # ----------------- helpers (EXACTLY as provided) -----------------
 def _pro_rating_color(v: float) -> str:
@@ -1850,7 +1849,10 @@ TWEMOJI_SPECIAL = {
 
 # Expanded country-name -> ISO-2 code map (kept EXACTLY, with additions)
 COUNTRY_TO_CC = {
+    # UK home nations (kept as before)
     "united kingdom":"gb","great britain":"gb","northern ireland":"nir","england":"eng","scotland":"sct","wales":"wls",
+
+    # Europe (existing + a few extras for completeness)
     "ireland":"ie","republic of ireland":"ie","spain":"es","france":"fr","germany":"de","italy":"it","portugal":"pt",
     "netherlands":"nl","belgium":"be","austria":"at","switzerland":"ch","denmark":"dk","sweden":"se","norway":"no",
     "finland":"fi","iceland":"is","poland":"pl","czech republic":"cz","czechia":"cz","slovakia":"sk","slovenia":"si",
@@ -1859,8 +1861,12 @@ COUNTRY_TO_CC = {
     "kazakhstan":"kz","azerbaijan":"az","armenia":"am","turkey":"tr","cyprus":"cy","luxembourg":"lu","andorra":"ad",
     "monaco":"mc","san marino":"sm","malta":"mt","moldova":"md","north macedonia":"mk","macedonia":"mk","estonia":"ee",
     "latvia":"lv","lithuania":"lt",
+
+    # Middle East & Asia (existing)
     "qatar":"qa","saudi arabia":"sa","uae":"ae","united arab emirates":"ae","israel":"il","japan":"jp","korea":"kr",
     "south korea":"kr","korea republic":"kr","china":"cn",
+
+    # Africa — big expansion
     "algeria":"dz","angola":"ao","benin":"bj","botswana":"bw","burkina faso":"bf","burundi":"bi","cabo verde":"cv",
     "cape verde":"cv","cameroon":"cm","central african republic":"cf","car":"cf","chad":"td","comoros":"km",
     "congo":"cg","republic of the congo":"cg","congo brazzaville":"cg",
@@ -1874,13 +1880,27 @@ COUNTRY_TO_CC = {
     "senegal":"sn","seychelles":"sc","sierra leone":"sl","somalia":"so","south africa":"za","south sudan":"ss","sudan":"sd",
     "tanzania":"tz","united republic of tanzania":"tz","togo":"tg","tunisia":"tn","uganda":"ug","zambia":"zm","zimbabwe":"zw",
     "western sahara":"eh","réunion":"re","reunion":"re","mayotte":"yt",
+
+    # North Africa already above; also include common Arabic/French variants (normalized by _norm)
     "maroc":"ma","algerie":"dz","tunis":"tn","egypte":"eg","cameroun":"cm","cote d’ivoire":"ci","cote-d-ivoire":"ci",
+
+    # Horn/variants
     "somaliland":"so","ethiopie":"et",
+
+    # Southern Africa variants
     "eswatini (swaziland)":"sz","swaziland (eswatini)":"sz",
+
+    # West/Central variants
     "congo-brazzaville":"cg","congo-kinshasa":"cd","gbissau":"gw",
+
+    # Americas (existing)
     "brazil":"br","argentina":"ar","uruguay":"uy","chile":"cl","colombia":"co","peru":"pe","ecuador":"ec","paraguay":"py",
     "bolivia":"bo","mexico":"mx","canada":"ca","united states":"us","usa":"us",
+
+    # Oceania (existing)
     "australia":"au","new zealand":"nz",
+
+    # Extras sometimes seen in datasets
     "palestine":"ps","state of palestine":"ps",
     "hong kong":"hk","macau":"mo","macao":"mo",
     "curacao":"cw","curaçao":"cw","cape verde islands":"cv",
@@ -1938,7 +1958,7 @@ def _get_foot(row) -> str:
     return ""
 
 # ==========================================================
-# ✅ PHOTO SYSTEM (same as CB): overrides + FotMob squad lookup
+# ✅ PHOTO SYSTEM (same as CB/FB): overrides + FotMob squad lookup
 # ==========================================================
 PLAYER_PHOTO_OVERRIDES_JSON = "player_photo_overrides.json"
 
@@ -2018,11 +2038,14 @@ def resolve_player_photo(player: str,
                          key_id: str,
                          session_photo_map: dict,
                          global_overrides: dict) -> str:
+    # 1) session override
     if session_photo_map.get(key_id):
         return session_photo_map[key_id]
+    # 2) global override
     if global_overrides.get(key_id):
         return global_overrides[key_id]
 
+    # 3) FotMob team squad lookup (team + surname)
     team_url = get_fotmob_url(team)
     tid = _fotmob_team_id_from_url(team_url)
     if tid:
@@ -2091,6 +2114,7 @@ def _metric_val(row: pd.Series, met: str):
 
 
 # ----------------- CENTRAL MIDFIELD VERSION -----------------
+# Label → (column_name, pretty_label)
 _CM_ROLE_MAP = [
     ("Deep Playmaker CM Score", "Deep Playmaker"),
     ("Advanced Playmaker CM Score", "Advanced Playmaker"),
@@ -2103,90 +2127,92 @@ _CM_ROLE_MAP = [
     ("PL Profile Score", "PL Profile"),
 ]
 
+# Helper to filter to existing columns
+_def_cols = [c for c,_ in _CM_ROLE_MAP]
+
+
 def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
-    # ---- CSS ----
-    st.markdown(
-        textwrap.dedent("""
-        <style>
-        html, body, .block-container *{
-          -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; text-rendering:optimizeLegibility;
-          font-feature-settings:"liga","kern","tnum"; font-variant-numeric:tabular-nums;
-        }
-        :root { --bg:#0c0e13; --card:#141823; --soft:#1e2533; }
+    # ---- CSS (EXACTLY same as base) ----
+    st.markdown("""
+    <style>
+    html, body, .block-container *{
+      -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; text-rendering:optimizeLegibility;
+      font-feature-settings:"liga","kern","tnum"; font-variant-numeric:tabular-nums;
+    }
+    :root { --bg:#0c0e13; --card:#141823; --soft:#1e2533; }
 
-        .pro-wrap{ display:flex; justify-content:center; }
-        .pro-card{
-          position:relative; width:min(420px,96%); display:grid; grid-template-columns:96px 1fr 48px; gap:12px; align-items:start;
-          background:var(--card); border:1px solid rgba(255,255,255,.06); border-radius:20px; padding:16px; margin-bottom:12px;
-          box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 6px 24px rgba(0,0,0,.35);
-        }
+    .pro-wrap{ display:flex; justify-content:center; }
+    .pro-card{
+      position:relative; width:min(420px,96%); display:grid; grid-template-columns:96px 1fr 48px; gap:12px; align-items:start;
+      background:var(--card); border:1px solid rgba(255,255,255,.06); border-radius:20px; padding:16px; margin-bottom:12px;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 6px 24px rgba(0,0,0,.35);
+    }
 
-        .pro-avatar{ width:96px; height:96px; border-radius:12px; border:1px solid #2a3145; overflow:hidden; background:#0b0d12; }
-        .pro-avatar img{ width:100%; height:100%; object-fit:cover; image-rendering:auto; transform:translateZ(0); }
+    .pro-avatar{ width:96px; height:96px; border-radius:12px; border:1px solid #2a3145; overflow:hidden; background:#0b0d12; }
+    .pro-avatar img{ width:100%; height:100%; object-fit:cover; image-rendering:auto; transform:translateZ(0); }
 
-        .flagchip{ display:inline-flex; align-items:center; gap:6px; background:transparent; border:none; padding:0; height:auto;}
-        .flagchip img{ width:26px; height:18px; border-radius:2px; display:block; }
+    .flagchip{ display:inline-flex; align-items:center; gap:6px; background:transparent; border:none; padding:0; height:auto;}
+    .flagchip img{ width:26px; height:18px; border-radius:2px; display:block; }
 
-        .chip{ background:transparent; color:#a6a6a6; border:none; padding:0; border-radius:0; font-size:15px; line-height:18px; opacity:.92; }
-        .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:2px 0; }
-        .leftrow1{ margin-top:6px; } .leftrow-foot{ margin-top:2px; } .leftrow-contract{ margin-top:10px; }
+    .chip{ background:transparent; color:#a6a6a6; border:none; padding:0; border-radius:0; font-size:15px; line-height:18px; opacity:.92; }
+    .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:2px 0; }
+    .leftrow1{ margin-top:6px; } .leftrow-foot{ margin-top:2px; } .leftrow-contract{ margin-top:10px; }
 
-        .pill{ padding:2px 6px; min-width:36px; border-radius:6px; font-weight:700; font-size:18px; line-height:1; color:#0b0d12; text-align:center; display:inline-block; box-shadow:none; }
+    .pill{ padding:2px 6px; min-width:36px; border-radius:6px; font-weight:700; font-size:18px; line-height:1; color:#0b0d12; text-align:center; display:inline-block; box-shadow:none; }
 
-        .name{ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px; letter-spacing:.2px; line-height:1.15; }
-        .sub{ color:#a8b3cf; font-size:15px; opacity:.9; }
+    .name{ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px; letter-spacing:.2px; line-height:1.15; }
+    .sub{ color:#a8b3cf; font-size:15px; opacity:.9; }
 
-        .posrow{ margin-top:13.5px; }
-        .postext{ font-weight:600; font-size:14.5px; letter-spacing:.2px; margin-right:11px; }
+    .posrow{ margin-top:13.5px; }
+    .postext{ font-weight:600; font-size:14.5px; letter-spacing:.2px; margin-right:11px; }
 
-        .rank{ position:absolute; top:10.5px; right:14px; color:#b7bfe1; font-weight:800; font-size:18px; text-align:right; pointer-events:none; }
+    .rank{ position:absolute; top:10.5px; right:14px; color:#b7bfe1; font-weight:800; font-size:18px; text-align:right; pointer-events:none; }
 
-        .teamline{ color:#dbe3ff; font-size:14px; font-weight:600; margin-top:6.5px; letter-spacing:.05px; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .tl-wrap{ position:relative; }
-        .tl-has-crest{ padding-left:24px; }
-        .crest-icon{ height:1.35em; width:auto; object-fit:contain; image-rendering:auto; }
-        .crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
+    .teamline{ color:#dbe3ff; font-size:14px; font-weight:600; margin-top:6.5px; letter-spacing:.05px; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .tl-wrap{ position:relative; }
+    .tl-has-crest{ padding-left:24px; }
+    .crest-icon{ height:1.35em; width:auto; object-fit:contain; image-rendering:auto; }
+    .crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
 
-        /* Individual metrics — CB-style (label + raw + badge) */
-        .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
-        .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
+    /* Individual metrics — CB-style (label + raw + badge) */
+    .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
+    .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
 
-        .m-row{ display:flex; align-items:center; gap:10px; padding:8px 8px; border-radius:10px; }
-        .m-label{ color:#c9d3f2; font-size:15.5px; letter-spacing:.1px; flex:1 1 0%; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .m-right{ display:flex; align-items:center; gap:10px; flex:0 0 auto; }
-        .m-val{ color:#a8b3cf; font-size:13px; opacity:.9; min-width:54px; text-align:right; }
-        .m-badge{ flex:0 0 auto; min-width:44px; text-align:center; padding:2px 10px; border-radius:8px;
-                  font-weight:800; font-size:18.5px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); box-shadow:none; }
+    .m-row{ display:flex; align-items:center; gap:10px; padding:8px 8px; border-radius:10px; }
+    .m-label{ color:#c9d3f2; font-size:15.5px; letter-spacing:.1px; flex:1 1 0%; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .m-right{ display:flex; align-items:center; gap:10px; flex:0 0 auto; }
+    .m-val{ color:#a8b3cf; font-size:13px; opacity:.9; min-width:54px; text-align:right; }
+    .m-badge{ flex:0 0 auto; min-width:44px; text-align:center; padding:2px 10px; border-radius:8px;
+              font-weight:800; font-size:18.5px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); box-shadow:none; }
 
-        .metrics-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
-        @media (min-width: 720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr);} }
+    .metrics-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
+    @media (min-width: 720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr);} }
 
-        .filter-label{ color:#cbd3ef; font-weight:700; font-size:13px; letter-spacing:.02em; margin-bottom:4px; }
+    .filter-label{ color:#cbd3ef; font-weight:700; font-size:13px; letter-spacing:.02em; margin-bottom:4px; }
 
-        .role-row{
-          display:flex;
-          align-items:center;
-          flex-wrap:nowrap;
-          width:100%;
-          justify-content:flex-start;
-        }
-        .role-row .pill{ flex:0 0 auto; }
-        .role-row .sub{
-          flex:1 1 auto;
-          margin-left:8px;
-          white-space:nowrap;
-          overflow:hidden;
-          text-overflow:ellipsis;
-        }
+    /* Keep role pills + labels on one line, let label stretch & ellipsize on mobile */
+    .role-row{
+      display:flex;
+      align-items:center;
+      flex-wrap:nowrap;
+      width:100%;
+      justify-content:flex-start;
+    }
+    .role-row .pill{ flex:0 0 auto; }
+    .role-row .sub{
+      flex:1 1 auto;
+      margin-left:8px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
 
-        @media (max-width: 480px){
-          .role-row .sub{ font-size:13px; }
-          .role-row .pill{ min-width:32px; font-size:16px; }
-        }
-        </style>
-        """).strip(),
-        unsafe_allow_html=True
-    )
+    @media (max-width: 480px){
+      .role-row .sub{ font-size:13px; }
+      .role-row .pill{ min-width:32px; font-size:16px; }
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
     # ✅ ensure maps exist + load global overrides (same as CB)
     global_photo_overrides = load_local_photo_overrides(PLAYER_PHOTO_OVERRIDES_JSON)
@@ -2236,10 +2262,12 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
     # ---- Start from full table ----
     df_filtered = df_view.copy()
 
+    # ---- Player search ----
     if search_q and "Player" in df_filtered.columns:
         s = str(search_q).strip().lower()
         df_filtered = df_filtered[df_filtered["Player"].astype(str).str.lower().str.contains(s, na=False)]
 
+    # ---- Team search ----
     if team_search_q and "Team" in df_filtered.columns:
         t = str(team_search_q).strip().lower()
         df_filtered = df_filtered[df_filtered["Team"].astype(str).str.lower().str.contains(t, na=False)]
@@ -2273,16 +2301,16 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
         if contract_choice != "Any":
             try:
                 max_year = int(contract_choice)
-                df_filtered["_contract_year"] = pd.to_datetime(
-                    df_filtered["Contract expires"], errors="coerce"
-                ).dt.year
+                df_filtered["_contract_year"] = pd.to_datetime(df_filtered["Contract expires"], errors="coerce").dt.year
                 df_filtered = df_filtered[df_filtered["_contract_year"] <= max_year]
             except Exception:
                 pass
 
     # ---- Birth country filter ----
     if "Birth country" in df_filtered.columns:
-        country_vals = df_filtered["Birth country"].dropna().astype(str).str.strip()
+        country_vals = (
+            df_filtered["Birth country"].dropna().astype(str).str.strip()
+        )
         country_vals = sorted({c for c in country_vals if c and c.lower() not in {"nan","none","null"}})
         selected_countries = st.multiselect(
             "Birth country",
@@ -2295,7 +2323,9 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
 
     # ---- Foot filter ----
     df_filtered["__foot"] = df_filtered.apply(_get_foot, axis=1)
-    foot_vals = df_filtered["__foot"].dropna().astype(str).str.strip()
+    foot_vals = (
+        df_filtered["__foot"].dropna().astype(str).str.strip()
+    )
     foot_vals = sorted({f for f in foot_vals if f and f.lower() not in {"nan","none","null"}})
     if foot_vals:
         selected_feet = st.multiselect("Foot", options=foot_vals, default=[], key="pro_foot_filter_cm")
@@ -2326,7 +2356,9 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
         st.info("No players match the selected filters.")
         return
 
-    # ---- Sort controls — All In + CM role score columns ----
+    # =========================
+    # Sort controls — All In + CM role score columns
+    # =========================
     ROLE_SCORE_COLS = [col for col,_ in _CM_ROLE_MAP if col in df_view.columns]
     sort_candidates = [all_col] + ROLE_SCORE_COLS
 
@@ -2364,6 +2396,7 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
         league = str(row.get("League","")) or ""
         pos = str(row.get("Position","")) or ""
 
+        # Age text
         try:
             age_val = int(row.get("Age")) if not pd.isna(row.get("Age", None)) else int(row.get("Age_num", 0))
         except Exception:
@@ -2402,7 +2435,7 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
             for c in ordered
         )
 
-        # ✅ photo resolver (same as CB)
+        # ✅ photo resolver (same as CB/FB)
         key_id = f"{_norm(player)}|{_norm(team)}"
         avatar_url = resolve_player_photo(
             player=player,
@@ -2442,43 +2475,40 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
             "PL Profile":"PL Profile",
         }
 
-        st.markdown(
-            textwrap.dedent(f"""
-            <div class='pro-wrap'>
-              <div class='pro-card'>
-                <div class='leftcol'>
-                  <div class='pro-avatar'>
-                    <img src="{avatar_url}" srcset="{avatar_url} 1x, {avatar_url} 2x" alt="{player}" loading="lazy" />
-                  </div>
-                  <div class='row leftrow1'>{flag}<span class='chip'>{age_txt}</span></div>
-                  <div class='row leftrow-foot'><span class='chip'>{foot}</span></div>
-                  <div class='row leftrow-contract'><span class='chip'>{contract_txt}</span></div>
-                </div>
-                <div>
-                  <div class='name'>{player}</div>
-
-                  <div class='row role-row'>
-                    <span class='pill' style='background:{_pro_rating_color(v1)}'>{t1}</span>
-                    <span class='sub'>{_subtitle_map.get(l1,l1)}</span>
-                  </div>
-                  <div class='row role-row'>
-                    <span class='pill' style='background:{_pro_rating_color(v2)}'>{t2}</span>
-                    <span class='sub'>{_subtitle_map.get(l2,l2)}</span>
-                  </div>
-                  <div class='row role-row'>
-                    <span class='pill' style='background:{_pro_rating_color(v3)}'>{t3}</span>
-                    <span class='sub'>{_subtitle_map.get(l3,l3)}</span>
-                  </div>
-
-                  <div class='row posrow'>{pos_html}</div>
-                  {teamline_html}
-                </div>
-                <div class='rank'>#{_fmt2(i+1)}</div>
+        st.markdown(f"""
+        <div class='pro-wrap'>
+          <div class='pro-card'>
+            <div class='leftcol'>
+              <div class='pro-avatar'>
+                <img src="{avatar_url}" srcset="{avatar_url} 1x, {avatar_url} 2x" alt="{player}" loading="lazy" />
               </div>
+              <div class='row leftrow1'>{flag}<span class='chip'>{age_txt}</span></div>
+              <div class='row leftrow-foot'><span class='chip'>{foot}</span></div>
+              <div class='row leftrow-contract'><span class='chip'>{contract_txt}</span></div>
             </div>
-            """).strip(),
-            unsafe_allow_html=True
-        )
+            <div>
+              <div class='name'>{player}</div>
+
+              <div class='row role-row'>
+                <span class='pill' style='background:{_pro_rating_color(v1)}'>{t1}</span>
+                <span class='sub'>{_subtitle_map.get(l1,l1)}</span>
+              </div>
+              <div class='row role-row'>
+                <span class='pill' style='background:{_pro_rating_color(v2)}'>{t2}</span>
+                <span class='sub'>{_subtitle_map.get(l2,l2)}</span>
+              </div>
+              <div class='row role-row'>
+                <span class='pill' style='background:{_pro_rating_color(v3)}'>{t3}</span>
+                <span class='sub'>{_subtitle_map.get(l3,l3)}</span>
+              </div>
+
+              <div class='row posrow'>{pos_html}</div>
+              {teamline_html}
+            </div>
+            <div class='rank'>#{_fmt2(i+1)}</div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
 
         # ----- Expander: CM individual metrics (ATT/DEF/POS) — ✅ labels + raw + badge -----
         with st.expander("Individual Metrics", expanded=False):
@@ -2519,8 +2549,8 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
                     p = _pro_show99(pct if not pd.isna(pct) else 0.0)
                     ptxt = _fmt2(p)
 
-                    rawv = _metric_val(row, met)
-                    raw_txt = "—" if pd.isna(rawv) else f"{rawv:.2f}".rstrip("0").rstrip(".")
+                    raw = _metric_val(row, met)
+                    raw_txt = "—" if pd.isna(raw) else f"{raw:.2f}".rstrip("0").rstrip(".")
 
                     rows.append(
                         "<div class='m-row'>"
@@ -2533,11 +2563,11 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
                 return f"<div class='m-sec'><div class='m-title'>{title}</div>{''.join(rows) if rows else ''}</div>"
 
             st.markdown(
-                ("<div class='metrics-grid'>"
-                 + _sec_html("ATTACKING", ATT)
-                 + _sec_html("DEFENSIVE", DEF)
-                 + _sec_html("POSSESSION", POS)
-                 + "</div>").strip(),
+                "<div class='metrics-grid'>"
+                + _sec_html("ATTACKING", ATT)
+                + _sec_html("DEFENSIVE", DEF)
+                + _sec_html("POSSESSION", POS)
+                + "</div>",
                 unsafe_allow_html=True
             )
 
@@ -2657,7 +2687,6 @@ with tabs[4]:
     st.subheader("Pro Layout — Top Central Midfielders (Tiles)")
     render_pro_layout_cm(df_f, top_n=top_n)
 ## ----------------- END PRO LAYOUT TAB — CENTRAL MIDFIELDERS -----------------
-
 
 
 
