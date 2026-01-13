@@ -2114,12 +2114,12 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
     .pro-wrap{ display:flex; justify-content:center; }
     .pro-card{
-      position:relative; width:min(420px,96%); display:grid; grid-template-columns:96px 1fr 48px; gap:12px; align-items:start;
+      position:relative; width:min(420px,96%); display:grid; grid-template-columns:88px 1fr 48px; gap:12px; align-items:start;
       background:var(--card); border:1px solid rgba(255,255,255,.06); border-radius:20px; padding:16px; margin-bottom:12px;
       box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 6px 24px rgba(0,0,0,.35);
     }
 
-    .pro-avatar{ width:96px; height:96px; border-radius:12px; border:1px solid #2a3145; overflow:hidden; background:#0b0d12; }
+    .pro-avatar{ width:88px; height:88px; border-radius:12px; border:1px solid #2a3145; overflow:hidden; background:#0b0d12; }
     .pro-avatar img{ width:100%; height:100%; object-fit:cover; image-rendering:auto; transform:translateZ(0); }
 
     .flagchip{ display:inline-flex; align-items:center; gap:6px; background:transparent; border:none; padding:0; height:auto;}
