@@ -1793,6 +1793,12 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 
+# ✅ needed for expander photo uploads + fotmob resolver + b64
+import io
+import os
+import base64
+import requests
+
 # ----------------- helpers (EXACTLY as provided) -----------------
 def _pro_rating_color(v: float) -> str:
     v = float(v)
@@ -1951,6 +1957,172 @@ def _get_foot(row) -> str:
                     return s
     return ""
 
+# ==========================================================
+# ✅ CB/FB STYLE photo+crest system + metric helpers
+# (copied behaviour: team url -> team_id -> squad -> player id -> image)
+# ==========================================================
+PLAYER_PHOTO_OVERRIDES_JSON = "player_photo_overrides.json"
+
+def load_local_photo_overrides(path: str) -> dict:
+    try:
+        import json
+        if not path or not os.path.exists(path):
+            return {}
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f) or {}
+    except Exception:
+        return {}
+
+try:
+    from team_fotmob_urls import FOTMOB_TEAM_URLS
+except Exception:
+    FOTMOB_TEAM_URLS = {}
+
+def get_fotmob_url(team: str) -> str:
+    return (FOTMOB_TEAM_URLS.get(team) or "").strip()
+
+def _fotmob_team_id_from_url(team_url: str) -> str:
+    m = _re.search(r"/teams/(\d+)/", str(team_url or ""))
+    return m.group(1) if m else ""
+
+def _fotmob_crest_url(team_url: str) -> str:
+    tid = _fotmob_team_id_from_url(team_url)
+    return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png" if tid else ""
+
+def _player_surname(player: str) -> str:
+    p = (player or "").strip()
+    if not p:
+        return ""
+    if "," in p:
+        return p.split(",", 1)[0].strip()
+    parts = p.split()
+    return parts[-1].strip() if parts else ""
+
+def _fotmob_team_squad(team_id: str) -> list[dict]:
+    """
+    Pull FotMob squad for a team_id, cached in session_state.
+    Uses: https://www.fotmob.com/api/teams?id=<team_id>
+    """
+    cache = st.session_state.setdefault("_fotmob_team_squad_cache", {})
+    if team_id in cache:
+        return cache[team_id] or []
+
+    squad: list[dict] = []
+    try:
+        url = f"https://www.fotmob.com/api/teams?id={team_id}"
+        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code == 200:
+            data = r.json() or {}
+            raw_squad = data.get("squad", None)
+
+            if isinstance(raw_squad, list):
+                for section in raw_squad:
+                    members = section.get("members") or section.get("players") or []
+                    if isinstance(members, list):
+                        squad.extend([m for m in members if isinstance(m, dict)])
+
+            elif isinstance(raw_squad, dict):
+                for k in ("members", "players"):
+                    members = raw_squad.get(k)
+                    if isinstance(members, list):
+                        squad.extend([m for m in members if isinstance(m, dict)])
+
+                nested = raw_squad.get("squad")
+                if isinstance(nested, list):
+                    for section in nested:
+                        members = section.get("members") or section.get("players") or []
+                        if isinstance(members, list):
+                            squad.extend([m for m in members if isinstance(m, dict)])
+    except Exception:
+        squad = []
+
+    cache[team_id] = squad
+    return squad
+
+def resolve_player_photo(player: str,
+                         team: str,
+                         league: str,
+                         key_id: str,
+                         session_photo_map: dict,
+                         global_overrides: dict) -> str:
+    """
+    ✅ Order (CB/FB-style):
+    1) per-player session override
+    2) global overrides JSON
+    3) FotMob squad lookup via team + surname / full-name contains
+    4) fallback placeholder
+    """
+    if session_photo_map.get(key_id):
+        return session_photo_map[key_id]
+
+    if global_overrides.get(key_id):
+        return global_overrides[key_id]
+
+    team_url = get_fotmob_url(team)
+    tid = _fotmob_team_id_from_url(team_url)
+    if tid:
+        squad = _fotmob_team_squad(tid)
+
+        target_surname = _norm(_player_surname(player))
+        target_full = _norm(player)
+
+        best_id = ""
+
+        if target_surname:
+            for m in squad:
+                name = m.get("name") or m.get("playerName") or ""
+                pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
+                if not pid:
+                    continue
+                if _norm(_player_surname(name)) == target_surname:
+                    best_id = str(pid)
+                    if target_full and target_full in _norm(name):
+                        break
+
+        if not best_id and target_full:
+            for m in squad:
+                name = m.get("name") or m.get("playerName") or ""
+                pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
+                if not pid:
+                    continue
+                if target_full in _norm(name):
+                    best_id = str(pid)
+                    break
+
+        if best_id and str(best_id).isdigit():
+            url = f"https://images.fotmob.com/image_resources/playerimages/{best_id}.png"
+            session_photo_map[key_id] = url
+            return url
+
+    return "https://i.redd.it/43axcjdu59nd1.jpeg"
+
+# ✅ Metric helpers (raw value + percentile badge like FB)
+def _available_metric_pairs(df_view: pd.DataFrame, pairs: list[tuple[str, str]]):
+    cols = set(df_view.columns)
+    out = []
+    for lab, met in pairs:
+        if met in cols or f"{met} Percentile" in cols:
+            out.append((lab, met))
+    return out
+
+def _metric_pct(row: pd.Series, met: str):
+    col = f"{met} Percentile"
+    if col in row.index and not pd.isna(row[col]):
+        try:
+            return float(row[col])
+        except Exception:
+            return np.nan
+    return np.nan
+
+def _metric_val(row: pd.Series, met: str):
+    if met in row.index and not pd.isna(row[met]):
+        try:
+            return float(row[met])
+        except Exception:
+            return row[met]
+    return np.nan
+
+
 # ----------------- CENTRAL MIDFIELD VERSION -----------------
 # Label → (column_name, pretty_label)
 _CM_ROLE_MAP = [
@@ -1969,7 +2141,7 @@ _CM_ROLE_MAP = [
 _def_cols = [c for c,_ in _CM_ROLE_MAP]
 
 def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
-    # ---- CSS (EXACTLY same as base) ----
+    # ---- CSS (EXACTLY same as your CM base, but metrics upgraded to FB style) ----
     st.markdown("""
     <style>
     html, body, .block-container *{
@@ -2011,12 +2183,17 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
     .crest-icon{ height:1.35em; width:auto; object-fit:contain; image-rendering:auto; }
     .crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
 
-    /* Individual metrics — compact layout */
+    /* ✅ Individual metrics — FB/CB style (label + raw + badge) */
     .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
     .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
-    .m-row{ display:flex; justify-content:space-between; align-items:center; padding:8px 8px; border-radius:10px; }
-    .m-label{ color:#c9d3f2; font-size:15.5px; letter-spacing:.1px; flex:1 1 auto; }
-    .m-badge{ flex:0 0 auto; min-width:44px; text-align:center; padding:2px 10px; border-radius:8px; font-weight:700; font-size:18.5px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); box-shadow:none; }
+
+    .m-row{ display:flex; align-items:center; gap:10px; padding:8px 8px; border-radius:10px; }
+    .m-label{ color:#c9d3f2; font-size:15.5px; letter-spacing:.1px; flex:1 1 0%; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .m-right{ display:flex; align-items:center; gap:10px; flex:0 0 auto; }
+    .m-val{ color:#a8b3cf; font-size:13px; opacity:.9; min-width:54px; text-align:right; }
+    .m-badge{ flex:0 0 auto; min-width:44px; text-align:center; padding:2px 10px; border-radius:8px;
+              font-weight:800; font-size:18.5px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); box-shadow:none; }
+
     .metrics-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
     @media (min-width: 720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr);} }
 
@@ -2030,9 +2207,7 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
       width:100%;
       justify-content:flex-start;
     }
-    .role-row .pill{
-      flex:0 0 auto;
-    }
+    .role-row .pill{ flex:0 0 auto; }
     .role-row .sub{
       flex:1 1 auto;
       margin-left:8px;
@@ -2042,16 +2217,16 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
     }
 
     @media (max-width: 480px){
-      .role-row .sub{
-        font-size:13px;
-      }
-      .role-row .pill{
-        min-width:32px;
-        font-size:16px;
-      }
+      .role-row .sub{ font-size:13px; }
+      .role-row .pill{ min-width:32px; font-size:16px; }
     }
     </style>
     """, unsafe_allow_html=True)
+
+    # ✅ same globals pattern as FB
+    global_photo_overrides = load_local_photo_overrides(PLAYER_PHOTO_OVERRIDES_JSON)
+    st.session_state.setdefault("photo_map", {})
+    st.session_state.setdefault("crest_map", {})
 
     # ---- FILTERS UI ROW ----
     c1, c2 = st.columns([1, 2])
@@ -2307,14 +2482,24 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
         flag = _flag_html(birth)
         contract_txt = f"{cyr}" if cyr > 0 else "—"
 
-        # keys & avatar
+        # ✅ keys & avatar (NOW FB/CB resolver)
         key_id = f"{_norm(player)}|{_norm(team)}"
-        default_avatar = "https://i.redd.it/43axcjdu59nd1.jpeg"
-        avatar_url = st.session_state.get("photo_map", {}).get(key_id, default_avatar)
+        avatar_url = resolve_player_photo(
+            player=player,
+            team=team,
+            league=league,
+            key_id=key_id,
+            session_photo_map=st.session_state["photo_map"],
+            global_overrides=global_photo_overrides,
+        )
 
-        # crest (stored per club)
+        # ✅ crest (NOW FB/CB: auto via fotmob team id if no override)
         crest_store_key = f"{_norm(team)}|{_norm(league)}"
         crest_url = st.session_state.get("crest_map", {}).get(crest_store_key, "")
+        if not crest_url:
+            team_url = get_fotmob_url(team)
+            crest_url = _fotmob_crest_url(team_url) if team_url else ""
+
         if crest_url:
             teamline_html = (
                 f"<div class='teamline tl-wrap tl-has-crest'>"
@@ -2376,11 +2561,8 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
         </div>
         """, unsafe_allow_html=True)
 
-        # ----- Expander: CM individual metrics (ATT/DEF/POS) -----
+        # ========================= EXPANDER (UNCHANGED STRUCTURE, BUT FB METRICS) =========================
         with st.expander("Individual Metrics", expanded=False):
-            def _pct(m):
-                col = f"{m} Percentile"
-                return float(row[col]) if col in row and not pd.isna(row[col]) else 0.0
 
             ATT=[("Crosses","Crosses per 90"),
                  ("Crossing Accuracy %","Accurate crosses, %"),
@@ -2419,15 +2601,23 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
                  ("Smart Passes","Smart passes per 90")]
 
             def _sec_html(title, pairs):
-                rows = []
+                pairs = _available_metric_pairs(df_view, pairs)
+                rows=[]
                 for lab, met in pairs:
-                    p = _pro_show99(_pct(met))
+                    pct = _metric_pct(row, met)
+                    p = _pro_show99(pct if not pd.isna(pct) else 0.0)
                     ptxt = _fmt2(p)
+
+                    rawv = _metric_val(row, met)
+                    raw_txt = "—" if pd.isna(rawv) else f"{rawv:.2f}".rstrip("0").rstrip(".")
+
                     rows.append(
-                        f"<div class='m-row'>"
+                        "<div class='m-row'>"
                         f"<div class='m-label'>{lab}</div>"
+                        "<div class='m-right'>"
+                        f"<div class='m-val'>{raw_txt}</div>"
                         f"<div class='m-badge' style='background:{_pro_rating_color(p)}'>{ptxt}</div>"
-                        f"</div>"
+                        "</div></div>"
                     )
                 return f"<div class='m-sec'><div class='m-title'>{title}</div>{''.join(rows)}</div>"
 
@@ -2440,18 +2630,13 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
                 unsafe_allow_html=True
             )
 
-            # --- Player image override (per-player unique keys) ---
+            # --- Player image override (per-player keys) ---
             img_key = f"imgurl_{i}_{key_id}"
             default_url = st.session_state.get("photo_map", {}).get(key_id, "")
-            uploaded_file = st.file_uploader(
-                "Upload player image (PNG/JPG)",
-                type=["png","jpg","jpeg"],
-                key=f"upload_{i}_{key_id}"
-            )
+            uploaded_file = st.file_uploader("Upload player image (PNG/JPG)", type=["png","jpg","jpeg"], key=f"upload_{i}_{key_id}")
             _ = st.text_input(
                 "Custom image URL (override avatar — e.g., https://images.fotmob.com/image_resources/playerimages/1199383.png)",
-                value=default_url,
-                key=img_key
+                value=default_url, key=img_key
             )
 
             col_a, col_b = st.columns([1, 3])
@@ -2459,27 +2644,26 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
                 if st.button("Apply to this player", key=f"apply_{i}_{key_id}"):
                     if uploaded_file is not None:
                         try:
-                            import base64, imghdr, io
                             data = uploaded_file.getvalue()
                             try:
                                 from PIL import Image
                                 Image.open(io.BytesIO(data))
                             except Exception:
                                 pass
-                            kind = imghdr.what(None, h=data)
-                            if kind in ("jpeg","jpg"):
-                                mime = "image/jpeg"
-                            elif kind == "png":
-                                mime = "image/png"
-                            else:
-                                mime = uploaded_file.type if getattr(uploaded_file,"type","").startswith("image/") else "image/png"
+
+                            mime = getattr(uploaded_file, "type", "") or ""
+                            if not mime.startswith("image/"):
+                                ext = os.path.splitext(uploaded_file.name or "")[1].lower()
+                                if ext == ".svg": mime = "image/svg+xml"
+                                elif ext == ".png": mime = "image/png"
+                                elif ext in (".jpg", ".jpeg"): mime = "image/jpeg"
+                                else: mime = "image/png"
+
                             b64 = base64.b64encode(data).decode("ascii")
                             st.session_state.setdefault("photo_map", {})[key_id] = f"data:{mime};base64,{b64}"
                             st.success("Uploaded image saved!")
-                            try:
-                                st.rerun()
-                            except Exception:
-                                st.experimental_rerun()
+                            try: st.rerun()
+                            except Exception: st.experimental_rerun()
                         except Exception as e:
                             st.error(f"Couldn't process the uploaded image: {e}")
                     else:
@@ -2491,57 +2675,39 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
                         else:
                             st.session_state.setdefault("photo_map", {})[key_id] = val
                             st.success("Saved!")
-                            try:
-                                st.rerun()
-                            except Exception:
-                                st.experimental_rerun()
+                            try: st.rerun()
+                            except Exception: st.experimental_rerun()
             with col_b:
                 if st.button("Clear override", key=f"clear_{i}_{key_id}"):
                     st.session_state.setdefault("photo_map", {}).pop(key_id, None)
                     st.info("Cleared.")
-                    try:
-                        st.rerun()
-                    except Exception:
-                        st.experimental_rerun()
+                    try: st.rerun()
+                    except Exception: st.experimental_rerun()
 
-            # --- Club crest override (unique widget keys) ---
+            # --- Club crest override (stored per-club) ---
             crest_widget_ns = f"{crest_store_key}|{key_id}|{i}"
             crest_default = st.session_state.get("crest_map", {}).get(crest_store_key, "")
-            crest_upload = st.file_uploader(
-                "Upload club crest (SVG/PNG/JPG)",
-                type=["svg","png","jpg","jpeg"],
-                key=f"crest_upload_{crest_widget_ns}"
-            )
-            _ = st.text_input(
-                "Custom crest URL (e.g., https://…/club.svg or .png)",
-                value=crest_default,
-                key=f"crest_url_{crest_widget_ns}"
-            )
+            crest_upload = st.file_uploader("Upload club crest (SVG/PNG/JPG)", type=["svg","png","jpg","jpeg"], key=f"crest_upload_{crest_widget_ns}")
+            _ = st.text_input("Custom crest URL (e.g., https://…/club.svg or .png)", value=crest_default, key=f"crest_url_{crest_widget_ns}")
+
             col_c, col_d = st.columns([1, 3])
             with col_c:
                 if st.button("Apply crest", key=f"apply_crest_{crest_widget_ns}"):
                     if crest_upload is not None:
                         try:
-                            import base64, os
                             data = crest_upload.getvalue()
                             mime = crest_upload.type or ""
                             if not mime.startswith("image/"):
                                 ext = os.path.splitext(crest_upload.name or "")[1].lower()
-                                if ext == ".svg":
-                                    mime = "image/svg+xml"
-                                elif ext == ".png":
-                                    mime = "image/png"
-                                elif ext in (".jpg",".jpeg"):
-                                    mime = "image/jpeg"
-                                else:
-                                    mime = "image/png"
+                                if ext == ".svg": mime = "image/svg+xml"
+                                elif ext == ".png": mime = "image/png"
+                                elif ext in (".jpg",".jpeg"): mime = "image/jpeg"
+                                else: mime = "image/png"
                             b64 = base64.b64encode(data).decode("ascii")
                             st.session_state.setdefault("crest_map", {})[crest_store_key] = f"data:{mime};base64,{b64}"
                             st.success("Crest saved!")
-                            try:
-                                st.rerun()
-                            except Exception:
-                                st.experimental_rerun()
+                            try: st.rerun()
+                            except Exception: st.experimental_rerun()
                         except Exception as e:
                             st.error(f"Couldn't process crest: {e}")
                     else:
@@ -2553,24 +2719,21 @@ def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
                         else:
                             st.session_state.setdefault("crest_map", {})[crest_store_key] = val
                             st.success("Crest URL saved!")
-                            try:
-                                st.rerun()
-                            except Exception:
-                                st.experimental_rerun()
+                            try: st.rerun()
+                            except Exception: st.experimental_rerun()
             with col_d:
                 if st.button("Clear crest", key=f"clear_crest_{crest_widget_ns}"):
                     st.session_state.setdefault("crest_map", {}).pop(crest_store_key, None)
                     st.info("Crest cleared.")
-                    try:
-                        st.rerun()
-                    except Exception:
-                        st.experimental_rerun()
+                    try: st.rerun()
+                    except Exception: st.experimental_rerun()
 
 # ---- TAB HOOK ----
 with tabs[4]:
     st.subheader("Pro Layout — Top Central Midfielders (Tiles)")
     render_pro_layout_cm(df_f, top_n=top_n)
 ## ----------------- END PRO LAYOUT TAB — CENTRAL MIDFIELDERS -----------------
+
 
 
 
