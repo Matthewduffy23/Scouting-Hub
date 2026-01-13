@@ -2567,9 +2567,9 @@ def render_pro_layout_strikers(df_view: pd.DataFrame, top_n:int=20):
                     except Exception: st.experimental_rerun()
 
 # ---- TAB HOOK ----
-with tabs[5]:  # <-- change index if your Strikers tab is different
-    st.subheader("Pro Layout — Top Strikers (Tiles)")
-    render_pro_layout_strikers(df_f, top_n=top_n)
+st.subheader("Pro Layout — Top Strikers (Tiles)")
+render_pro_layout_strikers(df_f, top_n=top_n)
+
 
 # ----------------- END PRO LAYOUT TAB — STRIKERS -----------------
 
