@@ -2103,168 +2103,70 @@ def _available_metric_pairs(df: pd.DataFrame, pairs):
 # ✅ PRO LAYOUT FUNCTION (tiles)
 # =========================================================
 def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
- # ---- CSS ----
-st.markdown("""
-<style>
-html, body, .block-container *{
-  -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; text-rendering:optimizeLegibility;
-  font-feature-settings:"liga","kern","tnum"; font-variant-numeric:tabular-nums;
-}
-:root { --bg:#0c0e13; --card:#141823; --soft:#1e2533; }
+    # ---- CSS ----
+    st.markdown("""
+    <style>
+    html, body, .block-container *{
+      -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; text-rendering:optimizeLegibility;
+      font-feature-settings:"liga","kern","tnum"; font-variant-numeric:tabular-nums;
+    }
+    :root { --bg:#0c0e13; --card:#141823; --soft:#1e2533; }
 
-.pro-wrap{ display:flex; justify-content:center; }
-.pro-card{
-  position:relative;
-  width:min(420px,96%);
-  display:grid;
-  grid-template-columns:84px 1fr 48px; /* 84px avatar column */
-  gap:12px;
-  align-items:start;
-  background:var(--card);
-  border:1px solid rgba(255,255,255,.06);
-  border-radius:20px;
-  padding:16px;
-  margin-bottom:12px;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 6px 24px rgba(0,0,0,.35);
-}
+    .pro-wrap{ display:flex; justify-content:center; }
+    .pro-card{
+      position:relative; width:min(420px,96%); display:grid; grid-template-columns:88px 1fr 48px; gap:12px; align-items:start;
+      background:var(--card); border:1px solid rgba(255,255,255,.06); border-radius:20px; padding:16px; margin-bottom:12px;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 6px 24px rgba(0,0,0,.35);
+    }
 
-.pro-avatar{
-  width:84px;
-  height:84px;
-  border-radius:12px;
-  border:1px solid #2a3145;
-  overflow:hidden;
-  background:#0b0d12;
-}
-.pro-avatar img{
-  width:100%;
-  height:100%;
-  object-fit:cover;
-}
+    .pro-avatar{ width:88px; height:88px; border-radius:12px; border:1px solid #2a3145; overflow:hidden; background:#0b0d12; }
+    .pro-avatar img{ width:100%; height:100%; object-fit:cover; image-rendering:auto; transform:translateZ(0); }
 
-.flagchip img{ width:26px; height:18px; border-radius:2px; }
+    .flagchip{ display:inline-flex; align-items:center; gap:6px; background:transparent; border:none; padding:0; height:auto;}
+    .flagchip img{ width:26px; height:18px; border-radius:2px; display:block; }
 
-.chip{ color:#a6a6a6; font-size:15px; }
+    .chip{ background:transparent; color:#a6a6a6; border:none; padding:0; border-radius:0; font-size:15px; line-height:18px; opacity:.92; }
+    .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:2px 0; }
+    .leftrow1{ margin-top:6px; } .leftrow-foot{ margin-top:2px; } .leftrow-contract{ margin-top:10px; }
 
-.name{ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px; }
-.sub{ color:#a8b3cf; font-size:15px; }
+    .pill{ padding:2px 6px; min-width:36px; border-radius:6px; font-weight:700; font-size:18px; line-height:1; color:#0b0d12; text-align:center; display:inline-block; box-shadow:none; }
 
-.rank{
-  position:absolute;
-  top:10.5px;
-  right:14px;
-  color:#b7bfe1;
-  font-weight:800;
-  font-size:18px;
-}
+    .name{ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px; letter-spacing:.2px; line-height:1.15; }
+    .sub{ color:#a8b3cf; font-size:15px; opacity:.9; }
 
-.teamline{
-  color:#dbe3ff;
-  font-size:14px;
-  font-weight:600;
-  letter-spacing:.05px;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-}
+    .posrow{ margin-top:13.5px; }
+    .postext{ font-weight:600; font-size:14.5px; letter-spacing:.2px; margin-right:11px; }
 
-.tl-wrap{ position:relative; }
-.tl-has-crest{ padding-left:24px; }
-.crest-icon{ height:1.35em; }
-.crest-abs{
-  position:absolute;
-  left:0;
-  top:50%;
-  transform:translateY(-50%);
-}
+    .rank{ position:absolute; top:10.5px; right:14px; color:#b7bfe1; font-weight:800; font-size:18px; text-align:right; pointer-events:none; }
 
-/* ---- ALIGNMENT FIX ---- */
+    .teamline{ color:#dbe3ff; font-size:14px; font-weight:600; margin-top:6.5px; letter-spacing:.05px; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .tl-wrap{ position:relative; }
+    .tl-has-crest{ padding-left:24px; }
+    .crest-icon{ height:1.35em; width:auto; object-fit:contain; image-rendering:auto; }
+    .crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
 
-.align-row{
-  display:flex;
-  align-items:center;
-  gap:14px;
-  margin-top:8px;
-}
+    /* ---- Individual Metrics (updated layout like other example) ---- */
+    .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
+    .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
 
-.poswrap{
-  display:flex;
-  gap:10px;
-  flex-wrap:wrap;
-}
+    .m-row{
+      display:flex; align-items:center; gap:10px;
+      padding:8px 8px; border-radius:10px;
+    }
+    .m-label{
+      color:#c9d3f2; font-size:15.5px; letter-spacing:.1px;
+      flex:1 1 0%; min-width:0;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    .m-right{ display:flex; align-items:center; gap:10px; flex:0 0 auto; }
+    .m-val{ color:#a8b3cf; font-size:13px; opacity:.9; min-width:54px; text-align:right; }
+    .m-badge{ flex:0 0 auto; min-width:44px; text-align:center; padding:2px 10px; border-radius:8px;
+              font-weight:800; font-size:18.5px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); box-shadow:none; }
 
-.bottom-align{
-  margin-top:10px;
-}
-
-.teamwrap{
-  flex:1;
-}
-
-/* pills */
-.pill{
-  padding:2px 6px;
-  min-width:36px;
-  border-radius:6px;
-  font-weight:700;
-  font-size:18px;
-  color:#0b0d12;
-}
-</style>
-""", unsafe_allow_html=True)
-
-
-# ---- CARD ----
-st.markdown(f"""
-<div class='pro-wrap'>
-  <div class='pro-card'>
-    <div>
-      <div class='pro-avatar'>
-        <img src="{avatar_url}" alt="{player}" />
-      </div>
-
-      <div class='align-row'>
-        {flag}
-        <span class='chip'>{age_txt}</span>
-      </div>
-
-      <!-- FOOT + POSITIONS -->
-      <div class="align-row">
-        <span class="chip">{foot}</span>
-        <div class="poswrap">{pos_html}</div>
-      </div>
-
-      <!-- CONTRACT + TEAM -->
-      <div class="align-row bottom-align">
-        <span class="chip">{contract_txt}</span>
-        <div class="teamwrap">{teamline_html}</div>
-      </div>
-    </div>
-
-    <div>
-      <div class='name'>{player}</div>
-
-      <div class='align-row'>
-        <span class='pill' style='background:{_pro_rating_color(gt_i)}'>{gt_txt}</span>
-        <span class='sub'>Ball Playing CB</span>
-      </div>
-
-      <div class='align-row'>
-        <span class='pill' style='background:{_pro_rating_color(lu_i)}'>{lu_txt}</span>
-        <span class='sub'>Wide CB</span>
-      </div>
-
-      <div class='align-row'>
-        <span class='pill' style='background:{_pro_rating_color(tm_i)}'>{tm_txt}</span>
-        <span class='sub'>Box Defender</span>
-      </div>
-    </div>
-
-    <div class='rank'>#{_fmt2(i+1)}</div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
-
+    .metrics-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
+    @media (min-width: 720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr);} }
+    </style>
+    """, unsafe_allow_html=True)
 
     # start from full table
     df_filtered = df_view.copy()
