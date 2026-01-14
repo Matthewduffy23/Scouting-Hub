@@ -161,7 +161,7 @@ FOTMOB_TEAM_URLS = {
     # --- ARMENIA ---
     "Pyunik": "https://www.fotmob.com/teams/6345/overview/pyunik",
     "Ararat": "https://www.fotmob.com/teams/866109/overview/ararat-armenia",
-    "Urartu": "https://www.fotmob.com/leagues/118/stats/season/27437/players/goals/team/7979/urartu-fc",
+    "Urartu": "https://www.fotmob.com/teams/7979/overview/urartu-fc",
     "Noah": "https://www.fotmob.com/teams/866111/squad/fc-noah",
     "BKMA": "https://www.fotmob.com/teams/1078402/overview/bkma",
 
