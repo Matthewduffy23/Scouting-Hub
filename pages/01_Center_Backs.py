@@ -2335,7 +2335,7 @@ def get_fotmob_url(team: str) -> str:
     return (FOTMOB_TEAM_URLS.get(team) or "").strip()
 
 def _fotmob_team_id_from_url(team_url: str) -> str:
-    m = _re.search(r"/teams/(\d+)/", str(team_url or ""))
+    m = re.search(r"/teams/(\d+)/", str(team_url or ""))
     return m.group(1) if m else ""
 
 def _fotmob_crest_url(team_url: str) -> str:
@@ -2367,7 +2367,7 @@ def _slug_name(s: str) -> str:
 
     s = unicodedata.normalize("NFKD", s)
     s = "".join(ch for ch in s if not unicodedata.combining(ch))
-    s = _re.sub(r"[^a-z0-9]+", "", s)
+    s = re.sub(r"[^a-z0-9]+", "", s)
     return s
 
 # ✅ fuzzy helper
