@@ -1957,6 +1957,30 @@ def _player_surname(player: str) -> str:
     parts = p.split()
     return parts[-1].strip() if parts else ""
 
+# ✅ Accent tolerant slug
+def _slug_name(s: str) -> str:
+    if not s:
+        return ""
+    s = str(s).strip().lower()
+
+    repl = {
+        "ø":"o","œ":"oe","æ":"ae","å":"a","ä":"a","ö":"o","ü":"u",
+        "ß":"ss","ł":"l","đ":"d","ð":"d","þ":"th","ç":"c",
+        "ş":"s","ğ":"g","ı":"i",
+    }
+    for k, v in repl.items():
+        s = s.replace(k, v)
+
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    s = _re.sub(r"[^a-z0-9]+", "", s)
+    return s
+
+# ✅ fuzzy helper
+from difflib import SequenceMatcher
+def _similar(a: str, b: str) -> float:
+    return SequenceMatcher(None, a, b).ratio()
+
 def _fotmob_team_squad(team_id: str) -> list[dict]:
     cache = st.session_state.setdefault("_fotmob_team_squad_cache", {})
     if team_id in cache:
@@ -2011,31 +2035,56 @@ def resolve_player_photo(player: str,
     if tid:
         squad = _fotmob_team_squad(tid)
 
-        target_surname = _norm(_player_surname(player))
-        target_full = _norm(player)
+        target_surname = _slug_name(_player_surname(player))
+        target_full    = _slug_name(player)
 
         best_id = ""
 
+        # ---- exact surname match first ----
         if target_surname:
             for m in squad:
                 name = m.get("name") or m.get("playerName") or ""
                 pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
                 if not pid:
                     continue
-                if _norm(_player_surname(name)) == target_surname:
+
+                if _slug_name(_player_surname(name)) == target_surname:
                     best_id = str(pid)
-                    if target_full and target_full in _norm(name):
+                    if target_full and target_full in _slug_name(name):
                         break
 
+        # ---- exact full-name contains ----
         if not best_id and target_full:
             for m in squad:
                 name = m.get("name") or m.get("playerName") or ""
                 pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
                 if not pid:
                     continue
-                if target_full in _norm(name):
+
+                if target_full in _slug_name(name):
                     best_id = str(pid)
                     break
+
+        # ---- FUZZY fallback (only if still not found) ----
+        if not best_id and target_surname:
+            best_score = 0.0
+            best_pid = ""
+
+            for m in squad:
+                name = m.get("name") or m.get("playerName") or ""
+                pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
+                if not pid:
+                    continue
+
+                sn = _slug_name(_player_surname(name))
+                sc = _similar(sn, target_surname)
+
+                if sc > best_score:
+                    best_score = sc
+                    best_pid = str(pid)
+
+            if best_score >= 0.86:   # safe threshold
+                best_id = best_pid
 
         if best_id and str(best_id).isdigit():
             url = f"https://images.fotmob.com/image_resources/playerimages/{best_id}.png"
