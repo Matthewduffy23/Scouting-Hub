@@ -1528,7 +1528,7 @@ FOTMOB_TEAM_URLS = {
     "Aarau": "https://www.fotmob.com/teams/9930/overview/aarau",
     "Neuchâtel Xamax": "https://www.fotmob.com/teams/7955/overview/xamax",
     "Stade Lausanne-Ouchy": "https://www.fotmob.com/teams/289334/overview/fc-stade-lausanne-ouchy",
-    "Bellinzona": https://www.fotmob.com/teams/6493/overview/bellinzona"",
+    "Bellinzona": "https://www.fotmob.com/teams/6493/overview/bellinzona",
     "Étoile Carouge": "https://www.fotmob.com/teams/6366/overview/etoile-du-sahel",
 
     # --- TUNISIA ---
@@ -1887,7 +1887,7 @@ FOTMOB_TEAM_URLS = {
 
     # --- READING ---
     "Reading U21": "https://www.fotmob.com/teams/773686/squad/reading-u21",
-    "Reading U18": https://www.fotmob.com/teams/773686/squad/reading-u21"",
+    "Reading U18": "https://www.fotmob.com/teams/773686/squad/reading-u21",
 
     # --- CRYSTAL PALACE ---
     "Crystal Palace U21": "https://www.fotmob.com/teams/1267874/squad/crystal-palace-u21",
