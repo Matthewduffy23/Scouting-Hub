@@ -1984,13 +1984,70 @@ def _player_surname(player: str) -> str:
 
 
 # ==========================================================
-# ✅ CB-style player photo resolver: team + surname -> squad -> player id -> image
+# ✅ URL photo system (same as FB/CM fixed version)
 # ==========================================================
+PLAYER_PHOTO_OVERRIDES_JSON = "player_photo_overrides.json"
+
+def load_local_photo_overrides(path: str) -> dict:
+    try:
+        import json
+        if not path or not os.path.exists(path):
+            return {}
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f) or {}
+    except Exception:
+        return {}
+
+try:
+    from team_fotmob_urls import FOTMOB_TEAM_URLS
+except Exception:
+    FOTMOB_TEAM_URLS = {}
+
+def get_fotmob_url(team: str) -> str:
+    return (FOTMOB_TEAM_URLS.get(team) or "").strip()
+
+def _fotmob_team_id_from_url(team_url: str) -> str:
+    m = _re.search(r"/teams/(\d+)/", str(team_url or ""))
+    return m.group(1) if m else ""
+
+def _fotmob_crest_url(team_url: str) -> str:
+    tid = _fotmob_team_id_from_url(team_url)
+    return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png" if tid else ""
+
+def _player_surname(player: str) -> str:
+    p = (player or "").strip()
+    if not p:
+        return ""
+    if "," in p:
+        return p.split(",", 1)[0].strip()
+    parts = p.split()
+    return parts[-1].strip() if parts else ""
+
+# ✅ Accent tolerant slug
+def _slug_name(s: str) -> str:
+    if not s:
+        return ""
+    s = str(s).strip().lower()
+
+    repl = {
+        "ø":"o","œ":"oe","æ":"ae","å":"a","ä":"a","ö":"o","ü":"u",
+        "ß":"ss","ł":"l","đ":"d","ð":"d","þ":"th","ç":"c",
+        "ş":"s","ğ":"g","ı":"i",
+    }
+    for k, v in repl.items():
+        s = s.replace(k, v)
+
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    s = _re.sub(r"[^a-z0-9]+", "", s)
+    return s
+
+# ✅ fuzzy helper
+from difflib import SequenceMatcher
+def _similar(a: str, b: str) -> float:
+    return SequenceMatcher(None, a, b).ratio()
+
 def _fotmob_team_squad(team_id: str) -> list[dict]:
-    """
-    Pull FotMob squad for a team_id, cached in session_state.
-    Uses: https://www.fotmob.com/api/teams?id=<team_id>
-    """
     cache = st.session_state.setdefault("_fotmob_team_squad_cache", {})
     if team_id in cache:
         return cache[team_id] or []
@@ -2003,14 +2060,12 @@ def _fotmob_team_squad(team_id: str) -> list[dict]:
             data = r.json() or {}
             raw_squad = data.get("squad", None)
 
-            # Most common: list of sections with "members"
             if isinstance(raw_squad, list):
                 for section in raw_squad:
                     members = section.get("members") or section.get("players") or []
                     if isinstance(members, list):
                         squad.extend([m for m in members if isinstance(m, dict)])
 
-            # Sometimes dict nested
             elif isinstance(raw_squad, dict):
                 for k in ("members", "players"):
                     members = raw_squad.get(k)
@@ -2035,63 +2090,75 @@ def resolve_player_photo(player: str,
                          key_id: str,
                          session_photo_map: dict,
                          global_overrides: dict) -> str:
-    """
-    ✅ Order (CB-style):
-    1) per-player session override
-    2) global overrides JSON
-    3) FotMob squad lookup via team + surname / full-name contains
-    4) fallback placeholder
-    """
-    # 1) session override
     if session_photo_map.get(key_id):
         return session_photo_map[key_id]
 
-    # 2) global override
     if global_overrides.get(key_id):
         return global_overrides[key_id]
 
-    # 3) squad lookup
     team_url = get_fotmob_url(team)
     tid = _fotmob_team_id_from_url(team_url)
     if tid:
         squad = _fotmob_team_squad(tid)
 
-        target_surname = _norm(_player_surname(player))
-        target_full = _norm(player)
+        target_surname = _slug_name(_player_surname(player))
+        target_full    = _slug_name(player)
 
         best_id = ""
 
-        # a) strict surname match first
+        # ---- exact surname match first ----
         if target_surname:
             for m in squad:
                 name = m.get("name") or m.get("playerName") or ""
                 pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
                 if not pid:
                     continue
-                if _norm(_player_surname(name)) == target_surname:
+
+                if _slug_name(_player_surname(name)) == target_surname:
                     best_id = str(pid)
-                    # if full name also matches, prefer it
-                    if target_full and target_full in _norm(name):
+                    if target_full and target_full in _slug_name(name):
                         break
 
-        # b) fallback: full-name contains
+        # ---- exact full-name contains ----
         if not best_id and target_full:
             for m in squad:
                 name = m.get("name") or m.get("playerName") or ""
                 pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
                 if not pid:
                     continue
-                if target_full in _norm(name):
+
+                if target_full in _slug_name(name):
                     best_id = str(pid)
                     break
 
+        # ---- FUZZY fallback (only if still not found) ----
+        if not best_id and target_surname:
+            best_score = 0.0
+            best_pid = ""
+
+            for m in squad:
+                name = m.get("name") or m.get("playerName") or ""
+                pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
+                if not pid:
+                    continue
+
+                sn = _slug_name(_player_surname(name))
+                sc = _similar(sn, target_surname)
+
+                if sc > best_score:
+                    best_score = sc
+                    best_pid = str(pid)
+
+            if best_score >= 0.86:   # safe threshold
+                best_id = best_pid
+
         if best_id and str(best_id).isdigit():
             url = f"https://images.fotmob.com/image_resources/playerimages/{best_id}.png"
-            session_photo_map[key_id] = url  # cache like CB
+            session_photo_map[key_id] = url
             return url
 
-    # 4) fallback
     return "https://i.redd.it/43axcjdu59nd1.jpeg"
+
 
 
 # ==========================================================

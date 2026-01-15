@@ -2311,97 +2311,181 @@ def _get_foot(row) -> str:
     return ""
 
 
-# -----------------
-# FotMob photo scraping + resolver
-# -----------------
-DEFAULT_AVATAR = "https://i.redd.it/43axcjdu59nd1.jpeg"
-PLAYER_PHOTO_OVERRIDES_JSON = "player_photos.json"
+# ==========================================================
+# ✅ URL photo system (same as FB/CM fixed version)
+# ==========================================================
+PLAYER_PHOTO_OVERRIDES_JSON = "player_photo_overrides.json"
 
-TEAM_PLAYER_PHOTOS: Dict[str, Dict[str, str]] = {}
-
-def _team_key(team: str, league: str) -> str:
-    return f"{_norm(team)}|{_norm(league)}"
-
-
-@st.cache_data(show_spinner=False, ttl=60*60*12)
-def fotmob_photo_map(team_url: str) -> Dict[str, str]:
+def load_local_photo_overrides(path: str) -> dict:
     try:
-        if not team_url:
+        import json
+        if not path or not os.path.exists(path):
             return {}
-
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-            "Accept-Language": "en-GB,en;q=0.9",
-            "Referer": "https://www.fotmob.com/",
-        }
-        resp = requests.get(team_url, headers=headers, timeout=20)
-        if resp.status_code != 200:
-            return {}
-        html = resp.text
-
-        ids = re.findall(r'"id"\s*:\s*(\d+)\s*,\s*"name"\s*:\s*"([^"]+)"', html)
-        if not ids:
-            ids = re.findall(r'"playerId"\s*:\s*(\d+).*?"name"\s*:\s*"([^"]+)"', html, flags=re.S)
-
-        out = {}
-        for pid, name in ids:
-            nm = _norm(name)
-            if nm:
-                out[nm] = f"https://images.fotmob.com/image_resources/playerimages/{pid}.png"
-        return out
-    except Exception:
-        return {}
-
-
-def load_local_photo_overrides(path: str) -> Dict[str, str]:
-    if not path or not os.path.exists(path):
-        return {}
-    try:
         with open(path, "r", encoding="utf-8") as f:
-            obj = json.load(f)
-        if isinstance(obj, dict):
-            return {_norm(k): str(v).strip() for k, v in obj.items() if str(v).strip()}
-        return {}
+            return json.load(f) or {}
     except Exception:
         return {}
 
+try:
+    from team_fotmob_urls import FOTMOB_TEAM_URLS
+except Exception:
+    FOTMOB_TEAM_URLS = {}
 
-def resolve_player_photo(
-    player: str,
-    team: str,
-    league: str,
-    key_id: str,
-    session_photo_map: Dict[str, str],
-    global_overrides: Dict[str, str],
-) -> str:
-    if key_id in session_photo_map:
+def get_fotmob_url(team: str) -> str:
+    return (FOTMOB_TEAM_URLS.get(team) or "").strip()
+
+def _fotmob_team_id_from_url(team_url: str) -> str:
+    m = _re.search(r"/teams/(\d+)/", str(team_url or ""))
+    return m.group(1) if m else ""
+
+def _fotmob_crest_url(team_url: str) -> str:
+    tid = _fotmob_team_id_from_url(team_url)
+    return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png" if tid else ""
+
+def _player_surname(player: str) -> str:
+    p = (player or "").strip()
+    if not p:
+        return ""
+    if "," in p:
+        return p.split(",", 1)[0].strip()
+    parts = p.split()
+    return parts[-1].strip() if parts else ""
+
+# ✅ Accent tolerant slug
+def _slug_name(s: str) -> str:
+    if not s:
+        return ""
+    s = str(s).strip().lower()
+
+    repl = {
+        "ø":"o","œ":"oe","æ":"ae","å":"a","ä":"a","ö":"o","ü":"u",
+        "ß":"ss","ł":"l","đ":"d","ð":"d","þ":"th","ç":"c",
+        "ş":"s","ğ":"g","ı":"i",
+    }
+    for k, v in repl.items():
+        s = s.replace(k, v)
+
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    s = _re.sub(r"[^a-z0-9]+", "", s)
+    return s
+
+# ✅ fuzzy helper
+from difflib import SequenceMatcher
+def _similar(a: str, b: str) -> float:
+    return SequenceMatcher(None, a, b).ratio()
+
+def _fotmob_team_squad(team_id: str) -> list[dict]:
+    cache = st.session_state.setdefault("_fotmob_team_squad_cache", {})
+    if team_id in cache:
+        return cache[team_id] or []
+
+    squad: list[dict] = []
+    try:
+        url = f"https://www.fotmob.com/api/teams?id={team_id}"
+        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code == 200:
+            data = r.json() or {}
+            raw_squad = data.get("squad", None)
+
+            if isinstance(raw_squad, list):
+                for section in raw_squad:
+                    members = section.get("members") or section.get("players") or []
+                    if isinstance(members, list):
+                        squad.extend([m for m in members if isinstance(m, dict)])
+
+            elif isinstance(raw_squad, dict):
+                for k in ("members", "players"):
+                    members = raw_squad.get(k)
+                    if isinstance(members, list):
+                        squad.extend([m for m in members if isinstance(m, dict)])
+
+                nested = raw_squad.get("squad")
+                if isinstance(nested, list):
+                    for section in nested:
+                        members = section.get("members") or section.get("players") or []
+                        if isinstance(members, list):
+                            squad.extend([m for m in members if isinstance(m, dict)])
+    except Exception:
+        squad = []
+
+    cache[team_id] = squad
+    return squad
+
+def resolve_player_photo(player: str,
+                         team: str,
+                         league: str,
+                         key_id: str,
+                         session_photo_map: dict,
+                         global_overrides: dict) -> str:
+    if session_photo_map.get(key_id):
         return session_photo_map[key_id]
 
-    n_full = _norm(player)
-
-    tkey = _team_key(team, league)
-    tdict = TEAM_PLAYER_PHOTOS.get(tkey, {})
-    if n_full in tdict:
-        return tdict[n_full]
-
-    if n_full in global_overrides:
-        return global_overrides[n_full]
+    if global_overrides.get(key_id):
+        return global_overrides[key_id]
 
     team_url = get_fotmob_url(team)
-    fm = fotmob_photo_map(team_url) if team_url else {}
-    if n_full in fm:
-        return fm[n_full]
+    tid = _fotmob_team_id_from_url(team_url)
+    if tid:
+        squad = _fotmob_team_squad(tid)
 
-    parts = [p for p in n_full.split() if p]
-    surname = parts[-1] if parts else ""
-    if surname:
-        for k, url in fm.items():
-            kp = [p for p in k.split() if p]
-            if kp and kp[-1] == surname:
-                return url
+        target_surname = _slug_name(_player_surname(player))
+        target_full    = _slug_name(player)
 
-    return DEFAULT_AVATAR
+        best_id = ""
+
+        # ---- exact surname match first ----
+        if target_surname:
+            for m in squad:
+                name = m.get("name") or m.get("playerName") or ""
+                pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
+                if not pid:
+                    continue
+
+                if _slug_name(_player_surname(name)) == target_surname:
+                    best_id = str(pid)
+                    if target_full and target_full in _slug_name(name):
+                        break
+
+        # ---- exact full-name contains ----
+        if not best_id and target_full:
+            for m in squad:
+                name = m.get("name") or m.get("playerName") or ""
+                pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
+                if not pid:
+                    continue
+
+                if target_full in _slug_name(name):
+                    best_id = str(pid)
+                    break
+
+        # ---- FUZZY fallback (only if still not found) ----
+        if not best_id and target_surname:
+            best_score = 0.0
+            best_pid = ""
+
+            for m in squad:
+                name = m.get("name") or m.get("playerName") or ""
+                pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
+                if not pid:
+                    continue
+
+                sn = _slug_name(_player_surname(name))
+                sc = _similar(sn, target_surname)
+
+                if sc > best_score:
+                    best_score = sc
+                    best_pid = str(pid)
+
+            if best_score >= 0.86:   # safe threshold
+                best_id = best_pid
+
+        if best_id and str(best_id).isdigit():
+            url = f"https://images.fotmob.com/image_resources/playerimages/{best_id}.png"
+            session_photo_map[key_id] = url
+            return url
+
+    return "https://i.redd.it/43axcjdu59nd1.jpeg"
 
 
 # -----------------
