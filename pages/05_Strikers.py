@@ -1070,7 +1070,12 @@ else:
 
 df_pool["_MetricForBars"] = cf_scale_0_100(base_for_display_raw)
 display_metric_col = "_MetricForBars"
-value_label_col = "_MetricForBars"
+
+# ✅ Change: show REAL raw values in raw-metric mode; otherwise show 0–100
+if rank_mode == "Raw metric (any numeric column)":
+    value_label_col = rank_label
+else:
+    value_label_col = "_MetricForBars"
 
 
 # ---------------------------------------------------------
@@ -1269,11 +1274,16 @@ def cf_load_local_badge(team: str):
     return None
 
 
+# ✅ Change: prefer team badge/crest; only then fall back to country flag if desired
 def cf_get_team_badge(row: pd.Series):
     team = str(row.get("Team", "")).strip()
+
+    # 1) Local badge first
     img = cf_load_local_badge(team)
     if img is not None:
         return img
+
+    # 2) Optional final fallback: birth-country flag (keep if you want)
     birth = row.get("Birth country") or row.get("Birth Country") or row.get("Nationality")
     return cf_birth_country_flag_image(birth)
 
@@ -1320,6 +1330,11 @@ def cf_format_value(v):
         return str(v)
     if np.isnan(v):
         return "—"
+
+    # ✅ Change: only raw metric mode always shows 2 decimals
+    if rank_mode == "Raw metric (any numeric column)":
+        return f"{v:.2f}"
+
     av = abs(v)
     if av >= 100:
         return f"{v:.0f}"
