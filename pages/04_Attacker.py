@@ -1289,6 +1289,24 @@ def att_load_fotmob_crest(team: str):
     return att_load_remote_png(url)
 
 
+# ---------------------------------------------------------
+# 6C) Badge size normaliser (make badges fit like flags)
+# ---------------------------------------------------------
+
+def att_zoom_to_fit(img, target_px: int = 28) -> float:
+    """
+    Scale any badge/flag image so its largest dimension becomes ~target_px.
+    This stops big club PNGs (e.g. Barcelona) from blowing up the layout.
+    """
+    try:
+        h, w = img.shape[0], img.shape[1]
+        m = max(h, w)
+        if m <= 0:
+            return 1.0
+        return float(target_px) / float(m)
+    except Exception:
+        return 1.0
+
 
 # ---------------------------------------------------------
 # 7) FOOTER LINES
@@ -1455,7 +1473,6 @@ def att_make_ranking_image(
         TEAM_FS = 19
         NAME_DY = row_h * 0.2
         TEAM_DY = row_h * 0.26
-        crest_zoom = 0.88
 
         for i, (_, row) in enumerate(df_top.iterrows()):
             y = ROW_TOP - (i + 0.5) * row_gap
@@ -1503,8 +1520,9 @@ def att_make_ranking_image(
 
             badge = att_get_team_badge(row)
             if badge is not None:
+                z = att_zoom_to_fit(badge, target_px=36)
                 ax.add_artist(AnnotationBbox(
-                    OffsetImage(badge, zoom=crest_zoom),
+                    OffsetImage(badge, zoom=z),
                     (CREST_X, y),
                     frameon=False,
                     zorder=5,
@@ -1599,8 +1617,13 @@ def att_make_ranking_image(
 
         badge = att_get_team_badge(row)
         if badge is not None:
-            ax.add_artist(AnnotationBbox(OffsetImage(badge, zoom=0.55),
-                                         (crest_x, y), frameon=False, zorder=5))
+            z = att_zoom_to_fit(badge, target_px=22)
+            ax.add_artist(AnnotationBbox(
+                OffsetImage(badge, zoom=z),
+                (crest_x, y),
+                frameon=False,
+                zorder=5
+            ))
 
         ax.text(0.21, y + 0.12, str(row.get("Player", "")).upper(),
                 fontsize=16, fontweight="bold", color=TXT, ha="left", va="center", zorder=5)
