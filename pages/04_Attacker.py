@@ -1239,12 +1239,55 @@ def att_load_local_badge(team: str):
 
 def att_get_team_badge(row: pd.Series):
     team = str(row.get("Team", "")).strip()
+
+    # 1) Local badge first
     img = att_load_local_badge(team)
     if img is not None:
         return img
+
+    # 2) FotMob crest fallback (team badge)
+    crest = att_load_fotmob_crest(team)
+    if crest is not None:
+        return crest
+
+    # 3) Optional final fallback: birth-country flag (keep if you want)
     birth = row.get("Birth country") or row.get("Birth Country") or row.get("Nationality")
-    # FIX: call the existing cm_birth_country_flag_image instead of undefined att_birth_country_flag_image
     return cm_birth_country_flag_image(birth)
+
+
+# ---------------------------------------------------------
+# 6B) FotMob crest fallback (same idea as your pro layout)
+# ---------------------------------------------------------
+
+# OPTIONAL: import from your shared team URL map if you have it
+try:
+    from team_fotmob_urls import FOTMOB_TEAM_URLS as _FOTMOB_TEAM_URLS
+except Exception:
+    _FOTMOB_TEAM_URLS = {}
+
+def att_get_fotmob_url(team: str) -> str:
+    # uses your central mapping if present; otherwise empty
+    return (_FOTMOB_TEAM_URLS.get(team) or "").strip()
+
+def att_fotmob_team_id_from_url(team_url: str) -> str:
+    try:
+        m = re.search(r"/teams/(\d+)/", str(team_url or ""))
+        return m.group(1) if m else ""
+    except Exception:
+        return ""
+
+def att_fotmob_crest_url(team: str) -> str:
+    team_url = att_get_fotmob_url(team)
+    tid = att_fotmob_team_id_from_url(team_url)
+    return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png" if tid else ""
+
+@st.cache_data(show_spinner=False)
+def att_load_fotmob_crest(team: str):
+    url = att_fotmob_crest_url(team)
+    if not url:
+        return None
+    return att_load_remote_png(url)
+
 
 
 # ---------------------------------------------------------
