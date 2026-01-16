@@ -1617,7 +1617,7 @@ def att_make_ranking_image(
 
         badge = att_get_team_badge(row)
         if badge is not None:
-            z = att_zoom_to_fit(badge, target_px=30)
+            z = att_zoom_to_fit(badge, target_px=40)
             ax.add_artist(AnnotationBbox(
                 OffsetImage(badge, zoom=z),
                 (crest_x, y),
