@@ -1081,7 +1081,12 @@ else:
 
 df_pool["_MetricForBars"] = cm_scale_0_100(base_for_display_raw)
 display_metric_col = "_MetricForBars"
-value_label_col = "_MetricForBars"
+
+# ✅ If raw metric mode, show REAL raw values in the value column
+if rank_mode == "Raw metric (any numeric column)":
+    value_label_col = rank_label
+else:
+    value_label_col = "_MetricForBars"
 
 
 # ---------------------------------------------------------
@@ -1272,11 +1277,71 @@ def cm_load_local_badge(team: str):
 
 def cm_get_team_badge(row: pd.Series):
     team = str(row.get("Team", "")).strip()
+
+    # 1) Local badge first
     img = cm_load_local_badge(team)
     if img is not None:
         return img
+
+    # 2) FotMob crest fallback (team badge)
+    crest = cm_load_fotmob_crest(team)
+    if crest is not None:
+        return crest
+
+    # 3) Optional final fallback: birth-country flag (keep if you want)
     birth = row.get("Birth country") or row.get("Birth Country") or row.get("Nationality")
     return cm_birth_country_flag_image(birth)
+
+
+# ---------------------------------------------------------
+# 6B) FotMob crest fallback (same idea as your pro layout)
+# ---------------------------------------------------------
+
+try:
+    from team_fotmob_urls import FOTMOB_TEAM_URLS as _CM_FOTMOB_TEAM_URLS
+except Exception:
+    _CM_FOTMOB_TEAM_URLS = {}
+
+def cm_get_fotmob_url(team: str) -> str:
+    return (_CM_FOTMOB_TEAM_URLS.get(team) or "").strip()
+
+def cm_fotmob_team_id_from_url(team_url: str) -> str:
+    try:
+        m = re.search(r"/teams/(\d+)/", str(team_url or ""))
+        return m.group(1) if m else ""
+    except Exception:
+        return ""
+
+def cm_fotmob_crest_url(team: str) -> str:
+    team_url = cm_get_fotmob_url(team)
+    tid = cm_fotmob_team_id_from_url(team_url)
+    return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png" if tid else ""
+
+@st.cache_data(show_spinner=False)
+def cm_load_fotmob_crest(team: str):
+    url = cm_fotmob_crest_url(team)
+    if not url:
+        return None
+    return cm_load_remote_png(url)
+
+
+# ---------------------------------------------------------
+# 6C) Badge size normaliser (make badges fit like flags)
+# ---------------------------------------------------------
+
+def cm_zoom_to_fit(img, target_px: int = 28) -> float:
+    """
+    Scale any badge/flag image so its largest dimension becomes ~target_px.
+    This stops big club PNGs from blowing up the layout.
+    """
+    try:
+        h, w = img.shape[0], img.shape[1]
+        m = max(h, w)
+        if m <= 0:
+            return 1.0
+        return float(target_px) / float(m)
+    except Exception:
+        return 1.0
 
 
 # ---------------------------------------------------------
@@ -1323,6 +1388,11 @@ def cm_format_value(v):
         return str(v)
     if np.isnan(v):
         return "—"
+
+    # ✅ raw mode shows 2dp actual value; composite keeps old formatting
+    if rank_mode == "Raw metric (any numeric column)":
+        return f"{v:.2f}"
+
     av = abs(v)
     if av >= 100:
         return f"{v:.0f}"
@@ -1444,7 +1514,6 @@ def cm_make_ranking_image(
         TEAM_FS = 19
         NAME_DY = row_h * 0.2
         TEAM_DY = row_h * 0.26
-        crest_zoom = 0.88
 
         for i, (_, row) in enumerate(df_top.iterrows()):
             y = ROW_TOP - (i + 0.5) * row_gap
@@ -1492,8 +1561,9 @@ def cm_make_ranking_image(
 
             badge = cm_get_team_badge(row)
             if badge is not None:
+                z = cm_zoom_to_fit(badge, target_px=52)
                 ax.add_artist(AnnotationBbox(
-                    OffsetImage(badge, zoom=crest_zoom),
+                    OffsetImage(badge, zoom=z),
                     (CREST_X, y),
                     frameon=False,
                     zorder=5,
@@ -1586,7 +1656,8 @@ def cm_make_ranking_image(
 
         badge = cm_get_team_badge(row)
         if badge is not None:
-            ax.add_artist(AnnotationBbox(OffsetImage(badge, zoom=0.55),
+            z = cm_zoom_to_fit(badge, target_px=40)
+            ax.add_artist(AnnotationBbox(OffsetImage(badge, zoom=z),
                                          (crest_x, y), frameon=False, zorder=5))
 
         ax.text(0.21, y + 0.12, str(row.get("Player", "")).upper(),
