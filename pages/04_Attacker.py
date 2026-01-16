@@ -1043,7 +1043,13 @@ else:
 
 df_pool["_MetricForBars"] = att_scale_0_100(base_for_display_raw)
 display_metric_col = "_MetricForBars"
-value_label_col = "_MetricForBars"
+
+# 👉 If raw metric mode, show REAL values
+if rank_mode == "Raw metric (any numeric column)":
+    value_label_col = rank_label   # e.g. "xA per 90"
+else:
+    value_label_col = "_MetricForBars"
+
 
 
 # ---------------------------------------------------------
