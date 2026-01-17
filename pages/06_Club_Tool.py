@@ -1,34 +1,25 @@
-# streamlit_app.py
-# ✅ REVAMPED “PRO LAYOUT” CLUB SCOUTING
-# - Keeps your EXISTING Role Fit calculations (distance → exp-decay → optional league blend + mismatch penalty)
-# - Moves Team Selection to the top
-# - Adds a clean “Adjustments” bar at the top (instead of a long sidebar)
-# - Each role tab has:
-#   1) Matches (table)
-#   2) Pro Layout (tiles with crest + photo + Match% top-right = Role Fit Score)
-#   3) Template players used (minutes desc)
-# - Tiles have “Individual Metrics” dropdown like your example
-# - Adds “Role pills” per position from your ROLES buckets (percentile-weighted), top-3 shown (CM = top-3 only as requested)
+# --- PART 1 (DROP-IN REPLACEMENT WITH DATASET PICKER) ---
 
-import io, math, re, time, os, json, base64, unicodedata
+import io, math, uuid, re, time
 from pathlib import Path
 from urllib.parse import quote
-from typing import List, Tuple, Dict
+from typing import List, Tuple  # Py3.8+ friendly
 
 import numpy as np
 import pandas as pd
 import streamlit as st
 from numpy.linalg import norm
 from numpy import exp
-import requests
-from difflib import SequenceMatcher
 
-# ========================= PAGE =========================
-st.set_page_config(page_title="Club Scouting — Pro Tiles", layout="wide")
-st.title("🔎 Advanced Club Scouting — Pro Tiles")
-st.caption("Team template → Role Fit matching → Pro tiles per role. Match% = Role Fit Score (same maths as before).")
+# ---------- Page ----------
+st.set_page_config(page_title="Club Scouting — Tiles", layout="wide")
+st.title("🔎 Advanced Club Scouting — Tiles View")
+st.caption(
+    "Club Selection → Role Template matching with glossy tiles per role. "
+    "Each tab computes its own Fit %. Dropdown per tile lets you paste a custom image URL to override the photo."
+)
 
-# ========================= DATASET PICKER =========================
+# ======================== DATA LOADER (picker + upload) ========================
 @st.cache_data(show_spinner=False)
 def _read_csv_from_path(path_str: str) -> pd.DataFrame:
     return pd.read_csv(path_str)
@@ -38,14 +29,20 @@ def _read_csv_from_bytes(data: bytes) -> pd.DataFrame:
     return pd.read_csv(io.BytesIO(data))
 
 def _candidate_dirs() -> List[Path]:
+    """Directories to search for WORLD*.csv files."""
     dirs: List[Path] = [Path.cwd()]
-    try: dirs.append(Path.cwd().parent)
-    except Exception: pass
+    # common project layouts (e.g., running from /pages)
+    try:
+        dirs.append(Path.cwd().parent)
+    except Exception:
+        pass
+    # include script directory and its parent if __file__ exists
     try:
         here = Path(__file__).resolve().parent
         dirs.extend([here, here.parent])
     except Exception:
         pass
+    # de-duplicate while preserving order
     seen, uniq = set(), []
     for d in dirs:
         rp = d.resolve()
@@ -57,6 +54,7 @@ def _find_world_csvs() -> List[Path]:
     files: List[Path] = []
     for base in _candidate_dirs():
         files.extend(sorted(base.glob("WORLD*.csv")))
+    # unique by resolved path, preserve order
     seen, uniq = set(), []
     for p in files:
         rp = p.resolve()
@@ -65,10 +63,15 @@ def _find_world_csvs() -> List[Path]:
     return uniq
 
 def _label_for(p: Path) -> str:
+    """Human-friendly label that disambiguates duplicates by parent folder."""
     parent_hint = p.parent.name or str(p.parent)
     return f"{p.name} — {parent_hint}/"
 
 def pick_or_upload_world_csv() -> Tuple[pd.DataFrame, str]:
+    """
+    UI: choose one of the detected WORLD*.csv files or upload your own.
+    Returns (df, dataset_name_for_state)
+    """
     st.markdown("### 📁 Data Source")
     found = _find_world_csvs()
     labels_found = [_label_for(p) for p in found]
@@ -86,22 +89,28 @@ def pick_or_upload_world_csv() -> Tuple[pd.DataFrame, str]:
         df_up = _read_csv_from_bytes(up.getvalue())
         return df_up, up.name
 
-    idx = labels.index(sel) - 1
+    # Map label back to the concrete Path (robust if duplicate names exist)
+    idx = labels.index(sel) - 1  # shift for "Upload a CSV…"
     chosen_path = found[idx]
     df_disk = _read_csv_from_path(str(chosen_path))
+    # Use resolved name for stable session checks
     return df_disk, chosen_path.resolve().name
 
+# ---- Load dataset now (df used by the rest of the app) ----
 df, DATASET_NAME = pick_or_upload_world_csv()
 
+# Optional: reset any dataset-scoped widgets/state on change
 if st.session_state.get("_active_dataset_name") != DATASET_NAME:
     for key in [
-        "photo_map","crest_map",
-        "st_tmpl_pick","att_tmpl_pick","cm_tmpl_pick","fb_tmpl_pick","cb_tmpl_pick",
+        # add any widget keys you want cleared when switching datasets
+        "att_role_choice", "fb_role_choice",
+        "st_tmpl_pick", "att_tmpl_pick", "cm_tmpl_pick", "fb_tmpl_pick", "cb_tmpl_pick",
+        "photo_map",
     ]:
         st.session_state.pop(key, None)
     st.session_state["_active_dataset_name"] = DATASET_NAME
 
-# ========================= LEAGUES & STRENGTHS =========================
+# ======================== leagues & strengths ========================
 INCLUDED_LEAGUES = [
     'England 1.','England 2.','England 3.','England 4.','England 5.','England 6.','England 7.','England 8.','England 9.','England 10.',
     'Albania 1.','Algeria 1.','Andorra 1.','Argentina 1.','Armenia 1.','Australia 1.','Austria 1.','Austria 2.','Azerbaijan 1.','Belgium 1.',
@@ -149,89 +158,75 @@ LEAGUE_STRENGTHS = {
 'Sweden 3.':29.41,'Slovenia 2.':28.82,'Slovakia 2.':28.24,'Greece 2.':27.06,'Wales 1.':26.67,
 'USA 3.':22.55,'Scotland 3.':20.00,'England 6.':16.08,'England 8.':15.69,'England 10.':3.92,
 'Estonia 2.':3
+
 }
 
-# ========================= TOP BAR: ADJUSTMENTS + POOL FILTERS =========================
-st.markdown("---")
-st.header("⚙️ Adjustments & Candidate Pool")
+# ======================== sidebar: candidate pool filters (generic) ========================
+with st.sidebar:
+    st.header("Candidate Pool Filters (affect MATCHES)")
+    c1, c2, c3 = st.columns(3)
+    use_top5 = c1.checkbox("Top-5", False)
+    use_top20 = c2.checkbox("Top-20", False)
+    use_efl = c3.checkbox("EFL", False)
 
-cA, cB, cC, cD = st.columns([1.2, 1.2, 1.2, 1.2])
+    seed = set()
+    if use_top5: seed |= PRESET_LEAGUES["Top 5 Europe"]
+    if use_top20: seed |= PRESET_LEAGUES["Top 20 Europe"]
+    if use_efl: seed |= PRESET_LEAGUES["EFL (England 2–4)"]
 
-with cA:
-    use_top5 = st.checkbox("Top-5 preset", False)
-    use_top20 = st.checkbox("Top-20 preset", False)
-    use_efl = st.checkbox("EFL preset", False)
-
-seed = set()
-if use_top5: seed |= PRESET_LEAGUES["Top 5 Europe"]
-if use_top20: seed |= PRESET_LEAGUES["Top 20 Europe"]
-if use_efl: seed |= PRESET_LEAGUES["EFL (England 2–4)"]
-
-leagues_avail = sorted(set(INCLUDED_LEAGUES) | set(df["League"].dropna().unique()))
-default_leagues = sorted(seed) if seed else INCLUDED_LEAGUES
-
-with cB:
+    leagues_avail = sorted(set(INCLUDED_LEAGUES) | set(df["League"].dropna().unique()))
+    default_leagues = sorted(seed) if seed else INCLUDED_LEAGUES
     leagues_sel = st.multiselect("Leagues in candidate pool", leagues_avail, default=default_leagues)
 
-with cC:
-    min_minutes, max_minutes = st.slider("Minutes (pool)", 0, 6000, (750, 6000))
+    # NOTE: per-role position filters are inside each tab
+    min_minutes, max_minutes = st.slider("Minutes played (pool)", 0, 6000, (750, 6000))
+
     age_min_data = int(np.nanmin(pd.to_numeric(df["Age"], errors="coerce"))) if df["Age"].notna().any() else 14
     age_max_data = int(np.nanmax(pd.to_numeric(df["Age"], errors="coerce"))) if df["Age"].notna().any() else 50
     min_age, max_age = st.slider("Age (pool)", age_min_data, age_max_data, (16, 50))
 
-with cD:
+    st.markdown("**Market value (€)**")
     mv_col = pd.to_numeric(df["Market value"], errors="coerce")
     mv_max_raw = int(np.nanmax(mv_col)) if mv_col.notna().any() else 50_000_000
     mv_cap = int(math.ceil(mv_max_raw / 5_000_000) * 5_000_000)
-    use_m = st.checkbox("Market value in M€", True)
+    use_m = st.checkbox("Adjust in millions", True)
     if use_m:
         max_m = max(1, mv_cap // 1_000_000)
-        mv_min_m, mv_max_m = st.slider("MV range (M€)", 0, max_m, (0, min(max_m, 10)))
+        mv_min_m, mv_max_m = st.slider("Range (M€)", 0, max_m, (0, min(max_m, 10)))
         pool_min_value, pool_max_value = mv_min_m*1_000_000, mv_max_m*1_000_000
     else:
-        pool_min_value, pool_max_value = st.slider("MV range (€)", 0, mv_cap, (0, min(mv_cap, 10_000_000)), step=100_000)
+        pool_min_value, pool_max_value = st.slider("Range (€)", 0, mv_cap, (0, min(mv_cap, 10_000_000)), step=100_000)
 
-# scoring controls row
-cE, cF, cG, cH = st.columns([1.2, 1.2, 1.2, 1.2])
-with cE:
+    min_strength, max_strength = st.slider(
+        "League quality (strength)", 0, 101, (0, 101),
+        help="Filter candidates by league strength (0–100)."
+    )
+
+    # Role score settings
+    st.subheader("Role Score")
     decay_rate = st.slider("Exp. decay (↑=stricter)", 0.5, 10.0, 5.0, 0.5)
-with cF:
-    use_league_weighting = st.checkbox("Blend league strength (β)", value=True)
-    beta = st.slider("β (0–1)", 0.0, 1.0, 0.40, 0.05)
-with cG:
-    use_league_mismatch = st.checkbox("League mismatch penalty (α,p)", value=True)
-    alpha = st.slider("α", 0.0, 5.0, 1.20, 0.05)
-    p_exp = st.slider("p", 1.0, 3.0, 1.50, 0.10)
-with cH:
-    penalty_mode = st.selectbox("Penalty combine", ["Additive (stronger)", "Quadrature (gentler)"], index=0)
-    min_strength, max_strength = st.slider("League strength (pool)", 0, 101, (0, 101))
-    top_n = st.number_input("Top N", 5, 200, 20, 5)
+    use_league_weighting = st.checkbox("Blend in league strength (β)", value=True)
+    beta = st.slider("β (0–1)", 0.0, 1.0, 0.40, 0.05, help="0=distance only, 1=league strength only")
 
-DEBUG_PHOTOS = st.checkbox("Debug photos", False)
+    use_league_mismatch = st.checkbox(
+        "Penalise league mismatch inside distance (α, p)", value=True,
+        help="Adds a distance-penalty based on |candidate league − template league|."
+    )
+    alpha = st.slider("League mismatch weight α", 0.0, 5.0, 1.20, 0.05)
+    p_exp = st.slider("League mismatch exponent p", 1.0, 3.0, 1.50, 0.10)
+    penalty_mode = st.selectbox("Penalty combine mode", ["Additive (stronger)", "Quadrature (gentler)"], index=0)
 
-# ========================= CLUB SELECTION (TOP) =========================
-st.markdown("---")
-st.header("🎯 Team Template (Pick Team at the top)")
+    top_n = st.number_input("How many tiles (Top N)", 5, 200, 20, 5)
+    DEBUG_PHOTOS = st.checkbox("Debug player photos", False)
 
-template_league_list = sorted([str(x) for x in df["League"].dropna().unique()])
-template_league = st.selectbox("Template league", template_league_list)
-
-templ_teams_all = sorted(df.loc[df["League"].astype(str) == template_league, "Team"].dropna().astype(str).unique())
-team_search = st.text_input("Search team", "")
-templ_teams = [t for t in templ_teams_all if team_search.lower() in t.lower()] or templ_teams_all
-template_team = st.selectbox("Template team", templ_teams)
-
-min_minutes_template = st.slider("Min minutes for template players", 0, 6000, 1000, 100)
-use_single_template_player = st.checkbox("Use single template player (otherwise role avg)", False)
-template_strength = float(LEAGUE_STRENGTHS.get(template_league, 0.0))
-
-# ========================= HELPERS =========================
+# ======================== helpers: build base candidate pool (no position) ========================
 def build_base_pool():
     p = df.copy()
     p = p[p["League"].isin(leagues_sel)]
+
+    # numeric coercions
     for c in ["Minutes played","Age","Market value","Goals"]:
-        if c in p.columns:
-            p[c] = pd.to_numeric(p[c], errors="coerce")
+        p[c] = pd.to_numeric(p[c], errors="coerce")
 
     p = p[p["Minutes played"].between(min_minutes, max_minutes)]
     p = p[p["Age"].between(min_age, max_age)]
@@ -241,6 +236,22 @@ def build_base_pool():
     p = p[(p["League Strength"] >= float(min_strength)) & (p["League Strength"] <= float(max_strength))]
     return p
 
+# ======================== Club Selection (re-used by all tabs) ========================
+st.markdown("---")
+st.header("🎯 Club Selection (template source)")
+
+template_league_list = sorted([str(x) for x in df["League"].dropna().unique()])
+template_league = st.selectbox("Template league (scopes team list)", template_league_list)
+templ_teams_all = sorted(df.loc[df["League"].astype(str) == template_league, "Team"].dropna().astype(str).unique())
+search = st.text_input("Search team (filters list)", "")
+templ_teams = [t for t in templ_teams_all if search.lower() in t.lower()] or templ_teams_all
+template_team = st.selectbox("Template team", templ_teams)
+
+min_minutes_template = st.slider("Minimum minutes for template players", 0, 6000, 1000, 100)
+use_single_template_player = st.checkbox("Use single player only (else avg of role at team)", False)
+template_strength = float(LEAGUE_STRENGTHS.get(template_league, 0.0))
+
+# ======================== shared: pick template rows by role predicate ========================
 def _template_rows_for_role(pos_predicate):
     src = df[
         (df["League"].astype(str) == template_league)
@@ -251,7 +262,10 @@ def _template_rows_for_role(pos_predicate):
     src = src[src["Minutes played"] >= min_minutes_template]
     return src
 
+# ======================== scoring helper used by all roles ========================
 def _score_block(df_with_baseDist: pd.DataFrame) -> pd.DataFrame:
+    """Given df with ['BaseDist','League'] columns, compute Role Fit Score with options."""
+
     # league mismatch inside distance
     if use_league_mismatch:
         base_min, base_max = float(df_with_baseDist["BaseDist"].min()), float(df_with_baseDist["BaseDist"].max())
@@ -279,20 +293,15 @@ def _score_block(df_with_baseDist: pd.DataFrame) -> pd.DataFrame:
     df_with_baseDist["Role Fit Score"] = (1.0 - beta) * base_score + beta * league_part
     return df_with_baseDist.sort_values("Role Fit Score", ascending=False).reset_index(drop=True)
 
+# ======================== small util: safe verticality ========================
 def _safe_verticality(forward_per90, passes_per90):
     f = pd.to_numeric(forward_per90, errors="coerce")
-    p = pd.to_numeric(passes_per90, errors="coerce").replace(0, np.nan)
-    return (f / p).fillna(0.0)
+    p = pd.to_numeric(passes_per90, errors="coerce")
+    p = p.replace(0, np.nan)
+    out = f / p
+    return out.fillna(0.0)
 
-def render_template_players_used(role_name: str, tmpl_src: pd.DataFrame):
-    showcols = [c for c in ["Player","Minutes played","Position","League","Team"] if c in tmpl_src.columns]
-    st.subheader(f"🧩 Players used for {role_name} template")
-    if tmpl_src.empty or not showcols:
-        st.info("No eligible template players for the selected team/filters.")
-        return
-    st.dataframe(tmpl_src[showcols].sort_values("Minutes played", ascending=False), use_container_width=True)
-
-# ========================= ROLE FIT (KEEP YOUR MATHS) =========================
+# ======================== ROLE CALCULATORS (updated) ========================
 def compute_strikers():
     feats = ['Touches in box per 90','xG per 90','Dribbles per 90','Progressive runs per 90',
              'Aerial duels per 90','Aerial duels won, %','Passes per 90','Non-penalty goals per 90','Accurate passes, %']
@@ -323,6 +332,7 @@ def compute_strikers():
     pool = pool[pool["Position"].str.upper().str.startswith("CF")]
     pool = pool[~((pool["Team"].astype(str) == template_team) & (pool["League"].astype(str) == template_league))].copy()
 
+    # hard caps
     pool = pool[(pd.to_numeric(pool["Age"], errors="coerce") <= 26)
                 & (pd.to_numeric(pool["Market value"], errors="coerce") <= 10_000_000)
                 & (pd.to_numeric(pool["Minutes played"], errors="coerce") >= 1000)]
@@ -352,13 +362,15 @@ def compute_attackers(role_choice: str):
         'Dribbles per 90','Progressive runs per 90'
     ]
 
+    # ----- Position filter with ROLE_CHOICE inside the tab -----
     def pos_ok(p):
         s = str(p).upper().strip()
         tokens = [t for t in re.split(r"[,/;]\s*|\s+", s) if t]
         if not tokens: return False
         t0 = tokens[0]
         if role_choice == "All":
-            return t0 in {"RW","RWF","RAMF","LW","LWF","LAMF","AMF"}
+            allowed = {"RW","RWF","RAMF","LW","LWF","LAMF","AMF"}
+            return t0 in allowed
         if role_choice == "Right Wingers":
             return t0 in {"RW","RWF","RAMF"}
         if role_choice == "Left Wingers":
@@ -392,6 +404,7 @@ def compute_attackers(role_choice: str):
     pool = base_pool[base_pool["Position"].apply(pos_ok)].copy()
     pool = pool[~((pool["Team"].astype(str) == template_team) & (pool["League"].astype(str) == template_league))]
 
+    # caps for attackers
     pool = pool[(pd.to_numeric(pool["Age"], errors="coerce") <= 23)
                 & (pd.to_numeric(pool["Market value"], errors="coerce") <= 5_000_000)
                 & (pd.to_numeric(pool["Minutes played"], errors="coerce") >= 900)]
@@ -410,7 +423,7 @@ def compute_attackers(role_choice: str):
     pool["BaseDist"] = pool.apply(lambda r: norm([r[c]-r[f"__tmpl__{c}"] for c in cols]), axis=1)
 
     ranked = _score_block(pool.copy())
-    return ranked, pool, f"Attackers ({role_choice})", tmpl_src
+    return ranked, pool, "Attackers (Wingers/AM)", tmpl_src, pos_ok
 
 def compute_central_mid():
     feats = [
@@ -427,7 +440,7 @@ def compute_central_mid():
     tmpl_src = _template_rows_for_role(pos_ok).dropna(subset=feats)
     if use_single_template_player:
         players = sorted(tmpl_src["Player"].dropna().astype(str).unique())
-        chosen = st.selectbox("Template player (CM)", ["— Select —"] + players, index=0, key="cm_tmpl_pick")
+        chosen = st.selectbox("Template player (Central Midfield)", ["— Select —"] + players, index=0, key="cm_tmpl_pick")
         if chosen and not chosen.startswith("—"):
             tmpl_src = tmpl_src[tmpl_src["Player"].astype(str) == chosen]
 
@@ -480,6 +493,7 @@ def compute_fullbacks(role_choice: str):
         'Accurate passes, %'
     ]
 
+    # ----- Position filter with ROLE_CHOICE inside the tab -----
     def pos_ok(p):
         s = str(p).strip().upper()
         if role_choice == "Right Backs":
@@ -493,7 +507,7 @@ def compute_fullbacks(role_choice: str):
     tmpl_src = _template_rows_for_role(pos_ok).dropna(subset=feats)
     if use_single_template_player:
         players = sorted(tmpl_src["Player"].dropna().astype(str).unique())
-        chosen = st.selectbox("Template player (FB)", ["— Select —"] + players, index=0, key="fb_tmpl_pick")
+        chosen = st.selectbox("Template player (Fullbacks)", ["— Select —"] + players, index=0, key="fb_tmpl_pick")
         if chosen and not chosen.startswith("—"):
             tmpl_src = tmpl_src[tmpl_src["Player"].astype(str) == chosen]
 
@@ -532,7 +546,7 @@ def compute_fullbacks(role_choice: str):
     pool["BaseDist"] = pool.apply(lambda r: norm([r[c]-r[f"__tmpl__{c}"] for c in cols]), axis=1)
 
     ranked = _score_block(pool.copy())
-    return ranked, pool, f"Fullbacks ({role_choice})", tmpl_src
+    return ranked, pool, "Fullbacks", tmpl_src, pos_ok
 
 def compute_center_backs():
     feats = [
@@ -549,7 +563,7 @@ def compute_center_backs():
     tmpl_src = _template_rows_for_role(pos_ok).dropna(subset=feats)
     if use_single_template_player:
         players = sorted(tmpl_src["Player"].dropna().astype(str).unique())
-        chosen = st.selectbox("Template player (CB)", ["— Select —"] + players, index=0, key="cb_tmpl_pick")
+        chosen = st.selectbox("Template player (Center Backs)", ["— Select —"] + players, index=0, key="cb_tmpl_pick")
         if chosen and not chosen.startswith("—"):
             tmpl_src = tmpl_src[tmpl_src["Player"].astype(str) == chosen]
 
@@ -570,6 +584,7 @@ def compute_center_backs():
     pool = base_pool[base_pool["Position"].apply(pos_ok)].copy()
     pool = pool[~((pool["Team"].astype(str) == template_team) & (pool["League"].astype(str) == template_league))]
 
+    # CB caps
     pool = pool[(pd.to_numeric(pool["Age"], errors="coerce") <= 22)
                 & (pd.to_numeric(pool["Market value"], errors="coerce") <= 10_000_000)
                 & (pd.to_numeric(pool["Minutes played"], errors="coerce") >= 500)]
@@ -588,14 +603,9 @@ def compute_center_backs():
     ranked = _score_block(pool.copy())
     return ranked, pool, "Center Backs", tmpl_src
 
-# ========================= PRO TILE SYSTEM (BADGES + PHOTOS + CRESTS) =========================
-def _pro_rating_color(v: float) -> str:
-    v = float(v)
-    COLORS = [(85,"#2E6114"),(75,"#5C9E2E"),(66,"#7FBC41"),(55,"#A7D763"),(41,"#F6D645"),(25,"#D77A2E"),(0,"#C63733")]
-    for thr, col in COLORS:
-        if v >= thr: return col
-    return COLORS[-1][1]
+    # --- PART 2 ---
 
+<<<<<<< HEAD
 def _pro_show99(x) -> int:
     try: return max(0, min(99, int(float(x))))
     except Exception: return 0
@@ -958,8 +968,133 @@ def render_pro_tiles(ranked, df_pool_role, role_title, pill_cols, top_n=20, show
 
     if df_view.empty:
         st.info("No matches for current filters.")
-        return
+=======
+# ---------- Style for tiles ----------
+st.markdown(
+    """
+<style>
+:root { --bg:#0f1115; --card:#161a22; --muted:#a8b3cf; --soft:#202633; }
+.block-container { padding-top:.8rem; }
+body{ background:var(--bg); font-family: system-ui,-apple-system,'Segoe UI','Segoe UI Emoji',Roboto,Helvetica,Arial,sans-serif;}
+.wrap{ display:flex; justify-content:center; }
+.player-card{ width:min(980px,96%); display:grid; grid-template-columns:112px 1fr 100px; gap:14px; align-items:start; background:var(--card); border:1px solid #252b3a; border-radius:18px; padding:16px; box-shadow: 0 2px 14px rgba(0,0,0,.25); }
+.avatar{ width:112px; height:112px; border-radius:12px; background-color:#0b0d12; background-size:cover; background-position:center; border:1px solid #2a3145; }
+.leftcol{ display:flex; flex-direction:column; align-items:center; gap:8px; }
+.name{ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px; }
+.sub{ color:#a8b3cf; font-size:15px; }
+.pill{ padding:2px 10px; border-radius:9px; font-weight:800; font-size:18px; color:#0b0d12; display:inline-block; min-width:42px; text-align:center; }
+.row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:4px 0; }
+.chip{ background:var(--soft); color:#cbd5f5; border:1px solid #2d3550; padding:3px 10px; border-radius:10px; font-size:13px; line-height:18px; }
+.pos{ color:#eaf0ff; font-weight:700; padding:4px 10px; border-radius:10px; font-size:12px; border:1px solid rgba(255,255,255,.08); }
+.teamline{ color:#e6ebff; font-size:15px; font-weight:400; margin-top:2px; }
+.fit{ color:#94f0c8; font-weight:900; font-size:28px; text-align:right; }
+.fit small{ display:block; color:#9fb3c6; font-weight:600; font-size:12px; margin-top:4px; }
+.divider{ height:12px; }
+.metric-section{ background:#121621; border:1px solid #242b3b; border-radius:14px; padding:10px 12px; }
+.m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; font-size:20px; text-transform:uppercase; }
+.m-row{ display:flex; justify-content:space-between; align-items:center; padding:8px 8px; border-radius:10px; }
+.m-row + .m-row{ margin-top:6px; }
+.m-label{ color:#c9d3f2; font-size:16px; }
+.m-right{ display:flex; align-items:center; gap:8px; }
+.m-badge{ min-width:40px; text-align:center; padding:2px 10px; border-radius:8px; font-weight:800; font-size:18px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); }
+.metrics-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
+@media (min-width: 980px){ .metrics-grid{ grid-template-columns:repeat(3, 1fr); } }
+</style>
+""",
+    unsafe_allow_html=True,
+)
 
+PALETTE=[(0,(208,2,27)),(50,(245,166,35)),(65,(248,231,28)),(75,(126,211,33)),(85,(65,117,5)),(100,(40,90,4))]
+def _lerp(a,b,t): return tuple(int(round(a[i]+(b[i]-a[i])*t)) for i in range(3))
+def rating_color(v:float)->str:
+    # HTML/CSS rgb(...)
+    v=max(0.0,min(100.0,float(v)))
+    for i in range(len(PALETTE)-1):
+        x0,c0=PALETTE[i]; x1,c1=PALETTE[i+1]
+        if v<=x1:
+            t=0 if x1==x0 else (v-x0)/(x1-x0); r,g,b=_lerp(c0,c1,t); return f"rgb({r},{g},{b})"
+    r,g,b=PALETTE[-1][1]; return f"rgb({r},{g},{b})"
+
+def rating_color_hex(v: float) -> str:
+    # Matplotlib-friendly HEX
+    v = max(0.0, min(100.0, float(v)))
+    for i in range(len(PALETTE)-1):
+        x0,c0=PALETTE[i]; x1,c1=PALETTE[i+1]
+        if v<=x1:
+            t=0 if x1==x0 else (v-x0)/(x1-x0)
+            r,g,b=_lerp(c0,c1,t)
+            return f"#{r:02x}{g:02x}{b:02x}"
+    r,g,b=PALETTE[-1][1]
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+# ====================== PlaymakerStats image resolver ======================
+_PS_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.playmakerstats.com/",
+}
+
+@st.cache_data(show_spinner=False, ttl=24*3600)
+def _http_get_text(url: str, retries: int = 1, timeout: int = 12) -> str:
+    import requests
+    for _ in range(retries + 1):
+        try:
+            r = requests.get(url, headers=_PS_HEADERS, timeout=timeout)
+            if r.status_code == 200:
+                return r.text
+            if r.status_code in (429, 500, 502, 503, 504):
+                time.sleep(0.6); continue
+        except Exception:
+            time.sleep(0.25); continue
+    return ""
+
+def _extract_og_image(html: str):
+    m = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', html, flags=re.I)
+    return m.group(1) if m else None
+
+@st.cache_data(show_spinner=False, ttl=24*3600)
+def playmakerstats_image_by_name_team(name: str, team: str):
+    q = f"{name} {team}".strip()
+    # PlaymakerStats (EN)
+    search_url = f"https://www.playmakerstats.com/search.php?search={quote(q)}"
+    html = _http_get_text(search_url, retries=1)
+    if html:
+        links = re.findall(r'href=["\'](/(?:player|jogador)\.php\?id=\d+[^"\']*)', html, flags=re.I)
+        if links:
+            p_html = _http_get_text("https://www.playmakerstats.com" + links[0], retries=1)
+            if p_html:
+                img = _extract_og_image(p_html)
+                if img: return img
+    # zerozero.pt fallback
+    search_url2 = f"https://www.zerozero.pt/procura.php?search={quote(q)}"
+    html2 = _http_get_text(search_url2, retries=1)
+    if html2:
+        links2 = re.findall(r'href=["\'](/jogador\.php\?id=\d+[^"\']*)', html2, flags=re.I)
+        if links2:
+            p_html2 = _http_get_text("https://www.zerozero.pt" + links2[0], retries=1)
+            if p_html2:
+                img2 = _extract_og_image(p_html2)
+                if img2: return img2
+    return None
+
+PLACEHOLDER_IMG = "https://i.redd.it/43axcjdu59nd1.jpeg"
+if "photo_map" not in st.session_state:
+    st.session_state["photo_map"] = {}
+
+# ---------- small helper: table of template players used (fixes issue #1) ----------
+def render_template_players_used(role_name: str, tmpl_src: pd.DataFrame):
+    showcols = [c for c in ["Player","Minutes played","Position","League","Team"] if c in tmpl_src.columns]
+    st.subheader(f"🧩 Players used for {role_name} Role Template")
+    if tmpl_src.empty or not showcols:
+        st.info("No eligible template players for the selected team/filters.")
+>>>>>>> parent of d523591 (Update 06_Club_Tool.py)
+        return
+    st.dataframe(
+        tmpl_src[showcols].sort_values("Minutes played", ascending=False),
+        use_container_width=True
+    )
+
+<<<<<<< HEAD
     def pretty_pill(col):
         return (
             col.replace(" Score", "")
@@ -972,17 +1107,41 @@ def render_pro_tiles(ranked, df_pool_role, role_title, pill_cols, top_n=20, show
         team = str(row.get("Team", "")) or ""
         league = str(row.get("League", "")) or ""
         pos = str(row.get("Position", "")) or ""
+=======
+# ---------- shared tile+FeatureZ renderer ----------
+def render_tiles_and_featureZ(ranked: pd.DataFrame, df_pool_role: pd.DataFrame, role_title: str):
+    st.markdown("---")
+    st.header(f"🏅 Top Role Matches — Tiles · {role_title}")
+    st.caption(f"Showing Top N = **{int(top_n)}**")
 
-        try:
-            age = int(pd.to_numeric(row.get("Age", np.nan), errors="coerce")) if not pd.isna(row.get("Age", np.nan)) else 0
-        except Exception:
-            age = 0
-        age_txt = f"{age}y.o." if age > 0 else "—"
+    # Helpers for dropdown metrics (percentiles vs pool)
+    def pct_series_for_player(player_row: pd.Series, col: str, within_df: pd.DataFrame) -> float:
+        vals = pd.to_numeric(within_df[col], errors="coerce").dropna()
+        if vals.empty: return 0.0
+        v = pd.to_numeric(player_row.get(col), errors="coerce")
+        if pd.isna(v): return 0.0
+        return float((vals <= v).mean() * 100.0)
 
-        foot = _get_foot(row) or "—"
-        cyr = _contract_year(row)
-        contract_txt = f"{cyr}" if cyr > 0 else "—"
+    st.write("")  # tiny spacer
+>>>>>>> parent of d523591 (Update 06_Club_Tool.py)
 
+    for idx, row in ranked.head(int(top_n)).iterrows():
+        name   = str(row.get("Player",""))
+        team   = str(row.get("Team",""))
+        league = str(row.get("League",""))
+        pos    = str(row.get("Position",""))
+        age    = int(row.get("Age",0)) if not pd.isna(row.get("Age",np.nan)) else 0
+        minutes= int(row.get("Minutes played",0)) if not pd.isna(row.get("Minutes played",np.nan)) else 0
+        fit    = float(row.get("Role Fit Score",0.0))
+        fit_pct= max(0, min(100, int(round(fit))))
+
+        key_id = f"{name}|||{team}|||{league}"
+        avatar_url = playmakerstats_image_by_name_team(name, team) or PLACEHOLDER_IMG
+        override_url = st.session_state.get("photo_map", {}).get(key_id, "")
+        if override_url:
+            avatar_url = override_url + f"?t={int(time.time())}"
+
+<<<<<<< HEAD
         fit = float(pd.to_numeric(row.get("Role Fit Score", 0), errors="coerce") or 0.0)
         fit_pct = max(0, min(100, int(round(fit))))
 
@@ -1099,16 +1258,101 @@ def render_pro_tiles(ranked, df_pool_role, role_title, pill_cols, top_n=20, show
                 ("Deep Completions", "Deep completions per 90"),
                 ("Smart Passes", "Smart passes per 90"),
             ]
+=======
+        if DEBUG_PHOTOS:
+            st.write(f"PHOTO DEBUG → '{name}' / '{team}' → {avatar_url}")
 
-            st.markdown(
+        ov_style = f"background:{rating_color(fit_pct)};"
+        codes = [c for c in re.split(r"[,/; ]+", pos.strip().upper()) if c]
+        chips_html = " ".join(f"<span class='pos'>{c}</span>" for c in dict.fromkeys(codes))
+
+        st.markdown(
+            f"""
+<div class='wrap'>
+  <div class='player-card'>
+    <div class='leftcol'>
+      <div class='avatar' style="background-image:url('{avatar_url}');"></div>
+      <div class='row'><span class='chip'>{age}y</span><span class='chip'>{minutes}m</span></div>
+    </div>
+    <div>
+      <div class='name'>{name}</div>
+      <div class='row' style='align-items:center;'>
+        <span class='pill' style='{ov_style}'>{fit_pct}</span>
+        <span class='sub'>Overall Fit</span>
+      </div>
+      <div class='row'>{chips_html}</div>
+      <div class='teamline'>{team} · {league}</div>
+    </div>
+    <div class='fit'>{fit_pct}%<small>Fit</small></div>
+  </div>
+</div>
+<div class='divider'></div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        # === dropdown: metrics + image URL override ===
+        with st.expander("▼ Show individual metrics / Set photo override"):
+            ATTACKING = []
+            for lab, met in [
+                ("Goals: Non-Penalty","Non-penalty goals per 90"),
+                ("xG","xG per 90"),
+                ("Shots","Shots per 90"),
+                ("Header Goals","Head goals per 90"),
+                ("Expected Assists","xA per 90"),
+                ("Progressive Runs","Progressive runs per 90"),
+                ("Touches in Opposition Box","Touches in box per 90"),
+            ]:
+                if met in df_pool_role.columns:
+                    ATTACKING.append((lab, pct_series_for_player(row, met, df_pool_role)))
+
+            DEFENSIVE = []
+            for lab, met in [
+                ("Aerial Duels","Aerial duels per 90"),
+                ("Aerial Duel Success %","Aerial duels won, %"),
+                ("PAdj. Interceptions","PAdj Interceptions"),
+                ("Defensive Duels","Defensive duels per 90"),
+                ("Defensive Duel Success %","Defensive duels won, %"),
+            ]:
+                if met in df_pool_role.columns:
+                    DEFENSIVE.append((lab, pct_series_for_player(row, met, df_pool_role)))
+
+            POSSESSION = []
+            for lab, met in [
+                ("Dribbles","Dribbles per 90"),
+                ("Dribbling Success %","Successful dribbles, %"),
+                ("Key Passes","Key passes per 90"),
+                ("Passes","Passes per 90"),
+                ("Passing Accuracy %","Accurate passes, %"),
+                ("Passes to Penalty Area","Passes to penalty area per 90"),
+                ("Passes to Penalty Area %","Accurate passes to penalty area, %"),
+                ("Deep Completions","Deep completions per 90"),
+                ("Smart Passes","Smart passes per 90"),
+            ]:
+                if met in df_pool_role.columns:
+                    POSSESSION.append((lab, pct_series_for_player(row, met, df_pool_role)))
+>>>>>>> parent of d523591 (Update 06_Club_Tool.py)
+
+            def section_html(title: str, items):
+                rows=[]
+                for lab, pct in items:
+                    pct_i = int(round(max(0.0, min(100.0, float(pct)))))
+                    rows.append(
+                        f"<div class='m-row'><div class='m-label'>{lab}</div>"
+                        f"<div class='m-right'><span class='m-badge' style='background:{rating_color(pct_i)}'>{pct_i}</span></div></div>"
+                    )
+                return f"<div class='metric-section'><div class='m-title'>{title}</div>{''.join(rows)}</div>"
+
+            col_html = (
                 "<div class='metrics-grid'>"
-                + _sec_html(df_pool_role, row, "ATTACKING", ATT)
-                + _sec_html(df_pool_role, row, "DEFENSIVE", DEF)
-                + _sec_html(df_pool_role, row, "POSSESSION", POS)
-                + "</div>",
-                unsafe_allow_html=True
+                + section_html('ATTACKING', ATTACKING)
+                + section_html('DEFENSIVE', DEFENSIVE)
+                + section_html('POSSESSION', POSSESSION)
+                + "</div>"
             )
+            st.markdown(col_html, unsafe_allow_html=True)
 
+<<<<<<< HEAD
             # Player image override
             img_key = "imgurl_{}_{}_{}".format(role_title, i, key_id)
             default_url = st.session_state.get("photo_map", {}).get(key_id, "")
@@ -1256,6 +1500,34 @@ with tabs[3]:
 with tabs[4]:
     role_tab("Center Backs", compute_fn=compute_center_backs, roles_for_pills=CB_ROLES, pill_prefix="CB")
 
+=======
+            # --- Custom image URL override ---
+            img_key = f"imgurl_{key_id}"
+            default_url = st.session_state.get("photo_map", {}).get(key_id, "")
+            _ = st.text_input(
+                "Custom image URL (override avatar — e.g., https://images.fotmob.com/image_resources/playerimages/1199383.png)",
+                value=default_url, key=img_key
+            )
+            col_a, col_b = st.columns([1, 3])
+            with col_a:
+                if st.button("Apply to this player", key=f"apply_{key_id}"):
+                    val = (st.session_state.get(img_key, "") or "").strip()
+                    if not val:
+                        st.error("Please paste an image URL.")
+                    elif not (val.startswith("http://") or val.startswith("https://")):
+                        st.error("Image URL must start with http:// or https://")
+                    else:
+                        st.session_state.setdefault("photo_map", {})[key_id] = val
+                        st.success("Saved!")
+                        try: st.rerun()
+                        except Exception: st.experimental_rerun()
+            with col_b:
+                if st.button("Clear override", key=f"clear_{key_id}"):
+                    st.session_state["photo_map"].pop(key_id, None)
+                    st.info("Cleared.")
+                    try: st.rerun()
+                    except Exception: st.experimental_rerun()
+>>>>>>> parent of d523591 (Update 06_Club_Tool.py)
 
 
 
