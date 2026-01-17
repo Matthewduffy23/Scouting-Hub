@@ -580,7 +580,11 @@ def compute_center_backs():
     pool["Progression Volume"]  = pool['Progressive passes per 90'] + pool['Progressive runs per 90']
 
     for c in cols: pool[f"__tmpl__{c}"] = tmpl_vec[c]
-    pool["BaseDist"] = pool.apply(lambda r: norm([r[c]-r[f"__tmpl__{c}"] for c in cols]), axis=1
+    pool["BaseDist"] = pool.apply(
+    lambda r: norm([r[c] - r[f"__tmpl__{c}"] for c in cols]),
+    axis=1
+)
+
 
     ranked = _score_block(pool.copy())
     return ranked, "Center Backs", tmpl_src
