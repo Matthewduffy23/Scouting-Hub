@@ -737,8 +737,7 @@ def resolve_player_photo(player: str, team: str, key_id: str, session_photo_map:
     return PLACEHOLDER_IMG
 
 # ========================= ROLE BUCKETS (YOUR DEFINITIONS) =========================
-# (We compute these as percentile-weighted “role pills” inside the Pro Tiles,
-#  while MATCH% stays your Role Fit Score.)
+# NOTE: kept exactly your attacker + striker role metrics, and we keep CM as "top 3 only".
 
 ATT_ROLES = {
     "Playmaker": {
@@ -807,7 +806,7 @@ ST_ROLES = {
     },
 }
 
-# CM: (you said “for cm just display top 3” — we always display top-3 pills)
+# CM - only show top-3 pills (the renderer always shows 3 anyway)
 CM_ROLES = {
     "Deep Playmaker": {"metrics": {
         "Passes per 90": 2.5, "Accurate passes, %": 2, "Forward passes per 90": 2,
@@ -824,114 +823,52 @@ CM_ROLES = {
 }
 
 # ========================= METRIC PERCENTILES + ROLE PILL SCORES =========================
-def _pct_rank(series: pd.Series) -> pd.Series:
+def _pct_rank(series):
     s = pd.to_numeric(series, errors="coerce")
-    # percentile within the visible role pool; NaN -> NaN
     return s.rank(pct=True) * 100.0
 
-def add_metric_percentiles(df_role: pd.DataFrame, metrics: List[str]) -> pd.DataFrame:
+def add_metric_percentiles(df_role, metrics):
     out = df_role.copy()
     for m in metrics:
         if m in out.columns:
-            out[f"{m} Percentile"] = _pct_rank(out[m])
+            out[m] = pd.to_numeric(out[m], errors="coerce")
+            out[m + " Percentile"] = _pct_rank(out[m])
     return out
 
-def compute_role_bucket_scores(df_role: pd.DataFrame, roles: Dict[str, dict], prefix: str) -> Tuple[pd.DataFrame, List[str]]:
+def compute_role_bucket_scores(df_role, roles, prefix):
     """
     Creates columns like: f"{prefix}{role_name} Score" (0-99 int)
-    Using weighted average of metric percentiles within df_role.
+    Score = weighted average of metric percentiles inside df_role.
     """
     out = df_role.copy()
     created_cols = []
+
     for rname, rdef in roles.items():
-        weights = rdef.get("metrics", {}) or {}
-        use_metrics = [m for m in weights.keys() if (m in out.columns)]
+        weights = (rdef.get("metrics") or {})
+        use_metrics = [m for m in weights.keys() if m in out.columns]
         if not use_metrics:
             continue
 
-        # ensure percentiles exist
         for m in use_metrics:
-            pc = f"{m} Percentile"
+            pc = m + " Percentile"
             if pc not in out.columns:
                 out[pc] = _pct_rank(out[m])
 
         wsum = float(sum(weights[m] for m in use_metrics)) or 1.0
         score = 0.0
         for m in use_metrics:
-            score = score + (pd.to_numeric(out[f"{m} Percentile"], errors="coerce").fillna(0.0) * float(weights[m]))
+            score = score + (pd.to_numeric(out[m + " Percentile"], errors="coerce").fillna(0.0) * float(weights[m]))
         score = (score / wsum)  # 0..100
-        score99 = (score * 0.99).clip(0, 99).round(0).astype(int)
 
-        col = f"{prefix}{rname} Score"
+        score99 = (score * 0.99).clip(0, 99).round(0).astype(int)
+        col = "{}{} Score".format(prefix, rname)
         out[col] = score99
         created_cols.append(col)
 
     return out, created_cols
 
-# ========================= PRO TILE CSS (one-time) =========================
-st.markdown("""
-<style>
-html, body, .block-container *{
-  -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; text-rendering:optimizeLegibility;
-  font-feature-settings:"liga","kern","tnum"; font-variant-numeric:tabular-nums;
-}
-:root { --bg:#0c0e13; --card:#141823; --soft:#1e2533; }
-
-.pro-wrap{ display:flex; justify-content:center; }
-.pro-card{
-  position:relative; width:min(420px,96%); display:grid; grid-template-columns:96px 1fr 88px; gap:12px; align-items:start;
-  background:var(--card); border:1px solid rgba(255,255,255,.06); border-radius:20px; padding:16px; margin-bottom:12px;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 6px 24px rgba(0,0,0,.35);
-}
-
-.pro-avatar{ width:96px; height:96px; border-radius:12px; border:1px solid #2a3145; overflow:hidden; background:#0b0d12; }
-.pro-avatar img{ width:100%; height:100%; object-fit:cover; transform:translateZ(0); }
-
-.chip{ background:transparent; color:#a6a6a6; border:none; padding:0; border-radius:0; font-size:15px; line-height:18px; opacity:.92; }
-.row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:2px 0; }
-.leftrow1{ margin-top:6px; } .leftrow-foot{ margin-top:2px; } .leftrow-contract{ margin-top:10px; }
-
-.pill{ padding:2px 6px; min-width:36px; border-radius:6px; font-weight:800; font-size:18px; line-height:1; color:#0b0d12; text-align:center; }
-
-.name{ font-weight:900; font-size:22px; color:#e8ecff; margin-bottom:6px; letter-spacing:.2px; line-height:1.15; }
-.sub{ color:#a8b3cf; font-size:15px; opacity:.9; }
-
-.posrow{ margin-top:13.5px; }
-.postext{ font-weight:700; font-size:14.5px; letter-spacing:.2px; margin-right:11px; }
-
-.matchbox{
-  position:absolute; top:10px; right:12px; text-align:right;
-  color:#eaf0ff; font-weight:900; font-size:26px; line-height:1.0;
-}
-.matchbox small{ display:block; margin-top:4px; color:#a8b3cf; font-weight:700; font-size:12px; opacity:.9; }
-
-.teamline{ color:#dbe3ff; font-size:14px; font-weight:700; margin-top:6.5px; letter-spacing:.05px; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.tl-wrap{ position:relative; }
-.tl-has-crest{ padding-left:24px; }
-.crest-icon{ height:1.35em; width:auto; object-fit:contain; }
-.crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
-
-.m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
-.m-title{ color:#e8ecff; font-weight:900; letter-spacing:.02em; margin:4px 0 10px 0; }
-
-.m-row{ display:flex; align-items:center; gap:10px; padding:8px 8px; border-radius:10px; }
-.m-label{ color:#c9d3f2; font-size:15.5px; flex:1 1 0%; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.m-right{ display:flex; align-items:center; gap:10px; }
-.m-val{ color:#a8b3cf; font-size:13px; opacity:.9; min-width:54px; text-align:right; }
-.m-badge{ min-width:44px; text-align:center; padding:2px 10px; border-radius:8px;
-          font-weight:900; font-size:18.5px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); }
-
-.metrics-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
-@media (min-width: 720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr);} }
-
-.role-row{ display:flex; align-items:center; flex-wrap:nowrap; width:100%; }
-.role-row .pill{ flex:0 0 auto; }
-.role-row .sub{ flex:1 1 auto; margin-left:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-</style>
-""", unsafe_allow_html=True)
-
 # ========================= METRIC DISPLAY HELPERS =========================
-def _available_metric_pairs(df_view: pd.DataFrame, pairs: List[Tuple[str,str]]):
+def _available_metric_pairs(df_view, pairs):
     cols = set(df_view.columns)
     out = []
     for lab, met in pairs:
@@ -939,20 +876,24 @@ def _available_metric_pairs(df_view: pd.DataFrame, pairs: List[Tuple[str,str]]):
             out.append((lab, met))
     return out
 
-def _metric_pct(row: pd.Series, met: str):
-    col = f"{met} Percentile"
+def _metric_pct(row, met):
+    col = met + " Percentile"
     if col in row.index and not pd.isna(row[col]):
-        try: return float(row[col])
-        except Exception: return np.nan
+        try:
+            return float(row[col])
+        except Exception:
+            return np.nan
     return np.nan
 
-def _metric_val(row: pd.Series, met: str):
+def _metric_val(row, met):
     if met in row.index and not pd.isna(row[met]):
-        try: return float(row[met])
-        except Exception: return row[met]
+        try:
+            return float(row[met])
+        except Exception:
+            return row[met]
     return np.nan
 
-def _sec_html(df_view: pd.DataFrame, row: pd.Series, title: str, pairs: List[Tuple[str,str]]):
+def _sec_html(df_view, row, title, pairs):
     pairs = _available_metric_pairs(df_view, pairs)
     rows = []
     for lab, met in pairs:
@@ -971,57 +912,32 @@ def _sec_html(df_view: pd.DataFrame, row: pd.Series, title: str, pairs: List[Tup
             f"<div class='m-badge' style='background:{_pro_rating_color(p)}'>{ptxt}</div>"
             "</div></div>"
         )
-    return f"<div class='m-sec'><div class='m-title'>{title}</div>{''.join(rows) if rows else '<div class=chip>—</div>'}</div>"
-
-# ========================= FOOT/CONTRACT SAFE EXTRACTORS =========================
-def _get_foot(row) -> str:
-    for col in ("Foot", "Preferred foot", "Preferred Foot"):
-        if col in row.index:
-            val = row[col]
-            try:
-                if pd.isna(val): continue
-            except Exception:
-                pass
-            s = str(val).strip()
-            if s and s.lower() not in {"nan","none","null"}:
-                return s
-    return ""
-
-def _contract_year(row) -> int:
-    if "Contract expires" not in row.index:
-        return 0
-    dt = pd.to_datetime(row.get("Contract expires"), errors="coerce")
-    return int(dt.year) if pd.notna(dt) else 0
+    if not rows:
+        rows.append("<div class='m-row'><div class='m-label'>—</div><div class='m-right'><div class='m-val'>—</div><div class='m-badge' style='background:#2d3550'>00</div></div></div>")
+    return f"<div class='m-sec'><div class='m-title'>{title}</div>{''.join(rows)}</div>"
 
 # ========================= PRO TILE RENDERER (GENERIC) =========================
-def render_pro_tiles(
-    ranked: pd.DataFrame,
-    df_pool_role: pd.DataFrame,
-    role_title: str,
-    pill_cols: List[str],
-    top_n: int = 20,
-    show_filters: bool = True,
-):
+def render_pro_tiles(ranked, df_pool_role, role_title, pill_cols, top_n=20, show_filters=True):
     global_overrides = load_local_photo_overrides(PLAYER_PHOTO_OVERRIDES_JSON)
     st.session_state.setdefault("photo_map", {})
     st.session_state.setdefault("crest_map", {})
 
-    # -------- optional filters row (simple + pro) --------
     df_view = ranked.copy()
 
+    # Filters
     if show_filters:
         f1, f2, f3 = st.columns([1.1, 1.6, 1.6])
         with f1:
             age_choice = st.selectbox(
                 "Age",
-                ["All","U18","U20","U21","U22","U23","U25","U30","30+","32+","35+"],
+                ["All", "U18", "U20", "U21", "U22", "U23", "U25", "U30", "30+", "32+", "35+"],
                 index=0,
-                key=f"age_filter_{role_title}",
+                key="age_filter_" + role_title,
             )
         with f2:
-            q_player = st.text_input("Search player", "", key=f"q_player_{role_title}")
+            q_player = st.text_input("Search player", "", key="q_player_" + role_title)
         with f3:
-            q_team = st.text_input("Search team", "", key=f"q_team_{role_title}")
+            q_team = st.text_input("Search team", "", key="q_team_" + role_title)
 
         if q_player and "Player" in df_view.columns:
             s = q_player.strip().lower()
@@ -1044,25 +960,18 @@ def render_pro_tiles(
         st.info("No matches for current filters.")
         return
 
-    # Make sure percentiles exist for expander + role pills
-    # (use df_pool_role as distribution – that’s what you wanted in the earlier version)
-    # We'll compute percentiles by ranking inside df_pool_role, then merge onto df_view by index.
-    # Simpler: recompute percentiles directly inside df_pool_role then reindex onto df_view columns.
-    # We'll just compute percentiles inside df_pool_role and then bring the columns into df_view by the same row index values,
-    # because df_view is a subset of ranked (which came from df_pool_role rows).
-    # So easiest: ensure ranked already has percentile columns (we’ll build them before calling render_pro_tiles).
+    def pretty_pill(col):
+        return (
+            col.replace(" Score", "")
+               .replace("ST ", "").replace("ATT ", "").replace("CM ", "").replace("FB ", "").replace("CB ", "")
+               .strip()
+        )
 
-    # Choose exactly 3 pills: top-3 pill columns by this player's values (per-player)
-    # But label in UI should be pretty.
-    def pretty_pill(col: str) -> str:
-        return col.replace(" Score","").replace("ST ","").replace("ATT ","").replace("CM ","").replace("FB ","").replace("CB ","").strip()
-
-    # Cards
     for i, row in df_view.head(int(top_n)).reset_index(drop=True).iterrows():
-        player = str(row.get("Player","")) or ""
-        team   = str(row.get("Team","")) or ""
-        league = str(row.get("League","")) or ""
-        pos    = str(row.get("Position","")) or ""
+        player = str(row.get("Player", "")) or ""
+        team = str(row.get("Team", "")) or ""
+        league = str(row.get("League", "")) or ""
+        pos = str(row.get("Position", "")) or ""
 
         try:
             age = int(pd.to_numeric(row.get("Age", np.nan), errors="coerce")) if not pd.isna(row.get("Age", np.nan)) else 0
@@ -1074,21 +983,20 @@ def render_pro_tiles(
         cyr = _contract_year(row)
         contract_txt = f"{cyr}" if cyr > 0 else "—"
 
-        # MATCH% = Role Fit Score (your calculations)
         fit = float(pd.to_numeric(row.get("Role Fit Score", 0), errors="coerce") or 0.0)
         fit_pct = max(0, min(100, int(round(fit))))
 
-        # position tokens (preserve order, dedupe)
         raw = (pos or "").strip().upper()
         codes = [c for c in re.split(r"[,\s/;]+", raw) if c]
-        seen = set(); ordered = []
+        seen = set()
+        ordered = []
         for c in codes:
             if c not in seen:
-                seen.add(c); ordered.append(c)
+                seen.add(c)
+                ordered.append(c)
         pos_html = "".join(f"<span class='postext' style='color:#cbd5f5'>{c}</span>" for c in ordered)
 
-        # crest
-        crest_store_key = f"{_norm(team)}|{_norm(league)}"
+        crest_store_key = "{}|{}".format(_norm(team), _norm(league))
         crest_url = st.session_state.get("crest_map", {}).get(crest_store_key, "")
         if not crest_url:
             team_url = get_fotmob_url(team)
@@ -1096,16 +1004,15 @@ def render_pro_tiles(
 
         if crest_url:
             teamline_html = (
-                f"<div class='teamline tl-wrap tl-has-crest'>"
+                "<div class='teamline tl-wrap tl-has-crest'>"
                 f"<img class='crest-icon crest-abs' src='{crest_url}' alt=''>"
                 f"<span class='teamtext'>{team} · {league}</span>"
-                f"</div>"
+                "</div>"
             )
         else:
             teamline_html = f"<div class='teamline'>{team} · {league}</div>"
 
-        # avatar
-        key_id = f"{_norm(player)}|{_norm(team)}"
+        key_id = "{}|{}".format(_norm(player), _norm(team))
         avatar_url = resolve_player_photo(
             player=player,
             team=team,
@@ -1113,10 +1020,7 @@ def render_pro_tiles(
             session_photo_map=st.session_state["photo_map"],
             global_overrides=global_overrides,
         )
-        if DEBUG_PHOTOS:
-            st.write("PHOTO DEBUG:", player, team, avatar_url)
 
-        # pick top-3 pill cols for this row
         pills = []
         for col in pill_cols:
             v = _pro_show99(row.get(col, 0))
@@ -1125,7 +1029,7 @@ def render_pro_tiles(
         while len(pills) < 3:
             pills.append(("—", 0))
 
-        (c1,v1),(c2,v2),(c3,v3) = pills
+        (c1, v1), (c2, v2), (c3, v3) = pills
 
         st.markdown(f"""
         <div class='pro-wrap'>
@@ -1164,38 +1068,36 @@ def render_pro_tiles(
         </div>
         """, unsafe_allow_html=True)
 
-        # ------------- EXPANDER (metrics + overrides) -------------
         with st.expander("Individual Metrics / Image + Crest overrides", expanded=False):
-            # default metric sets (works across roles; only shows those that exist)
             ATT = [
-                ("Goals: Non-Penalty","Non-penalty goals per 90"),
-                ("xG","xG per 90"),
-                ("Shots","Shots per 90"),
-                ("Expected Assists","xA per 90"),
-                ("Progressive Runs","Progressive runs per 90"),
-                ("Touches in Opposition Box","Touches in box per 90"),
-                ("Crosses","Crosses per 90"),
+                ("Goals: Non-Penalty", "Non-penalty goals per 90"),
+                ("xG", "xG per 90"),
+                ("Shots", "Shots per 90"),
+                ("Expected Assists", "xA per 90"),
+                ("Progressive Runs", "Progressive runs per 90"),
+                ("Touches in Opposition Box", "Touches in box per 90"),
+                ("Crosses", "Crosses per 90"),
             ]
             DEF = [
-                ("Aerial Duels","Aerial duels per 90"),
-                ("Aerial Duel Success %","Aerial duels won, %"),
-                ("PAdj. Interceptions","PAdj Interceptions"),
-                ("Defensive Duels","Defensive duels per 90"),
-                ("Defensive Duel Success %","Defensive duels won, %"),
-                ("Shots Blocked","Shots blocked per 90"),
+                ("Aerial Duels", "Aerial duels per 90"),
+                ("Aerial Duel Success %", "Aerial duels won, %"),
+                ("PAdj. Interceptions", "PAdj Interceptions"),
+                ("Defensive Duels", "Defensive duels per 90"),
+                ("Defensive Duel Success %", "Defensive duels won, %"),
+                ("Shots Blocked", "Shots blocked per 90"),
             ]
             POS = [
-                ("Dribbles","Dribbles per 90"),
-                ("Dribbling Success %","Successful dribbles, %"),
-                ("Key Passes","Key passes per 90"),
-                ("Passes","Passes per 90"),
-                ("Passing %","Accurate passes, %"),
-                ("Forward Passes","Forward passes per 90"),
-                ("Progressive Passes","Progressive passes per 90"),
-                ("Passes to Final 3rd","Passes to final third per 90"),
-                ("Passes to Penalty Area","Passes to penalty area per 90"),
-                ("Deep Completions","Deep completions per 90"),
-                ("Smart Passes","Smart passes per 90"),
+                ("Dribbles", "Dribbles per 90"),
+                ("Dribbling Success %", "Successful dribbles, %"),
+                ("Key Passes", "Key passes per 90"),
+                ("Passes", "Passes per 90"),
+                ("Passing %", "Accurate passes, %"),
+                ("Forward Passes", "Forward passes per 90"),
+                ("Progressive Passes", "Progressive passes per 90"),
+                ("Passes to Final 3rd", "Passes to final third per 90"),
+                ("Passes to Penalty Area", "Passes to penalty area per 90"),
+                ("Deep Completions", "Deep completions per 90"),
+                ("Smart Passes", "Smart passes per 90"),
             ]
 
             st.markdown(
@@ -1207,20 +1109,20 @@ def render_pro_tiles(
                 unsafe_allow_html=True
             )
 
-            # ---- Player image override (upload or URL) ----
-            img_key = f"imgurl_{role_title}_{i}_{key_id}"
+            # Player image override
+            img_key = "imgurl_{}_{}_{}".format(role_title, i, key_id)
             default_url = st.session_state.get("photo_map", {}).get(key_id, "")
-            uploaded_file = st.file_uploader("Upload player image (PNG/JPG)", type=["png","jpg","jpeg"], key=f"upl_{img_key}")
+            uploaded_file = st.file_uploader("Upload player image (PNG/JPG)", type=["png", "jpg", "jpeg"], key="upl_" + img_key)
             _ = st.text_input("Custom image URL (or data:image/...)", value=default_url, key=img_key)
 
             a, b = st.columns([1, 3])
             with a:
-                if st.button("Apply player image", key=f"apply_{img_key}"):
+                if st.button("Apply player image", key="apply_" + img_key):
                     if uploaded_file is not None:
                         data = uploaded_file.getvalue()
                         mime = getattr(uploaded_file, "type", "") or "image/png"
                         b64 = base64.b64encode(data).decode("ascii")
-                        st.session_state.setdefault("photo_map", {})[key_id] = f"data:{mime};base64,{b64}"
+                        st.session_state.setdefault("photo_map", {})[key_id] = "data:{};base64,{}".format(mime, b64)
                         st.success("Saved.")
                         st.rerun()
                     else:
@@ -1234,31 +1136,31 @@ def render_pro_tiles(
                             st.success("Saved.")
                             st.rerun()
             with b:
-                if st.button("Clear player image override", key=f"clear_{img_key}"):
+                if st.button("Clear player image override", key="clear_" + img_key):
                     st.session_state.setdefault("photo_map", {}).pop(key_id, None)
                     st.info("Cleared.")
                     st.rerun()
 
             st.markdown("---")
 
-            # ---- Club crest override (per-club) ----
-            crest_widget_ns = f"{role_title}_{i}_{crest_store_key}"
+            # Crest override
+            crest_widget_ns = "crest_{}_{}_{}".format(role_title, i, crest_store_key)
             crest_default = st.session_state.get("crest_map", {}).get(crest_store_key, "")
-            crest_upload = st.file_uploader("Upload club crest (SVG/PNG/JPG)", type=["svg","png","jpg","jpeg"], key=f"crest_upl_{crest_widget_ns}")
-            _ = st.text_input("Custom crest URL (or data:image/...)", value=crest_default, key=f"crest_url_{crest_widget_ns}")
+            crest_upload = st.file_uploader("Upload club crest (SVG/PNG/JPG)", type=["svg", "png", "jpg", "jpeg"], key="crest_upl_" + crest_widget_ns)
+            _ = st.text_input("Custom crest URL (or data:image/...)", value=crest_default, key="crest_url_" + crest_widget_ns)
 
             c, d = st.columns([1, 3])
             with c:
-                if st.button("Apply crest", key=f"apply_crest_{crest_widget_ns}"):
+                if st.button("Apply crest", key="apply_crest_" + crest_widget_ns):
                     if crest_upload is not None:
                         data = crest_upload.getvalue()
                         mime = crest_upload.type or "image/png"
                         b64 = base64.b64encode(data).decode("ascii")
-                        st.session_state.setdefault("crest_map", {})[crest_store_key] = f"data:{mime};base64,{b64}"
+                        st.session_state.setdefault("crest_map", {})[crest_store_key] = "data:{};base64,{}".format(mime, b64)
                         st.success("Crest saved.")
                         st.rerun()
                     else:
-                        val = (st.session_state.get(f"crest_url_{crest_widget_ns}", "") or "").strip()
+                        val = (st.session_state.get("crest_url_" + crest_widget_ns, "") or "").strip()
                         if not val:
                             st.error("Upload a crest or paste a URL.")
                         elif not (val.startswith("http://") or val.startswith("https://") or val.startswith("data:image/")):
@@ -1268,48 +1170,43 @@ def render_pro_tiles(
                             st.success("Crest saved.")
                             st.rerun()
             with d:
-                if st.button("Clear crest override", key=f"clear_crest_{crest_widget_ns}"):
+                if st.button("Clear crest override", key="clear_crest_" + crest_widget_ns):
                     st.session_state.setdefault("crest_map", {}).pop(crest_store_key, None)
                     st.info("Crest cleared.")
                     st.rerun()
 
 # ========================= ROLE TAB WRAPPER =========================
-def role_tab(role_key: str, compute_fn, roles_for_pills: Dict[str,dict], pill_prefix: str):
+def role_tab(role_key, compute_fn, roles_for_pills, pill_prefix):
     st.subheader(role_key)
 
     ranked, pool, role_title, tmpl_src = compute_fn()
 
-    # Ensure percentiles exist for metrics shown in expander + role pills
+    # Collect metrics used by pills
     all_metrics = set()
     for rdef in roles_for_pills.values():
-        for m in (rdef.get("metrics", {}) or {}).keys():
+        w = rdef.get("metrics") or {}
+        for m in w.keys():
             all_metrics.add(m)
 
-    pool2 = add_metric_percentiles(pool.copy(), sorted(all_metrics))
-    ranked2 = ranked.copy()
-    # Bring percentile cols into ranked2 (ranked is derived from pool rows, so it has same columns)
-    for m in all_metrics:
-        pc = f"{m} Percentile"
-        if pc in pool2.columns and pc not in ranked2.columns:
-            ranked2[pc] = pool2[pc]
+    ranked = ranked.copy()
+    # Make sure the raw metric columns exist for percentile calc
+    ranked = add_metric_percentiles(ranked, sorted(all_metrics))
+    ranked, pill_cols = compute_role_bucket_scores(ranked, roles_for_pills, prefix=pill_prefix + " ")
 
-    ranked3, pill_cols = compute_role_bucket_scores(ranked2, roles_for_pills, prefix=f"{pill_prefix} ")
-
-    # Tab sub-layout: Matches | Pro Tiles | Template Players Used
     t1, t2, t3 = st.tabs(["Matches", "Pro Layout (Tiles)", "Template Players Used"])
 
     with t1:
-        st.markdown(f"### 🧾 Matches — {role_title}")
+        st.markdown("### Matches - {}".format(role_title))
         show_cols = [c for c in [
-            "Player","Team","League","Position","Age","Minutes played","Market value","Role Fit Score"
-        ] if c in ranked3.columns]
-        st.dataframe(ranked3[show_cols].head(int(top_n)), use_container_width=True)
+            "Player", "Team", "League", "Position", "Age", "Minutes played", "Market value", "Role Fit Score"
+        ] if c in ranked.columns]
+        st.dataframe(ranked[show_cols].head(int(top_n)), use_container_width=True)
 
     with t2:
-        st.markdown(f"### 🏅 Pro Layout — {role_title}")
+        st.markdown("### Pro Layout - {}".format(role_title))
         render_pro_tiles(
-            ranked=ranked3,
-            df_pool_role=ranked3,  # contains Percentile cols + role scores
+            ranked=ranked,
+            df_pool_role=ranked,
             role_title=role_title,
             pill_cols=pill_cols,
             top_n=int(top_n),
@@ -1323,56 +1220,42 @@ def role_tab(role_key: str, compute_fn, roles_for_pills: Dict[str,dict], pill_pr
 tabs = st.tabs(["Strikers", "Attackers", "Central Midfield", "Fullbacks", "Center Backs"])
 
 with tabs[0]:
-    role_tab(
-        "Strikers",
-        compute_fn=compute_strikers,
-        roles_for_pills=ST_ROLES,
-        pill_prefix="ST",
-    )
+    role_tab("Strikers", compute_fn=compute_strikers, roles_for_pills=ST_ROLES, pill_prefix="ST")
 
 with tabs[1]:
     att_choice = st.selectbox(
         "Attacker subgroup",
-        ["All","Right Wingers","Left Wingers","Attacking Midfielders"],
+        ["All", "Right Wingers", "Left Wingers", "Attacking Midfielders"],
         index=0,
         key="att_role_choice",
     )
     role_tab(
-        f"Attackers — {att_choice}",
+        "Attackers - {}".format(att_choice),
         compute_fn=lambda: compute_attackers(att_choice),
         roles_for_pills=ATT_ROLES,
         pill_prefix="ATT",
     )
 
 with tabs[2]:
-    role_tab(
-        "Central Midfield",
-        compute_fn=compute_central_mid,
-        roles_for_pills=CM_ROLES,
-        pill_prefix="CM",
-    )
+    role_tab("Central Midfield", compute_fn=compute_central_mid, roles_for_pills=CM_ROLES, pill_prefix="CM")
 
 with tabs[3]:
     fb_choice = st.selectbox(
         "Fullback side",
-        ["All","Right Backs","Left Backs"],
+        ["All", "Right Backs", "Left Backs"],
         index=0,
         key="fb_role_choice",
     )
     role_tab(
-        f"Fullbacks — {fb_choice}",
+        "Fullbacks - {}".format(fb_choice),
         compute_fn=lambda: compute_fullbacks(fb_choice),
         roles_for_pills=FB_ROLES,
         pill_prefix="FB",
     )
 
 with tabs[4]:
-    role_tab(
-        "Center Backs",
-        compute_fn=compute_center_backs,
-        roles_for_pills=CB_ROLES,
-        pill_prefix="CB",
-    )
+    role_tab("Center Backs", compute_fn=compute_center_backs, roles_for_pills=CB_ROLES, pill_prefix="CB")
+
 
 
     # ======================== Feature Z (stability + Matplotlib color fixes) ========================
