@@ -1064,28 +1064,33 @@ with tabs[3]:
 with tabs[4]:
     role_tab("Center Backs", compute_center_backs)
 
-
 # ============================ CLUB TOOL — ONE-PAGER (FULL, ALL ROLES BY POSITION) ============================
 # Paste this WHOLE block into your Club Tool page where you want the one-pager section.
-# Assumptions:
-# - You already have df loaded (WORLD*.csv)
-# - You already imported: re, requests, numpy as np, pandas as pd, streamlit as st
-# - If you have resolve_player_photo(player, team, league), we'll use it. If not, we fallback to placeholder.
-# - If you have resolve_team_crest(team, league), we’ll use it. If not, crest is skipped.
-# - If you have LEAGUE_STRENGTHS, we’ll use it for the badge blend. If not, we default strength=50.
+#
+# ✅ Percentiles are computed vs: SAME LEAGUE + SAME POSITION-GROUP pool (unless "{metric} Percentile" exists)
+# ✅ Target Man CF is DISPLAYED in roles, but NOT used for the big badge score beside the name
+# ✅ Header layout: Player PHOTO then NAME then BIG BADGE (beside name). Crest on far-right
+# ✅ Reduced top gap: meta + roles sit tighter, panels start higher
+# ✅ Removed the badge number from the info/meta line (no leading "99" etc)
+#
+# Assumes you already have:
+# - df (DataFrame)
+# - streamlit as st, numpy as np, pandas as pd, re, requests available (if not, this block imports what it needs)
+# - Optional: resolve_player_photo(player, team, league) and resolve_team_crest(team, league)
+# - Optional: LEAGUE_STRENGTHS dict
 
 from io import BytesIO
+import re
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import requests
 
 st.markdown("---")
 st.header("🧾 One-pager (Club Tool)")
 
 # -------------------- ROLE BUCKETS (ALL ROLES BY POSITION) --------------------
-# These are the role-score buckets for the badge + roles row.
-# Score per role = weighted average of percentile metrics (0..100).
 ROLE_BUCKETS = {
     # -------------------- CENTRAL MID (CM/DM) --------------------
     "CM": {
@@ -1133,7 +1138,6 @@ ROLE_BUCKETS = {
                 "Accelerations per 90": 3,
             }
         },
-        # generic “attacking-mid/wing creator” style bucket (optional but useful)
         "Playmaker": {
             "metrics": {
                 "Passes per 90": 2,
@@ -1271,8 +1275,6 @@ ROLE_BUCKETS = {
     },
 
     # -------------------- ATTACKERS (W/AM) --------------------
-    # Your earlier pasted "Playmaker / Goal Threat / Ball Carrier" are also useful for attackers,
-    # so we include them here too.
     "ATT": {
         "Playmaker": {
             "metrics": {
@@ -1318,6 +1320,7 @@ def _pos_token(p: str) -> str:
     return toks[0] if toks else ""
 
 def _role_key_from_pos(tok: str) -> str:
+    tok = str(tok or "").upper().strip()
     if tok.startswith("CF"):
         return "CF"
     if tok.startswith(("CB","LCB","RCB")):
@@ -1330,25 +1333,22 @@ def _role_key_from_pos(tok: str) -> str:
         return "ATT"
     return ""
 
-# -------------------- Percentiles: use column if exists, else compute rank% --------------------
+# -------------------- Percentiles: compare vs same league + same position-group pool --------------------
 @st.cache_data(show_spinner=False)
-def _rank_percentiles_for_metric(df_in: pd.DataFrame, metric: str) -> pd.Series:
-    s = pd.to_numeric(df_in.get(metric, pd.Series(index=df_in.index, dtype=float)), errors="coerce")
+def _rank_percentiles_for_metric(df_ref: pd.DataFrame, metric: str) -> pd.Series:
+    s = pd.to_numeric(df_ref.get(metric, pd.Series(index=df_ref.index, dtype=float)), errors="coerce")
     return s.rank(pct=True) * 100.0
 
-def pct_of_row(ply: pd.Series, metric: str, df_all: pd.DataFrame) -> float:
-    # priority: "{metric} Percentile"
+def pct_of_row(ply: pd.Series, metric: str, df_all: pd.DataFrame, ref_df: pd.DataFrame) -> float:
     col = f"{metric} Percentile"
     if col in df_all.columns and pd.notna(ply.get(col, np.nan)):
         return float(ply[col])
-    # fallback: rank-based percentile from raw metric
-    if metric in df_all.columns:
-        pcts = _rank_percentiles_for_metric(df_all, metric)
-        try:
-            return float(pcts.loc[ply.name])
-        except Exception:
-            return np.nan
-    return np.nan
+    if metric not in df_all.columns:
+        return np.nan
+    if ref_df is None or ref_df.empty:
+        ref_df = df_all
+    pcts = _rank_percentiles_for_metric(ref_df, metric)
+    return float(pcts.loc[ply.name]) if ply.name in pcts.index else np.nan
 
 def val_str(ply: pd.Series, metric: str) -> str:
     if metric not in ply.index or pd.isna(ply[metric]):
@@ -1372,14 +1372,14 @@ def div_color_tuple(v: float):
         c1, c2 = np.array([234, 179, 8]), np.array([34, 197, 94])
     return tuple(((c1 + (c2 - c1) * t) / 255.0).astype(float))
 
-def compute_role_scores(ply: pd.Series, df_all: pd.DataFrame, role_key: str) -> dict:
+def compute_role_scores(ply: pd.Series, df_all: pd.DataFrame, role_key: str, ref_df: pd.DataFrame) -> dict:
     buckets = ROLE_BUCKETS.get(role_key, {}) if role_key else {}
     out = {}
     for role_name, spec in buckets.items():
         met_w = (spec or {}).get("metrics", {}) or {}
         vals, wts = [], []
         for met, w in met_w.items():
-            p = pct_of_row(ply, met, df_all)
+            p = pct_of_row(ply, met, df_all, ref_df)
             if pd.isna(p):
                 continue
             vals.append(float(p))
@@ -1388,7 +1388,7 @@ def compute_role_scores(ply: pd.Series, df_all: pd.DataFrame, role_key: str) -> 
             out[role_name] = float(np.average(vals, weights=wts))
     return out
 
-# -------------------- Metric groups (your requested “use all metrics”) --------------------
+# -------------------- Metric groups (use your full requested list) --------------------
 ATTACKING_METRICS = [
     ("Crosses", "Crosses per 90"),
     ("Crossing %", "Accurate crosses, %"),
@@ -1433,12 +1433,12 @@ POSSESSION_METRICS = [
     ("Smart Passes", "Smart passes per 90"),
 ]
 
-def build_triples(ply: pd.Series, df_all: pd.DataFrame, pairs: list) -> list:
+def build_triples(ply: pd.Series, df_all: pd.DataFrame, ref_df: pd.DataFrame, pairs: list) -> list:
     triples = []
     for lab, met in pairs:
         if met not in df_all.columns and f"{met} Percentile" not in df_all.columns:
             continue
-        triples.append((lab, pct_of_row(ply, met, df_all), val_str(ply, met)))
+        triples.append((lab, pct_of_row(ply, met, df_all, ref_df), val_str(ply, met)))
     return triples
 
 # -------------------- UI: Select position group -> player --------------------
@@ -1475,6 +1475,30 @@ league = str(ply.get("League", "?"))
 pos = str(ply.get("Position", "?"))
 pos_tok = _pos_token(pos)
 
+# --- build the reference pool: SAME LEAGUE + SAME POSITION-GROUP ---
+role_key = _role_key_from_pos(pos_tok)
+
+ref_df = df.copy()
+if "League" in ref_df.columns:
+    ref_df = ref_df[ref_df["League"].astype(str) == str(league)].copy()
+if "Position" in ref_df.columns:
+    ref_df["_pos_tok"] = ref_df["Position"].apply(_pos_token)
+    rk = role_key
+    if rk == "CF":
+        allowed = {"CF"}
+    elif rk == "CB":
+        allowed = {"CB","LCB","RCB"}
+    elif rk == "FB":
+        allowed = {"RB","LB","RWB","LWB"}
+    elif rk == "CM":
+        allowed = {"DMF","CMF","LCMF","RCMF","LDMF","RDMF"}
+    elif rk == "ATT":
+        allowed = {"RW","RWF","LW","LWF","AMF","RAMF","LAMF"}
+    else:
+        allowed = set()
+    if allowed:
+        ref_df = ref_df[ref_df["_pos_tok"].isin(allowed)].copy()
+
 # Photo + crest URLs (from your existing resolvers if present)
 PLACEHOLDER_IMG = "https://i.redd.it/43axcjdu59nd1.jpeg"
 photo_url = PLACEHOLDER_IMG
@@ -1491,33 +1515,12 @@ if "resolve_team_crest" in globals():
     except Exception:
         crest_url = ""
 
-# -------------------- Role scores + badge value --------------------
-role_key = _role_key_from_pos(pos_tok)
-role_scores = compute_role_scores(ply, df, role_key)
-
-# exclude Target Man CF from the badge pick
-EXCLUDE_ROLE = "target man cf"
-filtered_roles = [(k, v) for k, v in role_scores.items() if str(k).strip().lower() != EXCLUDE_ROLE]
-top3_roles = sorted(filtered_roles, key=lambda kv: kv[1], reverse=True)[:3]
-
-best_val_raw = float(top3_roles[0][1]) if top3_roles else (max(role_scores.values()) if role_scores else np.nan)
-
-_ls_map = globals().get("LEAGUE_STRENGTHS", {})
-league_strength = float(_ls_map.get(league, 50.0)) if isinstance(_ls_map, dict) else 50.0
-BETA_BADGE = 0.40
-best_val_adj = ((1.0 - BETA_BADGE) * float(best_val_raw) + BETA_BADGE * league_strength) if pd.notna(best_val_raw) else league_strength
-
-# -------------------- Metric triples --------------------
-ATTACKING = build_triples(ply, df, ATTACKING_METRICS)
-DEFENSIVE = build_triples(ply, df, DEFENSIVE_METRICS)
-POSSESSION = build_triples(ply, df, POSSESSION_METRICS)
-
-# -------------------- Image loading (photo + crest) --------------------
+# ---- load images ----
 def _try_load_img(url: str):
-    if not url or not (url.startswith("http://") or url.startswith("https://")):
+    if not url or not (str(url).startswith("http://") or str(url).startswith("https://")):
         return None
     try:
-        r = requests.get(url, timeout=7, headers={"User-Agent": "Mozilla/5.0"})
+        r = requests.get(str(url), timeout=7, headers={"User-Agent": "Mozilla/5.0"})
         if r.status_code != 200:
             return None
         return plt.imread(BytesIO(r.content))
@@ -1527,17 +1530,31 @@ def _try_load_img(url: str):
 photo_img = _try_load_img(photo_url)
 crest_img = _try_load_img(crest_url) if crest_url else None
 
-# -------------------- One-pager renderer --------------------
+# -------------------- Role scores + badge value --------------------
+role_scores = compute_role_scores(ply, df, role_key, ref_df)
+
+# badge pick EXCLUDES Target Man CF only (but we still display it in roles row)
+EXCLUDE_ROLE = "target man cf"
+filtered_roles = [(k, v) for k, v in role_scores.items() if str(k).strip().lower() != EXCLUDE_ROLE]
+top3_roles = sorted(filtered_roles, key=lambda kv: kv[1], reverse=True)[:3]
+best_val_raw = float(top3_roles[0][1]) if top3_roles else (max(role_scores.values()) if role_scores else np.nan)
+
+_ls_map = globals().get("LEAGUE_STRENGTHS", {})
+league_strength = float(_ls_map.get(str(league), 50.0)) if isinstance(_ls_map, dict) else 50.0
+BETA_BADGE = 0.40
+best_val_adj = ((1.0 - BETA_BADGE) * float(best_val_raw) + BETA_BADGE * league_strength) if pd.notna(best_val_raw) else league_strength
+
+# -------------------- Metric triples --------------------
+ATTACKING = build_triples(ply, df, ref_df, ATTACKING_METRICS)
+DEFENSIVE = build_triples(ply, df, ref_df, DEFENSIVE_METRICS)
+POSSESSION = build_triples(ply, df, ref_df, POSSESSION_METRICS)
+
+# -------------------- One-pager styling --------------------
 PAGE_BG   = "#0a0f1c"
 PANEL_BG  = "#11161C"
 TRACK_BG  = "#222c3d"
 TEXT      = "#E5E7EB"
 ROLE_GREY = "#737373"
-
-NAME_X = 0.055
-META_X = 0.055
-CHIP_X0 = 0.055
-GUTTER_PAD = 0.006
 
 BAR_PX = 24
 GAP_PX = 6
@@ -1550,20 +1567,25 @@ TITLE_FS = 20
 
 def _text_width_frac(fig, s, *, fontsize=8, weight="normal"):
     t = fig.text(0, 0, s, fontsize=fontsize, fontweight=weight, transform=fig.transFigure, alpha=0)
-    fig.canvas.draw(); r = fig.canvas.get_renderer()
-    w_px = t.get_window_extent(renderer=r).width; t.remove()
+    fig.canvas.draw()
+    r = fig.canvas.get_renderer()
+    w_px = t.get_window_extent(renderer=r).width
+    t.remove()
     return w_px / fig.bbox.width
 
 def _text_height_frac(fig, s, *, fontsize=8, weight="normal"):
     t = fig.text(0, 0, s, fontsize=fontsize, fontweight=weight, transform=fig.transFigure, alpha=0)
-    fig.canvas.draw(); r = fig.canvas.get_renderer()
-    h_px = t.get_window_extent(renderer=r).height; t.remove()
+    fig.canvas.draw()
+    r = fig.canvas.get_renderer()
+    h_px = t.get_window_extent(renderer=r).height
+    t.remove()
     return h_px / fig.bbox.height
 
 def roles_row_tight(fig, rs: dict, y, *, fs=10.6, max_items=12):
     if not isinstance(rs, dict) or not rs:
         return y
-    x0 = x = CHIP_X0
+
+    x0 = x = 0.055
     row_gap = 0.041
     gap = 0.003
     pad_x = 0.006
@@ -1616,17 +1638,18 @@ def bar_panel(fig, left, top, width, triples, title):
     fig.canvas.draw()
     fig_px_h = fig.bbox.height
 
-    ax_h_frac = (n_rows * STEP_PX) / fig_px_h if n_rows else (2 * STEP_PX) / fig_px_h
+    ax_h_frac = (max(1, n_rows) * STEP_PX) / fig_px_h
     bottom = top - ax_h_frac
 
     labels = [t[0] for t in triples]
     max_label_w_frac = max(_text_width_frac(fig, s, fontsize=LABEL_FS, weight="bold") for s in labels) if labels else 0
-    gutter_w = max_label_w_frac + GUTTER_PAD
+    gutter_w = max_label_w_frac + 0.006
 
     ax_panel = fig.add_axes([left, bottom, width, ax_h_frac])
     ax_panel.set_facecolor(PANEL_BG)
     ax_panel.set_xticks([]); ax_panel.set_yticks([])
-    for sp in ax_panel.spines.values(): sp.set_visible(False)
+    for sp in ax_panel.spines.values():
+        sp.set_visible(False)
 
     bar_left = left + gutter_w
     bar_width = max(0.001, width - gutter_w - 0.004)
@@ -1653,18 +1676,19 @@ def bar_panel(fig, left, top, width, triples, title):
         ax.add_patch(mpatches.Rectangle((0, yi - bar_du/2), v, bar_du, facecolor=div_color_tuple(v), edgecolor="none"))
         ax.text(1.0, yi, t, va="center", ha="left", color="#0B0B0B", fontsize=VALUE_FS + 0.5, weight="700")
 
-    for sp in ax.spines.values(): sp.set_visible(False)
+    for sp in ax.spines.values():
+        sp.set_visible(False)
     ax.tick_params(axis="both", length=0, labelsize=0)
     ax.grid(False)
     ax.axvline(50, color="#94A3B8", linestyle=":", linewidth=1.2, zorder=2)
 
     for yi, lab in zip(y_idx[:n], labels):
         y_fig = bottom + ax_h_frac * ((yi + 0.5) / max(1, n))
-        fig.text(left + GUTTER_PAD/2, y_fig, lab, color=TEXT, fontsize=LABEL_FS, fontweight="bold",
+        fig.text(left + 0.006/2, y_fig, lab, color=TEXT, fontsize=LABEL_FS, fontweight="bold",
                  va="center", ha="left")
 
     title_y = bottom + ax_h_frac + 0.008
-    fig.text(left + GUTTER_PAD/2, title_y, title, color=TEXT, fontsize=TITLE_FS, fontweight="900",
+    fig.text(left + 0.006/2, title_y, title, color=TEXT, fontsize=TITLE_FS, fontweight="900",
              ha="left", va="bottom")
     ax.plot([0, 1], [1, 1], transform=ax.transAxes, color="#94A3B8", linewidth=0.8, alpha=0.35)
 
@@ -1675,53 +1699,67 @@ W, H = 1500, 1080
 fig = plt.figure(figsize=(W/100, H/100), dpi=100)
 fig.patch.set_facecolor(PAGE_BG)
 
-# Header: name + badge + photo/crest
+# ---- header layout knobs ----
+PHOTO_W = 0.070
+PHOTO_H = 0.070
+PHOTO_X = 0.050
+PHOTO_Y = 0.915
+
+NAME_X = PHOTO_X + PHOTO_W + 0.016
+NAME_Y = 0.962
+
+BADGE_SCALE = 1.28
+
+# Photo beside name (left)
+if photo_img is not None:
+    axp = fig.add_axes([PHOTO_X, PHOTO_Y, PHOTO_W, PHOTO_H])
+    axp.imshow(photo_img)
+    axp.axis("off")
+    axp.set_facecolor(PAGE_BG)
+
+# Name
 name_fs = 28
-name_text = fig.text(NAME_X, 0.962, f"{player_name}", color="#FFFFFF",
+name_text = fig.text(NAME_X, NAME_Y, f"{player_name}", color="#FFFFFF",
                      fontsize=name_fs, fontweight="900", va="top", ha="left")
-fig.canvas.draw(); r = fig.canvas.get_renderer()
+
+fig.canvas.draw()
+r = fig.canvas.get_renderer()
 name_bbox = name_text.get_window_extent(renderer=r)
 name_w_frac = name_bbox.width / fig.bbox.width
 name_h_frac = name_bbox.height / fig.bbox.height
 
+# Bigger badge right beside name
 badge_x = NAME_X + name_w_frac + 0.010
-R, G, B = [int(255*c) for c in div_color_tuple(best_val_adj)]
-bh = name_h_frac
+bh = name_h_frac * BADGE_SCALE
 bw = bh
-by = 0.962 - bh
+by = NAME_Y - bh
 
+R, G, B = [int(255*c) for c in div_color_tuple(best_val_adj)]
 fig.patches.append(mpatches.FancyBboxPatch(
     (badge_x, by), bw, bh,
-    boxstyle="round,pad=0.001,rounding_size=0.011",
+    boxstyle="round,pad=0.001,rounding_size=0.012",
     transform=fig.transFigure,
     facecolor=f"#{R:02x}{G:02x}{B:02x}",
     edgecolor="none",
 ))
 fig.text(badge_x + bw/2, by + bh/2 - 0.0005, f"{int(round(best_val_adj))}",
-         fontsize=18.6, color="#FFFFFF", va="center", ha="center", fontweight="900")
+         fontsize=18.6 * BADGE_SCALE, color="#FFFFFF",
+         va="center", ha="center", fontweight="900")
 
-# Put photo on the far-right of header
-if photo_img is not None:
-    axp = fig.add_axes([0.905, 0.90, 0.07, 0.07])
-    axp.imshow(photo_img)
-    axp.axis("off")
-    axp.set_facecolor(PAGE_BG)
-
-# Crest next to photo (small)
+# Crest on far-right
 if crest_img is not None:
-    axc = fig.add_axes([0.865, 0.91, 0.04, 0.04])
+    axc = fig.add_axes([0.925, 0.92, 0.040, 0.040])
     axc.imshow(crest_img)
     axc.axis("off")
     axc.set_facecolor(PAGE_BG)
 
-# Second line: (score smaller) before position, then team/league etc.
+# -------------------- META line (NO leading score; moved down/tighter) --------------------
 age = int(ply["Age"]) if pd.notna(ply.get("Age")) else None
 mins = int(ply.get("Minutes played", np.nan)) if pd.notna(ply.get("Minutes played")) else None
 matches = int(ply.get("Matches played", np.nan)) if pd.notna(ply.get("Matches played")) else None
 goals = int(ply.get("Goals", np.nan)) if pd.notna(ply.get("Goals")) else 0
 assists = int(ply.get("Assists", np.nan)) if pd.notna(ply.get("Assists")) else 0
 
-# xG total if you have xG, else compute from xG per 90 and minutes
 if "xG" in ply.index and pd.notna(ply.get("xG")):
     xg_total = float(ply["xG"])
 else:
@@ -1729,57 +1767,43 @@ else:
     xg_total = float(xg_per90) * (float(mins) / 90.0) if (pd.notna(xg_per90) and mins) else np.nan
 xg_total_str = f"{xg_total:.2f}" if pd.notna(xg_total) else "—"
 
-# score (smaller) before position
-meta_y = 0.905
-score_small = f"{int(round(best_val_adj))}"
-meta_parts = [
-    (f"{score_small}  ", "bold_small"),
+meta_y = 0.915
+x_meta = 0.055
+runs = [
     (f"{pos} — ", "normal"),
-    (f"{team}", "bold"),
+    (team, "bold"),
     (" — ", "normal"),
-    (f"{league}", "bold"),
+    (league, "bold"),
     (f" — Age {age if age is not None else '—'} — Minutes {mins if mins is not None else '—'} — "
-     f"Matches {matches if matches is not None else '—'} — Goals {goals} — xG {xg_total_str} — Assists {assists}", "normal"),
+     f"Matches {matches if matches is not None else '—'} — Goals {goals} — xG {xg_total_str} — Assists {assists}", "normal")
 ]
-
-def _run_weight(tag: str):
-    if tag == "bold":
-        return "900"
-    if tag == "bold_small":
-        return "900"
-    return "normal"
-
-x_meta = META_X
-for txt, tag in meta_parts:
-    fs = 11.5 if tag == "bold_small" else 13
+for txt, weight in runs:
+    fs = 13
     fig.text(x_meta, meta_y, txt, color="#FFFFFF", fontsize=fs,
-             fontweight=_run_weight(tag), ha="left", va="center")
-    x_meta += _text_width_frac(fig, txt, fontsize=fs, weight=_run_weight(tag)) + 0.004
+             fontweight=("900" if weight == "bold" else "normal"),
+             ha="left", va="center")
+    x_meta += _text_width_frac(fig, txt, fontsize=fs, weight=("900" if weight == "bold" else "normal")) + (0.004 if txt.strip() else 0)
 
-# Roles row under header (top roles for this position)
-y_roles = 0.865
-# show the top 10 role scores (excluding "Target Man CF" if present)
-roles_for_row = dict(sorted(
-    [(k, v) for k, v in role_scores.items() if str(k).strip().lower() != "target man cf"],
-    key=lambda kv: -kv[1]
-)[:10])
+# -------------------- Roles row (DISPLAY ALL roles incl Target Man) --------------------
+y_roles = 0.835
+roles_for_row = dict(sorted(role_scores.items(), key=lambda kv: -kv[1])[:10])
 y_roles = roles_row_tight(fig, roles_for_row, y_roles, fs=10.6, max_items=10)
 
-# ----------------- Layout (wider panels, smaller middle gap) -----------------
+# -------------------- Layout (reduced top gap; panels start higher) --------------------
 LEFT = 0.050
 WIDTH_L = 0.41
 MID_GAP = 0.040
 RIGHT = LEFT + WIDTH_L + MID_GAP
 WIDTH_R = 0.41
 
-TOP = 0.66
+TOP = 0.635
 V_GAP_FRAC = 0.050
 
 att_bottom = bar_panel(fig, LEFT, TOP, WIDTH_L, ATTACKING, "Attacking")
-def_bottom = bar_panel(fig, LEFT, att_bottom - V_GAP_FRAC, WIDTH_L, DEFENSIVE, "Defensive")
+_ = bar_panel(fig, LEFT, att_bottom - V_GAP_FRAC, WIDTH_L, DEFENSIVE, "Defensive")
 _ = bar_panel(fig, RIGHT, TOP, WIDTH_R, POSSESSION, "Possession")
 
-# ----------------- render + download -----------------
+# -------------------- render + download --------------------
 st.pyplot(fig, use_container_width=True)
 
 buf = BytesIO()
@@ -1792,6 +1816,7 @@ st.download_button(
 )
 
 # ============================ END ONE-PAGER ============================
+
 
 
 
