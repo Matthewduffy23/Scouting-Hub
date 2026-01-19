@@ -2139,8 +2139,11 @@ def compute_strengths_weaknesses_styles(ply: pd.Series, df_all: pd.DataFrame, ro
 
 # -------------------- Metric groups --------------------
 ATTACKING_METRICS = [
+    ("Accelerations", "Accelerations per 90"),
     ("Crosses", "Crosses per 90"),
     ("Crossing %", "Accurate crosses, %"),
+    ("Dribbles", "Dribbles per 90"),
+    ("Dribbling %", "Successful dribbles, %"),
     ("Goals: Non-Penalty", "Non-penalty goals per 90"),
     ("xG", "xG per 90"),
     ("Expected Assists", "xA per 90"),
@@ -2157,10 +2160,7 @@ DEFENSIVE_METRICS = [
     ("PAdj Interceptions", "PAdj Interceptions"),
 ]
 POSSESSION_METRICS = [
-    ("Accelerations", "Accelerations per 90"),
     ("Deep completions", "Deep completions per 90"),
-    ("Dribbles", "Dribbles per 90"),
-    ("Dribbling %", "Successful dribbles, %"),
     ("Forward Passes", "Forward passes per 90"),
     ("Forward Pass %", "Accurate forward passes, %"),
     ("Long Passes", "Long passes per 90"),
@@ -2170,7 +2170,6 @@ POSSESSION_METRICS = [
     ("Passes to Final 3rd", "Passes to final third per 90"),
     ("Passes to Penalty Area", "Passes to penalty area per 90"),
     ("Progessive Passes", "Progressive passes per 90"),
-    ("Progressive Pass %", "Accurate progressive passes, %"),
     ("Smart Passes", "Smart passes per 90"),
 ]
 
