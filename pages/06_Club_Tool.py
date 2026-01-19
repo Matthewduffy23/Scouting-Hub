@@ -1065,6 +1065,736 @@ with tabs[4]:
     role_tab("Center Backs", compute_center_backs)
 
 
+# ============================ CLUB TOOL — ONE-PAGER (FULL, ALL ROLES BY POSITION) ============================
+# Paste this WHOLE block into your Club Tool page where you want the one-pager section.
+# Assumptions:
+# - You already have df loaded (WORLD*.csv)
+# - You already imported: re, requests, numpy as np, pandas as pd, streamlit as st
+# - If you have resolve_player_photo(player, team, league), we'll use it. If not, we fallback to placeholder.
+# - If you have resolve_team_crest(team, league), we’ll use it. If not, crest is skipped.
+# - If you have LEAGUE_STRENGTHS, we’ll use it for the badge blend. If not, we default strength=50.
+
+from io import BytesIO
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+
+st.markdown("---")
+st.header("🧾 One-pager (Club Tool)")
+
+# -------------------- ROLE BUCKETS (ALL ROLES BY POSITION) --------------------
+# These are the role-score buckets for the badge + roles row.
+# Score per role = weighted average of percentile metrics (0..100).
+ROLE_BUCKETS = {
+    # -------------------- CENTRAL MID (CM/DM) --------------------
+    "CM": {
+        "Deep Playmaker CM": {
+            "metrics": {
+                "Passes per 90": 1,
+                "Accurate passes, %": 1,
+                "Forward passes per 90": 2,
+                "Accurate forward passes, %": 1.5,
+                "Progressive passes per 90": 3,
+                "Passes to final third per 90": 2.5,
+                "Accurate long passes, %": 1,
+            }
+        },
+        "Advanced Playmaker CM": {
+            "metrics": {
+                "Deep completions per 90": 1.5,
+                "Smart passes per 90": 2,
+                "xA per 90": 4,
+                "Passes to penalty area per 90": 2,
+            }
+        },
+        "Defensive Midfielder DM": {
+            "metrics": {
+                "Defensive duels per 90": 4,
+                "Defensive duels won, %": 4,
+                "PAdj Interceptions": 3,
+                "Aerial duels per 90": 0.5,
+                "Aerial duels won, %": 1,
+            }
+        },
+        "Goal Threat CM": {
+            "metrics": {
+                "Non-penalty goals per 90": 3,
+                "xG per 90": 3,
+                "Shots per 90": 1.5,
+                "Touches in box per 90": 2,
+            }
+        },
+        "Ball-Carrying CM": {
+            "metrics": {
+                "Dribbles per 90": 4,
+                "Successful dribbles, %": 2,
+                "Progressive runs per 90": 3,
+                "Accelerations per 90": 3,
+            }
+        },
+        # generic “attacking-mid/wing creator” style bucket (optional but useful)
+        "Playmaker": {
+            "metrics": {
+                "Passes per 90": 2,
+                "xA per 90": 3,
+                "Key passes per 90": 1,
+                "Deep completions per 90": 1.5,
+                "Smart passes per 90": 1.5,
+                "Passes to penalty area per 90": 2,
+            },
+        },
+        "Goal Threat": {
+            "metrics": {
+                "xG per 90": 3,
+                "Non-penalty goals per 90": 3,
+                "Shots per 90": 2,
+                "Touches in box per 90": 2,
+            },
+        },
+        "Ball Carrier": {
+            "metrics": {
+                "Dribbles per 90": 4,
+                "Successful dribbles, %": 2,
+                "Progressive runs per 90": 3,
+                "Accelerations per 90": 3,
+            },
+        },
+    },
+
+    # -------------------- CENTER BACK (CB) --------------------
+    "CB": {
+        "Ball Playing CB": {
+            "metrics": {
+                "Passes per 90": 2,
+                "Accurate passes, %": 2,
+                "Forward passes per 90": 2,
+                "Accurate forward passes, %": 2,
+                "Progressive passes per 90": 2,
+                "Progressive runs per 90": 1.5,
+                "Dribbles per 90": 1.5,
+                "Accurate long passes, %": 1,
+                "Passes to final third per 90": 1.5,
+            }
+        },
+        "Wide CB": {
+            "metrics": {
+                "Defensive duels per 90": 1.5,
+                "Defensive duels won, %": 2,
+                "Dribbles per 90": 2,
+                "Forward passes per 90": 1,
+                "Progressive passes per 90": 1,
+                "Progressive runs per 90": 2,
+            }
+        },
+        "Box Defender": {
+            "metrics": {
+                "Aerial duels per 90": 1,
+                "Aerial duels won, %": 3,
+                "PAdj Interceptions": 2,
+                "Shots blocked per 90": 1,
+                "Defensive duels won, %": 4,
+            }
+        },
+    },
+
+    # -------------------- FULLBACK (FB) --------------------
+    "FB": {
+        "Build Up FB": {
+            "metrics": {
+                "Passes per 90": 2,
+                "Accurate passes, %": 1.5,
+                "Forward passes per 90": 2,
+                "Accurate forward passes, %": 2,
+                "Progressive passes per 90": 2.5,
+                "Progressive runs per 90": 2,
+                "Dribbles per 90": 2,
+                "Passes to final third per 90": 2,
+                "xA per 90": 1,
+            }
+        },
+        "Attacking FB": {
+            "metrics": {
+                "Crosses per 90": 2,
+                "Dribbles per 90": 3.5,
+                "Accelerations per 90": 1,
+                "Successful dribbles, %": 1,
+                "Touches in box per 90": 2,
+                "Progressive runs per 90": 3,
+                "Passes to penalty area per 90": 2,
+                "xA per 90": 3,
+            }
+        },
+        "Defensive FB": {
+            "metrics": {
+                "Aerial duels per 90": 1,
+                "Aerial duels won, %": 1.5,
+                "Defensive duels per 90": 2,
+                "PAdj Interceptions": 3,
+                "Shots blocked per 90": 1,
+                "Defensive duels won, %": 3.5,
+            }
+        },
+    },
+
+    # -------------------- STRIKER (CF) --------------------
+    "CF": {
+        "Target Man CF": {
+            "metrics": {
+                "Aerial duels per 90": 3,
+                "Aerial duels won, %": 5,
+            },
+        },
+        "Goal Threat CF": {
+            "metrics": {
+                "Non-penalty goals per 90": 3,
+                "Shots per 90": 1.5,
+                "xG per 90": 3,
+                "Touches in box per 90": 1,
+                "Shots on target, %": 0.5,
+            },
+        },
+        "Link-Up CF": {
+            "metrics": {
+                "Passes per 90": 2,
+                "Passes to penalty area per 90": 1.5,
+                "Deep completions per 90": 1,
+                "Smart passes per 90": 1.5,
+                "Accurate passes, %": 1.5,
+                "Key passes per 90": 1,
+                "Dribbles per 90": 2,
+                "Successful dribbles, %": 1,
+                "Progressive runs per 90": 2,
+                "xA per 90": 3,
+            },
+        },
+    },
+
+    # -------------------- ATTACKERS (W/AM) --------------------
+    # Your earlier pasted "Playmaker / Goal Threat / Ball Carrier" are also useful for attackers,
+    # so we include them here too.
+    "ATT": {
+        "Playmaker": {
+            "metrics": {
+                "Passes per 90": 2,
+                "xA per 90": 3,
+                "Key passes per 90": 1,
+                "Deep completions per 90": 1.5,
+                "Smart passes per 90": 1.5,
+                "Passes to penalty area per 90": 2,
+            },
+        },
+        "Goal Threat": {
+            "metrics": {
+                "xG per 90": 3,
+                "Non-penalty goals per 90": 3,
+                "Shots per 90": 2,
+                "Touches in box per 90": 2,
+            },
+        },
+        "Ball Carrier": {
+            "metrics": {
+                "Dribbles per 90": 4,
+                "Successful dribbles, %": 2,
+                "Progressive runs per 90": 3,
+                "Accelerations per 90": 3,
+            },
+        },
+    },
+}
+
+# -------------------- POSITION GROUPING (UI) --------------------
+POS_GROUPS = {
+    "Strikers (CF)": ["CF"],
+    "Center Backs (CB)": ["CB", "LCB", "RCB"],
+    "Fullbacks (RB/LB/WB)": ["RB", "LB", "RWB", "LWB"],
+    "Central Mid (DM/CM)": ["DMF", "CMF", "LCMF", "RCMF", "LDMF", "RDMF"],
+    "Attackers (W/AM)": ["RW", "RWF", "LW", "LWF", "AMF", "RAMF", "LAMF"],
+}
+
+def _pos_token(p: str) -> str:
+    s = str(p or "").strip().upper()
+    toks = [t for t in re.split(r"[,/;]\s*|\s+", s) if t]
+    return toks[0] if toks else ""
+
+def _role_key_from_pos(tok: str) -> str:
+    if tok.startswith("CF"):
+        return "CF"
+    if tok.startswith(("CB","LCB","RCB")):
+        return "CB"
+    if tok.startswith(("RB","LB","RWB","LWB")):
+        return "FB"
+    if tok.startswith(("DMF","CMF","LCMF","RCMF","LDMF","RDMF")):
+        return "CM"
+    if tok in {"RW","RWF","LW","LWF","AMF","RAMF","LAMF"}:
+        return "ATT"
+    return ""
+
+# -------------------- Percentiles: use column if exists, else compute rank% --------------------
+@st.cache_data(show_spinner=False)
+def _rank_percentiles_for_metric(df_in: pd.DataFrame, metric: str) -> pd.Series:
+    s = pd.to_numeric(df_in.get(metric, pd.Series(index=df_in.index, dtype=float)), errors="coerce")
+    return s.rank(pct=True) * 100.0
+
+def pct_of_row(ply: pd.Series, metric: str, df_all: pd.DataFrame) -> float:
+    # priority: "{metric} Percentile"
+    col = f"{metric} Percentile"
+    if col in df_all.columns and pd.notna(ply.get(col, np.nan)):
+        return float(ply[col])
+    # fallback: rank-based percentile from raw metric
+    if metric in df_all.columns:
+        pcts = _rank_percentiles_for_metric(df_all, metric)
+        try:
+            return float(pcts.loc[ply.name])
+        except Exception:
+            return np.nan
+    return np.nan
+
+def val_str(ply: pd.Series, metric: str) -> str:
+    if metric not in ply.index or pd.isna(ply[metric]):
+        return "—"
+    v = float(ply[metric])
+    m = metric.lower()
+    if "%" in metric or "percent" in m:
+        return f"{int(round(v))}%"
+    if "per 90" in m or "xg" in m or "xa" in m:
+        return f"{v:.2f}"
+    return f"{v:.2f}"
+
+def div_color_tuple(v: float):
+    if pd.isna(v): return (0.6, 0.63, 0.66)
+    v = float(v)
+    if v <= 50:
+        t = v / 50.0
+        c1, c2 = np.array([239, 68, 68]), np.array([234, 179, 8])
+    else:
+        t = (v - 50) / 50.0
+        c1, c2 = np.array([234, 179, 8]), np.array([34, 197, 94])
+    return tuple(((c1 + (c2 - c1) * t) / 255.0).astype(float))
+
+def compute_role_scores(ply: pd.Series, df_all: pd.DataFrame, role_key: str) -> dict:
+    buckets = ROLE_BUCKETS.get(role_key, {}) if role_key else {}
+    out = {}
+    for role_name, spec in buckets.items():
+        met_w = (spec or {}).get("metrics", {}) or {}
+        vals, wts = [], []
+        for met, w in met_w.items():
+            p = pct_of_row(ply, met, df_all)
+            if pd.isna(p):
+                continue
+            vals.append(float(p))
+            wts.append(float(w))
+        if vals and sum(wts) > 0:
+            out[role_name] = float(np.average(vals, weights=wts))
+    return out
+
+# -------------------- Metric groups (your requested “use all metrics”) --------------------
+ATTACKING_METRICS = [
+    ("Crosses", "Crosses per 90"),
+    ("Crossing %", "Accurate crosses, %"),
+    ("Goals: Non-Penalty", "Non-penalty goals per 90"),
+    ("xG", "xG per 90"),
+    ("Expected Assists", "xA per 90"),
+    ("Offensive Duels", "Offensive duels per 90"),
+    ("Offensive Duel %", "Offensive duels won, %"),
+    ("Shots", "Shots per 90"),
+    ("Shooting %", "Shots on target, %"),
+    ("Touches in box", "Touches in box per 90"),
+]
+
+DEFENSIVE_METRICS = [
+    ("Aerial Duels", "Aerial duels per 90"),
+    ("Aerial Win %", "Aerial duels won, %"),
+    ("Defensive Duels", "Defensive duels per 90"),
+    ("Defensive Duel %", "Defensive duels won, %"),
+    ("PAdj Interceptions", "PAdj Interceptions"),
+    ("Shots blocked", "Shots blocked per 90"),
+]
+
+POSSESSION_METRICS = [
+    ("Accelerations", "Accelerations per 90"),
+    ("Deep completions", "Deep completions per 90"),
+    ("Dribbles", "Dribbles per 90"),
+    ("Dribbling %", "Successful dribbles, %"),
+    ("Forward Passes", "Forward passes per 90"),
+    ("Forward Pass %", "Accurate forward passes, %"),
+    ("Key passes", "Key passes per 90"),
+    ("Long Passes", "Long passes per 90"),
+    ("Long Pass %", "Accurate long passes, %"),
+    ("Passes", "Passes per 90"),
+    ("Passing %", "Accurate passes, %"),
+    ("Passes to F3rd", "Passes to final third per 90"),
+    ("Passes F3rd %", "Accurate passes to final third, %"),
+    ("Passes Pen-Area", "Passes to penalty area per 90"),
+    ("Pass Pen-Area %", "Accurate passes to penalty area, %"),
+    ("Progessive Passes", "Progressive passes per 90"),
+    ("Prog Pass %", "Accurate progressive passes, %"),
+    ("Progressive Runs", "Progressive runs per 90"),
+    ("Smart Passes", "Smart passes per 90"),
+]
+
+def build_triples(ply: pd.Series, df_all: pd.DataFrame, pairs: list) -> list:
+    triples = []
+    for lab, met in pairs:
+        if met not in df_all.columns and f"{met} Percentile" not in df_all.columns:
+            continue
+        triples.append((lab, pct_of_row(ply, met, df_all), val_str(ply, met)))
+    return triples
+
+# -------------------- UI: Select position group -> player --------------------
+group = st.selectbox("Position group", list(POS_GROUPS.keys()), index=0)
+pos_prefixes = {p.upper() for p in POS_GROUPS[group]}
+
+df_view = df.copy()
+if "Position" in df_view.columns:
+    df_view["_pos_tok"] = df_view["Position"].apply(_pos_token)
+    df_view = df_view[df_view["_pos_tok"].isin(pos_prefixes)].copy()
+
+if df_view.empty:
+    st.info("No players for that position group in this dataset.")
+    st.stop()
+
+def _player_label(row: pd.Series) -> str:
+    nm = str(row.get("Player", "—"))
+    tm = str(row.get("Team", "")).strip()
+    lg = str(row.get("League", "")).strip()
+    return f"{nm} — {tm} ({lg})" if tm else f"{nm} ({lg})"
+
+df_view["_label"] = df_view.apply(_player_label, axis=1)
+picked = st.selectbox("Player", df_view["_label"].astype(str).tolist(), index=0)
+
+player_row = df_view[df_view["_label"].astype(str) == str(picked)].head(1).copy()
+if player_row.empty:
+    st.info("Pick a player above.")
+    st.stop()
+
+ply = player_row.iloc[0]
+player_name = str(ply.get("Player", "—"))
+team = str(ply.get("Team", "?"))
+league = str(ply.get("League", "?"))
+pos = str(ply.get("Position", "?"))
+pos_tok = _pos_token(pos)
+
+# Photo + crest URLs (from your existing resolvers if present)
+PLACEHOLDER_IMG = "https://i.redd.it/43axcjdu59nd1.jpeg"
+photo_url = PLACEHOLDER_IMG
+if "resolve_player_photo" in globals():
+    try:
+        photo_url = resolve_player_photo(player_name, team, league) or PLACEHOLDER_IMG
+    except Exception:
+        photo_url = PLACEHOLDER_IMG
+
+crest_url = ""
+if "resolve_team_crest" in globals():
+    try:
+        crest_url = resolve_team_crest(team, league) or ""
+    except Exception:
+        crest_url = ""
+
+# -------------------- Role scores + badge value --------------------
+role_key = _role_key_from_pos(pos_tok)
+role_scores = compute_role_scores(ply, df, role_key)
+
+# exclude Target Man CF from the badge pick
+EXCLUDE_ROLE = "target man cf"
+filtered_roles = [(k, v) for k, v in role_scores.items() if str(k).strip().lower() != EXCLUDE_ROLE]
+top3_roles = sorted(filtered_roles, key=lambda kv: kv[1], reverse=True)[:3]
+
+best_val_raw = float(top3_roles[0][1]) if top3_roles else (max(role_scores.values()) if role_scores else np.nan)
+
+_ls_map = globals().get("LEAGUE_STRENGTHS", {})
+league_strength = float(_ls_map.get(league, 50.0)) if isinstance(_ls_map, dict) else 50.0
+BETA_BADGE = 0.40
+best_val_adj = ((1.0 - BETA_BADGE) * float(best_val_raw) + BETA_BADGE * league_strength) if pd.notna(best_val_raw) else league_strength
+
+# -------------------- Metric triples --------------------
+ATTACKING = build_triples(ply, df, ATTACKING_METRICS)
+DEFENSIVE = build_triples(ply, df, DEFENSIVE_METRICS)
+POSSESSION = build_triples(ply, df, POSSESSION_METRICS)
+
+# -------------------- Image loading (photo + crest) --------------------
+def _try_load_img(url: str):
+    if not url or not (url.startswith("http://") or url.startswith("https://")):
+        return None
+    try:
+        r = requests.get(url, timeout=7, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200:
+            return None
+        return plt.imread(BytesIO(r.content))
+    except Exception:
+        return None
+
+photo_img = _try_load_img(photo_url)
+crest_img = _try_load_img(crest_url) if crest_url else None
+
+# -------------------- One-pager renderer --------------------
+PAGE_BG   = "#0a0f1c"
+PANEL_BG  = "#11161C"
+TRACK_BG  = "#222c3d"
+TEXT      = "#E5E7EB"
+ROLE_GREY = "#737373"
+
+NAME_X = 0.055
+META_X = 0.055
+CHIP_X0 = 0.055
+GUTTER_PAD = 0.006
+
+BAR_PX = 24
+GAP_PX = 6
+SEP_PX = 2
+STEP_PX = BAR_PX + GAP_PX
+
+LABEL_FS = 10.6
+VALUE_FS = 8.5
+TITLE_FS = 20
+
+def _text_width_frac(fig, s, *, fontsize=8, weight="normal"):
+    t = fig.text(0, 0, s, fontsize=fontsize, fontweight=weight, transform=fig.transFigure, alpha=0)
+    fig.canvas.draw(); r = fig.canvas.get_renderer()
+    w_px = t.get_window_extent(renderer=r).width; t.remove()
+    return w_px / fig.bbox.width
+
+def _text_height_frac(fig, s, *, fontsize=8, weight="normal"):
+    t = fig.text(0, 0, s, fontsize=fontsize, fontweight=weight, transform=fig.transFigure, alpha=0)
+    fig.canvas.draw(); r = fig.canvas.get_renderer()
+    h_px = t.get_window_extent(renderer=r).height; t.remove()
+    return h_px / fig.bbox.height
+
+def roles_row_tight(fig, rs: dict, y, *, fs=10.6, max_items=12):
+    if not isinstance(rs, dict) or not rs:
+        return y
+    x0 = x = CHIP_X0
+    row_gap = 0.041
+    gap = 0.003
+    pad_x = 0.006
+    pad_y = 0.003
+
+    items = sorted(rs.items(), key=lambda kv: -kv[1])[:max_items]
+    for rname, v in items:
+        text_w = _text_width_frac(fig, rname, fontsize=fs, weight="800")
+        text_h = _text_height_frac(fig, "Hg", fontsize=fs, weight="800")
+        role_w = text_w + pad_x * 2
+        role_h = text_h + pad_y * 2
+
+        num_text = f"{int(round(v))}"
+        num_wt = _text_width_frac(fig, num_text, fontsize=fs-0.6, weight="900")
+        num_ht = _text_height_frac(fig, "Hg", fontsize=fs-0.6, weight="900")
+        num_w  = num_wt + pad_x * 2 * 0.9
+        num_h  = num_ht + pad_y * 2 * 0.9
+
+        total = role_w + gap + num_w
+        if x + total > 0.965:
+            x = x0
+            y -= row_gap
+
+        fig.patches.append(mpatches.FancyBboxPatch(
+            (x, y - role_h * 0.78), role_w, role_h,
+            boxstyle=f"round,pad=0.001,rounding_size={role_h*0.25}",
+            transform=fig.transFigure,
+            facecolor=ROLE_GREY, edgecolor="none"
+        ))
+        fig.text(x + pad_x, y - role_h * 0.33, rname,
+                 fontsize=fs, color="#FFFFFF", va="center", ha="left", fontweight="800")
+
+        R, G, B = [int(255 * c) for c in div_color_tuple(v)]
+        bx = x + role_w + gap
+        fig.patches.append(mpatches.FancyBboxPatch(
+            (bx, y - num_h * 0.78), num_w, num_h,
+            boxstyle=f"round,pad=0.001,rounding_size={num_h*0.25}",
+            transform=fig.transFigure,
+            facecolor=f"#{R:02x}{G:02x}{B:02x}", edgecolor="none"
+        ))
+        fig.text(bx + num_w / 2, y - num_h * 0.33, num_text,
+                 fontsize=fs - 0.6, color="#FFFFFF", va="center", ha="center", fontweight="900")
+
+        x = bx + num_w + 0.010
+
+    return y - row_gap
+
+def bar_panel(fig, left, top, width, triples, title):
+    n_rows = len(triples)
+    fig.canvas.draw()
+    fig_px_h = fig.bbox.height
+
+    ax_h_frac = (n_rows * STEP_PX) / fig_px_h if n_rows else (2 * STEP_PX) / fig_px_h
+    bottom = top - ax_h_frac
+
+    labels = [t[0] for t in triples]
+    max_label_w_frac = max(_text_width_frac(fig, s, fontsize=LABEL_FS, weight="bold") for s in labels) if labels else 0
+    gutter_w = max_label_w_frac + GUTTER_PAD
+
+    ax_panel = fig.add_axes([left, bottom, width, ax_h_frac])
+    ax_panel.set_facecolor(PANEL_BG)
+    ax_panel.set_xticks([]); ax_panel.set_yticks([])
+    for sp in ax_panel.spines.values(): sp.set_visible(False)
+
+    bar_left = left + gutter_w
+    bar_width = max(0.001, width - gutter_w - 0.004)
+    ax = fig.add_axes([bar_left, bottom, bar_width, ax_h_frac])
+    ax.set_facecolor(PANEL_BG)
+
+    pcts = [float(np.nan_to_num(t[1], nan=0.0)) for t in triples]
+    texts = [t[2] for t in triples]
+    n = len(labels)
+
+    bar_du = BAR_PX / STEP_PX
+    gap_du = GAP_PX / STEP_PX
+    sep_du = SEP_PX / STEP_PX
+
+    ax.set_xlim(0, 100)
+    ax.set_ylim(-0.5, max(1, n) - 0.5)
+    y_idx = np.arange(max(1, n))[::-1]
+
+    track_h = bar_du + gap_du - sep_du
+    for yi in y_idx[:n]:
+        ax.add_patch(mpatches.Rectangle((0, yi - track_h/2), 100, track_h, facecolor=TRACK_BG, edgecolor="none"))
+
+    for yi, v, t in zip(y_idx[:n], pcts, texts):
+        ax.add_patch(mpatches.Rectangle((0, yi - bar_du/2), v, bar_du, facecolor=div_color_tuple(v), edgecolor="none"))
+        ax.text(1.0, yi, t, va="center", ha="left", color="#0B0B0B", fontsize=VALUE_FS + 0.5, weight="700")
+
+    for sp in ax.spines.values(): sp.set_visible(False)
+    ax.tick_params(axis="both", length=0, labelsize=0)
+    ax.grid(False)
+    ax.axvline(50, color="#94A3B8", linestyle=":", linewidth=1.2, zorder=2)
+
+    for yi, lab in zip(y_idx[:n], labels):
+        y_fig = bottom + ax_h_frac * ((yi + 0.5) / max(1, n))
+        fig.text(left + GUTTER_PAD/2, y_fig, lab, color=TEXT, fontsize=LABEL_FS, fontweight="bold",
+                 va="center", ha="left")
+
+    title_y = bottom + ax_h_frac + 0.008
+    fig.text(left + GUTTER_PAD/2, title_y, title, color=TEXT, fontsize=TITLE_FS, fontweight="900",
+             ha="left", va="bottom")
+    ax.plot([0, 1], [1, 1], transform=ax.transAxes, color="#94A3B8", linewidth=0.8, alpha=0.35)
+
+    return bottom
+
+# -------------------- Build the figure --------------------
+W, H = 1500, 1080
+fig = plt.figure(figsize=(W/100, H/100), dpi=100)
+fig.patch.set_facecolor(PAGE_BG)
+
+# Header: name + badge + photo/crest
+name_fs = 28
+name_text = fig.text(NAME_X, 0.962, f"{player_name}", color="#FFFFFF",
+                     fontsize=name_fs, fontweight="900", va="top", ha="left")
+fig.canvas.draw(); r = fig.canvas.get_renderer()
+name_bbox = name_text.get_window_extent(renderer=r)
+name_w_frac = name_bbox.width / fig.bbox.width
+name_h_frac = name_bbox.height / fig.bbox.height
+
+badge_x = NAME_X + name_w_frac + 0.010
+R, G, B = [int(255*c) for c in div_color_tuple(best_val_adj)]
+bh = name_h_frac
+bw = bh
+by = 0.962 - bh
+
+fig.patches.append(mpatches.FancyBboxPatch(
+    (badge_x, by), bw, bh,
+    boxstyle="round,pad=0.001,rounding_size=0.011",
+    transform=fig.transFigure,
+    facecolor=f"#{R:02x}{G:02x}{B:02x}",
+    edgecolor="none",
+))
+fig.text(badge_x + bw/2, by + bh/2 - 0.0005, f"{int(round(best_val_adj))}",
+         fontsize=18.6, color="#FFFFFF", va="center", ha="center", fontweight="900")
+
+# Put photo on the far-right of header
+if photo_img is not None:
+    axp = fig.add_axes([0.905, 0.90, 0.07, 0.07])
+    axp.imshow(photo_img)
+    axp.axis("off")
+    axp.set_facecolor(PAGE_BG)
+
+# Crest next to photo (small)
+if crest_img is not None:
+    axc = fig.add_axes([0.865, 0.91, 0.04, 0.04])
+    axc.imshow(crest_img)
+    axc.axis("off")
+    axc.set_facecolor(PAGE_BG)
+
+# Second line: (score smaller) before position, then team/league etc.
+age = int(ply["Age"]) if pd.notna(ply.get("Age")) else None
+mins = int(ply.get("Minutes played", np.nan)) if pd.notna(ply.get("Minutes played")) else None
+matches = int(ply.get("Matches played", np.nan)) if pd.notna(ply.get("Matches played")) else None
+goals = int(ply.get("Goals", np.nan)) if pd.notna(ply.get("Goals")) else 0
+assists = int(ply.get("Assists", np.nan)) if pd.notna(ply.get("Assists")) else 0
+
+# xG total if you have xG, else compute from xG per 90 and minutes
+if "xG" in ply.index and pd.notna(ply.get("xG")):
+    xg_total = float(ply["xG"])
+else:
+    xg_per90 = float(ply.get("xG per 90", np.nan)) if pd.notna(ply.get("xG per 90")) else np.nan
+    xg_total = float(xg_per90) * (float(mins) / 90.0) if (pd.notna(xg_per90) and mins) else np.nan
+xg_total_str = f"{xg_total:.2f}" if pd.notna(xg_total) else "—"
+
+# score (smaller) before position
+meta_y = 0.905
+score_small = f"{int(round(best_val_adj))}"
+meta_parts = [
+    (f"{score_small}  ", "bold_small"),
+    (f"{pos} — ", "normal"),
+    (f"{team}", "bold"),
+    (" — ", "normal"),
+    (f"{league}", "bold"),
+    (f" — Age {age if age is not None else '—'} — Minutes {mins if mins is not None else '—'} — "
+     f"Matches {matches if matches is not None else '—'} — Goals {goals} — xG {xg_total_str} — Assists {assists}", "normal"),
+]
+
+def _run_weight(tag: str):
+    if tag == "bold":
+        return "900"
+    if tag == "bold_small":
+        return "900"
+    return "normal"
+
+x_meta = META_X
+for txt, tag in meta_parts:
+    fs = 11.5 if tag == "bold_small" else 13
+    fig.text(x_meta, meta_y, txt, color="#FFFFFF", fontsize=fs,
+             fontweight=_run_weight(tag), ha="left", va="center")
+    x_meta += _text_width_frac(fig, txt, fontsize=fs, weight=_run_weight(tag)) + 0.004
+
+# Roles row under header (top roles for this position)
+y_roles = 0.865
+# show the top 10 role scores (excluding "Target Man CF" if present)
+roles_for_row = dict(sorted(
+    [(k, v) for k, v in role_scores.items() if str(k).strip().lower() != "target man cf"],
+    key=lambda kv: -kv[1]
+)[:10])
+y_roles = roles_row_tight(fig, roles_for_row, y_roles, fs=10.6, max_items=10)
+
+# ----------------- Layout (wider panels, smaller middle gap) -----------------
+LEFT = 0.050
+WIDTH_L = 0.41
+MID_GAP = 0.040
+RIGHT = LEFT + WIDTH_L + MID_GAP
+WIDTH_R = 0.41
+
+TOP = 0.66
+V_GAP_FRAC = 0.050
+
+att_bottom = bar_panel(fig, LEFT, TOP, WIDTH_L, ATTACKING, "Attacking")
+def_bottom = bar_panel(fig, LEFT, att_bottom - V_GAP_FRAC, WIDTH_L, DEFENSIVE, "Defensive")
+_ = bar_panel(fig, RIGHT, TOP, WIDTH_R, POSSESSION, "Possession")
+
+# ----------------- render + download -----------------
+st.pyplot(fig, use_container_width=True)
+
+buf = BytesIO()
+fig.savefig(buf, format="png", dpi=170, bbox_inches="tight", facecolor=fig.get_facecolor())
+st.download_button(
+    "⬇️ Download one-pager (PNG)",
+    data=buf.getvalue(),
+    file_name=f"{str(player_name).replace(' ', '_')}_onepager.png",
+    mime="image/png",
+)
+
+# ============================ END ONE-PAGER ============================
+
+
+
 # ======================== SECTION B (v2 — FULL, TITLES OFF, FULL LABELS) ========================
 st.markdown("---")
 st.header("Section B — League Comparison Radar & Tables")
