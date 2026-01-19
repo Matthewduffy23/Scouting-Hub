@@ -336,7 +336,7 @@ with cB:
     )
 
 with cC:
-    min_minutes, max_minutes = st.slider("Minutes (pool)", 0, 6000, (5000, 6000))
+    min_minutes, max_minutes = st.slider("Minutes (pool)", 0, 6000, (750, 6000))
     age_min_data = int(np.nanmin(pd.to_numeric(df["Age"], errors="coerce"))) if df["Age"].notna().any() else 14
     age_max_data = int(np.nanmax(pd.to_numeric(df["Age"], errors="coerce"))) if df["Age"].notna().any() else 50
     min_age, max_age = st.slider("Age (pool)", age_min_data, age_max_data, (16, 50))
@@ -508,10 +508,11 @@ def compute_strikers():
     pool = pool[pool["Position"].str.upper().str.startswith("CF")]
     pool = pool[~((pool["Team"].astype(str) == template_team) & (pool["League"].astype(str) == template_league))].copy()
 
-    # NOTE: Removed hard-coded Age/MV/Minutes filters here so it follows the top-bar pool filters only.
+    pool = pool[(pd.to_numeric(pool["Age"], errors="coerce") <= 26)
+                & (pd.to_numeric(pool["Market value"], errors="coerce") <= 10_000_000)
+                & (pd.to_numeric(pool["Minutes played"], errors="coerce") >= 1000)]
 
-    for c in feats:
-        pool[c] = pd.to_numeric(pool[c], errors="coerce")
+    for c in feats: pool[c] = pd.to_numeric(pool[c], errors="coerce")
     pool = pool.dropna(subset=feats)
 
     pool["Opportunities"]      = 0.7*pool['Touches in box per 90'] + 0.3*pool['xG per 90']
@@ -522,8 +523,7 @@ def compute_strikers():
     pool["Retention"]          = pool['Accurate passes, %']
 
     cols = ["Opportunities","Ball Carrying","Aerial Requirement","Passing Volume","Goal Output","Retention"]
-    for c in cols:
-        pool[f"__tmpl__{c}"] = tmpl_vec[c]
+    for c in cols: pool[f"__tmpl__{c}"] = tmpl_vec[c]
     pool["BaseDist"] = pool.apply(lambda r: norm([r[c]-r[f"__tmpl__{c}"] for c in cols]), axis=1)
 
     ranked = _score_block(pool.copy())
@@ -540,8 +540,7 @@ def compute_attackers(role_choice: str):
     def pos_ok(p):
         s = str(p).upper().strip()
         tokens = [t for t in re.split(r"[,/;]\s*|\s+", s) if t]
-        if not tokens:
-            return False
+        if not tokens: return False
         t0 = tokens[0]
         if role_choice == "All":
             return t0 in {"RW","RWF","RAMF","LW","LWF","LAMF","AMF"}
@@ -578,10 +577,11 @@ def compute_attackers(role_choice: str):
     pool = base_pool[base_pool["Position"].apply(pos_ok)].copy()
     pool = pool[~((pool["Team"].astype(str) == template_team) & (pool["League"].astype(str) == template_league))]
 
-    # NOTE: Removed hard-coded Age/MV/Minutes filters here so it follows the top-bar pool filters only.
+    pool = pool[(pd.to_numeric(pool["Age"], errors="coerce") <= 23)
+                & (pd.to_numeric(pool["Market value"], errors="coerce") <= 5_000_000)
+                & (pd.to_numeric(pool["Minutes played"], errors="coerce") >= 900)]
 
-    for c in feats:
-        pool[c] = pd.to_numeric(pool[c], errors="coerce")
+    for c in feats: pool[c] = pd.to_numeric(pool[c], errors="coerce")
     pool = pool.dropna(subset=feats)
 
     pool["Retention Style"]   = pool['Accurate passes, %']
@@ -591,8 +591,7 @@ def compute_attackers(role_choice: str):
     pool["Deeper Playmaking"] = 0.5*pool['Progressive passes per 90'] + 0.5*pool['Passes to final third per 90']
     pool["Ball Carrying"]     = 0.6*pool['Dribbles per 90'] + 0.4*pool['Progressive runs per 90']
 
-    for c in cols:
-        pool[f"__tmpl__{c}"] = tmpl_vec[c]
+    for c in cols: pool[f"__tmpl__{c}"] = tmpl_vec[c]
     pool["BaseDist"] = pool.apply(lambda r: norm([r[c]-r[f"__tmpl__{c}"] for c in cols]), axis=1)
 
     ranked = _score_block(pool.copy())
@@ -636,10 +635,11 @@ def compute_central_mid():
     pool = base_pool[base_pool["Position"].apply(pos_ok)].copy()
     pool = pool[~((pool["Team"].astype(str) == template_team) & (pool["League"].astype(str) == template_league))]
 
-    # NOTE: Removed hard-coded Age/MV/Minutes filters here so it follows the top-bar pool filters only.
+    pool = pool[(pd.to_numeric(pool["Age"], errors="coerce") <= 32)
+                & (pd.to_numeric(pool["Market value"], errors="coerce") <= 5_000_000)
+                & (pd.to_numeric(pool["Minutes played"], errors="coerce") >= 1000)]
 
-    for c in feats:
-        pool[c] = pd.to_numeric(pool[c], errors="coerce")
+    for c in feats: pool[c] = pd.to_numeric(pool[c], errors="coerce")
     pool = pool.dropna(subset=feats)
 
     pool["Pass Verticality"]    = _safe_verticality(pool['Forward passes per 90'], pool['Passes per 90'])
@@ -649,8 +649,7 @@ def compute_central_mid():
     pool["Interception Volume"] = pool['PAdj Interceptions']
     pool["Retention"]           = pool['Accurate passes, %']
 
-    for c in cols:
-        pool[f"__tmpl__{c}"] = tmpl_vec[c]
+    for c in cols: pool[f"__tmpl__{c}"] = tmpl_vec[c]
     pool["BaseDist"] = pool.apply(lambda r: norm([r[c]-r[f"__tmpl__{c}"] for c in cols]), axis=1)
 
     ranked = _score_block(pool.copy())
@@ -701,10 +700,11 @@ def compute_fullbacks(role_choice: str):
     pool = base_pool[base_pool["Position"].apply(pos_ok)].copy()
     pool = pool[~((pool["Team"].astype(str) == template_team) & (pool["League"].astype(str) == template_league))]
 
-    # NOTE: Removed hard-coded Age/MV/Minutes filters here so it follows the top-bar pool filters only.
+    pool = pool[(pd.to_numeric(pool["Age"], errors="coerce") <= 30)
+                & (pd.to_numeric(pool["Market value"], errors="coerce") <= 10_000_000)
+                & (pd.to_numeric(pool["Minutes played"], errors="coerce") >= 1000)]
 
-    for c in feats:
-        pool[c] = pd.to_numeric(pool[c], errors="coerce")
+    for c in feats: pool[c] = pd.to_numeric(pool[c], errors="coerce")
     pool = pool.dropna(subset=feats)
 
     pool["Pass Verticality"]     = _safe_verticality(pool['Forward passes per 90'], pool['Passes per 90'])
@@ -713,8 +713,7 @@ def compute_fullbacks(role_choice: str):
     pool["Defensive Volume"]     = 0.5*pool['Defensive duels per 90'] + 0.3*pool['PAdj Interceptions'] + 0.2*pool['Aerial duels per 90']
     pool["Retention"]            = pool['Accurate passes, %']
 
-    for c in cols:
-        pool[f"__tmpl__{c}"] = tmpl_vec[c]
+    for c in cols: pool[f"__tmpl__{c}"] = tmpl_vec[c]
     pool["BaseDist"] = pool.apply(lambda r: norm([r[c]-r[f"__tmpl__{c}"] for c in cols]), axis=1)
 
     ranked = _score_block(pool.copy())
@@ -756,10 +755,11 @@ def compute_center_backs():
     pool = base_pool[base_pool["Position"].apply(pos_ok)].copy()
     pool = pool[~((pool["Team"].astype(str) == template_team) & (pool["League"].astype(str) == template_league))]
 
-    # NOTE: Removed hard-coded Age/MV/Minutes filters here so it follows the top-bar pool filters only.
+    pool = pool[(pd.to_numeric(pool["Age"], errors="coerce") <= 22)
+                & (pd.to_numeric(pool["Market value"], errors="coerce") <= 10_000_000)
+                & (pd.to_numeric(pool["Minutes played"], errors="coerce") >= 500)]
 
-    for c in feats:
-        pool[c] = pd.to_numeric(pool[c], errors="coerce")
+    for c in feats: pool[c] = pd.to_numeric(pool[c], errors="coerce")
     pool = pool.dropna(subset=feats)
 
     pool["Passing Verticality"] = _safe_verticality(pool['Forward passes per 90'], pool['Passes per 90'])
@@ -767,12 +767,12 @@ def compute_center_backs():
     pool["Positional Demand"]   = pool['PAdj Interceptions'] + pool['Shots blocked per 90']
     pool["Progression Volume"]  = pool['Progressive passes per 90'] + pool['Progressive runs per 90']
 
-    for c in cols:
-        pool[f"__tmpl__{c}"] = tmpl_vec[c]
+    for c in cols: pool[f"__tmpl__{c}"] = tmpl_vec[c]
     pool["BaseDist"] = pool.apply(
-        lambda r: norm([r[c] - r[f"__tmpl__{c}"] for c in cols]),
-        axis=1
-    )
+    lambda r: norm([r[c] - r[f"__tmpl__{c}"] for c in cols]),
+    axis=1
+)
+
 
     ranked = _score_block(pool.copy())
     return ranked, "Center Backs", tmpl_src
