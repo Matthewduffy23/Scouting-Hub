@@ -2538,11 +2538,12 @@ def panel_height_frac(fig, n_rows):
     return (max(1, int(n_rows)) * STEP_PX) / fig_px_h
 
 # ✅ Panel supports shared gutter + forced height
-def bar_panel(fig, left, top, width, width, triples, title, *, gutter_override=None, height_override=None):
+def bar_panel(fig, left, top, width, triples, title, *, gutter_override=None, height_override=None):
     n_rows = len(triples)
     fig.canvas.draw()
     fig_px_h = fig.bbox.height
 
+    # height
     if height_override is None:
         ax_h_frac = (max(1, n_rows) * STEP_PX) / fig_px_h
     else:
@@ -2551,18 +2552,25 @@ def bar_panel(fig, left, top, width, width, triples, title, *, gutter_override=N
     bottom = top - ax_h_frac
     labels = [t[0] for t in triples]
 
+    # gutter
     if gutter_override is None:
-        max_label_w_frac = max(_text_width_frac(fig, s, fontsize=LABEL_FS, weight="bold") for s in labels) if labels else 0
+        max_label_w_frac = max(
+            _text_width_frac(fig, s, fontsize=LABEL_FS, weight="bold")
+            for s in labels
+        ) if labels else 0
         gutter_w = max_label_w_frac + 0.006
     else:
         gutter_w = float(gutter_override)
 
+    # panel background
     ax_panel = fig.add_axes([left, bottom, width, ax_h_frac])
     ax_panel.set_facecolor(PANEL_BG)
-    ax_panel.set_xticks([]); ax_panel.set_yticks([])
+    ax_panel.set_xticks([])
+    ax_panel.set_yticks([])
     for sp in ax_panel.spines.values():
         sp.set_visible(False)
 
+    # bars axis
     bar_left = left + gutter_w
     bar_width = max(0.001, width - gutter_w - 0.004)
     ax = fig.add_axes([bar_left, bottom, bar_width, ax_h_frac])
@@ -2577,40 +2585,75 @@ def bar_panel(fig, left, top, width, width, triples, title, *, gutter_override=N
     ax.set_ylim(-0.5, max(1, n) - 0.5)
     y_idx = np.arange(max(1, n))[::-1]
 
+    # track
     track_h = bar_du + gap_du - sep_du
     for yi in y_idx[:n]:
-        ax.add_patch(mpatches.Rectangle((0, yi - track_h/2), 100, track_h, facecolor=TRACK_BG, edgecolor="none"))
+        ax.add_patch(
+            mpatches.Rectangle(
+                (0, yi - track_h/2),
+                100, track_h,
+                facecolor=TRACK_BG,
+                edgecolor="none"
+            )
+        )
 
+    # fills
     for yi, triple in zip(y_idx[:n], triples):
         _, v_raw, txt = triple
         if pd.isna(v_raw):
-            ax.text(1.0, yi, txt, va="center", ha="left", color="#0B0B0B", fontsize=VALUE_FS + 0.5, weight="700")
+            ax.text(1.0, yi, txt, va="center", ha="left",
+                    color="#0B0B0B", fontsize=VALUE_FS+0.5, weight="700")
             continue
-        v = float(np.clip(float(v_raw), 0, 100))
-        ax.add_patch(mpatches.Rectangle((0, yi - bar_du/2), v, bar_du, facecolor=div_color_tuple(v), edgecolor="none"))
-        ax.text(1.0, yi, txt, va="center", ha="left", color="#0B0B0B", fontsize=VALUE_FS + 0.5, weight="700")
+
+        v = float(np.clip(v_raw, 0, 100))
+        ax.add_patch(
+            mpatches.Rectangle(
+                (0, yi - bar_du/2),
+                v, bar_du,
+                facecolor=div_color_tuple(v),
+                edgecolor="none"
+            )
+        )
+        ax.text(1.0, yi, txt, va="center", ha="left",
+                color="#0B0B0B", fontsize=VALUE_FS+0.5, weight="700")
 
     for sp in ax.spines.values():
         sp.set_visible(False)
     ax.tick_params(axis="both", length=0, labelsize=0)
     ax.grid(False)
 
-    ax.axvline(50, color="#E5E7EB", linestyle="--", linewidth=1.8, alpha=0.85, zorder=5)
-
+    # league avg
+    ax.axvline(50, color="#E5E7EB", linestyle="--", linewidth=1.8, alpha=0.85)
     y0, _ = ax.get_ylim()
-    ax.text(50, y0 - 0.35, "League avg", color="#CBD5E1", fontsize=8, ha="center", va="top")
+    ax.text(50, y0 - 0.35, "League avg",
+            color="#CBD5E1", fontsize=8, ha="center", va="top")
 
-    # Labels in gutter area
+    # labels in gutter
     for yi, lab in zip(y_idx[:n], labels):
         y_fig = bottom + ax_h_frac * ((yi + 0.5) / max(1, n))
-        fig.text(left + 0.006/2, y_fig, lab, color=TEXT, fontsize=LABEL_FS, fontweight="bold",
-                 va="center", ha="left")
+        fig.text(
+            left + 0.003,
+            y_fig,
+            lab,
+            color=TEXT,
+            fontsize=LABEL_FS,
+            fontweight="bold",
+            va="center",
+            ha="left"
+        )
 
-    title_y = bottom + ax_h_frac + 0.008
-    fig.text(left + 0.006/2, title_y, title, color=TEXT, fontsize=TITLE_FS, fontweight="900",
-             ha="left", va="bottom")
+    # title
+    fig.text(
+        left + 0.003,
+        bottom + ax_h_frac + 0.008,
+        title,
+        color=TEXT,
+        fontsize=TITLE_FS,
+        fontweight="900",
+        ha="left",
+        va="bottom"
+    )
 
-    ax.plot([0, 1], [1, 1], transform=ax.transAxes, color="#94A3B8", linewidth=0.8, alpha=0.35)
     return bottom
 
 # -------------------- Build the figure --------------------
