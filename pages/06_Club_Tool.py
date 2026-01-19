@@ -1710,7 +1710,24 @@ def bar_panel(fig, left, top, width, triples, title):
         sp.set_visible(False)
     ax.tick_params(axis="both", length=0, labelsize=0)
     ax.grid(False)
-    ax.axvline(50, color="#94A3B8", linestyle=":", linewidth=1.2, zorder=2)
+    ax.axvline(
+         50,
+         color="#E5E7EB",     # brighter
+         linestyle="--",     # stronger pattern
+         linewidth=1.8,      # thicker
+         alpha=0.85,
+         zorder=5
+)
+        ax.text(
+        50, ax.get_ylim()[0]-0.35,
+       "League avg",
+       color="#CBD5E1",
+       fontsize=8,
+       ha="center",
+       va="top"
+)
+
+
 
     for yi, lab in zip(y_idx[:n], labels):
         y_fig = bottom + ax_h_frac * ((yi + 0.5) / max(1, n))
@@ -1760,9 +1777,13 @@ name_h_frac = name_bbox.height / fig.bbox.height
 
 # Bigger badge right beside name
 badge_x = NAME_X + name_w_frac + 0.010
+
 bh = name_h_frac * BADGE_SCALE
 bw = bh
+
+# TRUE vertical centering
 by = NAME_Y - (name_h_frac / 2) - (bh / 2)
+
 
 
 R, G, B = [int(255*c) for c in div_color_tuple(best_val_adj)]
