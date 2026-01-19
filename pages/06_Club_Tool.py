@@ -192,40 +192,18 @@ with cD:
 
 cE, cF, cG, cH = st.columns([1.2, 1.2, 1.2, 1.2])
 with cE:
-    decay_rate = st.slider(
-        "Exp. decay (↑=stricter)", 0.5, 10.0, 5.0, 0.5,
-        help="Turns distance into a 0–100 score. Higher = more strict (scores drop faster as distance increases)."
-    )
-
+    decay_rate = st.slider("Exp. decay (↑=stricter)", 0.5, 10.0, 5.0, 0.5)
 with cF:
-    use_league_weighting = st.checkbox(
-        "Blend league strength (β)", value=True,
-        help="If on: final score is a blend of role-fit score and league strength."
-    )
-    beta = st.slider(
-        "β (0–1)", 0.0, 1.0, 0.40, 0.05,
-        help="Blend weight. β=0 => only role fit. β=1 => only league strength."
-    )
-
+    use_league_weighting = st.checkbox("Blend league strength (β)", value=True)
+    beta = st.slider("β (0–1)", 0.0, 1.0, 0.40, 0.05)
 with cG:
-    use_league_mismatch = st.checkbox(
-        "League mismatch penalty (α,p)", value=True,
-        help="Adds extra distance when player's league strength differs from the template league."
-    )
-    alpha = st.slider(
-        "α", 0.0, 5.0, 1.20, 0.05,
-        help="Penalty size. Higher α = league gap matters more."
-    )
-    p_exp = st.slider(
-        "p", 1.0, 3.0, 1.50, 0.10,
-        help="Penalty curve. p=1 linear. p>1 punishes big league gaps much more than small gaps."
-    )
-
+    use_league_mismatch = st.checkbox("League mismatch penalty (α,p)", value=True)
+    alpha = st.slider("α", 0.0, 5.0, 1.20, 0.05)
+    p_exp = st.slider("p", 1.0, 3.0, 1.50, 0.10)
 with cH:
-    penalty_mode = st.selectbox(
-        "Penalty combine", ["Additive (stronger)", "Quadrature (gentler)"], index=0,
-        help="Additive = BaseDist+Penalty. Quadrature = sqrt(BaseDist²+Penalty²) (softer)."
-    )
+    penalty_mode = st.selectbox("Penalty combine", ["Additive (stronger)", "Quadrature (gentler)"], index=0)
+    min_strength, max_strength = st.slider("League strength (pool)", 0, 101, (0, 101))
+    top_n = st.number_input("Top N", 5, 200, 20, 5)
 
 DEBUG_PHOTOS = st.checkbox("Debug photos", False)
 
@@ -246,60 +224,6 @@ use_single_template_player = st.checkbox("Use single template player (otherwise 
 template_strength = float(LEAGUE_STRENGTHS.get(template_league, 0.0))
 
 # ========================= HELPERS =========================
-
-def league_strength(league: str) -> float:
-    """0–100 league strength lookup (defaults to 0 if unknown)."""
-    return float(LEAGUE_STRENGTHS.get(str(league), 0.0))
-
-def normalize_0_1(x: pd.Series) -> pd.Series:
-    """Min-max normalize to [0,1]. If constant, return zeros."""
-    x = pd.to_numeric(x, errors="coerce")
-    mn, mx = float(x.min()), float(x.max())
-    rng = mx - mn
-    if rng <= 1e-12:
-        return pd.Series(0.0, index=x.index)
-    return (x - mn) / rng
-
-def exp_decay_score(dist: pd.Series, decay_rate: float) -> pd.Series:
-    """
-    Converts distance -> score using exponential decay after min-max normalization.
-    Higher decay_rate => harsher punishment for being far from template.
-    """
-    d01 = normalize_0_1(dist)
-    return 100.0 * np.exp(-float(decay_rate) * d01)
-
-def league_mismatch_penalty(
-    player_league: str,
-    template_strength: float,
-    alpha: float,
-    p_exp: float,
-    spread: float
-) -> float:
-    """
-    Penalty in *distance units* based on league strength gap.
-    """
-    delta = abs(league_strength(player_league) - float(template_strength)) / 100.0
-    return float(alpha) * (delta ** float(p_exp)) * float(spread)
-
-def combine_distance(base_dist: float, penalty: float, mode: str) -> float:
-    """
-    Additive: base + penalty (stronger)
-    Quadrature: sqrt(base^2 + penalty^2) (gentler)
-    """
-    if str(mode).startswith("Additive"):
-        return float(base_dist) + float(penalty)
-    return float(np.hypot(float(base_dist), float(penalty)))
-
-def blend_score(base_score: pd.Series, league_score: pd.Series, beta: float) -> pd.Series:
-    """
-    beta in [0,1]:
-      0.0 => only role-fit
-      1.0 => only league strength
-    """
-    b = float(beta)
-    return (1.0 - b) * base_score + b * league_score
-
-
 def build_base_pool():
     p = df.copy()
     p = p[p["League"].isin(leagues_sel)]
@@ -327,35 +251,30 @@ def _template_rows_for_role(pos_predicate):
     return src
 
 def _score_block(df_with_baseDist: pd.DataFrame) -> pd.DataFrame:
-    out = df_with_baseDist.copy()
-
-    # 1) Optional league mismatch penalty (in distance space)
     if use_league_mismatch:
-        base_min, base_max = float(out["BaseDist"].min()), float(out["BaseDist"].max())
+        base_min, base_max = float(df_with_baseDist["BaseDist"].min()), float(df_with_baseDist["BaseDist"].max())
         spread = max(1e-9, base_max - base_min)
 
-        penalties = out["League"].apply(
-            lambda lg: league_mismatch_penalty(lg, template_strength, alpha, p_exp, spread)
-        )
+        def _with_pen(row):
+            ls = float(LEAGUE_STRENGTHS.get(str(row["League"]), 0.0))
+            delta = abs(ls - template_strength) / 100.0
+            pen = alpha * (delta ** p_exp) * spread
+            return row["BaseDist"] + pen if penalty_mode.startswith("Additive") else float(np.hypot(row["BaseDist"], pen))
 
-        out["Role Fit Distance"] = [
-            combine_distance(b, p, penalty_mode)
-            for b, p in zip(out["BaseDist"].tolist(), penalties.tolist())
-        ]
+        df_with_baseDist["Role Fit Distance"] = df_with_baseDist.apply(_with_pen, axis=1)
     else:
-        out["Role Fit Distance"] = out["BaseDist"]
+        df_with_baseDist["Role Fit Distance"] = df_with_baseDist["BaseDist"]
 
-    # 2) Exp-decay distance -> base score (0–100)
-    base_score = exp_decay_score(out["Role Fit Distance"], decay_rate)
-
-    # 3) Optional league strength blend (score space)
-    if use_league_weighting:
-        league_part = out["League"].map(league_strength)
-        out["Role Fit Score"] = blend_score(base_score, league_part, beta)
+    dmin, dmax = float(df_with_baseDist["Role Fit Distance"].min()), float(df_with_baseDist["Role Fit Distance"].max())
+    rng = dmax - dmin
+    if rng <= 1e-12:
+        base_score = pd.Series(100.0, index=df_with_baseDist.index)
     else:
-        out["Role Fit Score"] = base_score
+        base_score = 100.0 * exp(-decay_rate * ((df_with_baseDist["Role Fit Distance"] - dmin) / rng))
 
-    return out.sort_values("Role Fit Score", ascending=False).reset_index(drop=True)
+    league_part = df_with_baseDist["League"].map(LEAGUE_STRENGTHS).fillna(0.0) if use_league_weighting else 0.0
+    df_with_baseDist["Role Fit Score"] = (1.0 - beta) * base_score + beta * league_part
+    return df_with_baseDist.sort_values("Role Fit Score", ascending=False).reset_index(drop=True)
 
 def _safe_verticality(forward_per90, passes_per90):
     f = pd.to_numeric(forward_per90, errors="coerce")
