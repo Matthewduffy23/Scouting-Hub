@@ -2352,7 +2352,11 @@ if "resolve_player_photo" in globals():
         photo_url = (resolved or "").strip() or PLACEHOLDER_IMG
     except Exception:
         photo_url = PLACEHOLDER_IMG
-photo_img = _try_load_img(photo_url) or _try_load_img(PLACEHOLDER_IMG)
+photo_img = _try_load_img(photo_url)
+
+if photo_img is None:
+    photo_img = _try_load_img(PLACEHOLDER_IMG)
+
 
 crest_url = ""
 if "resolve_team_crest" in globals():
