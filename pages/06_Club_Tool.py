@@ -1064,14 +1064,15 @@ with tabs[3]:
 with tabs[4]:
     role_tab("Center Backs", compute_center_backs)
 
-# ============================ CLUB TOOL — ONE-PAGER (FULL, ALL ROLES BY POSITION) ============================
+# ============================ CLUB TOOL — ONE-PAGER (FULL) + STYLES / STRENGTHS / WEAKNESSES ============================
 # Paste this WHOLE block into your Club Tool page where you want the one-pager section.
 #
 # ✅ Percentiles are computed vs: SAME LEAGUE + SAME POSITION-GROUP pool (unless "{metric} Percentile" exists)
 # ✅ Target Man CF is DISPLAYED in roles, but NOT used for the big badge score beside the name
 # ✅ Header layout: Player PHOTO then NAME then BIG BADGE (beside name). Crest on far-right
-# ✅ Reduced top gap: meta + roles sit tighter, panels start higher
+# ✅ Reduced top gap: meta + strengths/weaknesses/styles + roles sit tighter, panels start higher
 # ✅ Removed the badge number from the info/meta line (no leading "99" etc)
+# ✅ Adds: Strengths (>=HI), Weaknesses (<=LO), Styles (>=STYLE_T) from STYLE_MAP per position group
 #
 # Assumes you already have:
 # - df (DataFrame)
@@ -1090,218 +1091,143 @@ import requests
 st.markdown("---")
 st.header("🧾 One-pager (Club Tool)")
 
+# -------------------- THRESHOLDS --------------------
+HI, LO, STYLE_T = 70, 30, 65
+
+# -------------------- STYLE MAPS (BY POSITION GROUP KEY) --------------------
+# Keys in STYLE_MAP correspond to raw metric names in your dataset.
+STYLE_MAPS = {
+    "CB": {
+        "Defensive duels per 90": {"style": "Front Footed", "sw": "Defensive Duel Attempts"},
+        "Aerial duels won, %": {"style": "Aerially Dominant", "sw": "Aerial Duels"},
+        "Defensive duels won, %": {"style": None, "sw": "Tackling %"},
+        "Long Passes per 90": {"style": "Long Passer", "sw": None},
+        "PAdj Interceptions": {"style": "Cuts out opposition attacks", "sw": "Interceptions"},
+        "Accurate forward passes, %": {"style": None, "sw": "Forward Passing Accuracy"},
+        "Dribbles per 90": {"style": "Carries out from the back", "sw": "Dribble Volume"},
+        "Successful dribbles, %": {"style": None, "sw": "Dribbling Efficiency"},
+        "Progressive runs per 90": {"style": "Gets team up the pitch via carries", "sw": "Progressive Runs"},
+        "Passes per 90": {"style": "Ball player", "sw": "Passing Involvement"},
+        "Accurate passes, %": {"style": "Technical", "sw": "Passing Retention"},
+        "Progressive passes per 90": {"style": "Progressive Passer", "sw": "Ball progression via passes"},
+        "Shots blocked per 90": {"style": "Stopper", "sw": None},
+    },
+
+    "FB": {
+        "Defensive duels per 90": {"style": "Ball Winner", "sw": "Defensive Duel Attempts"},
+        "Aerial duels won, %": {"style": None, "sw": "Aerial Duels"},
+        "Defensive duels won, %": {"style": None, "sw": "Tackling %"},
+        "Long passes per 90": {"style": "Long Passer", "sw": None},
+        "xG per 90": {"style": None, "sw": "Goal Threat"},
+        "Shots per 90": {"style": "Takes many shots", "sw": None},
+        "PAdj Interceptions": {"style": "Cuts out opposition attacks", "sw": "Defensive positioning"},
+        "Accurate forward passes, %": {"style": None, "sw": "Forward Passing Accuracy"},
+        "Dribbles per 90": {"style": "Dribbler", "sw": "Dribble Volume"},
+        "Successful dribbles, %": {"style": None, "sw": "Dribbling Efficiency"},
+        "Touches in box per 90": {"style": "Busy in the penalty box", "sw": "Penalty-box Coverage"},
+        "Progressive runs per 90": {"style": "Gets team up the pitch via carries", "sw": "Progressive Runs"},
+        "Passes per 90": {"style": "Involved in build-up", "sw": "Passing Involvement"},
+        "Accurate passes, %": {"style": "Secure Passer", "sw": "Passing Retention"},
+        "xA per 90": {"style": "Creates goal scoring chances", "sw": "Creativity"},
+        "Passes to penalty area per 90": {"style": "Creates openings", "sw": "Passes to Penalty Area"},
+        "Deep completions per 90": {"style": "Gets ball into the box", "sw": None},
+        "Progressive passes per 90": {"style": "Build up Passer", "sw": "Ball progression via passes"},
+        "Smart passes per 90": {"style": "Attempts through balls", "sw": None},
+    },
+
+    "CM": {
+        "Defensive duels per 90": {"style": "Ball Winner", "sw": "Defensive Duel Attempts"},
+        "Aerial duels won, %": {"style": None, "sw": "Aerial Duels"},
+        "Defensive duels won, %": {"style": None, "sw": "Tackling %"},
+        "Long Passes per 90": {"style": "Long Passer", "sw": None},
+        "Non-penalty goals per 90": {"style": None, "sw": "Scoring Goals"},
+        "xG per 90": {"style": "Box-Crasher", "sw": "Goal Threat"},
+        "Shots per 90": {"style": "Takes many shots", "sw": None},
+        "PAdj Interceptions": {"style": "Cuts out opposition attacks", "sw": "Defensive positioning"},
+        "Accurate forward passes, %": {"style": None, "sw": "Forward Passing Accuracy"},
+        "Dribbles per 90": {"style": "Dribbler", "sw": "Dribble Volume"},
+        "Successful dribbles, %": {"style": None, "sw": "Dribbling Efficiency"},
+        "Touches in box per 90": {"style": "Busy in the penalty box", "sw": "Penalty-box Coverage"},
+        "Progressive runs per 90": {"style": "Gets team up the pitch via carries", "sw": "Progressive Runs"},
+        "Passes per 90": {"style": "Involved in build-up", "sw": "Passing Involvement"},
+        "Accurate passes, %": {"style": "Controller", "sw": "Passing Retention"},
+        "xA per 90": {"style": "Creates goal scoring chances", "sw": "Creativity"},
+        "Passes to penalty area per 90": {"style": "Advanced Playmaker", "sw": "Passes to Penalty Area"},
+        "Deep completions per 90": {"style": "Gets ball into the box", "sw": None},
+        "Progressive passes per 90": {"style": "Deep Playmaker", "sw": "Ball progression via passes"},
+        "Smart passes per 90": {"style": "Attempts through balls", "sw": None},
+    },
+
+    "CF": {
+        "Defensive duels per 90": {"style": "High Work Rate", "sw": "Defensive Duel Attempts"},
+        "Aerial duels won, %": {"style": None, "sw": "Aerial Duels"},
+        "xG per 90": {"style": "Gets into good goalscoring positions", "sw": "Goal Threat"},
+        "Shots per 90": {"style": "Takes many shots", "sw": "Shot Volume"},
+        "Crosses per 90": {"style": "Moves into wide areas to create", "sw": None},
+        "Dribbles per 90": {"style": "Dribbler", "sw": "Dribble Volume"},
+        "Successful dribbles, %": {"style": None, "sw": "Dribbling Efficiency"},
+        "Touches in box per 90": {"style": "Busy in the penalty box", "sw": "Penalty-box Coverage"},
+        "Progressive runs per 90": {"style": "Gets team up the pitch via carries", "sw": "Progressive Runs"},
+        "Passes per 90": {"style": "Involved in build-up", "sw": "Involvement"},
+        "Accurate passes, %": {"style": None, "sw": "Passing Retention"},
+        "xA per 90": {"style": "Creates goal scoring chances", "sw": "Creativity"},
+        "Passes to penalty area per 90": {"style": "Creates openings", "sw": "Passes to Penalty Area"},
+        "Deep completions per 90": {"style": "Gets ball into the box", "sw": None},
+        "Goal conversion, %": {"style": None, "sw": "Finishing"},
+        "Smart passes per 90": {"style": "Attempts through balls", "sw": None},
+    },
+}
+
 # -------------------- ROLE BUCKETS (ALL ROLES BY POSITION) --------------------
 ROLE_BUCKETS = {
-    # -------------------- CENTRAL MID (CM/DM) --------------------
     "CM": {
-        "Deep Playmaker CM": {
-            "metrics": {
-                "Passes per 90": 1,
-                "Accurate passes, %": 1,
-                "Forward passes per 90": 2,
-                "Accurate forward passes, %": 1.5,
-                "Progressive passes per 90": 3,
-                "Passes to final third per 90": 2.5,
-                "Accurate long passes, %": 1,
-            }
-        },
-        "Advanced Playmaker CM": {
-            "metrics": {
-                "Deep completions per 90": 1.5,
-                "Smart passes per 90": 2,
-                "xA per 90": 4,
-                "Passes to penalty area per 90": 2,
-            }
-        },
-        "Defensive Midfielder DM": {
-            "metrics": {
-                "Defensive duels per 90": 4,
-                "Defensive duels won, %": 4,
-                "PAdj Interceptions": 3,
-                "Aerial duels per 90": 0.5,
-                "Aerial duels won, %": 1,
-            }
-        },
-        "Goal Threat CM": {
-            "metrics": {
-                "Non-penalty goals per 90": 3,
-                "xG per 90": 3,
-                "Shots per 90": 1.5,
-                "Touches in box per 90": 2,
-            }
-        },
-        "Ball-Carrying CM": {
-            "metrics": {
-                "Dribbles per 90": 4,
-                "Successful dribbles, %": 2,
-                "Progressive runs per 90": 3,
-                "Accelerations per 90": 3,
-            }
-        },
-        "Playmaker": {
-            "metrics": {
-                "Passes per 90": 2,
-                "xA per 90": 3,
-                "Key passes per 90": 1,
-                "Deep completions per 90": 1.5,
-                "Smart passes per 90": 1.5,
-                "Passes to penalty area per 90": 2,
-            },
-        },
-        "Goal Threat": {
-            "metrics": {
-                "xG per 90": 3,
-                "Non-penalty goals per 90": 3,
-                "Shots per 90": 2,
-                "Touches in box per 90": 2,
-            },
-        },
-        "Ball Carrier": {
-            "metrics": {
-                "Dribbles per 90": 4,
-                "Successful dribbles, %": 2,
-                "Progressive runs per 90": 3,
-                "Accelerations per 90": 3,
-            },
-        },
+        "Deep Playmaker CM": {"metrics": {"Passes per 90": 1, "Accurate passes, %": 1, "Forward passes per 90": 2,
+                                         "Accurate forward passes, %": 1.5, "Progressive passes per 90": 3,
+                                         "Passes to final third per 90": 2.5, "Accurate long passes, %": 1}},
+        "Advanced Playmaker CM": {"metrics": {"Deep completions per 90": 1.5, "Smart passes per 90": 2,
+                                             "xA per 90": 4, "Passes to penalty area per 90": 2}},
+        "Defensive Midfielder DM": {"metrics": {"Defensive duels per 90": 4, "Defensive duels won, %": 4,
+                                               "PAdj Interceptions": 3, "Aerial duels per 90": 0.5, "Aerial duels won, %": 1}},
+        "Goal Threat CM": {"metrics": {"Non-penalty goals per 90": 3, "xG per 90": 3, "Shots per 90": 1.5, "Touches in box per 90": 2}},
+        "Ball-Carrying CM": {"metrics": {"Dribbles per 90": 4, "Successful dribbles, %": 2, "Progressive runs per 90": 3, "Accelerations per 90": 3}},
+        "Playmaker": {"metrics": {"Passes per 90": 2, "xA per 90": 3, "Key passes per 90": 1,
+                                  "Deep completions per 90": 1.5, "Smart passes per 90": 1.5, "Passes to penalty area per 90": 2}},
+        "Goal Threat": {"metrics": {"xG per 90": 3, "Non-penalty goals per 90": 3, "Shots per 90": 2, "Touches in box per 90": 2}},
+        "Ball Carrier": {"metrics": {"Dribbles per 90": 4, "Successful dribbles, %": 2, "Progressive runs per 90": 3, "Accelerations per 90": 3}},
     },
-
-    # -------------------- CENTER BACK (CB) --------------------
     "CB": {
-        "Ball Playing CB": {
-            "metrics": {
-                "Passes per 90": 2,
-                "Accurate passes, %": 2,
-                "Forward passes per 90": 2,
-                "Accurate forward passes, %": 2,
-                "Progressive passes per 90": 2,
-                "Progressive runs per 90": 1.5,
-                "Dribbles per 90": 1.5,
-                "Accurate long passes, %": 1,
-                "Passes to final third per 90": 1.5,
-            }
-        },
-        "Wide CB": {
-            "metrics": {
-                "Defensive duels per 90": 1.5,
-                "Defensive duels won, %": 2,
-                "Dribbles per 90": 2,
-                "Forward passes per 90": 1,
-                "Progressive passes per 90": 1,
-                "Progressive runs per 90": 2,
-            }
-        },
-        "Box Defender": {
-            "metrics": {
-                "Aerial duels per 90": 1,
-                "Aerial duels won, %": 3,
-                "PAdj Interceptions": 2,
-                "Shots blocked per 90": 1,
-                "Defensive duels won, %": 4,
-            }
-        },
+        "Ball Playing CB": {"metrics": {"Passes per 90": 2, "Accurate passes, %": 2, "Forward passes per 90": 2,
+                                        "Accurate forward passes, %": 2, "Progressive passes per 90": 2,
+                                        "Progressive runs per 90": 1.5, "Dribbles per 90": 1.5,
+                                        "Accurate long passes, %": 1, "Passes to final third per 90": 1.5}},
+        "Wide CB": {"metrics": {"Defensive duels per 90": 1.5, "Defensive duels won, %": 2, "Dribbles per 90": 2,
+                                "Forward passes per 90": 1, "Progressive passes per 90": 1, "Progressive runs per 90": 2}},
+        "Box Defender": {"metrics": {"Aerial duels per 90": 1, "Aerial duels won, %": 3, "PAdj Interceptions": 2,
+                                     "Shots blocked per 90": 1, "Defensive duels won, %": 4}},
     },
-
-    # -------------------- FULLBACK (FB) --------------------
     "FB": {
-        "Build Up FB": {
-            "metrics": {
-                "Passes per 90": 2,
-                "Accurate passes, %": 1.5,
-                "Forward passes per 90": 2,
-                "Accurate forward passes, %": 2,
-                "Progressive passes per 90": 2.5,
-                "Progressive runs per 90": 2,
-                "Dribbles per 90": 2,
-                "Passes to final third per 90": 2,
-                "xA per 90": 1,
-            }
-        },
-        "Attacking FB": {
-            "metrics": {
-                "Crosses per 90": 2,
-                "Dribbles per 90": 3.5,
-                "Accelerations per 90": 1,
-                "Successful dribbles, %": 1,
-                "Touches in box per 90": 2,
-                "Progressive runs per 90": 3,
-                "Passes to penalty area per 90": 2,
-                "xA per 90": 3,
-            }
-        },
-        "Defensive FB": {
-            "metrics": {
-                "Aerial duels per 90": 1,
-                "Aerial duels won, %": 1.5,
-                "Defensive duels per 90": 2,
-                "PAdj Interceptions": 3,
-                "Shots blocked per 90": 1,
-                "Defensive duels won, %": 3.5,
-            }
-        },
+        "Build Up FB": {"metrics": {"Passes per 90": 2, "Accurate passes, %": 1.5, "Forward passes per 90": 2,
+                                    "Accurate forward passes, %": 2, "Progressive passes per 90": 2.5, "Progressive runs per 90": 2,
+                                    "Dribbles per 90": 2, "Passes to final third per 90": 2, "xA per 90": 1}},
+        "Attacking FB": {"metrics": {"Crosses per 90": 2, "Dribbles per 90": 3.5, "Accelerations per 90": 1,
+                                     "Successful dribbles, %": 1, "Touches in box per 90": 2, "Progressive runs per 90": 3,
+                                     "Passes to penalty area per 90": 2, "xA per 90": 3}},
+        "Defensive FB": {"metrics": {"Aerial duels per 90": 1, "Aerial duels won, %": 1.5, "Defensive duels per 90": 2,
+                                     "PAdj Interceptions": 3, "Shots blocked per 90": 1, "Defensive duels won, %": 3.5}},
     },
-
-    # -------------------- STRIKER (CF) --------------------
     "CF": {
-        "Target Man CF": {
-            "metrics": {
-                "Aerial duels per 90": 3,
-                "Aerial duels won, %": 5,
-            },
-        },
-        "Goal Threat CF": {
-            "metrics": {
-                "Non-penalty goals per 90": 3,
-                "Shots per 90": 1.5,
-                "xG per 90": 3,
-                "Touches in box per 90": 1,
-                "Shots on target, %": 0.5,
-            },
-        },
-        "Link-Up CF": {
-            "metrics": {
-                "Passes per 90": 2,
-                "Passes to penalty area per 90": 1.5,
-                "Deep completions per 90": 1,
-                "Smart passes per 90": 1.5,
-                "Accurate passes, %": 1.5,
-                "Key passes per 90": 1,
-                "Dribbles per 90": 2,
-                "Successful dribbles, %": 1,
-                "Progressive runs per 90": 2,
-                "xA per 90": 3,
-            },
-        },
+        "Target Man CF": {"metrics": {"Aerial duels per 90": 3, "Aerial duels won, %": 5}},
+        "Goal Threat CF": {"metrics": {"Non-penalty goals per 90": 3, "Shots per 90": 1.5, "xG per 90": 3,
+                                       "Touches in box per 90": 1, "Shots on target, %": 0.5}},
+        "Link-Up CF": {"metrics": {"Passes per 90": 2, "Passes to penalty area per 90": 1.5, "Deep completions per 90": 1,
+                                   "Smart passes per 90": 1.5, "Accurate passes, %": 1.5, "Key passes per 90": 1,
+                                   "Dribbles per 90": 2, "Successful dribbles, %": 1, "Progressive runs per 90": 2, "xA per 90": 3}},
     },
-
-    # -------------------- ATTACKERS (W/AM) --------------------
     "ATT": {
-        "Playmaker": {
-            "metrics": {
-                "Passes per 90": 2,
-                "xA per 90": 3,
-                "Key passes per 90": 1,
-                "Deep completions per 90": 1.5,
-                "Smart passes per 90": 1.5,
-                "Passes to penalty area per 90": 2,
-            },
-        },
-        "Goal Threat": {
-            "metrics": {
-                "xG per 90": 3,
-                "Non-penalty goals per 90": 3,
-                "Shots per 90": 2,
-                "Touches in box per 90": 2,
-            },
-        },
-        "Ball Carrier": {
-            "metrics": {
-                "Dribbles per 90": 4,
-                "Successful dribbles, %": 2,
-                "Progressive runs per 90": 3,
-                "Accelerations per 90": 3,
-            },
-        },
+        "Playmaker": {"metrics": {"Passes per 90": 2, "xA per 90": 3, "Key passes per 90": 1,
+                                  "Deep completions per 90": 1.5, "Smart passes per 90": 1.5, "Passes to penalty area per 90": 2}},
+        "Goal Threat": {"metrics": {"xG per 90": 3, "Non-penalty goals per 90": 3, "Shots per 90": 2, "Touches in box per 90": 2}},
+        "Ball Carrier": {"metrics": {"Dribbles per 90": 4, "Successful dribbles, %": 2, "Progressive runs per 90": 3, "Accelerations per 90": 3}},
     },
 }
 
@@ -1388,7 +1314,52 @@ def compute_role_scores(ply: pd.Series, df_all: pd.DataFrame, role_key: str, ref
             out[role_name] = float(np.average(vals, weights=wts))
     return out
 
-# -------------------- Metric groups (use your full requested list) --------------------
+def compute_strengths_weaknesses_styles(ply: pd.Series, df_all: pd.DataFrame, role_key: str, ref_df: pd.DataFrame):
+    """
+    Uses STYLE_MAP for role_key.
+      - Strengths: sw label where metric pct >= HI
+      - Weaknesses: sw label where metric pct <= LO
+      - Styles: style label where metric pct >= STYLE_T
+    Returns: (strengths_list, weaknesses_list, styles_list, pct_extra_dict)
+    """
+    style_map = STYLE_MAPS.get(role_key, {}) if role_key else {}
+    strengths, weaknesses, styles = [], [], []
+    pct_extra = {}
+
+    for metric, meta in style_map.items():
+        p = pct_of_row(ply, metric, df_all, ref_df)
+        if pd.isna(p):
+            continue
+        pct_extra[metric] = float(p)
+
+        sw = (meta or {}).get("sw")
+        stl = (meta or {}).get("style")
+
+        if sw:
+            if p >= HI:
+                strengths.append(str(sw))
+            elif p <= LO:
+                weaknesses.append(str(sw))
+
+        if stl and p >= STYLE_T:
+            styles.append(str(stl))
+
+    # de-dupe while preserving order
+    def _dedupe(xs):
+        seen = set()
+        out = []
+        for x in xs:
+            if x not in seen:
+                seen.add(x)
+                out.append(x)
+        return out
+
+    strengths = _dedupe(strengths)[:10]
+    weaknesses = _dedupe(weaknesses)[:10]
+    styles = _dedupe(styles)[:10]
+    return strengths, weaknesses, styles, pct_extra
+
+# -------------------- Metric groups (requested) --------------------
 ATTACKING_METRICS = [
     ("Crosses", "Crosses per 90"),
     ("Crossing %", "Accurate crosses, %"),
@@ -1401,7 +1372,6 @@ ATTACKING_METRICS = [
     ("Shooting %", "Shots on target, %"),
     ("Touches in box", "Touches in box per 90"),
 ]
-
 DEFENSIVE_METRICS = [
     ("Aerial Duels", "Aerial duels per 90"),
     ("Aerial Win %", "Aerial duels won, %"),
@@ -1410,7 +1380,6 @@ DEFENSIVE_METRICS = [
     ("PAdj Interceptions", "PAdj Interceptions"),
     ("Shots blocked", "Shots blocked per 90"),
 ]
-
 POSSESSION_METRICS = [
     ("Accelerations", "Accelerations per 90"),
     ("Deep completions", "Deep completions per 90"),
@@ -1433,15 +1402,19 @@ POSSESSION_METRICS = [
     ("Smart Passes", "Smart passes per 90"),
 ]
 
-def build_triples(ply: pd.Series, df_all: pd.DataFrame, ref_df: pd.DataFrame, pairs: list) -> list:
+def build_triples(ply: pd.Series, df_all: pd.DataFrame, ref_df: pd.DataFrame, pairs: list, pct_extra: dict):
     triples = []
     for lab, met in pairs:
         if met not in df_all.columns and f"{met} Percentile" not in df_all.columns:
             continue
-        triples.append((lab, pct_of_row(ply, met, df_all, ref_df), val_str(ply, met)))
+        # use pct_extra if we computed it (styles/strength/weakness map)
+        p = pct_extra.get(met, None)
+        if p is None:
+            p = pct_of_row(ply, met, df_all, ref_df)
+        triples.append((lab, p, val_str(ply, met)))
     return triples
 
-# -------------------- UI: Select position group -> player --------------------
+# -------------------- UI: select position group -> player --------------------
 group = st.selectbox("Position group", list(POS_GROUPS.keys()), index=0)
 pos_prefixes = {p.upper() for p in POS_GROUPS[group]}
 
@@ -1481,25 +1454,45 @@ role_key = _role_key_from_pos(pos_tok)
 ref_df = df.copy()
 if "League" in ref_df.columns:
     ref_df = ref_df[ref_df["League"].astype(str) == str(league)].copy()
+
 if "Position" in ref_df.columns:
     ref_df["_pos_tok"] = ref_df["Position"].apply(_pos_token)
-    rk = role_key
-    if rk == "CF":
+    if role_key == "CF":
         allowed = {"CF"}
-    elif rk == "CB":
-        allowed = {"CB","LCB","RCB"}
-    elif rk == "FB":
-        allowed = {"RB","LB","RWB","LWB"}
-    elif rk == "CM":
-        allowed = {"DMF","CMF","LCMF","RCMF","LDMF","RDMF"}
-    elif rk == "ATT":
-        allowed = {"RW","RWF","LW","LWF","AMF","RAMF","LAMF"}
+    elif role_key == "CB":
+        allowed = {"CB", "LCB", "RCB"}
+    elif role_key == "FB":
+        allowed = {"RB", "LB", "RWB", "LWB"}
+    elif role_key == "CM":
+        allowed = {"DMF", "CMF", "LCMF", "RCMF", "LDMF", "RDMF"}
+    elif role_key == "ATT":
+        allowed = {"RW", "RWF", "LW", "LWF", "AMF", "RAMF", "LAMF"}
     else:
         allowed = set()
     if allowed:
         ref_df = ref_df[ref_df["_pos_tok"].isin(allowed)].copy()
 
-# Photo + crest URLs (from your existing resolvers if present)
+# -------------------- Role scores + strengths/weaknesses/styles --------------------
+role_scores = compute_role_scores(ply, df, role_key, ref_df)
+strengths, weaknesses, styles, pct_extra = compute_strengths_weaknesses_styles(ply, df, role_key, ref_df)
+
+# badge pick EXCLUDES Target Man CF only (but we still display it in roles row)
+EXCLUDE_ROLE = "target man cf"
+filtered_roles = [(k, v) for k, v in role_scores.items() if str(k).strip().lower() != EXCLUDE_ROLE]
+top3_roles = sorted(filtered_roles, key=lambda kv: kv[1], reverse=True)[:3]
+best_val_raw = float(top3_roles[0][1]) if top3_roles else (max(role_scores.values()) if role_scores else np.nan)
+
+_ls_map = globals().get("LEAGUE_STRENGTHS", {})
+league_strength = float(_ls_map.get(str(league), 50.0)) if isinstance(_ls_map, dict) else 50.0
+BETA_BADGE = 0.40
+best_val_adj = ((1.0 - BETA_BADGE) * float(best_val_raw) + BETA_BADGE * league_strength) if pd.notna(best_val_raw) else league_strength
+
+# -------------------- Metric triples --------------------
+ATTACKING = build_triples(ply, df, ref_df, ATTACKING_METRICS, pct_extra)
+DEFENSIVE = build_triples(ply, df, ref_df, DEFENSIVE_METRICS, pct_extra)
+POSSESSION = build_triples(ply, df, ref_df, POSSESSION_METRICS, pct_extra)
+
+# -------------------- Photos & crest --------------------
 PLACEHOLDER_IMG = "https://i.redd.it/43axcjdu59nd1.jpeg"
 photo_url = PLACEHOLDER_IMG
 if "resolve_player_photo" in globals():
@@ -1515,7 +1508,6 @@ if "resolve_team_crest" in globals():
     except Exception:
         crest_url = ""
 
-# ---- load images ----
 def _try_load_img(url: str):
     if not url or not (str(url).startswith("http://") or str(url).startswith("https://")):
         return None
@@ -1530,31 +1522,16 @@ def _try_load_img(url: str):
 photo_img = _try_load_img(photo_url)
 crest_img = _try_load_img(crest_url) if crest_url else None
 
-# -------------------- Role scores + badge value --------------------
-role_scores = compute_role_scores(ply, df, role_key, ref_df)
-
-# badge pick EXCLUDES Target Man CF only (but we still display it in roles row)
-EXCLUDE_ROLE = "target man cf"
-filtered_roles = [(k, v) for k, v in role_scores.items() if str(k).strip().lower() != EXCLUDE_ROLE]
-top3_roles = sorted(filtered_roles, key=lambda kv: kv[1], reverse=True)[:3]
-best_val_raw = float(top3_roles[0][1]) if top3_roles else (max(role_scores.values()) if role_scores else np.nan)
-
-_ls_map = globals().get("LEAGUE_STRENGTHS", {})
-league_strength = float(_ls_map.get(str(league), 50.0)) if isinstance(_ls_map, dict) else 50.0
-BETA_BADGE = 0.40
-best_val_adj = ((1.0 - BETA_BADGE) * float(best_val_raw) + BETA_BADGE * league_strength) if pd.notna(best_val_raw) else league_strength
-
-# -------------------- Metric triples --------------------
-ATTACKING = build_triples(ply, df, ref_df, ATTACKING_METRICS)
-DEFENSIVE = build_triples(ply, df, ref_df, DEFENSIVE_METRICS)
-POSSESSION = build_triples(ply, df, ref_df, POSSESSION_METRICS)
-
 # -------------------- One-pager styling --------------------
 PAGE_BG   = "#0a0f1c"
 PANEL_BG  = "#11161C"
 TRACK_BG  = "#222c3d"
 TEXT      = "#E5E7EB"
 ROLE_GREY = "#737373"
+
+CHIP_G_BG = "#22C55E"
+CHIP_R_BG = "#EF4444"
+CHIP_B_BG = "#60A5FA"
 
 BAR_PX = 24
 GAP_PX = 6
@@ -1581,16 +1558,46 @@ def _text_height_frac(fig, s, *, fontsize=8, weight="normal"):
     t.remove()
     return h_px / fig.bbox.height
 
+def chip_row_exact(fig, items, y, bg, *, fs=10.1, weight="900", max_rows=1, gap_x=0.006, max_per_row=6):
+    if not items:
+        return y
+    x0 = x = 0.055
+    row_gap = 0.026
+    pad_x = 0.004
+    pad_y = 0.002
+    h = _text_height_frac(fig, "Hg", fontsize=fs, weight=weight) + pad_y * 2
+    per_row = 0
+    for s in items[:60]:
+        w = _text_width_frac(fig, s, fontsize=fs, weight=weight) + pad_x * 2
+        need_wrap = (x + w > 0.965) or (max_per_row and per_row >= max_per_row)
+        if need_wrap:
+            max_rows -= 1
+            if max_rows <= 0:
+                break
+            x = x0
+            y -= row_gap
+            per_row = 0
+        fig.patches.append(
+            mpatches.FancyBboxPatch(
+                (x, y - h * 0.74), w, h,
+                boxstyle=f"round,pad=0.001,rounding_size={h * 0.45}",
+                transform=fig.transFigure, facecolor=bg, edgecolor="none"
+            )
+        )
+        fig.text(x + pad_x, y - h * 0.33, s, fontsize=fs, color="#FFFFFF",
+                 va="center", ha="left", fontweight=weight)
+        x += w + gap_x
+        per_row += 1
+    return y - row_gap
+
 def roles_row_tight(fig, rs: dict, y, *, fs=10.6, max_items=12):
     if not isinstance(rs, dict) or not rs:
         return y
-
     x0 = x = 0.055
     row_gap = 0.041
     gap = 0.003
     pad_x = 0.006
     pad_y = 0.003
-
     items = sorted(rs.items(), key=lambda kv: -kv[1])[:max_items]
     for rname, v in items:
         text_w = _text_width_frac(fig, rname, fontsize=fs, weight="800")
@@ -1601,8 +1608,8 @@ def roles_row_tight(fig, rs: dict, y, *, fs=10.6, max_items=12):
         num_text = f"{int(round(v))}"
         num_wt = _text_width_frac(fig, num_text, fontsize=fs-0.6, weight="900")
         num_ht = _text_height_frac(fig, "Hg", fontsize=fs-0.6, weight="900")
-        num_w  = num_wt + pad_x * 2 * 0.9
-        num_h  = num_ht + pad_y * 2 * 0.9
+        num_w = num_wt + pad_x * 2 * 0.9
+        num_h = num_ht + pad_y * 2 * 0.9
 
         total = role_w + gap + num_w
         if x + total > 0.965:
@@ -1611,9 +1618,8 @@ def roles_row_tight(fig, rs: dict, y, *, fs=10.6, max_items=12):
 
         fig.patches.append(mpatches.FancyBboxPatch(
             (x, y - role_h * 0.78), role_w, role_h,
-            boxstyle=f"round,pad=0.001,rounding_size={role_h*0.25}",
-            transform=fig.transFigure,
-            facecolor=ROLE_GREY, edgecolor="none"
+            boxstyle=f"round,pad=0.001,rounding_size={role_h * 0.25}",
+            transform=fig.transFigure, facecolor=ROLE_GREY, edgecolor="none"
         ))
         fig.text(x + pad_x, y - role_h * 0.33, rname,
                  fontsize=fs, color="#FFFFFF", va="center", ha="left", fontweight="800")
@@ -1622,15 +1628,13 @@ def roles_row_tight(fig, rs: dict, y, *, fs=10.6, max_items=12):
         bx = x + role_w + gap
         fig.patches.append(mpatches.FancyBboxPatch(
             (bx, y - num_h * 0.78), num_w, num_h,
-            boxstyle=f"round,pad=0.001,rounding_size={num_h*0.25}",
-            transform=fig.transFigure,
-            facecolor=f"#{R:02x}{G:02x}{B:02x}", edgecolor="none"
+            boxstyle=f"round,pad=0.001,rounding_size={num_h * 0.25}",
+            transform=fig.transFigure, facecolor=f"#{R:02x}{G:02x}{B:02x}", edgecolor="none"
         ))
         fig.text(bx + num_w / 2, y - num_h * 0.33, num_text,
                  fontsize=fs - 0.6, color="#FFFFFF", va="center", ha="center", fontweight="900")
 
         x = bx + num_w + 0.010
-
     return y - row_gap
 
 def bar_panel(fig, left, top, width, triples, title):
@@ -1753,7 +1757,7 @@ if crest_img is not None:
     axc.axis("off")
     axc.set_facecolor(PAGE_BG)
 
-# -------------------- META line (NO leading score; moved down/tighter) --------------------
+# -------------------- META line (NO leading score; tighter) --------------------
 age = int(ply["Age"]) if pd.notna(ply.get("Age")) else None
 mins = int(ply.get("Minutes played", np.nan)) if pd.notna(ply.get("Minutes played")) else None
 matches = int(ply.get("Matches played", np.nan)) if pd.notna(ply.get("Matches played")) else None
@@ -1767,7 +1771,7 @@ else:
     xg_total = float(xg_per90) * (float(mins) / 90.0) if (pd.notna(xg_per90) and mins) else np.nan
 xg_total_str = f"{xg_total:.2f}" if pd.notna(xg_total) else "—"
 
-meta_y = 0.915
+meta_y = 0.905
 x_meta = 0.055
 runs = [
     (f"{pos} — ", "normal"),
@@ -1784,10 +1788,16 @@ for txt, weight in runs:
              ha="left", va="center")
     x_meta += _text_width_frac(fig, txt, fontsize=fs, weight=("900" if weight == "bold" else "normal")) + (0.004 if txt.strip() else 0)
 
+# -------------------- Strengths / Weaknesses / Styles (chips) --------------------
+y_chips = 0.872
+y_chips = chip_row_exact(fig, strengths,  y_chips, CHIP_G_BG, fs=10.1, max_rows=1, max_per_row=6)
+y_chips = chip_row_exact(fig, weaknesses, y_chips, CHIP_R_BG, fs=10.1, max_rows=1, max_per_row=6)
+y_chips = chip_row_exact(fig, styles,     y_chips, CHIP_B_BG, fs=10.1, max_rows=1, max_per_row=6)
+y_chips -= 0.012
+
 # -------------------- Roles row (DISPLAY ALL roles incl Target Man) --------------------
-y_roles = 0.835
 roles_for_row = dict(sorted(role_scores.items(), key=lambda kv: -kv[1])[:10])
-y_roles = roles_row_tight(fig, roles_for_row, y_roles, fs=10.6, max_items=10)
+y_roles = roles_row_tight(fig, roles_for_row, y_chips, fs=10.6, max_items=10)
 
 # -------------------- Layout (reduced top gap; panels start higher) --------------------
 LEFT = 0.050
@@ -1796,7 +1806,7 @@ MID_GAP = 0.040
 RIGHT = LEFT + WIDTH_L + MID_GAP
 WIDTH_R = 0.41
 
-TOP = 0.635
+TOP = 0.625  # higher = less gap from header area
 V_GAP_FRAC = 0.050
 
 att_bottom = bar_panel(fig, LEFT, TOP, WIDTH_L, ATTACKING, "Attacking")
@@ -1816,6 +1826,7 @@ st.download_button(
 )
 
 # ============================ END ONE-PAGER ============================
+
 
 
 
