@@ -2719,7 +2719,9 @@ st.download_button(
     data=buf.getvalue(),
     file_name=f"{str(player_name).replace(' ', '_')}_onepager.png",
     mime="image/png",
+    key=f"{WKEY}_download_png",   # <--- THIS fixes the duplicate element id
 )
+
 
 
 
