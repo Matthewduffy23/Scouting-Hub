@@ -854,36 +854,6 @@ def render_tiles(ranked: pd.DataFrame, role_title: str):
     html.append("</div>")
     st.markdown("".join(html), unsafe_allow_html=True)
 
-    # photo override UI (simple + safe)
-    st.subheader("🖼️ Photo override (optional)")
-    st.caption("Paste a FotMob player image URL for any player tile. Stored in session only.")
-    player_opts = df_view["Player"].astype(str).tolist() if "Player" in df_view.columns else []
-    if player_opts:
-        picked = st.selectbox("Pick a player from the list above", player_opts, key=f"override_pick_{role_title}")
-        team_p = str(df_view.loc[df_view["Player"].astype(str) == picked, "Team"].iloc[0])
-        league_p = str(df_view.loc[df_view["Player"].astype(str) == picked, "League"].iloc[0])
-        key_id = f"{picked}|||{team_p}|||{league_p}"
-
-        default_url = st.session_state.get("photo_map", {}).get(key_id, "")
-        url = st.text_input("FotMob image URL (playerimages/{id}.png)", value=default_url, key=f"url_{role_title}")
-        a, b = st.columns([1, 1])
-        with a:
-            if st.button("Save override", key=f"save_{role_title}"):
-                val = (url or "").strip()
-                if not val:
-                    st.error("Paste a URL first.")
-                elif not (val.startswith("http://") or val.startswith("https://")):
-                    st.error("URL must start with http:// or https://")
-                else:
-                    st.session_state["photo_map"][key_id] = val
-                    st.success("Saved.")
-                    st.rerun()
-        with b:
-            if st.button("Clear override", key=f"clear_{role_title}"):
-                st.session_state["photo_map"].pop(key_id, None)
-                st.info("Cleared.")
-                st.rerun()
-
 
 def render_matches_table(ranked: pd.DataFrame):
     cols = [c for c in ["Player","Team","League","Position","Age","Minutes played","Market value","Role Fit Score"] if c in ranked.columns]
