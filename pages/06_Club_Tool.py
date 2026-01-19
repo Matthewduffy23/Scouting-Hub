@@ -821,6 +821,7 @@ def render_tiles(ranked: pd.DataFrame, role_title: str):
         age = row.get("Age", "")
         minutes = row.get("Minutes played", "")
         mv = row.get("Market value", "")
+        foot = str(row.get("Foot", "")).strip()
         score = float(pd.to_numeric(row.get("Role Fit Score", 0.0), errors="coerce") or 0.0)
         match_pct = max(0, min(100, int(round(score))))
 
@@ -845,6 +846,7 @@ def render_tiles(ranked: pd.DataFrame, role_title: str):
         <span class="chip">Age {age}</span>
         <span class="chip">{int(minutes) if str(minutes).isdigit() else minutes} min</span>
         <span class="chip">MV {mv}</span>
+        <span class="chip">Foot {foot if foot else "—"}</span>
       </div>
     </div>
   </div>
