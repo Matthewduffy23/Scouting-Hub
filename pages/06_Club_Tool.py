@@ -1364,6 +1364,7 @@ ATTACKING_METRICS = [
     ("Expected Assists", "xA per 90"),
     ("Offensive Duels", "Offensive duels per 90"),
     ("Offensive Duel %", "Offensive duels won, %"),
+    ("Progressive Runs", "Progressive runs per 90"),
     ("Shots", "Shots per 90"),
     ("Shooting %", "Shots on target, %"),
     ("Touches in box", "Touches in box per 90"),
@@ -1392,7 +1393,6 @@ POSSESSION_METRICS = [
     ("Passes to Penalty Area %", "Accurate passes to penalty area, %"),
     ("Progessive Passes", "Progressive passes per 90"),
     ("Progressive Pass %", "Accurate progressive passes, %"),
-    ("Progressive Runs", "Progressive runs per 90"),
     ("Smart Passes", "Smart passes per 90"),
 ]
 
@@ -1494,16 +1494,33 @@ PLACEHOLDER_IMG = "https://i.redd.it/43axcjdu59nd1.jpeg"
 def _try_load_img(url: str):
     """
     Returns an image array for a valid URL, else None.
+    Robust: uses PIL fallback for JPEG/odd formats.
     """
     if not url or not (str(url).startswith("http://") or str(url).startswith("https://")):
         return None
     try:
         r = requests.get(str(url), timeout=7, headers={"User-Agent": "Mozilla/5.0"})
-        if r.status_code != 200:
+        if r.status_code != 200 or not r.content:
             return None
-        return plt.imread(BytesIO(r.content))
+
+        # First try matplotlib (works great for PNG)
+        try:
+            return plt.imread(BytesIO(r.content))
+        except Exception:
+            pass
+
+        # Fallback: PIL (handles JPEG/WebP/etc)
+        try:
+            from PIL import Image
+            import numpy as np
+            im = Image.open(BytesIO(r.content)).convert("RGB")
+            return np.array(im)
+        except Exception:
+            return None
+
     except Exception:
         return None
+
 
 # --- Player photo (FotMob -> placeholder) ---
 photo_url = PLACEHOLDER_IMG
