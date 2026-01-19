@@ -2301,6 +2301,25 @@ fminside_url = st.text_input(
     key=f"{WKEY}_fminside_phys_url"
 )
 phys_dict = fetch_fminside_physical(fminside_url) if fminside_url else {}
+def build_physical_triples(phys: dict):
+    order = [
+        ("Acceleration", "Acceleration"),
+        ("Jumping Reach", "Jumping Reach"),
+        ("Agility", "Agility"),
+        ("Pace", "Pace"),
+        ("Stamina", "Stamina"),
+        ("Strength", "Strength"),
+    ]
+    triples = []
+    for lab, key in order:
+        if isinstance(phys, dict) and key in phys and phys[key] is not None:
+            v = float(phys[key])
+            v = float(np.clip(v, 0, 100))
+            triples.append((lab, v, f"{int(round(v))}%"))
+        else:
+            triples.append((lab, np.nan, "—"))
+    return triples
+
 PHYSICAL = build_physical_triples(phys_dict)
 
 # -------------------- Images --------------------
