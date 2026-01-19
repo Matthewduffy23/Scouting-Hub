@@ -1709,7 +1709,7 @@ PHOTO_H = 0.10
 PHOTO_X = 0.050
 PHOTO_Y = 0.915
 
-NAME_X = PHOTO_X + PHOTO_W + 0.016
+NAME_X = PHOTO_X + PHOTO_W + 0.010
 NAME_Y = 0.97
 
 BADGE_SCALE = 1.28
@@ -1736,7 +1736,8 @@ name_h_frac = name_bbox.height / fig.bbox.height
 badge_x = NAME_X + name_w_frac + 0.010
 bh = name_h_frac * BADGE_SCALE
 bw = bh
-by = NAME_Y - bh
+by = NAME_Y - (name_h_frac / 2) - (bh / 2)
+
 
 R, G, B = [int(255*c) for c in div_color_tuple(best_val_adj)]
 fig.patches.append(mpatches.FancyBboxPatch(
