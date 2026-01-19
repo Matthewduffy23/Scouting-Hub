@@ -1710,22 +1710,29 @@ def bar_panel(fig, left, top, width, triples, title):
         sp.set_visible(False)
     ax.tick_params(axis="both", length=0, labelsize=0)
     ax.grid(False)
+
+    # 50% midline (stronger)
     ax.axvline(
-         50,
-         color="#E5E7EB",     # brighter
-         linestyle="--",     # stronger pattern
-         linewidth=1.8,      # thicker
-         alpha=0.85,
-         zorder=5
-)
-        ax.text(
-        50, ax.get_ylim()[0]-0.35,
-       "League avg",
-       color="#CBD5E1",
-       fontsize=8,
-       ha="center",
-       va="top"
-)
+        50,
+        color="#E5E7EB",
+        linestyle="--",
+        linewidth=1.8,
+        alpha=0.85,
+        zorder=5,
+    )
+
+    # label under the axis (optional)
+    y0, y1 = ax.get_ylim()
+    ax.text(
+        50,
+        y0 - 0.35,
+        "League avg",
+        color="#CBD5E1",
+        fontsize=8,
+        ha="center",
+        va="top",
+    )
+
 
 
 
