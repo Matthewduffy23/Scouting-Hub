@@ -1883,13 +1883,21 @@ st.download_button(
 # ============================ END ONE-PAGER ============================
 
 
-# ============================ CLUB TOOL — ONE-PAGER (FULL) + PHYSICAL (FMINSIDE URL) ============================
-# ✅ FIXES:
-#   - Adds UNIQUE keys to every widget to stop StreamlitDuplicateElementId
-#   - Ensures PLACEHOLDER_IMG + _try_load_img exist BEFORE they’re used
-#   - Keeps your existing one-pager logic intact
-#   - Adds Physical panel under Possession driven by FMInside URL (0–99 => %)
-#   - (Optional) If FMInside parsing fails, it shows blanks rather than crashing
+# ============================ CLUB TOOL — ONE-PAGER (FULL) + PHYSICAL (FMINSIDE URL) — GRID ALIGNED ============================
+# Paste this WHOLE block into your Club Tool page where you want the one-pager section.
+#
+# ✅ Adds a "Physical" panel UNDER "Possession"
+# ✅ Physical pulls from an FMInside URL and maps 0–99 straight to 0–99% bars
+# ✅ Bars align within each column (shared gutter)
+# ✅ TRUE GRID: left + right columns share the same row heights so blocks start/end on same Y points
+# ✅ Fixes Streamlit DuplicateElementId by using a unique key prefix (WKEY)
+#
+# Assumes you already have:
+# - df (DataFrame)
+# - streamlit as st
+# - numpy as np, pandas as pd available (this block imports what it needs)
+# - Optional: resolve_player_photo(player, team, league) and resolve_team_crest(team, league)
+# - Optional: LEAGUE_STRENGTHS dict
 
 from io import BytesIO
 import re
@@ -1899,43 +1907,14 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import requests
 
+# -------------------- UNIQUE KEY PREFIX (CHANGE IF YOU DUPLICATE THIS BLOCK AGAIN) --------------------
+WKEY = "onepager_phys_grid_v1"
+
 st.markdown("---")
 st.header("🧾 One-pager (Club Tool)")
 
 # -------------------- THRESHOLDS --------------------
 HI, LO, STYLE_T = 70, 30, 65
-
-# -------------------- PLACEHOLDER + IMAGE LOADER (MUST be defined before use) --------------------
-PLACEHOLDER_IMG = "https://i.redd.it/43axcjdu59nd1.jpeg"
-
-def _try_load_img(url: str):
-    """
-    Returns image array for a valid URL, else None.
-    Robust: tries matplotlib then PIL.
-    """
-    if not url or not str(url).startswith(("http://", "https://")):
-        return None
-    try:
-        r = requests.get(str(url), timeout=7, headers={"User-Agent": "Mozilla/5.0"})
-        if r.status_code != 200 or not r.content:
-            return None
-
-        # Try matplotlib first (PNG etc.)
-        try:
-            return plt.imread(BytesIO(r.content))
-        except Exception:
-            pass
-
-        # Fallback PIL (JPEG/WebP/etc.)
-        try:
-            from PIL import Image
-            im = Image.open(BytesIO(r.content)).convert("RGB")
-            return np.array(im)
-        except Exception:
-            return None
-    except Exception:
-        return None
-
 
 # -------------------- STYLE MAPS (BY POSITION GROUP KEY) --------------------
 STYLE_MAPS = {
@@ -1954,6 +1933,7 @@ STYLE_MAPS = {
         "Progressive passes per 90": {"style": "Progressive Passer", "sw": "Ball progression via passes"},
         "Shots blocked per 90": {"style": "Stopper", "sw": None},
     },
+
     "FB": {
         "Defensive duels per 90": {"style": "Ball Winner", "sw": "Defensive Duel Attempts"},
         "Aerial duels won, %": {"style": None, "sw": "Aerial Duels"},
@@ -1975,6 +1955,7 @@ STYLE_MAPS = {
         "Progressive passes per 90": {"style": "Build up Passer", "sw": "Ball progression via passes"},
         "Smart passes per 90": {"style": "Attempts through balls", "sw": None},
     },
+
     "CM": {
         "Defensive duels per 90": {"style": "Ball Winner", "sw": "Defensive Duel Attempts"},
         "Aerial duels won, %": {"style": None, "sw": "Aerial Duels"},
@@ -1997,6 +1978,7 @@ STYLE_MAPS = {
         "Progressive passes per 90": {"style": "Deep Playmaker", "sw": "Ball progression via passes"},
         "Smart passes per 90": {"style": "Attempts through balls", "sw": None},
     },
+
     "CF": {
         "Defensive duels per 90": {"style": "High Work Rate", "sw": "Defensive Duel Attempts"},
         "Aerial duels won, %": {"style": None, "sw": "Aerial Duels"},
@@ -2123,8 +2105,7 @@ def val_str(ply: pd.Series, metric: str) -> str:
     return f"{v:.2f}"
 
 def div_color_tuple(v: float):
-    if pd.isna(v):
-        return (0.6, 0.63, 0.66)
+    if pd.isna(v): return (0.6, 0.63, 0.66)
     v = float(v)
     if v <= 50:
         t = v / 50.0
@@ -2154,31 +2135,38 @@ def compute_strengths_weaknesses_styles(ply: pd.Series, df_all: pd.DataFrame, ro
     style_map = STYLE_MAPS.get(role_key, {}) if role_key else {}
     strengths, weaknesses, styles = [], [], []
     pct_extra = {}
+
     for metric, meta in style_map.items():
         p = pct_of_row(ply, metric, df_all, ref_df)
         if pd.isna(p):
             continue
         pct_extra[metric] = float(p)
+
         sw = (meta or {}).get("sw")
         stl = (meta or {}).get("style")
+
         if sw:
             if p >= HI:
                 strengths.append(str(sw))
             elif p <= LO:
                 weaknesses.append(str(sw))
+
         if stl and p >= STYLE_T:
             styles.append(str(stl))
 
     def _dedupe(xs):
-        seen, out = set(), []
+        seen = set()
+        out = []
         for x in xs:
             if x not in seen:
                 seen.add(x)
                 out.append(x)
         return out
 
-    return _dedupe(strengths)[:10], _dedupe(weaknesses)[:10], _dedupe(styles)[:10], pct_extra
-
+    strengths = _dedupe(strengths)[:10]
+    weaknesses = _dedupe(weaknesses)[:10]
+    styles = _dedupe(styles)[:10]
+    return strengths, weaknesses, styles, pct_extra
 
 # -------------------- Metric groups --------------------
 ATTACKING_METRICS = [
@@ -2228,29 +2216,32 @@ def build_triples(ply: pd.Series, df_all: pd.DataFrame, ref_df: pd.DataFrame, pa
         triples.append((lab, p, val_str(ply, met)))
     return triples
 
-
 # -------------------- FMINSIDE: pull Physical attributes (0–99) --------------------
 @st.cache_data(show_spinner=False, ttl=3600)
 def fetch_fminside_physical(url: str) -> dict:
     """
-    Extracts physical attributes from FMInside page text.
-    Looks for the "### Physical" section and then finds:
-      Acceleration, Jumping Reach, Agility, Pace, Stamina, Strength (0–99)
+    Extracts physical attributes from FMInside HTML.
+    Assumes attributes appear as "Acceleration 65" etc inside "### Physical" section.
     """
     if not url or not str(url).startswith(("http://", "https://")):
         return {}
+
     try:
         r = requests.get(str(url), timeout=12, headers={"User-Agent": "Mozilla/5.0 (Streamlit Club Tool)"})
         if r.status_code != 200 or not r.text:
             return {}
+
         html = r.text
 
-        # strip tags -> visible text is the most reliable on this site
-        visible = re.sub("<[^<]+?>", "\n", html)
-
-        # isolate physical block
-        m = re.search(r"###\s*Physical\s*(.*?)\s*###\s*(Mental|Technical|Set Pieces)", visible, flags=re.S | re.I)
-        block = m.group(1) if m else visible
+        m = re.search(r"###\s*Physical\s*(.*?)\s*###\s*(Mental|Technical|Set Pieces)", html, flags=re.S | re.I)
+        if m:
+            block = m.group(1)
+        else:
+            visible = re.sub("<[^<]+?>", "\n", html)
+            m2 = re.search(r"###\s*Physical\s*(.*?)\s*###\s*(Mental|Technical|Set Pieces)", visible, flags=re.S | re.I)
+            if not m2:
+                return {}
+            block = m2.group(1)
 
         wanted = ["Acceleration", "Jumping Reach", "Agility", "Pace", "Stamina", "Strength"]
         out = {}
@@ -2260,6 +2251,7 @@ def fetch_fminside_physical(url: str) -> dict:
                 v = int(mm.group(1))
                 out[k] = max(0, min(100, v))
         return out
+
     except Exception:
         return {}
 
@@ -2281,17 +2273,8 @@ def build_physical_triples(phys: dict):
             triples.append((lab, np.nan, "—"))
     return triples
 
-
-# ==================== UI (KEYS FIX StreamlitDuplicateElementId) ====================
-# Use a unique prefix so this block can coexist with your "original" one-pager above.
-WKEY = "onepager2"   # <-- change this string if you ever copy/paste again
-
-group = st.selectbox(
-    "Position group",
-    list(POS_GROUPS.keys()),
-    index=0,
-    key=f"{WKEY}_pos_group",
-)
+# -------------------- UI: select position group -> player (KEYED) --------------------
+group = st.selectbox("Position group", list(POS_GROUPS.keys()), index=0, key=f"{WKEY}_pos_group")
 pos_prefixes = {p.upper() for p in POS_GROUPS[group]}
 
 df_view = df.copy()
@@ -2310,12 +2293,7 @@ def _player_label(row: pd.Series) -> str:
     return f"{nm} — {tm} ({lg})" if tm else f"{nm} ({lg})"
 
 df_view["_label"] = df_view.apply(_player_label, axis=1)
-picked = st.selectbox(
-    "Player",
-    df_view["_label"].astype(str).tolist(),
-    index=0,
-    key=f"{WKEY}_player_pick",
-)
+picked = st.selectbox("Player", df_view["_label"].astype(str).tolist(), index=0, key=f"{WKEY}_player_pick")
 
 player_row = df_view[df_view["_label"].astype(str) == str(picked)].head(1).copy()
 if player_row.empty:
@@ -2357,7 +2335,7 @@ if "Position" in ref_df.columns:
 role_scores = compute_role_scores(ply, df, role_key, ref_df)
 strengths, weaknesses, styles, pct_extra = compute_strengths_weaknesses_styles(ply, df, role_key, ref_df)
 
-# badge pick EXCLUDES Target Man CF only
+# badge pick EXCLUDES Target Man CF only (but we still display it in roles row)
 EXCLUDE_ROLE = "target man cf"
 filtered_roles = [(k, v) for k, v in role_scores.items() if str(k).strip().lower() != EXCLUDE_ROLE]
 top3_roles = sorted(filtered_roles, key=lambda kv: kv[1], reverse=True)[:3]
@@ -2373,17 +2351,40 @@ ATTACKING  = build_triples(ply, df, ref_df, ATTACKING_METRICS, pct_extra)
 DEFENSIVE  = build_triples(ply, df, ref_df, DEFENSIVE_METRICS, pct_extra)
 POSSESSION = build_triples(ply, df, ref_df, POSSESSION_METRICS, pct_extra)
 
-# -------------------- FMInside URL input (ONLY thing you need to paste) --------------------
+# -------------------- FMInside URL input (KEYED) --------------------
 st.markdown("### 🏃 Physical (FMInside URL)")
 fminside_url = st.text_input(
     "Paste FMInside player URL (auto-loads physical attributes)",
     value="https://fminside.net/players/7-fm-26/2000221925-rafiu-durosinmi",
-    key=f"{WKEY}_fminside_phys_url",
+    key=f"{WKEY}_fminside_phys_url"
 )
 phys_dict = fetch_fminside_physical(fminside_url) if fminside_url else {}
 PHYSICAL = build_physical_triples(phys_dict)
 
-# -------------------- Photos & crest --------------------
+# -------------------- Photos & crest helpers --------------------
+PLACEHOLDER_IMG = "https://i.redd.it/43axcjdu59nd1.jpeg"
+
+def _try_load_img(url: str):
+    if not url or not (str(url).startswith("http://") or str(url).startswith("https://")):
+        return None
+    try:
+        r = requests.get(str(url), timeout=7, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200 or not r.content:
+            return None
+        try:
+            return plt.imread(BytesIO(r.content))
+        except Exception:
+            pass
+        try:
+            from PIL import Image
+            im = Image.open(BytesIO(r.content)).convert("RGB")
+            return np.array(im)
+        except Exception:
+            return None
+    except Exception:
+        return None
+
+# --- Player photo (FotMob -> placeholder) ---
 photo_url = PLACEHOLDER_IMG
 if "resolve_player_photo" in globals():
     try:
@@ -2394,9 +2395,9 @@ if "resolve_player_photo" in globals():
 
 photo_img = _try_load_img(photo_url)
 if photo_img is None:
-    photo_url = PLACEHOLDER_IMG
-    photo_img = _try_load_img(photo_url)
+    photo_img = _try_load_img(PLACEHOLDER_IMG)
 
+# --- Club crest (optional; empty if missing) ---
 crest_url = ""
 if "resolve_team_crest" in globals():
     try:
@@ -2405,7 +2406,7 @@ if "resolve_team_crest" in globals():
         crest_url = ""
 crest_img = _try_load_img(crest_url) if crest_url else None
 
-# -------------------- One-pager styling --------------------
+# -------------------- Styling --------------------
 PAGE_BG   = "#0a0f1c"
 PANEL_BG  = "#11161C"
 TRACK_BG  = "#222c3d"
@@ -2520,17 +2521,41 @@ def roles_row_tight(fig, rs: dict, y, *, fs=10.6, max_items=12):
         x = bx + num_w + 0.010
     return y - row_gap
 
-def bar_panel(fig, left, top, width, triples, title):
+# ✅ shared gutter helper
+def gutter_for_triples(fig, triples_list, *, label_fs=LABEL_FS, pad=0.006):
+    labels = []
+    for triples in (triples_list or []):
+        labels.extend([t[0] for t in (triples or [])])
+    if not labels:
+        return pad
+    max_label_w = max(_text_width_frac(fig, s, fontsize=label_fs, weight="bold") for s in labels)
+    return max_label_w + pad
+
+# ✅ TRUE GRID: compute a shared panel height for each "row"
+def panel_height_frac(fig, n_rows):
+    fig.canvas.draw()
+    fig_px_h = fig.bbox.height
+    return (max(1, int(n_rows)) * STEP_PX) / fig_px_h
+
+# ✅ Panel supports shared gutter + forced height
+def bar_panel(fig, left, top, width, width, triples, title, *, gutter_override=None, height_override=None):
     n_rows = len(triples)
     fig.canvas.draw()
     fig_px_h = fig.bbox.height
 
-    ax_h_frac = (max(1, n_rows) * STEP_PX) / fig_px_h
-    bottom = top - ax_h_frac
+    if height_override is None:
+        ax_h_frac = (max(1, n_rows) * STEP_PX) / fig_px_h
+    else:
+        ax_h_frac = float(height_override)
 
+    bottom = top - ax_h_frac
     labels = [t[0] for t in triples]
-    max_label_w_frac = max(_text_width_frac(fig, s, fontsize=LABEL_FS, weight="bold") for s in labels) if labels else 0
-    gutter_w = max_label_w_frac + 0.006
+
+    if gutter_override is None:
+        max_label_w_frac = max(_text_width_frac(fig, s, fontsize=LABEL_FS, weight="bold") for s in labels) if labels else 0
+        gutter_w = max_label_w_frac + 0.006
+    else:
+        gutter_w = float(gutter_override)
 
     ax_panel = fig.add_axes([left, bottom, width, ax_h_frac])
     ax_panel.set_facecolor(PANEL_BG)
@@ -2543,12 +2568,7 @@ def bar_panel(fig, left, top, width, triples, title):
     ax = fig.add_axes([bar_left, bottom, bar_width, ax_h_frac])
     ax.set_facecolor(PANEL_BG)
 
-    # Keep original pcts for NaN check
-    raw_pcts = [t[1] for t in triples]
-    pcts = [float(np.nan_to_num(v, nan=0.0)) for v in raw_pcts]
-    texts = [t[2] for t in triples]
     n = len(labels)
-
     bar_du = BAR_PX / STEP_PX
     gap_du = GAP_PX / STEP_PX
     sep_du = SEP_PX / STEP_PX
@@ -2561,15 +2581,14 @@ def bar_panel(fig, left, top, width, triples, title):
     for yi in y_idx[:n]:
         ax.add_patch(mpatches.Rectangle((0, yi - track_h/2), 100, track_h, facecolor=TRACK_BG, edgecolor="none"))
 
-    # Fill bars (skip fill if original was NaN)
-    for i, (yi, v, t) in enumerate(zip(y_idx[:n], pcts, texts)):
-        orig = raw_pcts[i]
-        if pd.isna(orig):
-            # show only track; still print text
-            ax.text(1.0, yi, t, va="center", ha="left", color="#0B0B0B", fontsize=VALUE_FS + 0.5, weight="700")
+    for yi, triple in zip(y_idx[:n], triples):
+        _, v_raw, txt = triple
+        if pd.isna(v_raw):
+            ax.text(1.0, yi, txt, va="center", ha="left", color="#0B0B0B", fontsize=VALUE_FS + 0.5, weight="700")
             continue
+        v = float(np.clip(float(v_raw), 0, 100))
         ax.add_patch(mpatches.Rectangle((0, yi - bar_du/2), v, bar_du, facecolor=div_color_tuple(v), edgecolor="none"))
-        ax.text(1.0, yi, t, va="center", ha="left", color="#0B0B0B", fontsize=VALUE_FS + 0.5, weight="700")
+        ax.text(1.0, yi, txt, va="center", ha="left", color="#0B0B0B", fontsize=VALUE_FS + 0.5, weight="700")
 
     for sp in ax.spines.values():
         sp.set_visible(False)
@@ -2577,9 +2596,11 @@ def bar_panel(fig, left, top, width, triples, title):
     ax.grid(False)
 
     ax.axvline(50, color="#E5E7EB", linestyle="--", linewidth=1.8, alpha=0.85, zorder=5)
-    y0, y1 = ax.get_ylim()
+
+    y0, _ = ax.get_ylim()
     ax.text(50, y0 - 0.35, "League avg", color="#CBD5E1", fontsize=8, ha="center", va="top")
 
+    # Labels in gutter area
     for yi, lab in zip(y_idx[:n], labels):
         y_fig = bottom + ax_h_frac * ((yi + 0.5) / max(1, n))
         fig.text(left + 0.006/2, y_fig, lab, color=TEXT, fontsize=LABEL_FS, fontweight="bold",
@@ -2588,10 +2609,9 @@ def bar_panel(fig, left, top, width, triples, title):
     title_y = bottom + ax_h_frac + 0.008
     fig.text(left + 0.006/2, title_y, title, color=TEXT, fontsize=TITLE_FS, fontweight="900",
              ha="left", va="bottom")
+
     ax.plot([0, 1], [1, 1], transform=ax.transAxes, color="#94A3B8", linewidth=0.8, alpha=0.35)
-
     return bottom
-
 
 # -------------------- Build the figure --------------------
 W, H = 1500, 1080
@@ -2606,6 +2626,7 @@ PHOTO_Y = 0.915
 
 NAME_X = PHOTO_X + PHOTO_W + 0.010
 NAME_Y = 0.97
+
 BADGE_SCALE = 1.28
 
 # Photo beside name (left)
@@ -2626,7 +2647,6 @@ name_bbox = name_text.get_window_extent(renderer=r)
 name_w_frac = name_bbox.width / fig.bbox.width
 name_h_frac = name_bbox.height / fig.bbox.height
 
-# Bigger badge right beside name
 badge_x = NAME_X + name_w_frac + 0.010
 bh = name_h_frac * BADGE_SCALE
 bw = bh
@@ -2651,7 +2671,7 @@ if crest_img is not None:
     axc.axis("off")
     axc.set_facecolor(PAGE_BG)
 
-# -------------------- META line --------------------
+# -------------------- META line (tight) --------------------
 age = int(ply["Age"]) if pd.notna(ply.get("Age")) else None
 mins = int(ply.get("Minutes played", np.nan)) if pd.notna(ply.get("Minutes played")) else None
 matches = int(ply.get("Matches played", np.nan)) if pd.notna(ply.get("Matches played")) else None
@@ -2682,44 +2702,75 @@ for txt, weight in runs:
              ha="left", va="center")
     x_meta += _text_width_frac(fig, txt, fontsize=fs, weight=("900" if weight == "bold" else "normal")) + (0.004 if txt.strip() else 0)
 
-# -------------------- Strengths / Weaknesses / Styles (chips) --------------------
+# -------------------- Chips + roles --------------------
 y_chips = 0.872
 y_chips = chip_row_exact(fig, strengths,  y_chips, CHIP_G_BG, fs=10.1, max_rows=1, max_per_row=6)
 y_chips = chip_row_exact(fig, weaknesses, y_chips, CHIP_R_BG, fs=10.1, max_rows=1, max_per_row=6)
 y_chips = chip_row_exact(fig, styles,     y_chips, CHIP_B_BG, fs=10.1, max_rows=1, max_per_row=6)
 y_chips -= 0.012
 
-# -------------------- Roles row --------------------
 roles_for_row = dict(sorted(role_scores.items(), key=lambda kv: -kv[1])[:10])
 y_roles = roles_row_tight(fig, roles_for_row, y_chips, fs=10.6, max_items=10)
 
-# -------------------- Layout --------------------
-LEFT = 0.050
-WIDTH_L = 0.41
-MID_GAP = 0.040
-RIGHT = LEFT + WIDTH_L + MID_GAP
-WIDTH_R = 0.41
-
+# -------------------- TRUE GRID LAYOUT (CONTINUED) --------------------
 TOP = y_roles - 0.02
 V_GAP_FRAC = 0.050
 
-att_bottom = bar_panel(fig, LEFT, TOP, WIDTH_L, ATTACKING, "Attacking")
-_ = bar_panel(fig, LEFT, att_bottom - V_GAP_FRAC, WIDTH_L, DEFENSIVE, "Defensive")
+# ✅ Shared gutters so bars align inside each column
+gutter_L = gutter_for_triples(fig, [ATTACKING, DEFENSIVE])
+gutter_R = gutter_for_triples(fig, [POSSESSION, PHYSICAL])
 
-poss_bottom = bar_panel(fig, RIGHT, TOP, WIDTH_R, POSSESSION, "Possession")
-_ = bar_panel(fig, RIGHT, poss_bottom - V_GAP_FRAC, WIDTH_R, PHYSICAL, "Physical")
+# ✅ TRUE GRID row heights:
+# Row 1 height = max(#rows in Attacking, #rows in Possession)
+# Row 2 height = max(#rows in Defensive, #rows in Physical)
+h_row1 = panel_height_frac(fig, max(len(ATTACKING), len(POSSESSION)))
+h_row2 = panel_height_frac(fig, max(len(DEFENSIVE), len(PHYSICAL)))
 
-# -------------------- render + download --------------------
+# ---- Row 1 (Attacking vs Possession) ----
+row1_bottom_L = bar_panel(
+    fig, LEFT, TOP, WIDTH_L,
+    ATTACKING, "Attacking",
+    gutter_override=gutter_L,
+    height_override=h_row1
+)
+row1_bottom_R = bar_panel(
+    fig, RIGHT, TOP, WIDTH_R,
+    POSSESSION, "Possession",
+    gutter_override=gutter_R,
+    height_override=h_row1
+)
+
+# Use the shared row bottom (identical by construction, but take min for safety)
+row1_bottom = min(row1_bottom_L, row1_bottom_R)
+
+# ---- Row 2 top starts at same Y for both columns ----
+row2_top = row1_bottom - V_GAP_FRAC
+
+row2_bottom_L = bar_panel(
+    fig, LEFT, row2_top, WIDTH_L,
+    DEFENSIVE, "Defensive",
+    gutter_override=gutter_L,
+    height_override=h_row2
+)
+row2_bottom_R = bar_panel(
+    fig, RIGHT, row2_top, WIDTH_R,
+    PHYSICAL, "Physical",
+    gutter_override=gutter_R,
+    height_override=h_row2
+)
+
+# -------------------- render + download (KEYED) --------------------
 st.pyplot(fig, use_container_width=True)
 
 buf = BytesIO()
 fig.savefig(buf, format="png", dpi=170, bbox_inches="tight", facecolor=fig.get_facecolor())
+
 st.download_button(
     "⬇️ Download one-pager (PNG)",
     data=buf.getvalue(),
     file_name=f"{str(player_name).replace(' ', '_')}_onepager.png",
     mime="image/png",
-    key=f"{WKEY}_download_png",   # <--- THIS fixes the duplicate element id
+    key=f"{WKEY}_download_png",  # ✅ prevents duplicate element id
 )
 
 
