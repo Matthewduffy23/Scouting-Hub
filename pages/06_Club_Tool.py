@@ -1896,7 +1896,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import requests
-from bs4 import BeautifulSoup
 
 # -------------------- UNIQUE KEY PREFIX --------------------
 WKEY = "onepager_phys_grid_v2"
@@ -2200,70 +2199,32 @@ def fetch_fminside_physical(url: str) -> dict:
         if r.status_code != 200 or not r.text:
             return {}
 
-        soup = BeautifulSoup(r.text, "html.parser")
-        text = soup.get_text("\n")
-        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        html = r.text
 
-        def norm(s): return re.sub(r"[^a-z]+", "", s.lower())
+        # crude "visible text" extraction without bs4
+        text = re.sub(r"(?is)<(script|style).*?>.*?</\1>", "\n", html)
+        text = re.sub(r"(?is)<br\s*/?>", "\n", text)
+        text = re.sub(r"(?is)</p>|</div>|</li>|</tr>|</h\d>", "\n", text)
+        text = re.sub(r"(?is)<.*?>", " ", text)
+        text = re.sub(r"&nbsp;", " ", text)
+        text = re.sub(r"\s+", " ", text)
 
-        start = None
-        for i, ln in enumerate(lines):
-            if norm(ln) == "physical":
-                start = i
-                break
-        if start is None:
+        # Use a looser scan for each attribute near the word "Physical"
+        # Find a window of text around "Physical"
+        idx = text.lower().find("physical")
+        if idx == -1:
             return {}
-
-        stop_words = {"technical", "mental", "setpieces", "goalkeeping"}
-        end = len(lines)
-        for j in range(start + 1, len(lines)):
-            if norm(lines[j]) in stop_words:
-                end = j
-                break
-
-        block = lines[start:end]
+        window = text[idx: idx + 4000]
 
         wanted = ["Acceleration", "Jumping Reach", "Agility", "Pace", "Stamina", "Strength"]
-        wanted_norm = {norm(w): w for w in wanted}
         out = {}
-
-        i = 0
-        while i < len(block):
-            ln = block[i]
-            nln = norm(ln)
-
-            m = re.match(r"^([A-Za-z][A-Za-z \-']+)\s+(\d{1,3})$", ln)
-            if m and norm(m.group(1)) in wanted_norm:
-                key = wanted_norm[norm(m.group(1))]
-                out[key] = max(0, min(100, int(m.group(2))))
-                i += 1
-                continue
-
-            if nln in wanted_norm and i + 1 < len(block):
-                m2 = re.match(r"^(\d{1,3})$", block[i + 1])
-                if m2:
-                    key = wanted_norm[nln]
-                    out[key] = max(0, min(100, int(m2.group(1))))
-                    i += 2
-                    continue
-
-            i += 1
-
+        for k in wanted:
+            m = re.search(rf"{re.escape(k)}\s*[:\-]?\s*(\d{{1,3}})", window, flags=re.I)
+            if m:
+                out[k] = max(0, min(100, int(m.group(1))))
         return out
     except Exception:
         return {}
-
-def build_physical_triples(phys: dict):
-    order = [("Acceleration","Acceleration"),("Jumping Reach","Jumping Reach"),("Agility","Agility"),
-             ("Pace","Pace"),("Stamina","Stamina"),("Strength","Strength")]
-    triples=[]
-    for lab, key in order:
-        if key in phys:
-            v=float(phys[key])
-            triples.append((lab, v, f"{int(round(v))}%"))
-        else:
-            triples.append((lab, np.nan, "—"))
-    return triples
 
 # -------------------- UI (KEYED) --------------------
 group = st.selectbox("Position group", list(POS_GROUPS.keys()), index=0, key=f"{WKEY}_pos_group")
