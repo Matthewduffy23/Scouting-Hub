@@ -265,6 +265,9 @@ def league_region(league: str) -> str:
 
 
 # ========================= TOP BAR: FILTERS + SCORING =========================
+# Paste this WHOLE block to replace your entire current TOP BAR section
+# (from `st.markdown("---")` down to `DEBUG_PHOTOS = ...`)
+
 st.markdown("---")
 st.header("⚙️ Adjustments & Candidate Pool")
 
@@ -275,26 +278,30 @@ with cA:
     use_top20 = st.checkbox("Top-20 preset", False)
     use_efl = st.checkbox("EFL preset", False)
 
-    st.markdown("**Region presets**")
-    region_pick = st.selectbox(
-        "Region",
-        ["— None —", "Europe", "South America", "North America", "Africa", "Asia", "Other"],
-        index=0,
-        key="preset_region_pick",
+    st.markdown("**Region presets (multi)**")
+    region_picks = st.multiselect(
+        "Regions",
+        ["Europe", "South America", "North America", "Africa", "Asia", "Other"],
+        default=[],
+        key="preset_region_picks",
     )
 
-    st.markdown("**GBE band presets**")
-    band_mode = st.selectbox(
-        "GBE band",
-        [
-            "— None —",
-            "Band 1", "Band 2", "Band 3", "Band 4", "Band 5", "Band 6",
-            "Band ≤ 1", "Band ≤ 2", "Band ≤ 3", "Band ≤ 4", "Band ≤ 5",
-        ],
-        index=0,
-        key="preset_band_mode",
+    st.markdown("**GBE band presets (multi)**")
+    band_picks = st.multiselect(
+        "Bands (exact)",
+        [1, 2, 3, 4, 5, 6],
+        default=[],
+        key="preset_band_picks",
     )
 
+    band_max = st.selectbox(
+        "Or include all bands ≤",
+        ["— None —", 1, 2, 3, 4, 5, 6],
+        index=0,
+        key="preset_band_max",
+    )
+
+# ----- build preset league seed -----
 seed = set()
 
 # Existing presets
@@ -305,24 +312,28 @@ if use_top20:
 if use_efl:
     seed |= PRESET_LEAGUES["EFL (England 2–4)"]
 
-# Region preset
-if region_pick != "— None —":
-    seed |= {lg for lg in INCLUDED_LEAGUES if league_region(lg) == region_pick}
+# Region presets (multi)
+if region_picks:
+    seed |= {lg for lg in INCLUDED_LEAGUES if league_region(lg) in set(region_picks)}
 
-# GBE band preset
-if band_mode != "— None —":
-    if band_mode.startswith("Band ≤"):
-        max_band = int(band_mode.split("≤", 1)[1].strip())
-        seed |= {lg for lg in INCLUDED_LEAGUES if gbe_league_band(lg) <= max_band}
-    else:
-        band_n = int(band_mode.split(" ", 1)[1].strip())
-        seed |= {lg for lg in INCLUDED_LEAGUES if gbe_league_band(lg) == band_n}
+# Band presets (multi)
+if band_picks:
+    seed |= {lg for lg in INCLUDED_LEAGUES if gbe_league_band(lg) in set(band_picks)}
 
-if seed:
-    st.caption(f"Preset leagues selected: **{len(seed)}**")
+# Band max preset (≤)
+if band_max != "— None —":
+    seed |= {lg for lg in INCLUDED_LEAGUES if gbe_league_band(lg) <= int(band_max)}
+
+# ----- leagues list + default selection -----
+leagues_avail = sorted(set(INCLUDED_LEAGUES) | set(df["League"].dropna().astype(str).unique()))
+default_leagues = sorted(seed) if seed else INCLUDED_LEAGUES
 
 with cB:
-    leagues_sel = st.multiselect("Leagues in candidate pool", leagues_avail, default=default_leagues)
+    leagues_sel = st.multiselect(
+        "Leagues in candidate pool",
+        leagues_avail,
+        default=default_leagues
+    )
 
 with cC:
     min_minutes, max_minutes = st.slider("Minutes (pool)", 0, 6000, (750, 6000))
@@ -378,8 +389,11 @@ with cH:
     min_strength, max_strength = st.slider("League strength (pool)", 0, 101, (0, 101))
     top_n = st.number_input("Top N", 5, 200, 20, 5)
 
+if seed:
+    st.caption(f"Preset leagues selected: **{len(seed)}**")
 
 DEBUG_PHOTOS = st.checkbox("Debug photos", False)
+
 
 # ========================= TEAM TEMPLATE (TOP) =========================
 st.markdown("---")
