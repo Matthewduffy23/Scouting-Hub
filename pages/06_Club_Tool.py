@@ -2716,13 +2716,123 @@ y_roles = roles_row_tight(fig, roles_for_row, y_chips, fs=10.6, max_items=10)
 TOP = y_roles - 0.02
 V_GAP_FRAC = 0.050
 
-# ✅ Shared gutters so bars align inside each column
+# ✅ shared gutter helper
+def gutter_for_triples(fig, triples_list, *, label_fs=LABEL_FS, pad=0.006):
+    labels = []
+    for triples in (triples_list or []):
+        labels.extend([t[0] for t in (triples or [])])
+    if not labels:
+        return pad
+    max_label_w = max(_text_width_frac(fig, s, fontsize=label_fs, weight="bold") for s in labels)
+    return max_label_w + pad
+
+# ✅ TRUE GRID: compute a shared panel height for each "row"
+def panel_height_frac(fig, n_rows):
+    fig.canvas.draw()
+    fig_px_h = fig.bbox.height
+    return (max(1, int(n_rows)) * STEP_PX) / fig_px_h
+
+# ✅ Panel supports shared gutter + forced height
+def bar_panel(fig, left, top, width, triples, title, *, gutter_override=None, height_override=None):
+    n_rows = len(triples)
+    fig.canvas.draw()
+    fig_px_h = fig.bbox.height
+
+    # height
+    if height_override is None:
+        ax_h_frac = (max(1, n_rows) * STEP_PX) / fig_px_h
+    else:
+        ax_h_frac = float(height_override)
+
+    bottom = top - ax_h_frac
+    labels = [t[0] for t in triples]
+
+    # gutter
+    if gutter_override is None:
+        max_label_w_frac = max(_text_width_frac(fig, s, fontsize=LABEL_FS, weight="bold") for s in labels) if labels else 0
+        gutter_w = max_label_w_frac + 0.006
+    else:
+        gutter_w = float(gutter_override)
+
+    # panel background
+    ax_panel = fig.add_axes([left, bottom, width, ax_h_frac])
+    ax_panel.set_facecolor(PANEL_BG)
+    ax_panel.set_xticks([]); ax_panel.set_yticks([])
+    for sp in ax_panel.spines.values():
+        sp.set_visible(False)
+
+    # bars axis
+    bar_left = left + gutter_w
+    bar_width = max(0.001, width - gutter_w - 0.004)
+    ax = fig.add_axes([bar_left, bottom, bar_width, ax_h_frac])
+    ax.set_facecolor(PANEL_BG)
+
+    n = len(labels)
+    bar_du = BAR_PX / STEP_PX
+    gap_du = GAP_PX / STEP_PX
+    sep_du = SEP_PX / STEP_PX
+
+    ax.set_xlim(0, 100)
+    ax.set_ylim(-0.5, max(1, n) - 0.5)
+    y_idx = np.arange(max(1, n))[::-1]
+
+    # track
+    track_h = bar_du + gap_du - sep_du
+    for yi in y_idx[:n]:
+        ax.add_patch(mpatches.Rectangle((0, yi - track_h/2), 100, track_h, facecolor=TRACK_BG, edgecolor="none"))
+
+    # fills (skip if NaN)
+    for yi, triple in zip(y_idx[:n], triples):
+        _, v_raw, txt = triple
+        if pd.isna(v_raw):
+            ax.text(1.0, yi, txt, va="center", ha="left", color="#0B0B0B", fontsize=VALUE_FS + 0.5, weight="700")
+            continue
+        v = float(np.clip(float(v_raw), 0, 100))
+        ax.add_patch(mpatches.Rectangle((0, yi - bar_du/2), v, bar_du, facecolor=div_color_tuple(v), edgecolor="none"))
+        ax.text(1.0, yi, txt, va="center", ha="left", color="#0B0B0B", fontsize=VALUE_FS + 0.5, weight="700")
+
+    for sp in ax.spines.values():
+        sp.set_visible(False)
+    ax.tick_params(axis="both", length=0, labelsize=0)
+    ax.grid(False)
+
+    # league avg line
+    ax.axvline(50, color="#E5E7EB", linestyle="--", linewidth=1.8, alpha=0.85, zorder=5)
+    y0, _ = ax.get_ylim()
+    ax.text(50, y0 - 0.35, "League avg", color="#CBD5E1", fontsize=8, ha="center", va="top")
+
+    # labels in gutter area
+    for yi, lab in zip(y_idx[:n], labels):
+        y_fig = bottom + ax_h_frac * ((yi + 0.5) / max(1, n))
+        fig.text(left + 0.006/2, y_fig, lab, color=TEXT, fontsize=LABEL_FS, fontweight="bold",
+                 va="center", ha="left")
+
+    # title
+    title_y = bottom + ax_h_frac + 0.008
+    fig.text(left + 0.006/2, title_y, title, color=TEXT, fontsize=TITLE_FS, fontweight="900",
+             ha="left", va="bottom")
+
+    ax.plot([0, 1], [1, 1], transform=ax.transAxes, color="#94A3B8", linewidth=0.8, alpha=0.35)
+    return bottom
+
+
+# -------------------- TRUE GRID LAYOUT --------------------
+LEFT = 0.050
+WIDTH_L = 0.41
+MID_GAP = 0.040
+RIGHT = LEFT + WIDTH_L + MID_GAP
+WIDTH_R = 0.41
+
+TOP = y_roles - 0.02
+V_GAP_FRAC = 0.050
+
+# ✅ Shared gutters so bar start aligns inside each column
 gutter_L = gutter_for_triples(fig, [ATTACKING, DEFENSIVE])
 gutter_R = gutter_for_triples(fig, [POSSESSION, PHYSICAL])
 
-# ✅ TRUE GRID row heights:
-# Row 1 height = max(#rows in Attacking, #rows in Possession)
-# Row 2 height = max(#rows in Defensive, #rows in Physical)
+# ✅ TRUE GRID heights:
+# row1 uses max rows of (Attacking, Possession)
+# row2 uses max rows of (Defensive, Physical)
 h_row1 = panel_height_frac(fig, max(len(ATTACKING), len(POSSESSION)))
 h_row2 = panel_height_frac(fig, max(len(DEFENSIVE), len(PHYSICAL)))
 
@@ -2740,19 +2850,18 @@ row1_bottom_R = bar_panel(
     height_override=h_row1
 )
 
-# Use the shared row bottom (identical by construction, but take min for safety)
 row1_bottom = min(row1_bottom_L, row1_bottom_R)
 
-# ---- Row 2 top starts at same Y for both columns ----
+# ---- Row 2 (Defensive vs Physical) ----
 row2_top = row1_bottom - V_GAP_FRAC
 
-row2_bottom_L = bar_panel(
+_ = bar_panel(
     fig, LEFT, row2_top, WIDTH_L,
     DEFENSIVE, "Defensive",
     gutter_override=gutter_L,
     height_override=h_row2
 )
-row2_bottom_R = bar_panel(
+_ = bar_panel(
     fig, RIGHT, row2_top, WIDTH_R,
     PHYSICAL, "Physical",
     gutter_override=gutter_R,
@@ -2770,8 +2879,9 @@ st.download_button(
     data=buf.getvalue(),
     file_name=f"{str(player_name).replace(' ', '_')}_onepager.png",
     mime="image/png",
-    key=f"{WKEY}_download_png",  # ✅ prevents duplicate element id
+    key=f"{WKEY}_download_png",
 )
+
 
 
 
