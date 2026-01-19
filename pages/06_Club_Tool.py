@@ -1489,22 +1489,14 @@ DEFENSIVE = build_triples(ply, df, ref_df, DEFENSIVE_METRICS, pct_extra)
 POSSESSION = build_triples(ply, df, ref_df, POSSESSION_METRICS, pct_extra)
 
 # -------------------- Photos & crest --------------------
-PLACEHOLDER_IMG = "https://i.redd.it/43axcjdu59nd1.jpeg"
-photo_url = PLACEHOLDER_IMG
-if "resolve_player_photo" in globals():
-    try:
-        photo_url = resolve_player_photo(player_name, team, league) or PLACEHOLDER_IMG
-    except Exception:
-        photo_url = PLACEHOLDER_IMG
+from io import BytesIO
 
-crest_url = ""
-if "resolve_team_crest" in globals():
-    try:
-        crest_url = resolve_team_crest(team, league) or ""
-    except Exception:
-        crest_url = ""
+PLACEHOLDER_IMG = "https://i.redd.it/43axcjdu59nd1.jpeg"
 
 def _try_load_img(url: str):
+    """
+    Returns an image array for a valid URL, else None.
+    """
     if not url or not (str(url).startswith("http://") or str(url).startswith("https://")):
         return None
     try:
@@ -1515,8 +1507,31 @@ def _try_load_img(url: str):
     except Exception:
         return None
 
+# --- Player photo (FotMob -> placeholder) ---
+photo_url = PLACEHOLDER_IMG
+if "resolve_player_photo" in globals():
+    try:
+        resolved = resolve_player_photo(player_name, team, league)
+        photo_url = (resolved or "").strip() or PLACEHOLDER_IMG
+    except Exception:
+        photo_url = PLACEHOLDER_IMG
+
+# Try loading resolved photo; if it fails, force placeholder
 photo_img = _try_load_img(photo_url)
+if photo_img is None:
+    photo_url = PLACEHOLDER_IMG
+    photo_img = _try_load_img(photo_url)
+
+# --- Club crest (optional; empty if missing) ---
+crest_url = ""
+if "resolve_team_crest" in globals():
+    try:
+        crest_url = (resolve_team_crest(team, league) or "").strip()
+    except Exception:
+        crest_url = ""
+
 crest_img = _try_load_img(crest_url) if crest_url else None
+
 
 # -------------------- One-pager styling --------------------
 PAGE_BG   = "#0a0f1c"
