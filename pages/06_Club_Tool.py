@@ -1883,21 +1883,11 @@ st.download_button(
 # ============================ END ONE-PAGER ============================
 
 
-# ============================ CLUB TOOL — ONE-PAGER (FULL) + PHYSICAL (FMINSIDE URL) — GRID ALIGNED ============================
-# Paste this WHOLE block into your Club Tool page where you want the one-pager section.
-#
-# ✅ Adds a "Physical" panel UNDER "Possession"
-# ✅ Physical pulls from an FMInside URL and maps 0–99 straight to 0–99% bars
+# ============================ CLUB TOOL — ONE-PAGER (FULL) + PHYSICAL (FMINSIDE URL) — TRUE GRID (FIXED) ============================
+# ✅ Physical from FMInside URL (robust parsing)
+# ✅ No duplicate Streamlit IDs (all widgets keyed with WKEY)
 # ✅ Bars align within each column (shared gutter)
-# ✅ TRUE GRID: left + right columns share the same row heights so blocks start/end on same Y points
-# ✅ Fixes Streamlit DuplicateElementId by using a unique key prefix (WKEY)
-#
-# Assumes you already have:
-# - df (DataFrame)
-# - streamlit as st
-# - numpy as np, pandas as pd available (this block imports what it needs)
-# - Optional: resolve_player_photo(player, team, league) and resolve_team_crest(team, league)
-# - Optional: LEAGUE_STRENGTHS dict
+# ✅ TRUE GRID: left/right rows share same SLOT heights so blocks start/end at same Y points AND bar heights match
 
 from io import BytesIO
 import re
@@ -1906,9 +1896,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import requests
+from bs4 import BeautifulSoup
 
-# -------------------- UNIQUE KEY PREFIX (CHANGE IF YOU DUPLICATE THIS BLOCK AGAIN) --------------------
-WKEY = "onepager_phys_grid_v1"
+# -------------------- UNIQUE KEY PREFIX --------------------
+WKEY = "onepager_phys_grid_v2"
 
 st.markdown("---")
 st.header("🧾 One-pager (Club Tool)")
@@ -1933,7 +1924,6 @@ STYLE_MAPS = {
         "Progressive passes per 90": {"style": "Progressive Passer", "sw": "Ball progression via passes"},
         "Shots blocked per 90": {"style": "Stopper", "sw": None},
     },
-
     "FB": {
         "Defensive duels per 90": {"style": "Ball Winner", "sw": "Defensive Duel Attempts"},
         "Aerial duels won, %": {"style": None, "sw": "Aerial Duels"},
@@ -1955,7 +1945,6 @@ STYLE_MAPS = {
         "Progressive passes per 90": {"style": "Build up Passer", "sw": "Ball progression via passes"},
         "Smart passes per 90": {"style": "Attempts through balls", "sw": None},
     },
-
     "CM": {
         "Defensive duels per 90": {"style": "Ball Winner", "sw": "Defensive Duel Attempts"},
         "Aerial duels won, %": {"style": None, "sw": "Aerial Duels"},
@@ -1978,7 +1967,6 @@ STYLE_MAPS = {
         "Progressive passes per 90": {"style": "Deep Playmaker", "sw": "Ball progression via passes"},
         "Smart passes per 90": {"style": "Attempts through balls", "sw": None},
     },
-
     "CF": {
         "Defensive duels per 90": {"style": "High Work Rate", "sw": "Defensive Duel Attempts"},
         "Aerial duels won, %": {"style": None, "sw": "Aerial Duels"},
@@ -1999,7 +1987,7 @@ STYLE_MAPS = {
     },
 }
 
-# -------------------- ROLE BUCKETS (ALL ROLES BY POSITION) --------------------
+# -------------------- ROLE BUCKETS --------------------
 ROLE_BUCKETS = {
     "CM": {
         "Deep Playmaker CM": {"metrics": {"Passes per 90": 1, "Accurate passes, %": 1, "Forward passes per 90": 2,
@@ -2064,16 +2052,11 @@ def _pos_token(p: str) -> str:
 
 def _role_key_from_pos(tok: str) -> str:
     tok = str(tok or "").upper().strip()
-    if tok.startswith("CF"):
-        return "CF"
-    if tok.startswith(("CB","LCB","RCB")):
-        return "CB"
-    if tok.startswith(("RB","LB","RWB","LWB")):
-        return "FB"
-    if tok.startswith(("DMF","CMF","LCMF","RCMF","LDMF","RDMF")):
-        return "CM"
-    if tok in {"RW","RWF","LW","LWF","AMF","RAMF","LAMF"}:
-        return "ATT"
+    if tok.startswith("CF"): return "CF"
+    if tok.startswith(("CB","LCB","RCB")): return "CB"
+    if tok.startswith(("RB","LB","RWB","LWB")): return "FB"
+    if tok.startswith(("DMF","CMF","LCMF","RCMF","LDMF","RDMF")): return "CM"
+    if tok in {"RW","RWF","LW","LWF","AMF","RAMF","LAMF"}: return "ATT"
     return ""
 
 # -------------------- Percentiles --------------------
@@ -2123,8 +2106,7 @@ def compute_role_scores(ply: pd.Series, df_all: pd.DataFrame, role_key: str, ref
         vals, wts = [], []
         for met, w in met_w.items():
             p = pct_of_row(ply, met, df_all, ref_df)
-            if pd.isna(p):
-                continue
+            if pd.isna(p): continue
             vals.append(float(p))
             wts.append(float(w))
         if vals and sum(wts) > 0:
@@ -2135,38 +2117,26 @@ def compute_strengths_weaknesses_styles(ply: pd.Series, df_all: pd.DataFrame, ro
     style_map = STYLE_MAPS.get(role_key, {}) if role_key else {}
     strengths, weaknesses, styles = [], [], []
     pct_extra = {}
-
     for metric, meta in style_map.items():
         p = pct_of_row(ply, metric, df_all, ref_df)
-        if pd.isna(p):
-            continue
+        if pd.isna(p): continue
         pct_extra[metric] = float(p)
-
         sw = (meta or {}).get("sw")
         stl = (meta or {}).get("style")
-
         if sw:
-            if p >= HI:
-                strengths.append(str(sw))
-            elif p <= LO:
-                weaknesses.append(str(sw))
-
+            if p >= HI: strengths.append(str(sw))
+            elif p <= LO: weaknesses.append(str(sw))
         if stl and p >= STYLE_T:
             styles.append(str(stl))
 
     def _dedupe(xs):
-        seen = set()
-        out = []
+        seen=set(); out=[]
         for x in xs:
             if x not in seen:
-                seen.add(x)
-                out.append(x)
+                seen.add(x); out.append(x)
         return out
 
-    strengths = _dedupe(strengths)[:10]
-    weaknesses = _dedupe(weaknesses)[:10]
-    styles = _dedupe(styles)[:10]
-    return strengths, weaknesses, styles, pct_extra
+    return _dedupe(strengths)[:10], _dedupe(weaknesses)[:10], _dedupe(styles)[:10], pct_extra
 
 # -------------------- Metric groups --------------------
 ATTACKING_METRICS = [
@@ -2216,64 +2186,86 @@ def build_triples(ply: pd.Series, df_all: pd.DataFrame, ref_df: pd.DataFrame, pa
         triples.append((lab, p, val_str(ply, met)))
     return triples
 
-# -------------------- FMINSIDE: pull Physical attributes (0–99) --------------------
+# -------------------- FMINSIDE: robust physical parse --------------------
 @st.cache_data(show_spinner=False, ttl=3600)
 def fetch_fminside_physical(url: str) -> dict:
-    """
-    Extracts physical attributes from FMInside HTML.
-    Assumes attributes appear as "Acceleration 65" etc inside "### Physical" section.
-    """
     if not url or not str(url).startswith(("http://", "https://")):
         return {}
-
     try:
-        r = requests.get(str(url), timeout=12, headers={"User-Agent": "Mozilla/5.0 (Streamlit Club Tool)"})
+        r = requests.get(
+            str(url),
+            timeout=12,
+            headers={"User-Agent": "Mozilla/5.0 (Streamlit Club Tool)", "Accept-Language": "en-GB,en;q=0.9"},
+        )
         if r.status_code != 200 or not r.text:
             return {}
 
-        html = r.text
+        soup = BeautifulSoup(r.text, "html.parser")
+        text = soup.get_text("\n")
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
 
-        m = re.search(r"###\s*Physical\s*(.*?)\s*###\s*(Mental|Technical|Set Pieces)", html, flags=re.S | re.I)
-        if m:
-            block = m.group(1)
-        else:
-            visible = re.sub("<[^<]+?>", "\n", html)
-            m2 = re.search(r"###\s*Physical\s*(.*?)\s*###\s*(Mental|Technical|Set Pieces)", visible, flags=re.S | re.I)
-            if not m2:
-                return {}
-            block = m2.group(1)
+        def norm(s): return re.sub(r"[^a-z]+", "", s.lower())
+
+        start = None
+        for i, ln in enumerate(lines):
+            if norm(ln) == "physical":
+                start = i
+                break
+        if start is None:
+            return {}
+
+        stop_words = {"technical", "mental", "setpieces", "goalkeeping"}
+        end = len(lines)
+        for j in range(start + 1, len(lines)):
+            if norm(lines[j]) in stop_words:
+                end = j
+                break
+
+        block = lines[start:end]
 
         wanted = ["Acceleration", "Jumping Reach", "Agility", "Pace", "Stamina", "Strength"]
+        wanted_norm = {norm(w): w for w in wanted}
         out = {}
-        for k in wanted:
-            mm = re.search(rf"{re.escape(k)}\s+(\d{{1,3}})", block, flags=re.I)
-            if mm:
-                v = int(mm.group(1))
-                out[k] = max(0, min(100, v))
-        return out
 
+        i = 0
+        while i < len(block):
+            ln = block[i]
+            nln = norm(ln)
+
+            m = re.match(r"^([A-Za-z][A-Za-z \-']+)\s+(\d{1,3})$", ln)
+            if m and norm(m.group(1)) in wanted_norm:
+                key = wanted_norm[norm(m.group(1))]
+                out[key] = max(0, min(100, int(m.group(2))))
+                i += 1
+                continue
+
+            if nln in wanted_norm and i + 1 < len(block):
+                m2 = re.match(r"^(\d{1,3})$", block[i + 1])
+                if m2:
+                    key = wanted_norm[nln]
+                    out[key] = max(0, min(100, int(m2.group(1))))
+                    i += 2
+                    continue
+
+            i += 1
+
+        return out
     except Exception:
         return {}
 
 def build_physical_triples(phys: dict):
-    order = [
-        ("Acceleration", "Acceleration"),
-        ("Jumping Reach", "Jumping Reach"),
-        ("Agility", "Agility"),
-        ("Pace", "Pace"),
-        ("Stamina", "Stamina"),
-        ("Strength", "Strength"),
-    ]
-    triples = []
+    order = [("Acceleration","Acceleration"),("Jumping Reach","Jumping Reach"),("Agility","Agility"),
+             ("Pace","Pace"),("Stamina","Stamina"),("Strength","Strength")]
+    triples=[]
     for lab, key in order:
         if key in phys:
-            v = float(phys[key])
+            v=float(phys[key])
             triples.append((lab, v, f"{int(round(v))}%"))
         else:
             triples.append((lab, np.nan, "—"))
     return triples
 
-# -------------------- UI: select position group -> player (KEYED) --------------------
+# -------------------- UI (KEYED) --------------------
 group = st.selectbox("Position group", list(POS_GROUPS.keys()), index=0, key=f"{WKEY}_pos_group")
 pos_prefixes = {p.upper() for p in POS_GROUPS[group]}
 
@@ -2307,7 +2299,6 @@ league = str(ply.get("League", "?"))
 pos = str(ply.get("Position", "?"))
 pos_tok = _pos_token(pos)
 
-# --- build the reference pool: SAME LEAGUE + SAME POSITION-GROUP ---
 role_key = _role_key_from_pos(pos_tok)
 
 ref_df = df.copy()
@@ -2316,26 +2307,18 @@ if "League" in ref_df.columns:
 
 if "Position" in ref_df.columns:
     ref_df["_pos_tok"] = ref_df["Position"].apply(_pos_token)
-    if role_key == "CF":
-        allowed = {"CF"}
-    elif role_key == "CB":
-        allowed = {"CB", "LCB", "RCB"}
-    elif role_key == "FB":
-        allowed = {"RB", "LB", "RWB", "LWB"}
-    elif role_key == "CM":
-        allowed = {"DMF", "CMF", "LCMF", "RCMF", "LDMF", "RDMF"}
-    elif role_key == "ATT":
-        allowed = {"RW", "RWF", "LW", "LWF", "AMF", "RAMF", "LAMF"}
-    else:
-        allowed = set()
+    if role_key == "CF": allowed = {"CF"}
+    elif role_key == "CB": allowed = {"CB", "LCB", "RCB"}
+    elif role_key == "FB": allowed = {"RB", "LB", "RWB", "LWB"}
+    elif role_key == "CM": allowed = {"DMF", "CMF", "LCMF", "RCMF", "LDMF", "RDMF"}
+    elif role_key == "ATT": allowed = {"RW", "RWF", "LW", "LWF", "AMF", "RAMF", "LAMF"}
+    else: allowed = set()
     if allowed:
         ref_df = ref_df[ref_df["_pos_tok"].isin(allowed)].copy()
 
-# -------------------- Role scores + strengths/weaknesses/styles --------------------
 role_scores = compute_role_scores(ply, df, role_key, ref_df)
 strengths, weaknesses, styles, pct_extra = compute_strengths_weaknesses_styles(ply, df, role_key, ref_df)
 
-# badge pick EXCLUDES Target Man CF only (but we still display it in roles row)
 EXCLUDE_ROLE = "target man cf"
 filtered_roles = [(k, v) for k, v in role_scores.items() if str(k).strip().lower() != EXCLUDE_ROLE]
 top3_roles = sorted(filtered_roles, key=lambda kv: kv[1], reverse=True)[:3]
@@ -2346,12 +2329,10 @@ league_strength = float(_ls_map.get(str(league), 50.0)) if isinstance(_ls_map, d
 BETA_BADGE = 0.40
 best_val_adj = ((1.0 - BETA_BADGE) * float(best_val_raw) + BETA_BADGE * league_strength) if pd.notna(best_val_raw) else league_strength
 
-# -------------------- Metric triples --------------------
 ATTACKING  = build_triples(ply, df, ref_df, ATTACKING_METRICS, pct_extra)
 DEFENSIVE  = build_triples(ply, df, ref_df, DEFENSIVE_METRICS, pct_extra)
 POSSESSION = build_triples(ply, df, ref_df, POSSESSION_METRICS, pct_extra)
 
-# -------------------- FMInside URL input (KEYED) --------------------
 st.markdown("### 🏃 Physical (FMInside URL)")
 fminside_url = st.text_input(
     "Paste FMInside player URL (auto-loads physical attributes)",
@@ -2361,7 +2342,7 @@ fminside_url = st.text_input(
 phys_dict = fetch_fminside_physical(fminside_url) if fminside_url else {}
 PHYSICAL = build_physical_triples(phys_dict)
 
-# -------------------- Photos & crest helpers --------------------
+# -------------------- Images --------------------
 PLACEHOLDER_IMG = "https://i.redd.it/43axcjdu59nd1.jpeg"
 
 def _try_load_img(url: str):
@@ -2384,7 +2365,6 @@ def _try_load_img(url: str):
     except Exception:
         return None
 
-# --- Player photo (FotMob -> placeholder) ---
 photo_url = PLACEHOLDER_IMG
 if "resolve_player_photo" in globals():
     try:
@@ -2392,12 +2372,8 @@ if "resolve_player_photo" in globals():
         photo_url = (resolved or "").strip() or PLACEHOLDER_IMG
     except Exception:
         photo_url = PLACEHOLDER_IMG
+photo_img = _try_load_img(photo_url) or _try_load_img(PLACEHOLDER_IMG)
 
-photo_img = _try_load_img(photo_url)
-if photo_img is None:
-    photo_img = _try_load_img(PLACEHOLDER_IMG)
-
-# --- Club crest (optional; empty if missing) ---
 crest_url = ""
 if "resolve_team_crest" in globals():
     try:
@@ -2412,7 +2388,6 @@ PANEL_BG  = "#11161C"
 TRACK_BG  = "#222c3d"
 TEXT      = "#E5E7EB"
 ROLE_GREY = "#737373"
-
 CHIP_G_BG = "#22C55E"
 CHIP_R_BG = "#EF4444"
 CHIP_B_BG = "#60A5FA"
@@ -2521,7 +2496,7 @@ def roles_row_tight(fig, rs: dict, y, *, fs=10.6, max_items=12):
         x = bx + num_w + 0.010
     return y - row_gap
 
-# ✅ shared gutter helper
+# ✅ shared gutter for a column
 def gutter_for_triples(fig, triples_list, *, label_fs=LABEL_FS, pad=0.006):
     labels = []
     for triples in (triples_list or []):
@@ -2531,263 +2506,18 @@ def gutter_for_triples(fig, triples_list, *, label_fs=LABEL_FS, pad=0.006):
     max_label_w = max(_text_width_frac(fig, s, fontsize=label_fs, weight="bold") for s in labels)
     return max_label_w + pad
 
-# ✅ TRUE GRID: compute a shared panel height for each "row"
-def panel_height_frac(fig, n_rows):
-    fig.canvas.draw()
-    fig_px_h = fig.bbox.height
-    return (max(1, int(n_rows)) * STEP_PX) / fig_px_h
-
-# ✅ Panel supports shared gutter + forced height
-def bar_panel(fig, left, top, width, triples, title, *, gutter_override=None, height_override=None):
-    n_rows = len(triples)
+# ✅ TRUE GRID bar panel: uses SLOTS so row pixel height stays identical across grid
+def bar_panel(fig, left, top, width, triples, title, *, gutter_override=None, slots_override=None):
     fig.canvas.draw()
     fig_px_h = fig.bbox.height
 
-    # height
-    if height_override is None:
-        ax_h_frac = (max(1, n_rows) * STEP_PX) / fig_px_h
-    else:
-        ax_h_frac = float(height_override)
+    n = len(triples)
+    slots = int(slots_override) if slots_override is not None else max(1, n)
 
+    # Height based on slots
+    ax_h_frac = (max(1, slots) * STEP_PX) / fig_px_h
     bottom = top - ax_h_frac
-    labels = [t[0] for t in triples]
 
-    # gutter
-    if gutter_override is None:
-        max_label_w_frac = max(
-            _text_width_frac(fig, s, fontsize=LABEL_FS, weight="bold")
-            for s in labels
-        ) if labels else 0
-        gutter_w = max_label_w_frac + 0.006
-    else:
-        gutter_w = float(gutter_override)
-
-    # panel background
-    ax_panel = fig.add_axes([left, bottom, width, ax_h_frac])
-    ax_panel.set_facecolor(PANEL_BG)
-    ax_panel.set_xticks([])
-    ax_panel.set_yticks([])
-    for sp in ax_panel.spines.values():
-        sp.set_visible(False)
-
-    # bars axis
-    bar_left = left + gutter_w
-    bar_width = max(0.001, width - gutter_w - 0.004)
-    ax = fig.add_axes([bar_left, bottom, bar_width, ax_h_frac])
-    ax.set_facecolor(PANEL_BG)
-
-    n = len(labels)
-    bar_du = BAR_PX / STEP_PX
-    gap_du = GAP_PX / STEP_PX
-    sep_du = SEP_PX / STEP_PX
-
-    ax.set_xlim(0, 100)
-    ax.set_ylim(-0.5, max(1, n) - 0.5)
-    y_idx = np.arange(max(1, n))[::-1]
-
-    # track
-    track_h = bar_du + gap_du - sep_du
-    for yi in y_idx[:n]:
-        ax.add_patch(
-            mpatches.Rectangle(
-                (0, yi - track_h/2),
-                100, track_h,
-                facecolor=TRACK_BG,
-                edgecolor="none"
-            )
-        )
-
-    # fills
-    for yi, triple in zip(y_idx[:n], triples):
-        _, v_raw, txt = triple
-        if pd.isna(v_raw):
-            ax.text(1.0, yi, txt, va="center", ha="left",
-                    color="#0B0B0B", fontsize=VALUE_FS+0.5, weight="700")
-            continue
-
-        v = float(np.clip(v_raw, 0, 100))
-        ax.add_patch(
-            mpatches.Rectangle(
-                (0, yi - bar_du/2),
-                v, bar_du,
-                facecolor=div_color_tuple(v),
-                edgecolor="none"
-            )
-        )
-        ax.text(1.0, yi, txt, va="center", ha="left",
-                color="#0B0B0B", fontsize=VALUE_FS+0.5, weight="700")
-
-    for sp in ax.spines.values():
-        sp.set_visible(False)
-    ax.tick_params(axis="both", length=0, labelsize=0)
-    ax.grid(False)
-
-    # league avg
-    ax.axvline(50, color="#E5E7EB", linestyle="--", linewidth=1.8, alpha=0.85)
-    y0, _ = ax.get_ylim()
-    ax.text(50, y0 - 0.35, "League avg",
-            color="#CBD5E1", fontsize=8, ha="center", va="top")
-
-    # labels in gutter
-    for yi, lab in zip(y_idx[:n], labels):
-        y_fig = bottom + ax_h_frac * ((yi + 0.5) / max(1, n))
-        fig.text(
-            left + 0.003,
-            y_fig,
-            lab,
-            color=TEXT,
-            fontsize=LABEL_FS,
-            fontweight="bold",
-            va="center",
-            ha="left"
-        )
-
-    # title
-    fig.text(
-        left + 0.003,
-        bottom + ax_h_frac + 0.008,
-        title,
-        color=TEXT,
-        fontsize=TITLE_FS,
-        fontweight="900",
-        ha="left",
-        va="bottom"
-    )
-
-    return bottom
-
-# -------------------- Build the figure --------------------
-W, H = 1500, 1080
-fig = plt.figure(figsize=(W/100, H/100), dpi=100)
-fig.patch.set_facecolor(PAGE_BG)
-
-# ---- header layout knobs ----
-PHOTO_W = 0.10
-PHOTO_H = 0.10
-PHOTO_X = 0.050
-PHOTO_Y = 0.915
-
-NAME_X = PHOTO_X + PHOTO_W + 0.010
-NAME_Y = 0.97
-
-BADGE_SCALE = 1.28
-
-# Photo beside name (left)
-if photo_img is not None:
-    axp = fig.add_axes([PHOTO_X, PHOTO_Y, PHOTO_W, PHOTO_H])
-    axp.imshow(photo_img)
-    axp.axis("off")
-    axp.set_facecolor(PAGE_BG)
-
-# Name
-name_fs = 28
-name_text = fig.text(NAME_X, NAME_Y, f"{player_name}", color="#FFFFFF",
-                     fontsize=name_fs, fontweight="900", va="top", ha="left")
-
-fig.canvas.draw()
-r = fig.canvas.get_renderer()
-name_bbox = name_text.get_window_extent(renderer=r)
-name_w_frac = name_bbox.width / fig.bbox.width
-name_h_frac = name_bbox.height / fig.bbox.height
-
-badge_x = NAME_X + name_w_frac + 0.010
-bh = name_h_frac * BADGE_SCALE
-bw = bh
-by = NAME_Y - (name_h_frac / 2) - (bh / 2)
-
-R, G, B = [int(255*c) for c in div_color_tuple(best_val_adj)]
-fig.patches.append(mpatches.FancyBboxPatch(
-    (badge_x, by), bw, bh,
-    boxstyle="round,pad=0.001,rounding_size=0.012",
-    transform=fig.transFigure,
-    facecolor=f"#{R:02x}{G:02x}{B:02x}",
-    edgecolor="none",
-))
-fig.text(badge_x + bw/2, by + bh/2 - 0.0005, f"{int(round(best_val_adj))}",
-         fontsize=18.6 * BADGE_SCALE, color="#FFFFFF",
-         va="center", ha="center", fontweight="900")
-
-# Crest on far-right
-if crest_img is not None:
-    axc = fig.add_axes([0.93, 0.93, 0.05, 0.05])
-    axc.imshow(crest_img)
-    axc.axis("off")
-    axc.set_facecolor(PAGE_BG)
-
-# -------------------- META line (tight) --------------------
-age = int(ply["Age"]) if pd.notna(ply.get("Age")) else None
-mins = int(ply.get("Minutes played", np.nan)) if pd.notna(ply.get("Minutes played")) else None
-matches = int(ply.get("Matches played", np.nan)) if pd.notna(ply.get("Matches played")) else None
-goals = int(ply.get("Goals", np.nan)) if pd.notna(ply.get("Goals")) else 0
-assists = int(ply.get("Assists", np.nan)) if pd.notna(ply.get("Assists")) else 0
-
-if "xG" in ply.index and pd.notna(ply.get("xG")):
-    xg_total = float(ply["xG"])
-else:
-    xg_per90 = float(ply.get("xG per 90", np.nan)) if pd.notna(ply.get("xG per 90")) else np.nan
-    xg_total = float(xg_per90) * (float(mins) / 90.0) if (pd.notna(xg_per90) and mins) else np.nan
-xg_total_str = f"{xg_total:.2f}" if pd.notna(xg_total) else "—"
-
-meta_y = 0.895
-x_meta = 0.055
-runs = [
-    (f"{pos} — ", "normal"),
-    (team, "bold"),
-    (" — ", "normal"),
-    (league, "bold"),
-    (f" — Age {age if age is not None else '—'} — Minutes {mins if mins is not None else '—'} — "
-     f"Matches {matches if matches is not None else '—'} — Goals {goals} — xG {xg_total_str} — Assists {assists}", "normal")
-]
-for txt, weight in runs:
-    fs = 13
-    fig.text(x_meta, meta_y, txt, color="#FFFFFF", fontsize=fs,
-             fontweight=("900" if weight == "bold" else "normal"),
-             ha="left", va="center")
-    x_meta += _text_width_frac(fig, txt, fontsize=fs, weight=("900" if weight == "bold" else "normal")) + (0.004 if txt.strip() else 0)
-
-# -------------------- Chips + roles --------------------
-y_chips = 0.872
-y_chips = chip_row_exact(fig, strengths,  y_chips, CHIP_G_BG, fs=10.1, max_rows=1, max_per_row=6)
-y_chips = chip_row_exact(fig, weaknesses, y_chips, CHIP_R_BG, fs=10.1, max_rows=1, max_per_row=6)
-y_chips = chip_row_exact(fig, styles,     y_chips, CHIP_B_BG, fs=10.1, max_rows=1, max_per_row=6)
-y_chips -= 0.012
-
-roles_for_row = dict(sorted(role_scores.items(), key=lambda kv: -kv[1])[:10])
-y_roles = roles_row_tight(fig, roles_for_row, y_chips, fs=10.6, max_items=10)
-
-# -------------------- TRUE GRID LAYOUT (CONTINUED) --------------------
-TOP = y_roles - 0.02
-V_GAP_FRAC = 0.050
-
-# ✅ shared gutter helper
-def gutter_for_triples(fig, triples_list, *, label_fs=LABEL_FS, pad=0.006):
-    labels = []
-    for triples in (triples_list or []):
-        labels.extend([t[0] for t in (triples or [])])
-    if not labels:
-        return pad
-    max_label_w = max(_text_width_frac(fig, s, fontsize=label_fs, weight="bold") for s in labels)
-    return max_label_w + pad
-
-# ✅ TRUE GRID: compute a shared panel height for each "row"
-def panel_height_frac(fig, n_rows):
-    fig.canvas.draw()
-    fig_px_h = fig.bbox.height
-    return (max(1, int(n_rows)) * STEP_PX) / fig_px_h
-
-# ✅ Panel supports shared gutter + forced height
-def bar_panel(fig, left, top, width, triples, title, *, gutter_override=None, height_override=None):
-    n_rows = len(triples)
-    fig.canvas.draw()
-    fig_px_h = fig.bbox.height
-
-    # height
-    if height_override is None:
-        ax_h_frac = (max(1, n_rows) * STEP_PX) / fig_px_h
-    else:
-        ax_h_frac = float(height_override)
-
-    bottom = top - ax_h_frac
     labels = [t[0] for t in triples]
 
     # gutter
@@ -2810,22 +2540,22 @@ def bar_panel(fig, left, top, width, triples, title, *, gutter_override=None, he
     ax = fig.add_axes([bar_left, bottom, bar_width, ax_h_frac])
     ax.set_facecolor(PANEL_BG)
 
-    n = len(labels)
     bar_du = BAR_PX / STEP_PX
     gap_du = GAP_PX / STEP_PX
     sep_du = SEP_PX / STEP_PX
 
     ax.set_xlim(0, 100)
-    ax.set_ylim(-0.5, max(1, n) - 0.5)
-    y_idx = np.arange(max(1, n))[::-1]
+    ax.set_ylim(-0.5, slots - 0.5)
 
-    # track
+    # Put this panel's rows at the TOP of the slot space
+    offset = slots - n
+    y_positions = (np.arange(n)[::-1] + offset) if n > 0 else np.array([])
+
     track_h = bar_du + gap_du - sep_du
-    for yi in y_idx[:n]:
+    for yi in y_positions:
         ax.add_patch(mpatches.Rectangle((0, yi - track_h/2), 100, track_h, facecolor=TRACK_BG, edgecolor="none"))
 
-    # fills (skip if NaN)
-    for yi, triple in zip(y_idx[:n], triples):
+    for yi, triple in zip(y_positions, triples):
         _, v_raw, txt = triple
         if pd.isna(v_raw):
             ax.text(1.0, yi, txt, va="center", ha="left", color="#0B0B0B", fontsize=VALUE_FS + 0.5, weight="700")
@@ -2839,90 +2569,162 @@ def bar_panel(fig, left, top, width, triples, title, *, gutter_override=None, he
     ax.tick_params(axis="both", length=0, labelsize=0)
     ax.grid(False)
 
-    # league avg line
     ax.axvline(50, color="#E5E7EB", linestyle="--", linewidth=1.8, alpha=0.85, zorder=5)
     y0, _ = ax.get_ylim()
     ax.text(50, y0 - 0.35, "League avg", color="#CBD5E1", fontsize=8, ha="center", va="top")
 
-    # labels in gutter area
-    for yi, lab in zip(y_idx[:n], labels):
-        y_fig = bottom + ax_h_frac * ((yi + 0.5) / max(1, n))
-        fig.text(left + 0.006/2, y_fig, lab, color=TEXT, fontsize=LABEL_FS, fontweight="bold",
+    # labels in gutter
+    for yi, lab in zip(y_positions, labels):
+        y_fig = bottom + ax_h_frac * ((yi + 0.5) / max(1, slots))
+        fig.text(left + 0.003, y_fig, lab, color=TEXT, fontsize=LABEL_FS, fontweight="bold",
                  va="center", ha="left")
 
     # title
-    title_y = bottom + ax_h_frac + 0.008
-    fig.text(left + 0.006/2, title_y, title, color=TEXT, fontsize=TITLE_FS, fontweight="900",
-             ha="left", va="bottom")
+    fig.text(left + 0.003, bottom + ax_h_frac + 0.008, title, color=TEXT, fontsize=TITLE_FS,
+             fontweight="900", ha="left", va="bottom")
 
-    ax.plot([0, 1], [1, 1], transform=ax.transAxes, color="#94A3B8", linewidth=0.8, alpha=0.35)
     return bottom
 
+# -------------------- Build the figure --------------------
+W, H = 1500, 1080
+fig = plt.figure(figsize=(W/100, H/100), dpi=100)
+fig.patch.set_facecolor(PAGE_BG)
 
-# -------------------- TRUE GRID LAYOUT --------------------
-LEFT = 0.050
-WIDTH_L = 0.41
-MID_GAP = 0.040
-RIGHT = LEFT + WIDTH_L + MID_GAP
-WIDTH_R = 0.41
+# ---- header layout knobs ----
+PHOTO_W = 0.10
+PHOTO_H = 0.10
+PHOTO_X = 0.050
+PHOTO_Y = 0.915
+NAME_X = PHOTO_X + PHOTO_W + 0.010
+NAME_Y = 0.97
+BADGE_SCALE = 1.28
 
-TOP = y_roles - 0.02
-V_GAP_FRAC = 0.050
+# photo
+if photo_img is not None:
+    axp = fig.add_axes([PHOTO_X, PHOTO_Y, PHOTO_W, PHOTO_H])
+    axp.imshow(photo_img)
+    axp.axis("off")
+    axp.set_facecolor(PAGE_BG)
 
-# ✅ Shared gutters so bar start aligns inside each column
+# name
+name_fs = 28
+name_text = fig.text(NAME_X, NAME_Y, f"{player_name}", color="#FFFFFF",
+                     fontsize=name_fs, fontweight="900", va="top", ha="left")
+
+fig.canvas.draw()
+r = fig.canvas.get_renderer()
+name_bbox = name_text.get_window_extent(renderer=r)
+name_w_frac = name_bbox.width / fig.bbox.width
+
+# rating badge
+badge_val = int(round(best_val_adj))
+badge_text = f"{badge_val}"
+badge_w = _text_width_frac(fig, badge_text, fontsize=name_fs-2, weight="900") + 0.012
+badge_h = _text_height_frac(fig, "Hg", fontsize=name_fs-2, weight="900") * BADGE_SCALE
+
+bx = NAME_X + name_w_frac + 0.010
+by = NAME_Y - badge_h*0.85
+
+fig.patches.append(
+    mpatches.FancyBboxPatch(
+        (bx, by), badge_w, badge_h,
+        boxstyle=f"round,pad=0.004,rounding_size={badge_h*0.45}",
+        transform=fig.transFigure,
+        facecolor="#22C55E",
+        edgecolor="none"
+    )
+)
+fig.text(bx + badge_w/2, by + badge_h/2, badge_text,
+         fontsize=name_fs-2, color="#FFFFFF",
+         va="center", ha="center", fontweight="900")
+
+# crest
+if crest_img is not None:
+    axc = fig.add_axes([0.90, 0.93, 0.055, 0.055])
+    axc.imshow(crest_img)
+    axc.axis("off")
+
+# subtitle
+subtitle = f"{pos_tok} — {team} — {league} — Age {int(ply.get('Age',0)) if 'Age' in ply else '?'} — " \
+           f"Minutes {int(ply.get('Minutes',0)) if 'Minutes' in ply else '?'} — " \
+           f"Matches {int(ply.get('Matches',0)) if 'Matches' in ply else '?'} — " \
+           f"Goals {ply.get('Goals','?')} — xG {ply.get('xG',0):.2f} — Assists {ply.get('Assists','?')}"
+
+fig.text(NAME_X, NAME_Y-0.045, subtitle,
+         color="#CBD5E1", fontsize=11, ha="left", va="top")
+
+# chips rows
+y0 = NAME_Y - 0.080
+y0 = chip_row_exact(fig, strengths, y0, CHIP_G_BG)
+y0 = chip_row_exact(fig, weaknesses, y0, CHIP_R_BG)
+y0 = chip_row_exact(fig, styles, y0, CHIP_B_BG, max_rows=2)
+
+# roles row
+y_roles = roles_row_tight(fig, role_scores, y0-0.015)
+
+# -------------------- GRID LAYOUT --------------------
+LEFT = 0.05
+RIGHT = 0.54
+WIDTH_L = 0.40
+WIDTH_R = 0.40
+TOP = y_roles - 0.025
+V_GAP = 0.050
+
+# shared gutters
 gutter_L = gutter_for_triples(fig, [ATTACKING, DEFENSIVE])
 gutter_R = gutter_for_triples(fig, [POSSESSION, PHYSICAL])
 
-# ✅ TRUE GRID heights:
-# row1 uses max rows of (Attacking, Possession)
-# row2 uses max rows of (Defensive, Physical)
-h_row1 = panel_height_frac(fig, max(len(ATTACKING), len(POSSESSION)))
-h_row2 = panel_height_frac(fig, max(len(DEFENSIVE), len(PHYSICAL)))
+# slot counts for TRUE GRID
+slots_row1 = max(len(ATTACKING), len(POSSESSION))
+slots_row2 = max(len(DEFENSIVE), len(PHYSICAL))
 
-# ---- Row 1 (Attacking vs Possession) ----
+# ---- Row 1 ----
 row1_bottom_L = bar_panel(
     fig, LEFT, TOP, WIDTH_L,
     ATTACKING, "Attacking",
     gutter_override=gutter_L,
-    height_override=h_row1
+    slots_override=slots_row1
 )
 row1_bottom_R = bar_panel(
     fig, RIGHT, TOP, WIDTH_R,
     POSSESSION, "Possession",
     gutter_override=gutter_R,
-    height_override=h_row1
+    slots_override=slots_row1
 )
 
 row1_bottom = min(row1_bottom_L, row1_bottom_R)
 
-# ---- Row 2 (Defensive vs Physical) ----
-row2_top = row1_bottom - V_GAP_FRAC
+# ---- Row 2 ----
+row2_top = row1_bottom - V_GAP
 
-_ = bar_panel(
+bar_panel(
     fig, LEFT, row2_top, WIDTH_L,
     DEFENSIVE, "Defensive",
     gutter_override=gutter_L,
-    height_override=h_row2
+    slots_override=slots_row2
 )
-_ = bar_panel(
+bar_panel(
     fig, RIGHT, row2_top, WIDTH_R,
     PHYSICAL, "Physical",
     gutter_override=gutter_R,
-    height_override=h_row2
+    slots_override=slots_row2
 )
 
-# -------------------- render + download (KEYED) --------------------
+# -------------------- RENDER --------------------
 st.pyplot(fig, use_container_width=True)
 
+# -------------------- DOWNLOAD --------------------
 buf = BytesIO()
-fig.savefig(buf, format="png", dpi=170, bbox_inches="tight", facecolor=fig.get_facecolor())
+fig.savefig(buf, format="png", dpi=170,
+            bbox_inches="tight",
+            facecolor=fig.get_facecolor())
 
 st.download_button(
     "⬇️ Download one-pager (PNG)",
     data=buf.getvalue(),
-    file_name=f"{str(player_name).replace(' ', '_')}_onepager.png",
+    file_name=f"{player_name.replace(' ','_')}_onepager.png",
     mime="image/png",
-    key=f"{WKEY}_download_png",
+    key=f"{WKEY}_download_png"
 )
 
 
