@@ -152,23 +152,174 @@ LEAGUE_STRENGTHS = {
 'Estonia 2.':3, 'Ireland 2.':10,
 }
 
+# ========================= GBE BANDS + REGIONS (PRESETS) =========================
+# Put this block AFTER LEAGUE_STRENGTHS = {...} and BEFORE the TOP BAR section.
+
+# ---- GBE league bands (custom: all UK & Ireland leagues in Band 1) ----
+GBE_LEAGUE_BANDS = {
+    # Band 1 – Top 5 + all England / Scotland / Wales / Ireland / Northern Ireland leagues
+    "England 1.": 1, "England 2.": 1, "England 3.": 1, "England 4.": 1,
+    "England 5.": 1, "England 6.": 1, "England 7.": 1, "England 8.": 1,
+    "England 9.": 1, "England 10.": 1,
+    "Scotland 1.": 1, "Scotland 2.": 1, "Scotland 3.": 1,
+    "Wales 1.": 1,
+    "Ireland 1.": 1,
+    "Northern Ireland 1.": 1,
+
+    "Spain 1.": 1, "Germany 1.": 1, "Italy 1.": 1, "France 1.": 1,
+
+    # Band 2
+    "Portugal 1.": 2, "Netherlands 1.": 2, "Belgium 1.": 2, "Turkey 1.": 2,
+
+    # Band 3
+    "USA 1.": 3, "Brazil 1.": 3, "Argentina 1.": 3, "Mexico 1.": 3,
+
+    # Band 4
+    "Czech 1.": 4, "Croatia 1.": 4, "Switzerland 1.": 4,
+    "Spain 2.": 4, "Germany 2.": 4,
+    "Ukraine 1.": 4, "Greece 1.": 4, "Colombia 1.": 4,
+    "Austria 1.": 4, "Denmark 1.": 4, "France 2.": 4, "Russia 1.": 4,
+
+    # Band 5
+    "Serbia 1.": 5, "Poland 1.": 5, "Slovenia 1.": 5, "Chile 1.": 5, "Uruguay 1.": 5,
+    "Sweden 1.": 5, "Norway 1.": 5, "Italy 2.": 5, "Hungary 1.": 5, "Japan 1.": 5,
+    "Korea 1.": 5, "Australia 1.": 5,
+
+    # Everything else defaults to Band 6
+}
+
+def gbe_league_band(league_name: str) -> int:
+    """Map 'Country N.' league name to custom GBE band 1–6. Unlisted leagues default to Band 6."""
+    league_name = str(league_name).strip()
+    return int(GBE_LEAGUE_BANDS.get(league_name, 6))
+
+@st.cache_data(show_spinner=False)
+def league_strength_band_df(max_band: int = 6) -> pd.DataFrame:
+    """
+    Return a dataframe with League, League Strength, and GBE Band,
+    filtered to bands <= max_band.
+    """
+    rows = []
+    for league, strength in LEAGUE_STRENGTHS.items():
+        band = gbe_league_band(league)
+        if band <= max_band:
+            rows.append({"League": league, "League strength": strength, "GBE band": band})
+    df_ls = pd.DataFrame(rows)
+    return df_ls.sort_values(["League strength"], ascending=[False])
+
+# --- Country → Region mapping for league-level region filter ---
+COUNTRY_TO_REGION = {
+    # Europe
+    "England": "Europe", "Spain": "Europe", "Germany": "Europe", "Italy": "Europe",
+    "France": "Europe", "Belgium": "Europe", "Portugal": "Europe", "Netherlands": "Europe",
+    "Croatia": "Europe", "Switzerland": "Europe", "Norway": "Europe", "Sweden": "Europe",
+    "Cyprus": "Europe", "Czech": "Europe", "Greece": "Europe", "Austria": "Europe",
+    "Hungary": "Europe", "Romania": "Europe", "Scotland": "Europe", "Slovenia": "Europe",
+    "Slovakia": "Europe", "Ukraine": "Europe", "Bulgaria": "Europe", "Serbia": "Europe",
+    "Albania": "Europe", "Bosnia": "Europe", "Kosovo": "Europe", "Ireland": "Europe",
+    "Finland": "Europe", "Armenia": "Europe", "Georgia": "Europe", "Poland": "Europe",
+    "Iceland": "Europe", "North Macedonia": "Europe", "Latvia": "Europe",
+    "Montenegro": "Europe", "Denmark": "Europe", "Estonia": "Europe",
+    "Northern Ireland": "Europe", "Wales": "Europe",
+
+    # South America
+    "Brazil": "South America", "Argentina": "South America", "Colombia": "South America",
+    "Ecuador": "South America", "Paraguay": "South America", "Uruguay": "South America",
+    "Chile": "South America", "Bolivia": "South America", "Peru": "South America",
+    "Venezuela": "South America",
+
+    # North America
+    "USA": "North America", "Mexico": "North America", "Costa Rica": "North America",
+    "Canada": "North America",
+
+    # Africa
+    "Morocco": "Africa", "Algeria": "Africa", "Egypt": "Africa", "Nigeria": "Africa",
+    "Tunisia": "Africa", "South Africa": "Africa",
+
+    # Asia
+    "Japan": "Asia", "Korea": "Asia", "Saudi": "Asia",
+    "UAE": "Asia", "Qatar": "Asia", "Uzbekistan": "Asia", "Israel": "Asia",
+    "Turkey": "Asia", "Azerbaijan": "Asia",
+
+    # Oceania / other
+    "Australia": "Asia",
+}
+
+def league_country(league: str) -> str:
+    """
+    Extract country part from 'Country N.' including multi-word countries.
+    Examples:
+      'North Macedonia 1.' -> 'North Macedonia'
+      'Northern Ireland 1.' -> 'Northern Ireland'
+      'South Africa 1.' -> 'South Africa'
+      'England 2.' -> 'England'
+    """
+    s = str(league).strip()
+    m = re.match(r"^(.*)\s\d+\.\s*$", s)
+    return m.group(1).strip() if m else s
+
+def league_region(league: str) -> str:
+    """Map a league to a region using the country part."""
+    c = league_country(league)
+    return COUNTRY_TO_REGION.get(c, "Other")
+
+
 # ========================= TOP BAR: FILTERS + SCORING =========================
 st.markdown("---")
 st.header("⚙️ Adjustments & Candidate Pool")
 
 cA, cB, cC, cD = st.columns([1.2, 1.6, 1.2, 1.2])
 with cA:
+    st.markdown("**League presets**")
     use_top5 = st.checkbox("Top-5 preset", False)
     use_top20 = st.checkbox("Top-20 preset", False)
     use_efl = st.checkbox("EFL preset", False)
 
-seed = set()
-if use_top5: seed |= PRESET_LEAGUES["Top 5 Europe"]
-if use_top20: seed |= PRESET_LEAGUES["Top 20 Europe"]
-if use_efl: seed |= PRESET_LEAGUES["EFL (England 2–4)"]
+    st.markdown("**Region presets**")
+    region_pick = st.selectbox(
+        "Region",
+        ["— None —", "Europe", "South America", "North America", "Africa", "Asia", "Other"],
+        index=0,
+        key="preset_region_pick",
+    )
 
-leagues_avail = sorted(set(INCLUDED_LEAGUES) | set(df["League"].dropna().unique()))
-default_leagues = sorted(seed) if seed else INCLUDED_LEAGUES
+    st.markdown("**GBE band presets**")
+    band_mode = st.selectbox(
+        "GBE band",
+        [
+            "— None —",
+            "Band 1", "Band 2", "Band 3", "Band 4", "Band 5", "Band 6",
+            "Band ≤ 1", "Band ≤ 2", "Band ≤ 3", "Band ≤ 4", "Band ≤ 5",
+        ],
+        index=0,
+        key="preset_band_mode",
+    )
+
+seed = set()
+
+# Existing presets
+if use_top5:
+    seed |= PRESET_LEAGUES["Top 5 Europe"]
+if use_top20:
+    seed |= PRESET_LEAGUES["Top 20 Europe"]
+if use_efl:
+    seed |= PRESET_LEAGUES["EFL (England 2–4)"]
+
+# Region preset
+if region_pick != "— None —":
+    seed |= {lg for lg in INCLUDED_LEAGUES if league_region(lg) == region_pick}
+
+# GBE band preset
+if band_mode != "— None —":
+    if band_mode.startswith("Band ≤"):
+        max_band = int(band_mode.split("≤", 1)[1].strip())
+        seed |= {lg for lg in INCLUDED_LEAGUES if gbe_league_band(lg) <= max_band}
+    else:
+        band_n = int(band_mode.split(" ", 1)[1].strip())
+        seed |= {lg for lg in INCLUDED_LEAGUES if gbe_league_band(lg) == band_n}
+
+if seed:
+    st.caption(f"Preset leagues selected: **{len(seed)}**")
 
 with cB:
     leagues_sel = st.multiselect("Leagues in candidate pool", leagues_avail, default=default_leagues)
