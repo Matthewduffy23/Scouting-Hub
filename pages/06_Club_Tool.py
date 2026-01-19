@@ -1710,7 +1710,7 @@ PHOTO_X = 0.050
 PHOTO_Y = 0.915
 
 NAME_X = PHOTO_X + PHOTO_W + 0.016
-NAME_Y = 0.95
+NAME_Y = 0.97
 
 BADGE_SCALE = 1.28
 
@@ -1771,7 +1771,7 @@ else:
     xg_total = float(xg_per90) * (float(mins) / 90.0) if (pd.notna(xg_per90) and mins) else np.nan
 xg_total_str = f"{xg_total:.2f}" if pd.notna(xg_total) else "—"
 
-meta_y = 0.88
+meta_y = 0.93
 x_meta = 0.055
 runs = [
     (f"{pos} — ", "normal"),
