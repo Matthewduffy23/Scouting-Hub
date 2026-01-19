@@ -1507,12 +1507,31 @@ def _try_load_img(url: str):
     except Exception:
         return None
 
+# Ensure session photo map exists
+st.session_state.setdefault("photo_map", {})
+
+# Load global overrides once (cached in session_state)
+if "_global_photo_overrides" not in st.session_state:
+    st.session_state["_global_photo_overrides"] = load_local_photo_overrides(PLAYER_PHOTO_OVERRIDES_JSON) if "load_local_photo_overrides" in globals() else {}
+GLOBAL_OVERRIDES = st.session_state.get("_global_photo_overrides", {}) or {}
+
+# Stable key for this player row
+key_id = f"{player_name}|||{team}|||{league}"
+
 # --- Player photo (FotMob -> placeholder) ---
 photo_url = PLACEHOLDER_IMG
 if "resolve_player_photo" in globals():
     try:
-        resolved = resolve_player_photo(player_name, team, league)
-        photo_url = (resolved or "").strip() or PLACEHOLDER_IMG
+        photo_url = resolve_player_photo(
+            player=player_name,
+            team=team,
+            league=league,
+            key_id=key_id,
+            session_photo_map=st.session_state["photo_map"],
+            global_overrides=GLOBAL_OVERRIDES,
+            placeholder_url=PLACEHOLDER_IMG,
+        ) or PLACEHOLDER_IMG
+        photo_url = str(photo_url).strip() or PLACEHOLDER_IMG
     except Exception:
         photo_url = PLACEHOLDER_IMG
 
@@ -1539,6 +1558,8 @@ PANEL_BG  = "#11161C"
 TRACK_BG  = "#222c3d"
 TEXT      = "#E5E7EB"
 ROLE_GREY = "#737373"
+
+crest_img = _try_load_img(crest_url) if crest_url else None
 
 CHIP_G_BG = "#22C55E"
 CHIP_R_BG = "#EF4444"
