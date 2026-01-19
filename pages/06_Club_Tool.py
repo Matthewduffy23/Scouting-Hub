@@ -846,7 +846,7 @@ def render_tiles(ranked: pd.DataFrame, role_title: str):
         <span class="chip">Age {age}</span>
         <span class="chip">{int(minutes) if str(minutes).isdigit() else minutes} min</span>
         <span class="chip">MV {mv}</span>
-        <span class="chip">Foot {foot if foot else "—"}</span>
+        <span class="chip">{foot}</span>
       </div>
     </div>
   </div>
