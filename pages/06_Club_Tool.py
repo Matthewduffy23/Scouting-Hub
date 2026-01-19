@@ -1374,7 +1374,6 @@ DEFENSIVE_METRICS = [
     ("Defensive Duels", "Defensive duels per 90"),
     ("Defensive Duel %", "Defensive duels won, %"),
     ("PAdj Interceptions", "PAdj Interceptions"),
-    ("Shots blocked", "Shots blocked per 90"),
 ]
 POSSESSION_METRICS = [
     ("Accelerations", "Accelerations per 90"),
@@ -1388,12 +1387,11 @@ POSSESSION_METRICS = [
     ("Long Pass %", "Accurate long passes, %"),
     ("Passes", "Passes per 90"),
     ("Passing %", "Accurate passes, %"),
-    ("Passes to F3rd", "Passes to final third per 90"),
-    ("Passes F3rd %", "Accurate passes to final third, %"),
-    ("Passes Pen-Area", "Passes to penalty area per 90"),
-    ("Pass Pen-Area %", "Accurate passes to penalty area, %"),
+    ("Passes to Final 3rd", "Passes to final third per 90"),
+    ("Passes to Penalty Area", "Passes to penalty area per 90"),
+    ("Passes to Penalty Area %", "Accurate passes to penalty area, %"),
     ("Progessive Passes", "Progressive passes per 90"),
-    ("Prog Pass %", "Accurate progressive passes, %"),
+    ("Progressive Pass %", "Accurate progressive passes, %"),
     ("Progressive Runs", "Progressive runs per 90"),
     ("Smart Passes", "Smart passes per 90"),
 ]
