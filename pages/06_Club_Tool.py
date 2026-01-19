@@ -1753,7 +1753,7 @@ fig.text(badge_x + bw/2, by + bh/2 - 0.0005, f"{int(round(best_val_adj))}",
 
 # Crest on far-right
 if crest_img is not None:
-    axc = fig.add_axes([0.5, 0.92, 0.01, 0.01])
+    axc = fig.add_axes([0.7, 0.92, 0.1, 0.1])
     axc.imshow(crest_img)
     axc.axis("off")
     axc.set_facecolor(PAGE_BG)
