@@ -192,18 +192,40 @@ with cD:
 
 cE, cF, cG, cH = st.columns([1.2, 1.2, 1.2, 1.2])
 with cE:
-    decay_rate = st.slider("Exp. decay (↑=stricter)", 0.5, 10.0, 5.0, 0.5)
+    decay_rate = st.slider(
+        "Exp. decay (↑=stricter)", 0.5, 10.0, 5.0, 0.5,
+        help="Higher = harsher scoring. Lower = more forgiving shortlist."
+    )
 with cF:
-    use_league_weighting = st.checkbox("Blend league strength (β)", value=True)
-    beta = st.slider("β (0–1)", 0.0, 1.0, 0.40, 0.05)
+    use_league_weighting = st.checkbox(
+        "Blend league strength (β)", value=True,
+        help="If on: adds league strength into the final score (controlled by β)."
+    )
+    beta = st.slider(
+        "β (0–1)", 0.0, 1.0, 0.40, 0.05,
+        help="β=0 pure role fit. β=1 pure league strength."
+    )
 with cG:
-    use_league_mismatch = st.checkbox("League mismatch penalty (α,p)", value=True)
-    alpha = st.slider("α", 0.0, 5.0, 1.20, 0.05)
-    p_exp = st.slider("p", 1.0, 3.0, 1.50, 0.10)
+    use_league_mismatch = st.checkbox(
+        "League mismatch penalty (α,p)", value=True,
+        help="If on: penalizes players from much weaker/stronger leagues vs your template league."
+    )
+    alpha = st.slider(
+        "α", 0.0, 5.0, 1.20, 0.05,
+        help="Penalty size. Higher α makes league differences matter more."
+    )
+    p_exp = st.slider(
+        "p", 1.0, 3.0, 1.50, 0.10,
+        help="Penalty curve. p>1 punishes big league gaps much more than small gaps."
+    )
 with cH:
-    penalty_mode = st.selectbox("Penalty combine", ["Additive (stronger)", "Quadrature (gentler)"], index=0)
+    penalty_mode = st.selectbox(
+        "Penalty combine", ["Additive (stronger)", "Quadrature (gentler)"], index=0,
+        help="Additive = BaseDist+Penalty. Quadrature = sqrt(BaseDist²+Penalty²)."
+    )
     min_strength, max_strength = st.slider("League strength (pool)", 0, 101, (0, 101))
     top_n = st.number_input("Top N", 5, 200, 20, 5)
+
 
 DEBUG_PHOTOS = st.checkbox("Debug photos", False)
 
