@@ -1771,7 +1771,7 @@ else:
     xg_total = float(xg_per90) * (float(mins) / 90.0) if (pd.notna(xg_per90) and mins) else np.nan
 xg_total_str = f"{xg_total:.2f}" if pd.notna(xg_total) else "—"
 
-meta_y = 0.91
+meta_y = 0.895
 x_meta = 0.055
 runs = [
     (f"{pos} — ", "normal"),
