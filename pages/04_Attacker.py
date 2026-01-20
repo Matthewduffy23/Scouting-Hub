@@ -4276,7 +4276,7 @@ else:
 
 
 
-# ============================== SCATTERPLOT — Tableau-ish smart labels + full-range scaling + wiggle room ==============================
+# ============================== SCATTERPLOT — Tableau-ish smart labels (NO leader lines) + full-range scaling + wiggle room ==============================
 st.markdown("---")
 st.header("📈 Scatterplot")
 
@@ -4339,8 +4339,8 @@ with st.expander("Scatter settings", expanded=False):
     allow_overlap = st.toggle("Allow overlapping labels (not recommended)", value=False, key="sc_overlap")
     label_size = st.slider("Label size", 8, 20, 13, 1, key="sc_lbl_sz")
 
-    # Tableau-ish label controls (NEW)
-    max_labels = st.slider("Max labels (Tableau style)", 0, 40, 18, 1, key="sc_max_labels")
+    # Tableau-ish label controls
+    max_labels = st.slider("Max labels (Tableau style)", 0, 40, 16, 1, key="sc_max_labels")  # slightly lower default
     label_strategy = st.selectbox(
         "Label strategy",
         ["Smart (recommended)", "Selected only", "Outliers only", "Top-right performers"],
@@ -4417,7 +4417,7 @@ with st.expander("Scatter settings", expanded=False):
         key="sc_scale_mode",
     )
 
-    # Wiggle room (requested)
+    # Wiggle room
     wiggle_pct = st.slider("Wiggle room (%)", 0.0, 12.0, 4.0, 0.5, key="sc_wiggle") / 100.0
 
     # ---- Build pool ----
@@ -4483,7 +4483,6 @@ with st.expander("Scatter settings", expanded=False):
                 x_vals = pool_sc[x_metric].to_numpy(float)
                 y_vals = pool_sc[y_metric].to_numpy(float)
 
-                # ----- Nice step -----
                 import math
                 def nice_step(vmin, vmax, target_ticks=6):
                     span = abs(vmax - vmin)
@@ -4492,22 +4491,16 @@ with st.expander("Scatter settings", expanded=False):
                     raw = span / max(target_ticks, 2)
                     power = 10 ** math.floor(math.log10(raw))
                     mult = raw / power
-                    if mult <= 1:
-                        k = 1
-                    elif mult <= 2:
-                        k = 2
-                    elif mult <= 2.5:
-                        k = 2.5
-                    elif mult <= 5:
-                        k = 5
-                    else:
-                        k = 10
+                    if mult <= 1: k = 1
+                    elif mult <= 2: k = 2
+                    elif mult <= 2.5: k = 2.5
+                    elif mult <= 5: k = 5
+                    else: k = 10
                     return k * power
 
-                # ----- Axis limits with wiggle room + dot-radius safety (prevents cut-off) -----
                 def _data_pad_from_points(ax, s_pts2, x_span, y_span):
-                    r_pt = float(np.sqrt(max(s_pts2, 1e-9))) / 2.0  # radius in points
-                    r_px = r_pt * ax.figure.dpi / 72.0              # points -> px
+                    r_pt = float(np.sqrt(max(s_pts2, 1e-9))) / 2.0
+                    r_px = r_pt * ax.figure.dpi / 72.0
                     bbox = ax.get_window_extent().transformed(ax.figure.dpi_scale_trans.inverted())
                     w_in, h_in = bbox.width, bbox.height
                     w_px, h_px_ = w_in * ax.figure.dpi, h_in * ax.figure.dpi
@@ -4530,16 +4523,13 @@ with st.expander("Scatter settings", expanded=False):
                 x_span = x_hi - x_lo
                 y_span = y_hi - y_lo
 
-                # wiggle
                 x_lo -= x_span * wiggle_pct
                 x_hi += x_span * wiggle_pct
                 y_lo -= y_span * wiggle_pct
                 y_hi += y_span * wiggle_pct
 
-                # need a draw for accurate bbox (pad calc)
                 fig.canvas.draw()
                 pad_x, pad_y = _data_pad_from_points(ax, point_size, (x_hi - x_lo), (y_hi - y_lo))
-
                 ax.set_xlim(x_lo - pad_x, x_hi + pad_x)
                 ax.set_ylim(y_lo - pad_y, y_hi + pad_y)
 
@@ -4551,9 +4541,9 @@ with st.expander("Scatter settings", expanded=False):
                 cmin, cmax = float(np.nanmin(cvals)), float(np.nanmax(cvals))
                 if cmin == cmax:
                     cmax = cmin + 1e-6
-                tt = (cvals - cmin) / (cmax - cmin)
+                tcol = (cvals - cmin) / (cmax - cmin)
                 if reverse_scale:
-                    tt = 1.0 - tt
+                    tcol = 1.0 - tcol
 
                 def interp(a, b, u):
                     a = np.array(a, dtype=float); b = np.array(b, dtype=float)
@@ -4580,7 +4570,7 @@ with st.expander("Scatter settings", expanded=False):
                 else:
                     def map_col(v): return np.array([0, 0, 0]) / 255.0
 
-                col_array = np.vstack([map_col(v) for v in tt])
+                col_array = np.vstack([map_col(v) for v in tcol])
                 color_series = pd.Series(list(map(tuple, col_array)), index=pool_sc.index)
 
                 # Split selected
@@ -4628,7 +4618,7 @@ with st.expander("Scatter settings", expanded=False):
                     ax.axvline(med_x, color=med_col, ls=(0, (4, 4)), lw=2.2, zorder=3)
                     ax.axhline(med_y, color=med_col, ls=(0, (4, 4)), lw=2.2, zorder=3)
 
-                # ---------- Labels (Tableau-ish: small smart subset, stable, no chaos) ----------
+                # ---------- Labels (Tableau-ish subset + NO leader lines) ----------
                 texts = []
 
                 def _clip_text(tobj):
@@ -4680,7 +4670,7 @@ with st.expander("Scatter settings", expanded=False):
 
                     cand = cand.assign(_score=score).sort_values("_score", ascending=False)
 
-                    # Collision gate (skip instead of moving wildly)
+                    # Collision gate (skip instead of chaos)
                     placed = []
                     if not sel.empty:
                         placed.append((sx, sy))
@@ -4709,18 +4699,19 @@ with st.expander("Scatter settings", expanded=False):
                         texts.append(ttxt)
                         count += 1
 
-                    # Small controlled nudge + leader lines (Tableau-ish)
+                    # Controlled nudge (NO arrows/leader-lines)
                     try:
-                        if _HAS_ADJUST and not allow_overlap and texts:
+                        if _HAS_ADJUST and not allow_overlap and len(texts) > 1:
                             adjust_text(
-                                texts, ax=ax,
+                                texts,
+                                ax=ax,
                                 only_move={"text": "xy"},
                                 ensure_inside_axes=True,
-                                lim=60,
-                                force_text=(0.03, 0.06),
-                                expand_text=(1.02, 1.04),
+                                lim=35,                       # lower = less movement / less chaos
+                                force_text=(0.01, 0.02),       # gentle push
+                                expand_text=(1.01, 1.02),
                                 expand_points=(1.01, 1.02),
-                                arrowprops=dict(arrowstyle="-", lw=0.7, alpha=0.35)
+                                # IMPORTANT: no arrowprops -> no spiderweb lines
                             )
                             for ttxt in texts:
                                 _clip_text(ttxt)
@@ -4783,6 +4774,7 @@ with st.expander("Scatter settings", expanded=False):
     except Exception as e:
         st.info(f"Scatter could not be drawn: {e}")
 # =========================================================================================================================
+
 
 
 
