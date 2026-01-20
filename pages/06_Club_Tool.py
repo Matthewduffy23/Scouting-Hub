@@ -1838,7 +1838,7 @@ else:
     xg_total = float(xg_per90) * (float(mins) / 90.0) if (pd.notna(xg_per90) and mins) else np.nan
 xg_total_str = f"{xg_total:.2f}" if pd.notna(xg_total) else "—"
 
-meta_y = 0.907
+meta_y = 0.905
 x_meta = 0.055
 runs = [
     (f"{pos} — ", "normal"),
@@ -1856,7 +1856,7 @@ for txt, weight in runs:
     x_meta += _text_width_frac(fig, txt, fontsize=fs, weight=("900" if weight == "bold" else "normal")) + (0.004 if txt.strip() else 0)
 
 # -------------------- Strengths / Weaknesses / Styles (chips) --------------------
-y_chips = 0.89
+y_chips = 0.899
 y_chips = chip_row_exact(fig, strengths,  y_chips, CHIP_G_BG, fs=10.1, max_rows=1, max_per_row=6)
 y_chips = chip_row_exact(fig, weaknesses, y_chips, CHIP_R_BG, fs=10.1, max_rows=1, max_per_row=6)
 y_chips = chip_row_exact(fig, styles,     y_chips, CHIP_B_BG, fs=10.1, max_rows=1, max_per_row=6)
