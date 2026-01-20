@@ -1237,7 +1237,7 @@ ROLE_BUCKETS = {
         "Target Man CF": {"metrics": {"Aerial duels per 90": 3, "Aerial duels won, %": 5}},
         "Goal Threat CF": {"metrics": {"Non-penalty goals per 90": 3, "Shots per 90": 1.5, "xG per 90": 3,
                                        "Touches in box per 90": 1, "Shots on target, %": 0.5}},
-        "Link-Up CF": {"metrics": {"Passes per 90": 2, "Passes to penalty area per 90": 1.5, "Deep completions per 90": 1,
+        "Link Up CF": {"metrics": {"Passes per 90": 2, "Passes to penalty area per 90": 1.5, "Deep completions per 90": 1,
                                    "Smart passes per 90": 1.5, "Accurate passes, %": 1.5, "Key passes per 90": 1,
                                    "Dribbles per 90": 2, "Successful dribbles, %": 1, "Progressive runs per 90": 2, "xA per 90": 3}},
 
@@ -1521,10 +1521,13 @@ BETA_BADGE = st.slider(
 role_scores = compute_role_scores(ply, df, role_key, ref_df)
 strengths, weaknesses, styles, pct_extra = compute_strengths_weaknesses_styles(ply, df, role_key, ref_df)
 
-# badge pick EXCLUDES Target Man CF AND excludes "extra label-only roles"
-EXCLUDE_ROLE = "target man cf"
+# -------------------- Badge role filtering --------------------
+# Exclude from badge score ONLY (still allowed for label + tabs)
+BADGE_EXCLUDE_ROLES = {
+    "target man cf",
+}
 
-# roles you want displayed / label-eligible but NOT counted in badge
+# Roles that should be displayed / label-eligible but NOT counted in badge
 LABEL_ONLY_ROLES = {
     "box to box cm",
     "wide creator fb",
@@ -1534,14 +1537,14 @@ LABEL_ONLY_ROLES = {
 }
 
 # filtered roles used ONLY for badge score
-filtered_roles = [
+filtered_roles_for_badge = [
     (k, v) for k, v in role_scores.items()
-    if str(k).strip().lower() != EXCLUDE_ROLE
+    if str(k).strip().lower() not in BADGE_EXCLUDE_ROLES
     and str(k).strip().lower() not in LABEL_ONLY_ROLES
 ]
 
-top3_roles = sorted(filtered_roles, key=lambda kv: kv[1], reverse=True)[:3]
-best_val_raw = float(top3_roles[0][1]) if top3_roles else (max(role_scores.values()) if role_scores else np.nan)
+top3_roles_for_badge = sorted(filtered_roles_for_badge, key=lambda kv: kv[1], reverse=True)[:3]
+best_val_raw = float(top3_roles_for_badge[0][1]) if top3_roles_for_badge else (max(role_scores.values()) if role_scores else np.nan)
 
 _ls_map = globals().get("LEAGUE_STRENGTHS", {})
 league_strength = float(_ls_map.get(str(league), 50.0)) if isinstance(_ls_map, dict) else 50.0
@@ -1552,7 +1555,12 @@ else:
     best_val_adj = float(best_val_raw) if pd.notna(best_val_raw) else league_strength
 
 # -------------------- Best role label text (AFTER crest) --------------------
-best_role_name_for_label = top3_roles[0][0] if top3_roles else ""
+# Label can use ANY role (including Target Man + the new roles)
+best_role_name_for_label = (
+    max(role_scores.items(), key=lambda kv: kv[1])[0]
+    if role_scores else ""
+)
+
 role_prefix = " ".join(str(best_role_name_for_label).split()[:2]).strip()
 best_role_pos_label = f"{role_prefix} {pos_tok}".strip() if role_prefix and pos_tok else ""
 
