@@ -4276,7 +4276,7 @@ else:
 
 
 
-# ============================== SCATTERPLOT — fixed scaling, clipped labels, denser ticks, optional outlier-zoom ==============================
+# ============================== SCATTERPLOT — FIX: no cut-off points/labels + slight wiggle room ==============================
 st.markdown("---")
 st.header("📈 Scatterplot")
 
@@ -4348,13 +4348,13 @@ with st.expander("Scatter settings", expanded=False):
     point_size = st.slider("Point size", 24, 300, 250, 2, key="sc_pts")
     marker = st.selectbox("Marker", ["o", "s", "^", "D"], index=0, key="sc_marker")
 
-    # Team highlight (based on selected preset/leagues)
+    # Team highlight
     teams_available_hl = sorted(df[df["League"].isin(leagues_scatter)]["Team"].dropna().unique().tolist())
     team_highlight = st.selectbox(
         "Highlight team (within selected leagues)", ["(None)"] + teams_available_hl, index=0, key="sc_team_hl"
     )
 
-    # Ticks (Auto or manual)
+    # Ticks
     tick_mode = st.selectbox(
         "Tick spacing", ["Auto (recommended)", "0.05", "0.1", "0.2", "0.5", "1.0"], index=0, key="sc_tick_mode"
     )
@@ -4366,7 +4366,7 @@ with st.expander("Scatter settings", expanded=False):
     GRID_MAJ = "#d7d7d7" if theme == "Light" else "#3a4050"
     txt_col = "#111111" if theme == "Light" else "#f5f5f5"
 
-    # Colour mapping (default = All Black)
+    # Colour mapping
     palette_options = [
         "Red–Gold–Green (diverging)",
         "Light-grey → Black",
@@ -4387,7 +4387,7 @@ with st.expander("Scatter settings", expanded=False):
     palette_choice = st.selectbox("Palette", palette_options, index=default_palette_index, key="sc_palette")
     reverse_scale = st.checkbox("Reverse colours", value=False, key="sc_reverse")
 
-    # === Canvas & top gap & title ===
+    # Canvas & top gap & title
     canvas_preset = st.selectbox("Canvas size (px)", ["1280×720", "1600×900", "1920×820", "1920×1080"], index=1)
     w_px, h_px = map(int, canvas_preset.replace("×", "x").replace(" ", "").split("x"))
 
@@ -4396,17 +4396,20 @@ with st.expander("Scatter settings", expanded=False):
 
     top_gap_px = st.slider("Top blank gap (px)", 0, 240, 100, 5, key="sc_topgap_slider")
     if show_title:
-        top_gap_px = 75  # AUTO override when title enabled
+        top_gap_px = 75
 
     render_exact = st.checkbox("Render exact pixels (PNG)", value=True)
 
-    # === NEW: scaling mode ===
+    # Axis scaling
     scale_mode = st.selectbox(
         "Axis scaling",
-        ["Fit to min/max (tight)", "Ignore outliers (1–99%)"],
+        ["Full range (include outliers)", "Ignore outliers (1–99%)"],
         index=0,
         key="sc_scale_mode",
     )
+
+    # NEW: wiggle room (requested)
+    wiggle_pct = st.slider("Wiggle room (%)", 0.0, 12.0, 4.0, 0.5, key="sc_wiggle") / 100.0
 
     # ---- Build pool ----
     try:
@@ -4471,7 +4474,7 @@ with st.expander("Scatter settings", expanded=False):
                 x_vals = pool_sc[x_metric].to_numpy(float)
                 y_vals = pool_sc[y_metric].to_numpy(float)
 
-                # ----- Nice step (Tableau-ish) -----
+                # ----- Nice step -----
                 import math
                 def nice_step(vmin, vmax, target_ticks=6):
                     span = abs(vmax - vmin)
@@ -4492,29 +4495,53 @@ with st.expander("Scatter settings", expanded=False):
                         k = 10
                     return k * power
 
-                # ----- Tight padded limits (FIXED: less padding, no headroom) -----
-                def padded_limits(arr, pad_frac=0.03):
-                    a_min, a_max = float(np.nanmin(arr)), float(np.nanmax(arr))
-                    if a_min == a_max:
-                        a_min -= 1e-6; a_max += 1e-6
-                    span = (a_max - a_min)
-                    pad = span * pad_frac
-                    return a_min - pad, a_max + pad
+                # ----- Axis limits with point-radius safety + wiggle room -----
+                # Convert marker size (points^2) to a data-space pad so circles don't get clipped by axes frame.
+                def _data_pad_from_points(ax, s_pts2, x_span, y_span):
+                    # marker radius in points (s is area)
+                    r_pt = float(np.sqrt(max(s_pts2, 1e-9))) / 2.0
+                    # points -> pixels
+                    r_px = r_pt * ax.figure.dpi / 72.0
+                    # pixels -> axes fraction
+                    bbox = ax.get_window_extent().transformed(ax.figure.dpi_scale_trans.inverted())
+                    w_in, h_in = bbox.width, bbox.height
+                    w_px, h_px_ = w_in * ax.figure.dpi, h_in * ax.figure.dpi
+                    fx = r_px / max(w_px, 1)
+                    fy = r_px / max(h_px_, 1)
+                    return x_span * fx, y_span * fy
 
-                # Choose scaling mode (NEW)
+                # initial limits based on mode
                 if scale_mode.startswith("Ignore outliers"):
                     x_lo, x_hi = np.nanpercentile(x_vals, [1, 99])
                     y_lo, y_hi = np.nanpercentile(y_vals, [1, 99])
-                    ax.set_xlim(x_lo, x_hi)
-                    ax.set_ylim(y_lo, y_hi)
-                    xlim = (x_lo, x_hi)
-                    ylim = (y_lo, y_hi)
-                    # small margins so points don't touch frame
-                    ax.margins(x=0.02, y=0.02)
                 else:
-                    xlim = padded_limits(x_vals, pad_frac=0.03)
-                    ylim = padded_limits(y_vals, pad_frac=0.03)
-                    ax.set_xlim(*xlim); ax.set_ylim(*ylim)
+                    x_lo, x_hi = float(np.nanmin(x_vals)), float(np.nanmax(x_vals))
+                    y_lo, y_hi = float(np.nanmin(y_vals)), float(np.nanmax(y_vals))
+
+                if x_lo == x_hi:
+                    x_lo -= 1e-6; x_hi += 1e-6
+                if y_lo == y_hi:
+                    y_lo -= 1e-6; y_hi += 1e-6
+
+                x_span = x_hi - x_lo
+                y_span = y_hi - y_lo
+
+                # apply wiggle room
+                x_lo -= x_span * wiggle_pct
+                x_hi += x_span * wiggle_pct
+                y_lo -= y_span * wiggle_pct
+                y_hi += y_span * wiggle_pct
+
+                # draw now so ax bbox exists for pad calc
+                fig.canvas.draw()
+
+                # add extra pad so big dots don't clip against spines
+                pad_x, pad_y = _data_pad_from_points(ax, point_size, (x_hi - x_lo), (y_hi - y_lo))
+                ax.set_xlim(x_lo - pad_x, x_hi + pad_x)
+                ax.set_ylim(y_lo - pad_y, y_hi + pad_y)
+
+                xlim = ax.get_xlim()
+                ylim = ax.get_ylim()
 
                 # ---- Colour mapping ----
                 cvals = pool_sc[colour_metric].to_numpy(float)
@@ -4547,7 +4574,7 @@ with st.expander("Scatter settings", expanded=False):
                         return interp(purple, mid, v/0.5) if v <= 0.5 else interp(mid, gold, (v-0.5)/0.5)
                 elif palette_choice == "All White":
                     def map_col(v): return np.array([255, 255, 255]) / 255.0
-                else:  # "All Black"
+                else:
                     def map_col(v): return np.array([0, 0, 0]) / 255.0
 
                 col_array = np.vstack([map_col(v) for v in t])
@@ -4567,13 +4594,13 @@ with st.expander("Scatter settings", expanded=False):
                     others[x_metric], others[y_metric],
                     s=point_size, c=list(color_series.loc[others.index]),
                     alpha=float(point_alpha), edgecolors="none", linewidths=0.0,
-                    marker=marker, zorder=2
+                    marker=marker, zorder=2, clip_on=True
                 )
                 if not sel.empty:
                     ax.scatter(
                         sel[x_metric], sel[y_metric],
                         s=point_size, c="#C81E1E", edgecolors="white", linewidths=1.8,
-                        marker=marker, zorder=4
+                        marker=marker, zorder=4, clip_on=True
                     )
 
                 if team_highlight != "(None)":
@@ -4583,7 +4610,7 @@ with st.expander("Scatter settings", expanded=False):
                             hl[x_metric], hl[y_metric],
                             s=point_size, c="#f59e0b",
                             alpha=1.0, edgecolors="white", linewidths=1.6,
-                            marker=marker, zorder=5
+                            marker=marker, zorder=5, clip_on=True
                         )
 
                 # IQR & medians
@@ -4598,7 +4625,7 @@ with st.expander("Scatter settings", expanded=False):
                     ax.axvline(med_x, color=med_col, ls=(0, (4, 4)), lw=2.2, zorder=3)
                     ax.axhline(med_y, color=med_col, ls=(0, (4, 4)), lw=2.2, zorder=3)
 
-                # ---------- Labels (clipped + inside axes + stable ordering) ----------
+                # ---------- Labels (clipped inside axes) ----------
                 texts = []
 
                 def _clip_text(tt):
@@ -4714,6 +4741,7 @@ with st.expander("Scatter settings", expanded=False):
     except Exception as e:
         st.info(f"Scatter could not be drawn: {e}")
 # =========================================================================================================================
+
 
 
 # ==========================================================================================================
