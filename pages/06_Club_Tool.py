@@ -1160,6 +1160,28 @@ STYLE_MAPS = {
         "Smart passes per 90": {"style": "Attempts through balls", "sw": None},
     },
 
+    "ATT": {
+        "Defensive duels per 90": {"style": "High work rate", "sw": "Defensive Duels"},
+        "Aerial duels won, %": {"style": None, "sw": "Aerial Duels"},
+        "Aerial duels per 90": {"style": "Long Reference Point", "sw": None},
+        "Non-penalty goals per 90": {"style": None, "sw": "Scoring Goals"},
+        "xG per 90": {"style": "Gets into good goal scoring positions", "sw": "Attacking Positioning"},
+        "Shots per 90": {"style": "Takes many shots", "sw": "Shot Volume"},
+        "Goal conversion, %": {"style": None, "sw": "Finishing"},
+        "Crosses per 90": {"style": "Wide Creator", "sw": "Crossing"},
+        "Dribbles per 90": {"style": "Dribbler", "sw": "Dribble Volume"},
+        "Successful dribbles, %": {"style": None, "sw": "Dribbling Efficiency"},
+        "Touches in box per 90": {"style": "Busy in the penalty box", "sw": "Penalty-box Coverage"},
+        "Progressive runs per 90": {"style": "Gets team up the pitch via carries", "sw": "Progressive Runs"},
+        "Passes per 90": {"style": "Involved in build-up", "sw": "Involvement"},
+        "Accurate passes, %": {"style": None, "sw": "Retention"},
+        "xA per 90": {"style": "Creates goal scoring chances", "sw": "Creativity"},
+        "Passes to penalty area per 90": {"style": None, "sw": "Passes to Penalty Area"},
+        "Deep completions per 90": {"style": "Gets ball into the box", "sw": None},
+        "Progressive passes per 90": {"style": "Drops deep to build play", "sw": None},
+        "Smart passes per 90": {"style": "Attempts through balls", "sw": None},
+    },
+
     "CF": {
         "Defensive duels per 90": {"style": "High Work Rate", "sw": "Defensive Duel Attempts"},
         "Aerial duels won, %": {"style": None, "sw": "Aerial Duels"},
@@ -1179,6 +1201,7 @@ STYLE_MAPS = {
         "Smart passes per 90": {"style": "Attempts through balls", "sw": None},
     },
 }
+
 
 # -------------------- ROLE BUCKETS (ALL ROLES BY POSITION) --------------------
 ROLE_BUCKETS = {
