@@ -4746,8 +4746,10 @@ with st.expander("Scatter settings", expanded=False):
                         color=title_col, fontsize=26, fontweight="semibold"
                     )
 
-                # ---------- Labels (FIXED: no layout/bbox changes, no overlaps) ----------
-                if show_labels:
+                # ---------- Labels (HARD OFF when toggle is off) ----------
+                if not show_labels:
+                    pass
+                else:
                     stroke = "#ffffff" if theme == "Light" else "#1e293b"
 
                     candidates = others.copy()
@@ -4759,14 +4761,16 @@ with st.expander("Scatter settings", expanded=False):
                     approx_cap = max(18, min(90, approx_cap))
 
                     force_names = []
+
+                    # Only force selected name IF labels are on
                     if not sel.empty and sel_name:
                         force_names.append(str(sel_name))
 
-                    # Force-highlighted team
+                    # Force-highlighted team (optional)
                     if team_highlight != "(None)":
                         force_names += candidates[candidates["Team"] == team_highlight]["Player"].astype(str).tolist()
 
-                    # Only include selected player when labels are ON
+                    # Only include selected player for labeling when labels are ON
                     cand_all = candidates.copy()
                     if not sel.empty:
                         cand_all = pd.concat([sel, cand_all], ignore_index=True, sort=False)
