@@ -1064,6 +1064,20 @@ with tabs[3]:
 with tabs[4]:
     role_tab("Center Backs", compute_center_backs)
 
+
+# Safety fallback (if block is loaded early)
+try:
+    POS_GROUPS
+except NameError:
+    POS_GROUPS = {
+        "Strikers (CF)": ["CF"],
+        "Center Backs (CB)": ["CB", "LCB", "RCB"],
+        "Fullbacks (RB/LB/WB)": ["RB", "LB", "RWB", "LWB"],
+        "Central Mid (DM/CM)": ["DMF", "CMF", "LCMF", "RCMF", "LDMF", "RDMF"],
+        "Attackers (W/AM)": ["RW", "RWF", "LW", "LWF", "AMF", "RAMF", "LAMF"],
+    }
+
+
 # ============================ FEATURE BLOCK (T20 SHORTLIST) ============================
 # Paste this ABOVE your one-pager section.
 #
