@@ -1860,7 +1860,7 @@ y_chips = 0.899
 y_chips = chip_row_exact(fig, strengths,  y_chips, CHIP_G_BG, fs=10.1, max_rows=1, max_per_row=6)
 y_chips = chip_row_exact(fig, weaknesses, y_chips, CHIP_R_BG, fs=10.1, max_rows=1, max_per_row=6)
 y_chips = chip_row_exact(fig, styles,     y_chips, CHIP_B_BG, fs=10.1, max_rows=1, max_per_row=6)
-y_chips -= 0.012
+y_chips -= 0.01
 
 # -------------------- Roles row (DISPLAY ALL roles incl Target Man) --------------------
 roles_for_row = dict(sorted(role_scores.items(), key=lambda kv: -kv[1])[:10])
