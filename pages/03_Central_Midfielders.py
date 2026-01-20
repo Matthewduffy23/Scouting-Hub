@@ -110,7 +110,7 @@ INCLUDED_LEAGUES = [
 'Estonia 1.','England 9.','Northern Ireland 1.','Serbia 2.','Denmark 3.',
 'Sweden 3.','Slovenia 2.','Slovakia 2.','Greece 2.','Wales 1.',
 'USA 3.','Scotland 3.','England 6.','England 8.','England 10.',
-'Estonia 2.', 'China 1.'
+'Estonia 2.', 'China 1.', 'Ireland 2.,
 ]
 
 PRESET_LEAGUES = {
@@ -342,6 +342,9 @@ YOUTH_LEAGUES = {
     "Portugal 3.",
     "Denmark 3.",
     "Germany 4.",
+    "USA 2.",
+    "Ireland 2.",
+    "Estonia 2.",
 }
 
 # --- Country → Region mapping for league-level region filter ---
@@ -357,7 +360,8 @@ COUNTRY_TO_REGION = {
     "Finland": "Europe", "Armenia": "Europe", "Georgia": "Europe", "Poland": "Europe",
     "Iceland": "Europe", "North Macedonia": "Europe", "Latvia": "Europe",
     "Montenegro": "Europe", "Denmark": "Europe", "Estonia": "Europe",
-    "Northern Ireland": "Europe", "Wales": "Europe",
+    "Northern Ireland": "Europe", "Wales": "Europe", "Russia": "Europe", "Kazakhstan": "Europe",
+    "Lithuania": "Europe", "Malta": "Europe", "Moldova": "Europe", "Israel": "Europe",
 
     # South America
     "Brazil": "South America", "Argentina": "South America", "Colombia": "South America",
@@ -375,7 +379,7 @@ COUNTRY_TO_REGION = {
 
     # Asia (incl. some UEFA/dual countries – choose what fits your model best)
     "Japan": "Asia", "Korea": "Asia", "Saudi": "Asia",
-    "UAE": "Asia", "Qatar": "Asia", "Uzbekistan": "Asia", "Israel": "Asia",
+    "UAE": "Asia", "Qatar": "Asia", "Uzbekistan": "Asia", "China": "Asia",
     "Turkey": "Asia", "Azerbaijan": "Asia",
 
     # Oceania / other (you can change this to "Other" if you prefer)
