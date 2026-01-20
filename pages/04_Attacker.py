@@ -4335,6 +4335,7 @@ with st.expander("Scatter settings", expanded=False):
     # Selected player & labels
     include_selected = st.toggle("Include selected player", value=True, key="sc_include")
     show_labels = st.toggle("Show player labels", value=True, key="sc_labels_all")
+    show_sel_label = st.toggle("Always label selected player", value=True, key="sc_sel_label")
     label_only_u23 = st.checkbox("Label only U23 players", value=False, key="sc_lbl_u23")
     allow_overlap = st.toggle("Allow overlapping labels (not recommended)", value=False, key="sc_overlap")
     label_size = st.slider("Label size", 8, 20, 13, 1, key="sc_lbl_sz")
@@ -4746,12 +4747,30 @@ with st.expander("Scatter settings", expanded=False):
                         color=title_col, fontsize=26, fontweight="semibold"
                     )
 
-                # ---------- Labels (HARD OFF when toggle is off) ----------
-                if not show_labels:
-                    pass
-                else:
-                    stroke = "#ffffff" if theme == "Light" else "#1e293b"
+                # ---------- Labels ----------
+                stroke = "#ffffff" if theme == "Light" else "#1e293b"
 
+                # (A) Selected player label (even when show_labels is OFF)
+                if show_sel_label and (not sel.empty) and sel_name:
+                    sx = float(sel.iloc[0][x_metric])
+                    sy = float(sel.iloc[0][y_metric])
+
+                    tsel = ax.annotate(
+                        str(sel_name),
+                        (sx, sy),
+                        xytext=(10, 12),
+                        textcoords="offset points",
+                        fontsize=label_size,
+                        fontweight="semibold",
+                        color=txt_col,
+                        ha="left",
+                        va="bottom",
+                        zorder=7,
+                    )
+                    tsel.set_path_effects([pe.withStroke(linewidth=2.0, foreground=stroke, alpha=0.9)])
+
+                # (B) Pool labels only when show_labels is ON
+                if show_labels:
                     candidates = others.copy()
                     if label_only_u23:
                         candidates = candidates[pd.to_numeric(candidates["Age"], errors="coerce") < 23]
@@ -4761,19 +4780,16 @@ with st.expander("Scatter settings", expanded=False):
                     approx_cap = max(18, min(90, approx_cap))
 
                     force_names = []
-
-                    # Only force selected name IF labels are on
-                    if not sel.empty and sel_name:
+                    # If you want selected player to be forced when pool labels are on too:
+                    if (not sel.empty) and sel_name:
                         force_names.append(str(sel_name))
 
                     # Force-highlighted team (optional)
                     if team_highlight != "(None)":
                         force_names += candidates[candidates["Team"] == team_highlight]["Player"].astype(str).tolist()
 
-                    # Only include selected player for labeling when labels are ON
+                    # IMPORTANT: exclude selected from candidates to avoid double-label
                     cand_all = candidates.copy()
-                    if not sel.empty:
-                        cand_all = pd.concat([sel, cand_all], ignore_index=True, sort=False)
 
                     place_labels_nonoverlap(
                         fig, ax,
