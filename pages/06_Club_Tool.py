@@ -2043,13 +2043,23 @@ st.download_button(
 
 # ============================ END ONE-PAGER ============================
 
-# ============================ SHORTLIST (T20) ============================
+# ============================ SHORTLIST (T20) — ELITE TABLE ============================
 import pandas as pd
 import numpy as np
 import streamlit as st
 
 st.markdown("---")
 st.header("📋 Shortlist (T20)")
+
+# ---------- role exclusions (same logic as one-pager badge) ----------
+BADGE_EXCLUDE_ROLES = {"target man cf"}  # excluded from badge score
+LABEL_ONLY_ROLES = {
+    "box-to-box cm",
+    "wide creator fb",
+    "wide carrier fb",
+    "false-9 runner cf",
+    "false-9 passer cf",
+}
 
 # ---------- UI filters ----------
 c1, c2, c3, c4 = st.columns([1.3, 1.7, 1.2, 1.3])
@@ -2062,7 +2072,7 @@ with c1:
     )
 
 with c2:
-    # Build role options from ROLE_BUCKETS
+    # Build role options from ROLE_BUCKETS (all roles)
     all_roles = []
     for rk in ["CF", "CB", "FB", "CM", "ATT"]:
         all_roles += list((ROLE_BUCKETS.get(rk, {}) or {}).keys())
@@ -2098,7 +2108,17 @@ with c11:
 
 top_n = st.number_input("Top N", 5, 200, 20, 5, key="t20_top_n")
 
-load_images = st.toggle("Load photos & crests (slower)", value=False, key="t20_load_images")
+# score controls (same idea as one-pager badge)
+cS1, cS2 = st.columns([1.2, 2.2])
+with cS1:
+    use_league_weighting = st.toggle("League-adjusted score", value=True, key="t20_league_weighting")
+with cS2:
+    BETA_BADGE = st.slider(
+        "League weighting strength (β)",
+        0.0, 1.0, 0.40, 0.05,
+        key="t20_beta_badge",
+        help="0 = pure role score, 1 = pure league strength."
+    ) if use_league_weighting else 0.0
 
 
 # ---------- group → allowed pos tokens ----------
@@ -2109,19 +2129,7 @@ POS_GROUPS_LOCAL = {
     "Central Mid (DM/CM)": {"DMF", "CMF", "LCMF", "RCMF", "LDMF", "RDMF"},
     "Attackers (W/AM)": {"RW", "RWF", "LW", "LWF", "AMF", "RAMF", "LAMF"},
 }
-
 allowed_pos = POS_GROUPS_LOCAL[group_filter]
-
-
-# ---------- FAST percentile prep (vectorised) ----------
-@st.cache_data(show_spinner=False)
-def _percentiles_for_ref(df_ref: pd.DataFrame, metrics: list) -> pd.DataFrame:
-    out = pd.DataFrame(index=df_ref.index)
-    for m in metrics:
-        if m in df_ref.columns:
-            s = pd.to_numeric(df_ref[m], errors="coerce")
-            out[m] = s.rank(pct=True) * 100.0
-    return out
 
 def _role_key_from_group(group: str) -> str:
     if group.startswith("Strikers"):
@@ -2138,10 +2146,16 @@ def _role_key_from_group(group: str) -> str:
 
 role_key = _role_key_from_group(group_filter)
 
-# Pull the metrics needed for role scoring + styles/strengths
-role_metrics = sorted({m for r in (ROLE_BUCKETS.get(role_key, {}) or {}).values() for m in (r.get("metrics", {}) or {}).keys()})
-style_metrics = sorted(set((STYLE_MAPS.get(role_key, {}) or {}).keys()))
-need_metrics = sorted(set(role_metrics) | set(style_metrics))
+
+# ---------- FAST percentile prep (vectorised) ----------
+@st.cache_data(show_spinner=False)
+def _percentiles_for_ref(df_ref: pd.DataFrame, metrics: list) -> pd.DataFrame:
+    out = pd.DataFrame(index=df_ref.index)
+    for m in metrics:
+        if m in df_ref.columns:
+            s = pd.to_numeric(df_ref[m], errors="coerce")
+            out[m] = s.rank(pct=True) * 100.0
+    return out
 
 
 # ---------- base filtered view (DISPLAY ONLY filters) ----------
@@ -2169,7 +2183,7 @@ if player_q.strip():
 if team_q.strip():
     df_view = df_view[df_view["Team"].astype(str).str.contains(team_q.strip(), case=False, na=False)]
 
-# league quality DISPLAY filter (does not affect any other pools; it’s just filtering which rows show)
+# league quality DISPLAY filter (doesn't affect any pool math)
 if "League" in df_view.columns:
     df_view["_lg_strength"] = df_view["League"].astype(str).map(LEAGUE_STRENGTHS).fillna(0.0)
     df_view = df_view[df_view["_lg_strength"].between(float(league_q[0]), float(league_q[1]))].copy()
@@ -2179,14 +2193,19 @@ if df_view.empty:
     st.stop()
 
 
-# ---------- compute percentiles ONCE for this shortlist view ----------
+# ---------- metrics we need for this role group ----------
+role_specs = ROLE_BUCKETS.get(role_key, {}) or {}
+role_metrics = sorted({m for r in role_specs.values() for m in (r.get("metrics", {}) or {}).keys()})
+style_metrics = sorted(set((STYLE_MAPS.get(role_key, {}) or {}).keys()))
+need_metrics = sorted(set(role_metrics) | set(style_metrics))
+
 pcts = _percentiles_for_ref(df_view, need_metrics)
 
+
 # ---------- role scores (vectorised) ----------
-def _score_role(df_idx: pd.Index, role_name: str, spec: dict) -> pd.Series:
+def _score_role(df_idx: pd.Index, spec: dict) -> pd.Series:
     met_w = (spec or {}).get("metrics", {}) or {}
-    cols = []
-    wts = []
+    cols, wts = [], []
     for met, w in met_w.items():
         if met in pcts.columns:
             cols.append(met)
@@ -2197,22 +2216,28 @@ def _score_role(df_idx: pd.Index, role_name: str, spec: dict) -> pd.Series:
     w = np.array(wts, dtype=float)
     return (M.mul(w, axis=1).sum(axis=1) / w.sum())
 
-role_specs = ROLE_BUCKETS.get(role_key, {}) or {}
-role_score_cols = {}
-for rname, spec in role_specs.items():
-    role_score_cols[rname] = _score_role(df_view.index, rname, spec)
+role_scores_df = pd.DataFrame(
+    {rname: _score_role(df_view.index, spec) for rname, spec in role_specs.items()},
+    index=df_view.index,
+) if role_specs else pd.DataFrame(index=df_view.index)
 
-role_scores_df = pd.DataFrame(role_score_cols, index=df_view.index) if role_score_cols else pd.DataFrame(index=df_view.index)
 
-# best role + best score
-if not role_scores_df.empty:
-    df_view["_best_role"] = role_scores_df.idxmax(axis=1)
-    df_view["_best_score"] = role_scores_df.max(axis=1)
+# ---------- eligible badge roles (exclude target man + label-only) ----------
+eligible_role_cols = [
+    c for c in role_scores_df.columns
+    if str(c).strip().lower() not in BADGE_EXCLUDE_ROLES
+    and str(c).strip().lower() not in LABEL_ONLY_ROLES
+]
+
+if eligible_role_cols:
+    df_view["_best_role_badge"] = role_scores_df[eligible_role_cols].idxmax(axis=1)
+    df_view["_best_raw_badge"]  = role_scores_df[eligible_role_cols].max(axis=1)
 else:
-    df_view["_best_role"] = ""
-    df_view["_best_score"] = np.nan
+    df_view["_best_role_badge"] = ""
+    df_view["_best_raw_badge"]  = np.nan
 
-# multi-role filter: keep rows where ANY selected role meets min_role_score
+
+# ---------- multi-role filter thresholding ----------
 if role_picks:
     keep = pd.Series(False, index=df_view.index)
     for rp in role_picks:
@@ -2220,14 +2245,14 @@ if role_picks:
             keep |= (role_scores_df[rp] >= float(min_role_score))
     df_view = df_view[keep].copy()
 else:
-    df_view = df_view[df_view["_best_score"] >= float(min_role_score)].copy()
+    df_view = df_view[df_view["_best_raw_badge"] >= float(min_role_score)].copy()
 
 if df_view.empty:
     st.info("No players meet the role-score threshold.")
     st.stop()
 
 
-# ---------- styles/strengths/weakness (fast tags using percentiles already computed) ----------
+# ---------- styles/strengths/weakness tags (for contains filters) ----------
 HI, LO, STYLE_T = 70, 30, 65
 style_map = STYLE_MAPS.get(role_key, {}) or {}
 
@@ -2246,16 +2271,14 @@ def _tags_for_row(idx) -> tuple[list, list, list]:
                 weaknesses.append(str(sw))
         if stl and p >= STYLE_T:
             styles.append(str(stl))
-    # dedupe
     def dd(xs):
         out, seen = [], set()
         for x in xs:
             if x not in seen:
                 out.append(x); seen.add(x)
         return out
-    return dd(strengths)[:6], dd(weaknesses)[:6], dd(styles)[:6]
+    return dd(strengths), dd(weaknesses), dd(styles)
 
-# filter by contains/exclude (string matching on joined tags)
 if style_contains.strip() or strength_contains.strip() or exclude_weakness.strip():
     keep_idx = []
     sc = style_contains.strip().lower()
@@ -2282,45 +2305,198 @@ if df_view.empty:
     st.stop()
 
 
-# ---------- final ranking + output ----------
-df_view["_rank_score"] = df_view["_best_score"].astype(float)
-df_view = df_view.sort_values("_rank_score", ascending=False).head(int(top_n)).copy()
+# ---------- final score (raw badge role score → optional league blend) ----------
+df_view["_league_strength"] = df_view["League"].astype(str).map(LEAGUE_STRENGTHS).fillna(0.0)
+
+raw = pd.to_numeric(df_view["_best_raw_badge"], errors="coerce")
+ls  = pd.to_numeric(df_view["_league_strength"], errors="coerce")
+
+if use_league_weighting:
+    df_view["_score"] = (1.0 - float(BETA_BADGE)) * raw + float(BETA_BADGE) * ls
+else:
+    df_view["_score"] = raw
+
+df_view["_score"] = pd.to_numeric(df_view["_score"], errors="coerce").fillna(0.0)
+
+
+# ---------- color pill (same red→yellow→green interpolation) ----------
+def _div_color_hex(v: float) -> str:
+    try:
+        v = float(v)
+    except Exception:
+        return "#9ca3af"
+    v = max(0.0, min(100.0, v))
+    if v <= 50:
+        t = v / 50.0
+        c1 = np.array([239, 68, 68])   # red
+        c2 = np.array([234, 179, 8])   # amber
+    else:
+        t = (v - 50) / 50.0
+        c1 = np.array([234, 179, 8])   # amber
+        c2 = np.array([34, 197, 94])   # green
+    rgb = (c1 + (c2 - c1) * t).astype(int)
+    return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
+
+
+# ---------- rank + take top N ----------
+df_view = df_view.sort_values("_score", ascending=False).head(int(top_n)).copy()
 df_view.insert(0, "Rank", range(1, len(df_view) + 1))
 
-# Render table first (FAST, always)
-out_cols = ["Rank", "Player", "Team", "League", "Position", "Age", "Minutes played", "_best_role", "_best_score"]
-out_cols = [c for c in out_cols if c in df_view.columns]
-rename = {"_best_role": "Best role", "_best_score": "Score"}
-show = df_view[out_cols].rename(columns=rename)
+# ---------- build elite HTML table with inline images ----------
+def _esc(x) -> str:
+    return str(x if x is not None else "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
-st.dataframe(show, use_container_width=True, hide_index=True)
+# Use URL images directly (browser fetch) — fast & clean
+def _photo_url(row) -> str:
+    try:
+        return resolve_player_photo(str(row.get("Player","")), str(row.get("Team","")), str(row.get("League","")))
+    except Exception:
+        return PLACEHOLDER_IMG
 
-# Optional: images (SLOW) — only for Top N and cached by your resolve_* functions
-if load_images:
-    st.markdown("#### Images (Top N)")
-    for _, r in df_view.iterrows():
-        player = str(r.get("Player", ""))
-        team = str(r.get("Team", ""))
-        league = str(r.get("League", ""))
-        best_role = str(r.get("_best_role", ""))
-        score = float(pd.to_numeric(r.get("_best_score", np.nan), errors="coerce") or 0.0)
+def _crest_url(row) -> str:
+    try:
+        return resolve_team_crest(str(row.get("Team","")), str(row.get("League","")))
+    except Exception:
+        return ""
 
-        cols = st.columns([0.9, 3.6, 2.0, 2.0])
-        with cols[0]:
-            try:
-                st.image(resolve_player_photo(player, team, league), width=54)
-            except Exception:
-                st.write("—")
-        with cols[1]:
-            st.markdown(f"**{player}**  \n{team}")
-        with cols[2]:
-            try:
-                st.image(resolve_team_crest(team, league), width=26)
-            except Exception:
-                st.write(league)
-        with cols[3]:
-            st.markdown(f"**{best_role}**  \n**{int(round(score))}**")
+st.markdown(
+    """
+<style>
+.t20-wrap{ margin-top:10px; }
+.t20-table{
+  width:100%;
+  border-collapse:separate;
+  border-spacing:0;
+  background:#0b1220;
+  border:1px solid rgba(148,163,184,.18);
+  border-radius:14px;
+  overflow:hidden;
+}
+.t20-table thead th{
+  text-align:left;
+  font-size:12px;
+  letter-spacing:.02em;
+  color:#cbd5e1;
+  padding:12px 12px;
+  background:rgba(15,23,42,.70);
+  border-bottom:1px solid rgba(148,163,184,.16);
+  white-space:nowrap;
+}
+.t20-table tbody td{
+  padding:12px 12px;
+  border-bottom:1px solid rgba(148,163,184,.10);
+  color:#e5e7eb;
+  font-size:13px;
+  vertical-align:middle;
+  white-space:nowrap;
+}
+.t20-table tbody tr:hover td{ background:rgba(59,130,246,.06); }
+.t20-rank{ color:#e5e7eb; font-weight:900; width:54px; }
+.t20-player{
+  display:flex; align-items:center; gap:10px; min-width:260px;
+}
+.t20-photo{
+  width:36px; height:36px; border-radius:10px; object-fit:cover;
+  border:1px solid rgba(148,163,184,.22);
+  background:#0f172a;
+}
+.t20-name{ font-weight:900; line-height:1.05; }
+.t20-team{
+  display:flex; align-items:center; gap:10px; min-width:230px;
+}
+.t20-crest{
+  width:22px; height:22px; border-radius:6px; object-fit:contain;
+  border:1px solid rgba(148,163,184,.22);
+  background:#0f172a;
+}
+.t20-muted{ color:#94a3b8; font-weight:600; }
+.t20-pill{
+  display:inline-flex; align-items:center; justify-content:center;
+  min-width:44px;
+  padding:6px 10px;
+  border-radius:12px;
+  color:white;
+  font-weight:900;
+  border:1px solid rgba(255,255,255,.10);
+}
+.t20-role{ font-weight:800; color:#e5e7eb; }
+</style>
+""",
+    unsafe_allow_html=True
+)
+
+rows_html = []
+for _, r in df_view.iterrows():
+    player = _esc(r.get("Player",""))
+    team   = _esc(r.get("Team",""))
+    league = _esc(r.get("League",""))
+    pos    = _esc(r.get("Position",""))
+    age    = _esc(r.get("Age","—"))
+    mins   = _esc(r.get("Minutes played","—"))
+    best_role = _esc(r.get("_best_role_badge",""))
+    score = float(pd.to_numeric(r.get("_score", 0.0), errors="coerce") or 0.0)
+    pill_col = _div_color_hex(score)
+
+    photo = _esc(_photo_url(r))
+    crest = _esc(_crest_url(r))
+    crest_img = f"<img class='t20-crest' src='{crest}' />" if crest else ""
+
+    rows_html.append(
+        f"""
+<tr>
+  <td class="t20-rank">{int(r.get("Rank",0))}</td>
+  <td>
+    <div class="t20-player">
+      <img class="t20-photo" src="{photo}" />
+      <div>
+        <div class="t20-name">{player}</div>
+      </div>
+    </div>
+  </td>
+  <td>
+    <div class="t20-team">
+      {crest_img}
+      <div>
+        <div style="font-weight:800;">{team}</div>
+      </div>
+    </div>
+  </td>
+  <td><span class="t20-muted">{league}</span></td>
+  <td><span class="t20-muted">{pos}</span></td>
+  <td>{age}</td>
+  <td>{mins}</td>
+  <td class="t20-role">{best_role}</td>
+  <td><span class="t20-pill" style="background:{pill_col};">{int(round(score))}</span></td>
+</tr>
+"""
+    )
+
+table_html = f"""
+<div class="t20-wrap">
+  <table class="t20-table">
+    <thead>
+      <tr>
+        <th>Rank</th>
+        <th>Player</th>
+        <th>Team</th>
+        <th>League</th>
+        <th>Position</th>
+        <th>Age</th>
+        <th>Minutes played</th>
+        <th>Best role</th>
+        <th>Score</th>
+      </tr>
+    </thead>
+    <tbody>
+      {''.join(rows_html)}
+    </tbody>
+  </table>
+</div>
+"""
+
+st.markdown(table_html, unsafe_allow_html=True)
 # ============================ END SHORTLIST (T20) ============================
+
 
 
 
