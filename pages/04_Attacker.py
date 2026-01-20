@@ -4496,8 +4496,9 @@ with st.expander("Scatter settings", expanded=False):
                     pad = span * pad_frac
                     return a_min - pad, a_max + pad + span * headroom
 
-                xlim = padded_limits(x_vals); ylim = padded_limits(y_vals)
-                ax.set_xlim(*xlim); ax.set_ylim(*ylim)
+        xlim = padded_limits(x_vals, pad_frac=0.03, headroom=0.00)
+        ylim = padded_limits(y_vals, pad_frac=0.03, headroom=0.00)
+
 
                 # ---- Colour mapping ----
                 cvals = pool_sc[colour_metric].to_numpy(float)
