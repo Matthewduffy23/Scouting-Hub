@@ -1552,7 +1552,7 @@ PAGE_BG   = "#0a0f1c"
 PANEL_BG  = "#11161C"
 TRACK_BG  = "#222c3d"
 TEXT      = "#E5E7EB"
-ROLE_GREY = "#737373"
+ROLE_GREY = "#a3a3a3"
 
 CHIP_G_BG = "#22C55E"
 CHIP_R_BG = "#EF4444"
@@ -1753,12 +1753,12 @@ fig = plt.figure(figsize=(W/100, H/100), dpi=100)
 fig.patch.set_facecolor(PAGE_BG)
 
 # ---- header layout knobs ----
-PHOTO_W = 0.10
-PHOTO_H = 0.10
+PHOTO_W = 0.12
+PHOTO_H = 0.12
 PHOTO_X = 0.050
 PHOTO_Y = 0.915
 
-NAME_X = PHOTO_X + PHOTO_W + 0.010
+NAME_X = PHOTO_X + PHOTO_W + 0.08
 NAME_Y = 0.97
 
 BADGE_SCALE = 1.28
@@ -1856,7 +1856,7 @@ for txt, weight in runs:
     x_meta += _text_width_frac(fig, txt, fontsize=fs, weight=("900" if weight == "bold" else "normal")) + (0.004 if txt.strip() else 0)
 
 # -------------------- Strengths / Weaknesses / Styles (chips) --------------------
-y_chips = 0.872
+y_chips = 0.89
 y_chips = chip_row_exact(fig, strengths,  y_chips, CHIP_G_BG, fs=10.1, max_rows=1, max_per_row=6)
 y_chips = chip_row_exact(fig, weaknesses, y_chips, CHIP_R_BG, fs=10.1, max_rows=1, max_per_row=6)
 y_chips = chip_row_exact(fig, styles,     y_chips, CHIP_B_BG, fs=10.1, max_rows=1, max_per_row=6)
