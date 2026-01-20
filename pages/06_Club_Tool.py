@@ -1854,6 +1854,8 @@ r = fig.canvas.get_renderer()
 name_bbox = name_text.get_window_extent(renderer=r)
 name_w_frac = name_bbox.width / fig.bbox.width
 name_h_frac = name_bbox.height / fig.bbox.height
+NAME_YC = NAME_Y - (name_h_frac / 2)   # vertical center of the name line
+
 
 # Bigger badge right beside name
 badge_x = NAME_X + name_w_frac + 0.010
@@ -1887,7 +1889,7 @@ crest_x = badge_x + bw + CREST_GAP
 crest_x = min(crest_x, CREST_RIGHT_LIMIT - CREST_W)
 
 # align vertically to the pill (centered)
-crest_y = by + (bh - CREST_H) / 2
+crest_y = NAME_YC - (CREST_H / 2)
 
 if crest_img is not None:
     axc = fig.add_axes([crest_x, crest_y, CREST_W, CREST_H])
@@ -1905,13 +1907,13 @@ if best_role_pos_label:
     label_x = (crest_x + CREST_W + ROLE_LABEL_GAP) if crest_drawn else (badge_x + bw + ROLE_LABEL_GAP)
     label_x = min(label_x, 0.975)
 
-    fig.text(
-        label_x, NAME_Y, best_role_pos_label,
-        color=ROLE_LABEL_COL,
-        fontsize=ROLE_LABEL_FS,
-        fontweight="700",
-        va="top", ha="left"
-    )
+fig.text(
+    label_x, NAME_YC, best_role_pos_label,
+    color=ROLE_LABEL_COL,
+    fontsize=ROLE_LABEL_FS,
+    fontweight="700",
+    va="center", ha="left"
+)
 
 # -------------------- META line (NO leading score; tighter) --------------------
 age = int(ply["Age"]) if pd.notna(ply.get("Age")) else None
