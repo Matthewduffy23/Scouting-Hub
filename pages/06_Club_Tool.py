@@ -1500,30 +1500,6 @@ team = str(ply.get("Team", "?"))
 league = str(ply.get("League", "?"))
 pos = str(ply.get("Position", "?"))
 pos_tok = _pos_token(pos)
-# -------------------- Normalise position token for label --------------------
-POS_LABEL_MAP = {
-    "LCB": "CB",
-    "CB": "CB",
-    "RCB": "CB",
-
-    "RDMF": "DM",
-    "LDMF": "DM",
-    "DMF": "DM",
-
-    "LCMF": "CM",
-    "RCMF": "CM",
-
-    "RAMF": "RW",
-    "RW": "RW",
-    "RWF": "RW",
-
-    "LAMF": "LW",
-    "LW": "LW",
-    "LWF": "LW",
-}
-
-best_role_pos_label = f"{role_prefix} {pos_tok_label}".strip()
-
 
 # --- build the reference pool: SAME LEAGUE + SAME POSITION-GROUP ---
 role_key = _role_key_from_pos(pos_tok)
