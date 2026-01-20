@@ -1465,6 +1465,21 @@ if "Position" in ref_df.columns:
     if allowed:
         ref_df = ref_df[ref_df["_pos_tok"].isin(allowed)].copy()
 
+# -------------------- Badge options --------------------
+use_league_weighting = st.toggle(
+    "League-weighted badge score",
+    value=True,
+    help="If on, blends the player's role score with a league strength adjustment."
+)
+
+# (Optional) let user tune the blend
+BETA_BADGE = st.slider(
+    "League weighting strength",
+    min_value=0.0, max_value=1.0, value=0.40, step=0.05,
+    help="0 = no league influence, 1 = badge equals league strength only."
+) if use_league_weighting else 0.0
+
+
 # -------------------- Role scores + strengths/weaknesses/styles --------------------
 role_scores = compute_role_scores(ply, df, role_key, ref_df)
 strengths, weaknesses, styles, pct_extra = compute_strengths_weaknesses_styles(ply, df, role_key, ref_df)
@@ -1477,8 +1492,12 @@ best_val_raw = float(top3_roles[0][1]) if top3_roles else (max(role_scores.value
 
 _ls_map = globals().get("LEAGUE_STRENGTHS", {})
 league_strength = float(_ls_map.get(str(league), 50.0)) if isinstance(_ls_map, dict) else 50.0
-BETA_BADGE = 0.40
-best_val_adj = ((1.0 - BETA_BADGE) * float(best_val_raw) + BETA_BADGE * league_strength) if pd.notna(best_val_raw) else league_strength
+
+if use_league_weighting and pd.notna(best_val_raw):
+    best_val_adj = (1.0 - BETA_BADGE) * float(best_val_raw) + BETA_BADGE * league_strength
+else:
+    best_val_adj = float(best_val_raw) if pd.notna(best_val_raw) else league_strength
+
 
 # -------------------- Metric triples --------------------
 ATTACKING = build_triples(ply, df, ref_df, ATTACKING_METRICS, pct_extra)
