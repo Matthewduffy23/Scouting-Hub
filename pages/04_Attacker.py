@@ -4625,65 +4625,128 @@ with st.expander("Scatter settings", expanded=False):
                     ax.axvline(med_x, color=med_col, ls=(0, (4, 4)), lw=2.2, zorder=3)
                     ax.axhline(med_y, color=med_col, ls=(0, (4, 4)), lw=2.2, zorder=3)
 
-                # ---------- Labels (clipped inside axes) ----------
-                texts = []
+# ---------- Labels (Tableau-ish: label a small smart subset + stable placement) ----------
+texts = []
 
-                def _clip_text(tt):
-                    tt.set_clip_on(True)
-                    tt.set_clip_path(ax.patch)
+def _clip_text(tt):
+    tt.set_clip_on(True)
+    tt.set_clip_path(ax.patch)
 
-                if not sel.empty:
-                    sx, sy = float(sel.iloc[0][x_metric]), float(sel.iloc[0][y_metric])
-                    tsel = ax.annotate(
-                        sel.iloc[0]["Player"], (sx, sy), xytext=(10, 12), textcoords="offset points",
-                        fontsize=label_size, fontweight="semibold", color=txt_col, ha="left", va="bottom", zorder=6
-                    )
-                    tsel.set_path_effects([pe.withStroke(linewidth=2.0, foreground=("#ffffff" if theme == "Light" else "#1e293b"), alpha=0.9)])
-                    _clip_text(tsel)
-                    texts.append(tsel)
+# How many labels max (Tableau labels only a subset)
+max_labels = st.slider("Max labels (Tableau style)", 0, 40, 18, 1, key="sc_max_labels")
 
-                if show_labels:
-                    candidates = others.copy()
-                    if label_only_u23:
-                        candidates = candidates[pd.to_numeric(candidates["Age"], errors="coerce") < 23]
+# Strategy
+label_strategy = st.selectbox(
+    "Label strategy",
+    ["Smart (recommended)", "Selected only", "Outliers only", "Top-right performers"],
+    index=0,
+    key="sc_label_strategy",
+)
 
-                    cx, cy = float(np.nanmedian(x_vals)), float(np.nanmedian(y_vals))
-                    dist = (candidates[x_metric]-cx)**2 + (candidates[y_metric]-cy)**2
-                    candidates = candidates.assign(_dist=dist.values).sort_values("_dist", ascending=True)
+# Build candidate set (exclude selected from "others" labels so it doesn't duplicate)
+candidates = others.copy()
+if label_only_u23:
+    candidates = candidates[pd.to_numeric(candidates["Age"], errors="coerce") < 23]
 
-                    x_tol = (xlim[1]-xlim[0]) * 0.035
-                    y_tol = (ylim[1]-ylim[0]) * 0.035
-                    placed = []
-                    if not sel.empty:
-                        placed.append((sx, sy))
+# Always label selected player
+if not sel.empty:
+    sx, sy = float(sel.iloc[0][x_metric]), float(sel.iloc[0][y_metric])
+    tsel = ax.annotate(
+        sel.iloc[0]["Player"], (sx, sy),
+        xytext=(10, 10), textcoords="offset points",
+        fontsize=label_size, fontweight="semibold", color=txt_col,
+        ha="left", va="bottom", zorder=7
+    )
+    tsel.set_path_effects([pe.withStroke(linewidth=2.2, foreground=("#ffffff" if theme == "Light" else "#1e293b"), alpha=0.95)])
+    _clip_text(tsel)
+    texts.append(tsel)
 
-                    for _, r in candidates.iterrows():
-                        px, py = float(r[x_metric]), float(r[y_metric])
-                        if not allow_overlap and any(abs(px-qx) < x_tol and abs(py-qy) < y_tol for (qx, qy) in placed):
-                            continue
-                        placed.append((px, py))
-                        tt = ax.annotate(
-                            r["Player"], (px, py), xytext=(10, 12), textcoords="offset points",
-                            fontsize=label_size, fontweight="semibold", color=txt_col, ha="left", va="bottom", zorder=4
-                        )
-                        tt.set_path_effects([pe.withStroke(linewidth=2.0, foreground=("#ffffff" if theme == "Light" else "#1e293b"), alpha=0.9)])
-                        _clip_text(tt)
-                        texts.append(tt)
+# Nothing else to do
+if max_labels == 0 or candidates.empty or (label_strategy == "Selected only"):
+    pass
+else:
+    # Compute “importance” scores (Tableau-ish heuristics)
+    x = candidates[x_metric].to_numpy(float)
+    y = candidates[y_metric].to_numpy(float)
 
-                    try:
-                        if _HAS_ADJUST and not allow_overlap and texts:
-                            adjust_text(
-                                texts, ax=ax,
-                                only_move={"points": "y", "text": "xy"},
-                                autoalign=True, precision=0.001, lim=150,
-                                expand_text=(1.05, 1.10), expand_points=(1.05, 1.10),
-                                force_text=(0.08, 0.12), force_points=(0.08, 0.12),
-                                ensure_inside_axes=True
-                            )
-                            for tt in texts:
-                                _clip_text(tt)
-                    except Exception:
-                        pass
+    # Standardize (robust-ish) so x/y are comparable
+    def zscore(a):
+        m = float(np.nanmedian(a))
+        s = float(np.nanpercentile(a, 75) - np.nanpercentile(a, 25))
+        s = s if s > 1e-9 else float(np.nanstd(a) + 1e-9)
+        return (a - m) / s
+
+    zx, zy = zscore(x), zscore(y)
+
+    # Outlierness: distance from center
+    outlier = zx**2 + zy**2
+
+    # Top-right performance: high x and high y
+    topright = zx + zy
+
+    # Extreme axes: very high/low x or y
+    extremes = np.maximum(np.abs(zx), np.abs(zy))
+
+    if label_strategy == "Outliers only":
+        score = outlier
+    elif label_strategy == "Top-right performers":
+        score = topright
+    else:
+        # Smart (recommended): blend of outlierness + top-right + extremes
+        score = 0.55*outlier + 0.35*topright + 0.10*extremes
+
+    candidates = candidates.assign(_score=score).sort_values("_score", ascending=False)
+
+    # Place labels with a strict collision gate (skip if collision)
+    placed = []
+    # include selected point in collision set
+    if not sel.empty:
+        placed.append((sx, sy))
+
+    x_tol = (ax.get_xlim()[1] - ax.get_xlim()[0]) * 0.045
+    y_tol = (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.045
+
+    count = 0
+    for _, r in candidates.iterrows():
+        if count >= max_labels:
+            break
+
+        px, py = float(r[x_metric]), float(r[y_metric])
+
+        # Skip if too close to an already-labeled point (Tableau style)
+        if not allow_overlap and any(abs(px-qx) < x_tol and abs(py-qy) < y_tol for (qx, qy) in placed):
+            continue
+
+        placed.append((px, py))
+
+        tt = ax.annotate(
+            r["Player"], (px, py),
+            xytext=(8, 8), textcoords="offset points",
+            fontsize=label_size, fontweight="semibold", color=txt_col,
+            ha="left", va="bottom", zorder=6
+        )
+        tt.set_path_effects([pe.withStroke(linewidth=2.0, foreground=("#ffffff" if theme == "Light" else "#1e293b"), alpha=0.9)])
+        _clip_text(tt)
+        texts.append(tt)
+        count += 1
+
+    # Small, controlled nudge using adjustText (no wild moves)
+    try:
+        if _HAS_ADJUST and not allow_overlap and texts:
+            adjust_text(
+                texts, ax=ax,
+                only_move={"text": "xy"},
+                ensure_inside_axes=True,
+                lim=60,
+                force_text=(0.03, 0.06),
+                expand_text=(1.02, 1.04),
+                expand_points=(1.01, 1.02),
+                arrowprops=dict(arrowstyle="-", lw=0.7, alpha=0.35)  # leader lines when nudged
+            )
+            for tt in texts:
+                _clip_text(tt)
+    except Exception:
+        pass
 
                 # ---------- Axes & grid ----------
                 ax.set_xlabel(x_metric, fontsize=14, fontweight="semibold", color=txt_col)
