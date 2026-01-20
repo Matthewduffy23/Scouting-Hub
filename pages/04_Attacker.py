@@ -4335,9 +4335,9 @@ with st.expander("Scatter settings", expanded=False):
     # Selected player & labels
     include_selected = st.toggle("Include selected player", value=True, key="sc_include")
     show_labels = st.toggle("Show player labels", value=True, key="sc_labels_all")
-    label_only_u23 = st.checkbox("Label only U23 players", value=False, key="sc_lbl_u23")  # NEW
+    label_only_u23 = st.checkbox("Label only U23 players", value=False, key="sc_lbl_u23")
     allow_overlap = st.toggle("Allow overlapping labels (not recommended)", value=False, key="sc_overlap")
-    label_size = st.slider("Label size", 8, 20, 13, 1, key="sc_lbl_sz")  # default = 13 (UPDATED)
+    label_size = st.slider("Label size", 8, 20, 13, 1, key="sc_lbl_sz")
 
     # Visual aids
     show_medians = st.checkbox("Show median reference lines", value=True, key="sc_medians")
@@ -4345,14 +4345,14 @@ with st.expander("Scatter settings", expanded=False):
 
     # Points
     point_alpha = st.slider("Point opacity", 0.2, 1.0, 0.92, 0.02, key="sc_alpha")
-    point_size = st.slider("Point size", 24, 300, 250, 2, key="sc_pts")  # default = 250 (UPDATED)
+    point_size = st.slider("Point size", 24, 300, 250, 2, key="sc_pts")
     marker = st.selectbox("Marker", ["o", "s", "^", "D"], index=0, key="sc_marker")
 
     # Team highlight (based on selected preset/leagues)
     teams_available_hl = sorted(df[df["League"].isin(leagues_scatter)]["Team"].dropna().unique().tolist())
     team_highlight = st.selectbox(
         "Highlight team (within selected leagues)", ["(None)"] + teams_available_hl, index=0, key="sc_team_hl"
-    )  # NEW
+    )
 
     # Ticks (Auto or manual)
     tick_mode = st.selectbox(
@@ -4397,7 +4397,7 @@ with st.expander("Scatter settings", expanded=False):
     # Top blank gap slider, but AUTO-SET to 75 when a custom title is shown
     top_gap_px = st.slider("Top blank gap (px)", 0, 240, 100, 5, key="sc_topgap_slider")
     if show_title:
-        top_gap_px = 75  # AUTO override when title enabled (NEW)
+        top_gap_px = 75  # AUTO override when title enabled
 
     # Exact-pixel render
     render_exact = st.checkbox("Render exact pixels (PNG)", value=True)
@@ -4582,8 +4582,13 @@ with st.expander("Scatter settings", expanded=False):
                     ax.axvline(med_x, color=med_col, ls=(0, (4, 4)), lw=2.2, zorder=3)
                     ax.axhline(med_y, color=med_col, ls=(0, (4, 4)), lw=2.2, zorder=3)
 
-                # ---------- Labels ----------
+                # ---------- Labels (FIXED: clip to axes + keep inside + correct prioritisation) ----------
                 texts = []
+
+                def _clip_text(tt):
+                    tt.set_clip_on(True)
+                    tt.set_clip_path(ax.patch)
+
                 if not sel.empty:
                     sx, sy = float(sel.iloc[0][x_metric]), float(sel.iloc[0][y_metric])
                     tsel = ax.annotate(
@@ -4591,34 +4596,42 @@ with st.expander("Scatter settings", expanded=False):
                         fontsize=label_size, fontweight="semibold", color=txt_col, ha="left", va="bottom", zorder=6
                     )
                     tsel.set_path_effects([pe.withStroke(linewidth=2.0, foreground=("#ffffff" if theme == "Light" else "#1e293b"), alpha=0.9)])
+                    _clip_text(tsel)
                     texts.append(tsel)
 
                 if show_labels:
                     candidates = others.copy()
                     if label_only_u23:
                         candidates = candidates[pd.to_numeric(candidates["Age"], errors="coerce") < 23]
+
+                    # FIX: closest-to-centre labels first (stable, avoids “labels everywhere”)
                     cx, cy = float(np.nanmedian(x_vals)), float(np.nanmedian(y_vals))
                     dist = (candidates[x_metric]-cx)**2 + (candidates[y_metric]-cy)**2
                     candidates = candidates.assign(_dist=dist.values).sort_values("_dist", ascending=True)
 
-
+                    # data-space “no label near label” gate
                     x_tol = (xlim[1]-xlim[0]) * 0.035
                     y_tol = (ylim[1]-ylim[0]) * 0.035
                     placed = []
                     if not sel.empty:
                         placed.append((sx, sy))
+
                     for _, r in candidates.iterrows():
                         px, py = float(r[x_metric]), float(r[y_metric])
+
                         if not allow_overlap and any(abs(px-qx) < x_tol and abs(py-qy) < y_tol for (qx, qy) in placed):
                             continue
+
                         placed.append((px, py))
                         t = ax.annotate(
                             r["Player"], (px, py), xytext=(10, 12), textcoords="offset points",
                             fontsize=label_size, fontweight="semibold", color=txt_col, ha="left", va="bottom", zorder=4
                         )
                         t.set_path_effects([pe.withStroke(linewidth=2.0, foreground=("#ffffff" if theme == "Light" else "#1e293b"), alpha=0.9)])
+                        _clip_text(t)
                         texts.append(t)
 
+                    # Keep labels inside axes if adjustText is available
                     try:
                         if _HAS_ADJUST and not allow_overlap and texts:
                             adjust_text(
@@ -4626,14 +4639,18 @@ with st.expander("Scatter settings", expanded=False):
                                 only_move={"points": "y", "text": "xy"},
                                 autoalign=True, precision=0.001, lim=150,
                                 expand_text=(1.05, 1.10), expand_points=(1.05, 1.10),
-                                force_text=(0.08, 0.12), force_points=(0.08, 0.12)
+                                force_text=(0.08, 0.12), force_points=(0.08, 0.12),
+                                ensure_inside_axes=True
                             )
+                            # re-clip after adjustment
+                            for tt in texts:
+                                _clip_text(tt)
                     except Exception:
                         pass
 
                 # ---------- Axes & grid ----------
-                ax.set_xlabel(x_metric, fontsize=14, fontweight="semibold", color=txt_col)  # UPDATED
-                ax.set_ylabel(y_metric, fontsize=14, fontweight="semibold", color=txt_col)  # UPDATED
+                ax.set_xlabel(x_metric, fontsize=14, fontweight="semibold", color=txt_col)
+                ax.set_ylabel(y_metric, fontsize=14, fontweight="semibold", color=txt_col)
 
                 # Denser auto ticks (≈2×)
                 if tick_mode.startswith("Auto"):
@@ -4670,7 +4687,7 @@ with st.expander("Scatter settings", expanded=False):
                 # Optional title slightly lower within the gap
                 if show_title and custom_title.strip():
                     title_col = "#111111" if theme == "Light" else "#f5f5f5"
-                    y_gap_pos = top_frac + (1 - top_frac) * 0.44  # slight nudge down
+                    y_gap_pos = top_frac + (1 - top_frac) * 0.44
                     fig.text(
                         0.5, y_gap_pos, custom_title.strip(),
                         ha="center", va="center", color=title_col, fontsize=26, fontweight="semibold"
@@ -4679,7 +4696,8 @@ with st.expander("Scatter settings", expanded=False):
                 if render_exact:
                     from io import BytesIO
                     buf = BytesIO()
-                    fig.savefig(buf, format="png", dpi=100, facecolor=fig.get_facecolor(), bbox_inches="tight")
+                    # FIX: avoid bbox_inches="tight" to prevent unexpected shifting/cropping
+                    fig.savefig(buf, format="png", dpi=100, facecolor=fig.get_facecolor())
                     buf.seek(0)
                     st.image(buf, width=w_px)
                 else:
@@ -4687,6 +4705,8 @@ with st.expander("Scatter settings", expanded=False):
 
     except Exception as e:
         st.info(f"Scatter could not be drawn: {e}")
+# ==========================================================================================================
+
 # ==========================================================================================================
 
 # ============================== FEATURE Q — ATT ARCHETYPE SCATTER ==============================
