@@ -1065,214 +1065,6 @@ with tabs[4]:
     role_tab("Center Backs", compute_center_backs)
 
 
-# ============================ FEATURE BLOCK (T20 SHORTLIST) ============================
-# SAFE: Self-contained (defines POS_GROUPS locally to avoid NameError)
-# Filters affect DISPLAY ONLY – not pool or calculations
-
-st.markdown("---")
-st.header("📋 Shortlist (T20)")
-
-# -------------------- Local position groups (prevents NameError) --------------------
-POS_GROUPS_LOCAL = {
-    "Strikers (CF)": ["CF"],
-    "Center Backs (CB)": ["CB", "LCB", "RCB"],
-    "Fullbacks (RB/LB/WB)": ["RB", "LB", "RWB", "LWB"],
-    "Central Mid (DM/CM)": ["DMF", "CMF", "LCMF", "RCMF", "LDMF", "RDMF"],
-    "Attackers (W/AM)": ["RW", "RWF", "LW", "LWF", "AMF", "RAMF", "LAMF"],
-}
-
-# -------------------- Controls --------------------
-c1, c2, c3, c4 = st.columns([1.2,1.4,1.2,1.2])
-
-with c1:
-    group_filter = st.selectbox(
-        "Position group",
-        list(POS_GROUPS_LOCAL.keys()),
-        index=0,
-        key="t20_group"
-    )
-    pos_prefixes = {p.upper() for p in POS_GROUPS_LOCAL[group_filter]}
-
-def _role_keys_for_group(g):
-    if "Strikers" in g: return ["CF"]
-    if "Center Backs" in g: return ["CB"]
-    if "Fullbacks" in g: return ["FB"]
-    if "Central Mid" in g: return ["CM"]
-    if "Attackers" in g: return ["ATT"]
-    return []
-
-with c2:
-    role_keys = _role_keys_for_group(group_filter)
-    all_roles = []
-    for rk in role_keys:
-        all_roles += list((ROLE_BUCKETS.get(rk, {}) or {}).keys())
-    all_roles = sorted(set(all_roles))
-
-    roles_pick = st.multiselect(
-        "Multi-role filter",
-        all_roles,
-        default=[],
-        key="t20_roles"
-    )
-
-with c3:
-    min_role_score = st.slider("Min role score", 40, 95, 60)
-    top_n = st.number_input("Top N", 5, 100, 20)
-
-with c4:
-    min_ls, max_ls = st.slider(
-        "League quality (display only)",
-        0, 100, (0,100)
-    )
-
-c5, c6, c7, c8 = st.columns(4)
-
-with c5:
-    age_band = st.slider("Age band", 15, 45, (16,35))
-
-with c6:
-    mins_band = st.slider("Minutes played", 0, 6000, (0,6000))
-
-with c7:
-    player_q = st.text_input("Player search")
-
-with c8:
-    team_q = st.text_input("Team search")
-
-c9, c10, c11 = st.columns(3)
-with c9:
-    style_filter = st.text_input("Style contains")
-with c10:
-    strength_filter = st.text_input("Strength contains")
-with c11:
-    weakness_exclude = st.text_input("Exclude weakness")
-
-# -------------------- Build shortlist --------------------
-df_short = df.copy()
-
-df_short["_pos_tok"] = df_short["Position"].apply(_pos_token)
-df_short = df_short[df_short["_pos_tok"].isin(pos_prefixes)]
-
-# numeric
-df_short["Age"] = pd.to_numeric(df_short["Age"], errors="coerce")
-df_short["Minutes played"] = pd.to_numeric(df_short["Minutes played"], errors="coerce")
-
-# display filters
-df_short = df_short[
-    df_short["Age"].between(*age_band) &
-    df_short["Minutes played"].between(*mins_band)
-]
-
-if player_q:
-    df_short = df_short[df_short["Player"].str.contains(player_q, case=False, na=False)]
-if team_q:
-    df_short = df_short[df_short["Team"].str.contains(team_q, case=False, na=False)]
-
-rows = []
-
-for _, ply in df_short.iterrows():
-
-    pos_tok = _pos_token(ply["Position"])
-    rk = _role_key_from_pos(pos_tok)
-    if not rk:
-        continue
-
-    league = str(ply["League"])
-
-    # ref pool = SAME LEAGUE + POSITION GROUP (unchanged logic)
-    ref_df = df[
-        (df["League"] == league)
-    ].copy()
-
-    ref_df["_pos_tok"] = ref_df["Position"].apply(_pos_token)
-
-    if rk == "CF": allowed={"CF"}
-    elif rk == "CB": allowed={"CB","LCB","RCB"}
-    elif rk == "FB": allowed={"RB","LB","RWB","LWB"}
-    elif rk == "CM": allowed={"DMF","CMF","LCMF","RCMF","LDMF","RDMF"}
-    elif rk == "ATT": allowed={"RW","RWF","LW","LWF","AMF","RAMF","LAMF"}
-    else: allowed=set()
-
-    ref_df = ref_df[ref_df["_pos_tok"].isin(allowed)]
-
-    rs = compute_role_scores(ply, df, rk, ref_df)
-    if not rs:
-        continue
-
-    best_role, best_val = max(rs.items(), key=lambda x:x[1])
-
-    # multi-role filter
-    if roles_pick:
-        if not any(r in rs and rs[r]>=min_role_score for r in roles_pick):
-            continue
-
-    strengths, weaknesses, styles,_ = compute_strengths_weaknesses_styles(
-        ply, df, rk, ref_df
-    )
-
-    if style_filter and not any(style_filter.lower() in s.lower() for s in styles):
-        continue
-    if strength_filter and not any(strength_filter.lower() in s.lower() for s in strengths):
-        continue
-    if weakness_exclude and any(weakness_exclude.lower() in w.lower() for w in weaknesses):
-        continue
-
-    # badge score
-    ls = float(LEAGUE_STRENGTHS.get(league,50))
-    score = (1-BETA_BADGE)*best_val + BETA_BADGE*ls if use_league_weighting else best_val
-
-    if not (min_ls<=ls<=max_ls):
-        continue
-
-    rows.append({
-        "Player": ply["Player"],
-        "Team": ply["Team"],
-        "League": league,
-        "Age": int(ply["Age"]),
-        "Minutes": int(ply["Minutes played"]),
-        "Best role": best_role,
-        "Score": score,
-        "Photo": resolve_player_photo(ply["Player"],ply["Team"],league),
-        "Crest": resolve_team_crest(ply["Team"],league)
-    })
-
-df_tbl = pd.DataFrame(rows)
-
-if df_tbl.empty:
-    st.warning("No players match filters.")
-else:
-    df_tbl = df_tbl.sort_values("Score", ascending=False).head(int(top_n)).reset_index(drop=True)
-    df_tbl.insert(0,"Rank",range(1,len(df_tbl)+1))
-
-    def pill(v):
-        r,g,b=[int(x*255) for x in div_color_tuple(v)]
-        return f"<span style='background:rgb({r},{g},{b});padding:6px 12px;border-radius:12px;font-weight:900;color:white'>{int(v)}</span>"
-
-    html = "<table style='width:100%'>"
-    html+="<tr><th>#</th><th>Player</th><th>Team</th><th>League</th><th>Role</th><th>Age</th><th>Min</th><th>Score</th></tr>"
-
-    for _,r in df_tbl.iterrows():
-        html+=f"""
-        <tr>
-          <td>{r.Rank}</td>
-          <td><img src='{r.Photo}' width=36 style='border-radius:50%'> {r.Player}</td>
-          <td><img src='{r.Crest}' width=24> {r.Team}</td>
-          <td>{r.League}</td>
-          <td>{r['Best role']}</td>
-          <td>{r.Age}</td>
-          <td>{r.Minutes}</td>
-          <td>{pill(r.Score)}</td>
-        </tr>
-        """
-
-    html+="</table>"
-    st.markdown(html, unsafe_allow_html=True)
-
-# ============================ END FEATURE BLOCK ============================
-
-
-
-
 # ============================ CLUB TOOL — ONE-PAGER (FULL) + STYLES / STRENGTHS / WEAKNESSES ============================
 # Paste this WHOLE block into your Club Tool page where you want the one-pager section.
 #
@@ -2250,6 +2042,212 @@ st.download_button(
 )
 
 # ============================ END ONE-PAGER ============================
+
+# ============================ FEATURE BLOCK (T20 SHORTLIST) ============================
+# SAFE: Self-contained (defines POS_GROUPS locally to avoid NameError)
+# Filters affect DISPLAY ONLY – not pool or calculations
+
+st.markdown("---")
+st.header("📋 Shortlist (T20)")
+
+# -------------------- Local position groups (prevents NameError) --------------------
+POS_GROUPS_LOCAL = {
+    "Strikers (CF)": ["CF"],
+    "Center Backs (CB)": ["CB", "LCB", "RCB"],
+    "Fullbacks (RB/LB/WB)": ["RB", "LB", "RWB", "LWB"],
+    "Central Mid (DM/CM)": ["DMF", "CMF", "LCMF", "RCMF", "LDMF", "RDMF"],
+    "Attackers (W/AM)": ["RW", "RWF", "LW", "LWF", "AMF", "RAMF", "LAMF"],
+}
+
+# -------------------- Controls --------------------
+c1, c2, c3, c4 = st.columns([1.2,1.4,1.2,1.2])
+
+with c1:
+    group_filter = st.selectbox(
+        "Position group",
+        list(POS_GROUPS_LOCAL.keys()),
+        index=0,
+        key="t20_group"
+    )
+    pos_prefixes = {p.upper() for p in POS_GROUPS_LOCAL[group_filter]}
+
+def _role_keys_for_group(g):
+    if "Strikers" in g: return ["CF"]
+    if "Center Backs" in g: return ["CB"]
+    if "Fullbacks" in g: return ["FB"]
+    if "Central Mid" in g: return ["CM"]
+    if "Attackers" in g: return ["ATT"]
+    return []
+
+with c2:
+    role_keys = _role_keys_for_group(group_filter)
+    all_roles = []
+    for rk in role_keys:
+        all_roles += list((ROLE_BUCKETS.get(rk, {}) or {}).keys())
+    all_roles = sorted(set(all_roles))
+
+    roles_pick = st.multiselect(
+        "Multi-role filter",
+        all_roles,
+        default=[],
+        key="t20_roles"
+    )
+
+with c3:
+    min_role_score = st.slider("Min role score", 40, 95, 60)
+    top_n = st.number_input("Top N", 5, 100, 20)
+
+with c4:
+    min_ls, max_ls = st.slider(
+        "League quality (display only)",
+        0, 100, (0,100)
+    )
+
+c5, c6, c7, c8 = st.columns(4)
+
+with c5:
+    age_band = st.slider("Age band", 15, 45, (16,35))
+
+with c6:
+    mins_band = st.slider("Minutes played", 0, 6000, (0,6000))
+
+with c7:
+    player_q = st.text_input("Player search")
+
+with c8:
+    team_q = st.text_input("Team search")
+
+c9, c10, c11 = st.columns(3)
+with c9:
+    style_filter = st.text_input("Style contains")
+with c10:
+    strength_filter = st.text_input("Strength contains")
+with c11:
+    weakness_exclude = st.text_input("Exclude weakness")
+
+# -------------------- Build shortlist --------------------
+df_short = df.copy()
+
+df_short["_pos_tok"] = df_short["Position"].apply(_pos_token)
+df_short = df_short[df_short["_pos_tok"].isin(pos_prefixes)]
+
+# numeric
+df_short["Age"] = pd.to_numeric(df_short["Age"], errors="coerce")
+df_short["Minutes played"] = pd.to_numeric(df_short["Minutes played"], errors="coerce")
+
+# display filters
+df_short = df_short[
+    df_short["Age"].between(*age_band) &
+    df_short["Minutes played"].between(*mins_band)
+]
+
+if player_q:
+    df_short = df_short[df_short["Player"].str.contains(player_q, case=False, na=False)]
+if team_q:
+    df_short = df_short[df_short["Team"].str.contains(team_q, case=False, na=False)]
+
+rows = []
+
+for _, ply in df_short.iterrows():
+
+    pos_tok = _pos_token(ply["Position"])
+    rk = _role_key_from_pos(pos_tok)
+    if not rk:
+        continue
+
+    league = str(ply["League"])
+
+    # ref pool = SAME LEAGUE + POSITION GROUP (unchanged logic)
+    ref_df = df[
+        (df["League"] == league)
+    ].copy()
+
+    ref_df["_pos_tok"] = ref_df["Position"].apply(_pos_token)
+
+    if rk == "CF": allowed={"CF"}
+    elif rk == "CB": allowed={"CB","LCB","RCB"}
+    elif rk == "FB": allowed={"RB","LB","RWB","LWB"}
+    elif rk == "CM": allowed={"DMF","CMF","LCMF","RCMF","LDMF","RDMF"}
+    elif rk == "ATT": allowed={"RW","RWF","LW","LWF","AMF","RAMF","LAMF"}
+    else: allowed=set()
+
+    ref_df = ref_df[ref_df["_pos_tok"].isin(allowed)]
+
+    rs = compute_role_scores(ply, df, rk, ref_df)
+    if not rs:
+        continue
+
+    best_role, best_val = max(rs.items(), key=lambda x:x[1])
+
+    # multi-role filter
+    if roles_pick:
+        if not any(r in rs and rs[r]>=min_role_score for r in roles_pick):
+            continue
+
+    strengths, weaknesses, styles,_ = compute_strengths_weaknesses_styles(
+        ply, df, rk, ref_df
+    )
+
+    if style_filter and not any(style_filter.lower() in s.lower() for s in styles):
+        continue
+    if strength_filter and not any(strength_filter.lower() in s.lower() for s in strengths):
+        continue
+    if weakness_exclude and any(weakness_exclude.lower() in w.lower() for w in weaknesses):
+        continue
+
+    # badge score
+    ls = float(LEAGUE_STRENGTHS.get(league,50))
+    score = (1-BETA_BADGE)*best_val + BETA_BADGE*ls if use_league_weighting else best_val
+
+    if not (min_ls<=ls<=max_ls):
+        continue
+
+    rows.append({
+        "Player": ply["Player"],
+        "Team": ply["Team"],
+        "League": league,
+        "Age": int(ply["Age"]),
+        "Minutes": int(ply["Minutes played"]),
+        "Best role": best_role,
+        "Score": score,
+        "Photo": resolve_player_photo(ply["Player"],ply["Team"],league),
+        "Crest": resolve_team_crest(ply["Team"],league)
+    })
+
+df_tbl = pd.DataFrame(rows)
+
+if df_tbl.empty:
+    st.warning("No players match filters.")
+else:
+    df_tbl = df_tbl.sort_values("Score", ascending=False).head(int(top_n)).reset_index(drop=True)
+    df_tbl.insert(0,"Rank",range(1,len(df_tbl)+1))
+
+    def pill(v):
+        r,g,b=[int(x*255) for x in div_color_tuple(v)]
+        return f"<span style='background:rgb({r},{g},{b});padding:6px 12px;border-radius:12px;font-weight:900;color:white'>{int(v)}</span>"
+
+    html = "<table style='width:100%'>"
+    html+="<tr><th>#</th><th>Player</th><th>Team</th><th>League</th><th>Role</th><th>Age</th><th>Min</th><th>Score</th></tr>"
+
+    for _,r in df_tbl.iterrows():
+        html+=f"""
+        <tr>
+          <td>{r.Rank}</td>
+          <td><img src='{r.Photo}' width=36 style='border-radius:50%'> {r.Player}</td>
+          <td><img src='{r.Crest}' width=24> {r.Team}</td>
+          <td>{r.League}</td>
+          <td>{r['Best role']}</td>
+          <td>{r.Age}</td>
+          <td>{r.Minutes}</td>
+          <td>{pill(r.Score)}</td>
+        </tr>
+        """
+
+    html+="</table>"
+    st.markdown(html, unsafe_allow_html=True)
+
+# ============================ END FEATURE BLOCK ============================
+
 
 
 # ======================== SECTION B (v2 — FULL, TITLES OFF, FULL LABELS) ========================
