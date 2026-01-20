@@ -1073,6 +1073,8 @@ with tabs[4]:
 # ✅ Reduced top gap: meta + strengths/weaknesses/styles + roles sit tighter, panels start higher
 # ✅ Removed the badge number from the info/meta line (no leading "99" etc)
 # ✅ Adds: Strengths (>=HI), Weaknesses (<=LO), Styles (>=STYLE_T) from STYLE_MAP per position group
+# ✅ Adds: (NEW) Best-role label AFTER crest (first 2 words + first position token)
+# ✅ Adds: (NEW) Extra roles (display/label-eligible) that do NOT affect badge score
 #
 # Assumes you already have:
 # - df (DataFrame)
@@ -1190,6 +1192,13 @@ ROLE_BUCKETS = {
                                                "PAdj Interceptions": 3, "Aerial duels per 90": 0.5, "Aerial duels won, %": 1}},
         "Goal Threat CM": {"metrics": {"Non-penalty goals per 90": 3, "xG per 90": 3, "Shots per 90": 1.5, "Touches in box per 90": 2}},
         "Ball-Carrying CM": {"metrics": {"Dribbles per 90": 4, "Successful dribbles, %": 2, "Progressive runs per 90": 3, "Accelerations per 90": 3}},
+
+        # ===== NEW ROLE (display/label-eligible; excluded from badge) =====
+        "Box to Box CM": {"metrics": {
+            "Touches in box per 90": 3,
+            "Defensive duels per 90": 3,
+            "Non-penalty goals per 90": 2,
+        }},
     },
     "CB": {
         "Ball Playing CB": {"metrics": {"Passes per 90": 2, "Accurate passes, %": 2, "Forward passes per 90": 2,
@@ -1210,6 +1219,19 @@ ROLE_BUCKETS = {
                                      "Passes to penalty area per 90": 2, "xA per 90": 3}},
         "Defensive FB": {"metrics": {"Aerial duels per 90": 1, "Aerial duels won, %": 1.5, "Defensive duels per 90": 2,
                                      "PAdj Interceptions": 3, "Shots blocked per 90": 1, "Defensive duels won, %": 3.5}},
+
+        # ===== NEW ROLES (display/label-eligible; excluded from badge) =====
+        "Wide Creator FB": {"metrics": {
+            "xA per 90": 3,
+            "Crosses per 90": 3,
+            "Accurate crosses, %": 1,
+        }},
+        "Wide Carrier FB": {"metrics": {
+            "Dribbles per 90": 3,
+            "Successful dribbles, %": 1,
+            "Progressive runs per 90": 3,
+            "Accelerations per 90": 1,
+        }},
     },
     "CF": {
         "Target Man CF": {"metrics": {"Aerial duels per 90": 3, "Aerial duels won, %": 5}},
@@ -1218,6 +1240,21 @@ ROLE_BUCKETS = {
         "Link-Up CF": {"metrics": {"Passes per 90": 2, "Passes to penalty area per 90": 1.5, "Deep completions per 90": 1,
                                    "Smart passes per 90": 1.5, "Accurate passes, %": 1.5, "Key passes per 90": 1,
                                    "Dribbles per 90": 2, "Successful dribbles, %": 1, "Progressive runs per 90": 2, "xA per 90": 3}},
+
+        # ===== NEW ROLES (display/label-eligible; excluded from badge) =====
+        "False 9 Runner CF": {"metrics": {
+            "Progressive runs per 90": 3,
+            "Dribbles per 90": 3,
+            "Successful dribbles, %": 2,
+        }},
+        "False 9 Passer CF": {"metrics": {
+            "Passes per 90": 3,
+            "Accurate passes, %": 2,
+            "Smart passes per 90": 2,
+            "Deep completions per 90": 2,
+            "Passes to penalty area per 90": 3,
+            "xA per 90": 3,
+        }},
     },
     "ATT": {
         "Playmaker": {"metrics": {"Passes per 90": 2, "xA per 90": 3, "Key passes per 90": 1,
@@ -1484,9 +1521,25 @@ BETA_BADGE = st.slider(
 role_scores = compute_role_scores(ply, df, role_key, ref_df)
 strengths, weaknesses, styles, pct_extra = compute_strengths_weaknesses_styles(ply, df, role_key, ref_df)
 
-# badge pick EXCLUDES Target Man CF only (but we still display it in roles row)
+# badge pick EXCLUDES Target Man CF AND excludes "extra label-only roles"
 EXCLUDE_ROLE = "target man cf"
-filtered_roles = [(k, v) for k, v in role_scores.items() if str(k).strip().lower() != EXCLUDE_ROLE]
+
+# roles you want displayed / label-eligible but NOT counted in badge
+LABEL_ONLY_ROLES = {
+    "box to box cm",
+    "wide creator fb",
+    "wide carrier fb",
+    "false 9 runner cf",
+    "false 9 passer cf",
+}
+
+# filtered roles used ONLY for badge score
+filtered_roles = [
+    (k, v) for k, v in role_scores.items()
+    if str(k).strip().lower() != EXCLUDE_ROLE
+    and str(k).strip().lower() not in LABEL_ONLY_ROLES
+]
+
 top3_roles = sorted(filtered_roles, key=lambda kv: kv[1], reverse=True)[:3]
 best_val_raw = float(top3_roles[0][1]) if top3_roles else (max(role_scores.values()) if role_scores else np.nan)
 
@@ -1497,6 +1550,11 @@ if use_league_weighting and pd.notna(best_val_raw):
     best_val_adj = (1.0 - BETA_BADGE) * float(best_val_raw) + BETA_BADGE * league_strength
 else:
     best_val_adj = float(best_val_raw) if pd.notna(best_val_raw) else league_strength
+
+# -------------------- Best role label text (AFTER crest) --------------------
+best_role_name_for_label = top3_roles[0][0] if top3_roles else ""
+role_prefix = " ".join(str(best_role_name_for_label).split()[:2]).strip()
+best_role_pos_label = f"{role_prefix} {pos_tok}".strip() if role_prefix and pos_tok else ""
 
 
 # -------------------- Metric triples --------------------
@@ -1751,9 +1809,6 @@ def bar_panel(fig, left, top, width, triples, title):
         va="top",
     )
 
-
-
-
     for yi, lab in zip(y_idx[:n], labels):
         y_fig = bottom + ax_h_frac * ((yi + 0.5) / max(1, n))
         fig.text(left + 0.006/2, y_fig, lab, color=TEXT, fontsize=LABEL_FS, fontweight="bold",
@@ -1809,8 +1864,6 @@ bw = bh
 # TRUE vertical centering
 by = NAME_Y - (name_h_frac / 2) - (bh / 2)
 
-
-
 R, G, B = [int(255*c) for c in div_color_tuple(best_val_adj)]
 fig.patches.append(mpatches.FancyBboxPatch(
     (badge_x, by), bw, bh,
@@ -1829,19 +1882,36 @@ CREST_H = 0.050
 CREST_GAP = 0.018          # distance between pill and crest
 CREST_RIGHT_LIMIT = 0.985  # keep inside figure
 
+crest_drawn = False
+crest_x = badge_x + bw + CREST_GAP
+crest_x = min(crest_x, CREST_RIGHT_LIMIT - CREST_W)
+
+# align vertically to the pill (centered)
+crest_y = by + (bh - CREST_H) / 2
+
 if crest_img is not None:
-    crest_x = badge_x + bw + CREST_GAP
-    # clamp so it never goes off the canvas
-    crest_x = min(crest_x, CREST_RIGHT_LIMIT - CREST_W)
-
-    # align vertically to the pill (centered)
-    crest_y = by + (bh - CREST_H) / 2
-
     axc = fig.add_axes([crest_x, crest_y, CREST_W, CREST_H])
     axc.imshow(crest_img)
     axc.axis("off")
     axc.set_facecolor(PAGE_BG)
+    crest_drawn = True
 
+# -------------------- Best role *position* label AFTER CREST --------------------
+ROLE_LABEL_FS = name_fs * 0.60   # slightly smaller than name
+ROLE_LABEL_COL = "#9CA3AF"       # lighter grey
+ROLE_LABEL_GAP = 0.012           # gap after crest (or after badge if no crest)
+
+if best_role_pos_label:
+    label_x = (crest_x + CREST_W + ROLE_LABEL_GAP) if crest_drawn else (badge_x + bw + ROLE_LABEL_GAP)
+    label_x = min(label_x, 0.975)
+
+    fig.text(
+        label_x, NAME_Y, best_role_pos_label,
+        color=ROLE_LABEL_COL,
+        fontsize=ROLE_LABEL_FS,
+        fontweight="700",
+        va="top", ha="left"
+    )
 
 # -------------------- META line (NO leading score; tighter) --------------------
 age = int(ply["Age"]) if pd.notna(ply.get("Age")) else None
@@ -1881,7 +1951,7 @@ y_chips = chip_row_exact(fig, weaknesses, y_chips, CHIP_R_BG, fs=10.1, max_rows=
 y_chips = chip_row_exact(fig, styles,     y_chips, CHIP_B_BG, fs=10.1, max_rows=1, max_per_row=6)
 y_chips -= 0.009
 
-# -------------------- Roles row (DISPLAY ALL roles incl Target Man) --------------------
+# -------------------- Roles row (DISPLAY ALL roles incl Target Man + NEW roles) --------------------
 roles_for_row = dict(sorted(role_scores.items(), key=lambda kv: -kv[1])[:10])
 y_roles = roles_row_tight(fig, roles_for_row, y_chips, fs=10.6, max_items=10)
 
