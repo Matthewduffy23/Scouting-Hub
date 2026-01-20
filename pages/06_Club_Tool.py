@@ -1753,12 +1753,12 @@ fig = plt.figure(figsize=(W/100, H/100), dpi=100)
 fig.patch.set_facecolor(PAGE_BG)
 
 # ---- header layout knobs ----
-PHOTO_W = 0.12
-PHOTO_H = 0.12
+PHOTO_W = 0.10
+PHOTO_H = 0.10
 PHOTO_X = 0.050
 PHOTO_Y = 0.915
 
-NAME_X = PHOTO_X + PHOTO_W + 0.08
+NAME_X = PHOTO_X + PHOTO_W + 0.007
 NAME_Y = 0.97
 
 BADGE_SCALE = 1.28
