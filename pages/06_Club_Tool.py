@@ -1194,7 +1194,7 @@ ROLE_BUCKETS = {
         "Ball-Carrying CM": {"metrics": {"Dribbles per 90": 4, "Successful dribbles, %": 2, "Progressive runs per 90": 3, "Accelerations per 90": 3}},
 
         # ===== NEW ROLE (display/label-eligible; excluded from badge) =====
-        "Box to Box CM": {"metrics": {
+        "Box-to-Box CM": {"metrics": {
             "Touches in box per 90": 3,
             "Defensive duels per 90": 3,
             "Non-penalty goals per 90": 2,
@@ -1242,12 +1242,12 @@ ROLE_BUCKETS = {
                                    "Dribbles per 90": 2, "Successful dribbles, %": 1, "Progressive runs per 90": 2, "xA per 90": 3}},
 
         # ===== NEW ROLES (display/label-eligible; excluded from badge) =====
-        "False 9 Runner CF": {"metrics": {
+        "False-9 Runner CF": {"metrics": {
             "Progressive runs per 90": 3,
             "Dribbles per 90": 3,
             "Successful dribbles, %": 2,
         }},
-        "False 9 Passer CF": {"metrics": {
+        "False-9 Passer CF": {"metrics": {
             "Passes per 90": 3,
             "Accurate passes, %": 2,
             "Smart passes per 90": 2,
@@ -1529,11 +1529,11 @@ BADGE_EXCLUDE_ROLES = {
 
 # Roles that should be displayed / label-eligible but NOT counted in badge
 LABEL_ONLY_ROLES = {
-    "box to box cm",
+    "box-to-box cm",
     "wide creator fb",
     "wide carrier fb",
-    "false 9 runner cf",
-    "false 9 passer cf",
+    "false-9 runner cf",
+    "false-9 passer cf",
 }
 
 # filtered roles used ONLY for badge score
