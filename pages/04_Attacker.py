@@ -4599,7 +4599,8 @@ with st.expander("Scatter settings", expanded=False):
                         candidates = candidates[pd.to_numeric(candidates["Age"], errors="coerce") < 23]
                     cx, cy = float(np.nanmedian(x_vals)), float(np.nanmedian(y_vals))
                     dist = (candidates[x_metric]-cx)**2 + (candidates[y_metric]-cy)**2
-                    candidates = candidates.assign(_prio=-dist.values).sort_values("_prio")
+                    candidates = candidates.assign(_dist=dist.values).sort_values("_dist", ascending=True)
+
 
                     x_tol = (xlim[1]-xlim[0]) * 0.035
                     y_tol = (ylim[1]-ylim[0]) * 0.035
