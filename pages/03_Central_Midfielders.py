@@ -110,7 +110,7 @@ INCLUDED_LEAGUES = [
 'Estonia 1.','England 9.','Northern Ireland 1.','Serbia 2.','Denmark 3.',
 'Sweden 3.','Slovenia 2.','Slovakia 2.','Greece 2.','Wales 1.',
 'USA 3.','Scotland 3.','England 6.','England 8.','England 10.',
-'Estonia 2.', 'China 1.', 'Ireland 2.,
+'Estonia 2.', 'China 1.', 'Ireland 2.',
 ]
 
 PRESET_LEAGUES = {
