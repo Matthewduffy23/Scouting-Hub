@@ -4754,20 +4754,19 @@ with st.expander("Scatter settings", expanded=False):
                     if label_only_u23:
                         candidates = candidates[pd.to_numeric(candidates["Age"], errors="coerce") < 23]
 
-                    # Dynamic cap based on canvas size (prevents “everything breaks” on big pools)
-                    # (Still tries to place more if space allows, but never wrecks formatting.)
-                    approx_cap = int((w_px * h_px) / 45000)  # ~36 on 1600x900, ~46 on 1920x820
+                    # Dynamic cap based on canvas size
+                    approx_cap = int((w_px * h_px) / 45000)
                     approx_cap = max(18, min(90, approx_cap))
 
                     force_names = []
                     if not sel.empty and sel_name:
                         force_names.append(str(sel_name))
 
-                    # Also force-highlighted team (optional)
+                    # Force-highlighted team
                     if team_highlight != "(None)":
                         force_names += candidates[candidates["Team"] == team_highlight]["Player"].astype(str).tolist()
 
-                    # Include selected point in candidates so it labels via the same system
+                    # Only include selected player when labels are ON
                     cand_all = candidates.copy()
                     if not sel.empty:
                         cand_all = pd.concat([sel, cand_all], ignore_index=True, sort=False)
@@ -4783,6 +4782,7 @@ with st.expander("Scatter settings", expanded=False):
                         max_labels=approx_cap,
                         always_label_names=force_names,
                     )
+
 
                 # ---------- Render ----------
                 if render_exact:
