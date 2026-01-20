@@ -4276,7 +4276,7 @@ else:
 
 
 
-# ============================== SCATTERPLOT — title, denser ticks, extra headroom ==============================
+# ============================== SCATTERPLOT — fixed scaling, clipped labels, denser ticks, optional outlier-zoom ==============================
 st.markdown("---")
 st.header("📈 Scatterplot")
 
@@ -4394,13 +4394,19 @@ with st.expander("Scatter settings", expanded=False):
     show_title = st.checkbox("Show custom title", value=False, key="sc_show_title")
     custom_title = st.text_input("Custom title", "xG per 90 vs Non-penalty goals per 90", key="sc_title")
 
-    # Top blank gap slider, but AUTO-SET to 75 when a custom title is shown
     top_gap_px = st.slider("Top blank gap (px)", 0, 240, 100, 5, key="sc_topgap_slider")
     if show_title:
         top_gap_px = 75  # AUTO override when title enabled
 
-    # Exact-pixel render
     render_exact = st.checkbox("Render exact pixels (PNG)", value=True)
+
+    # === NEW: scaling mode ===
+    scale_mode = st.selectbox(
+        "Axis scaling",
+        ["Fit to min/max (tight)", "Ignore outliers (1–99%)"],
+        index=0,
+        key="sc_scale_mode",
+    )
 
     # ---- Build pool ----
     try:
@@ -4458,7 +4464,6 @@ with st.expander("Scatter settings", expanded=False):
                     "text.antialiased": True,
                 })
 
-                # === Figure with exact pixels ===
                 fig, ax = plt.subplots(figsize=(w_px / 100, h_px / 100), dpi=100)
                 fig.patch.set_facecolor(PAGE_BG)
                 ax.set_facecolor(PLOT_BG)
@@ -4487,18 +4492,29 @@ with st.expander("Scatter settings", expanded=False):
                         k = 10
                     return k * power
 
-                # ----- Padded limits with extra headroom on the max side -----
-                def padded_limits(arr, pad_frac=0.06, headroom=0.03):
+                # ----- Tight padded limits (FIXED: less padding, no headroom) -----
+                def padded_limits(arr, pad_frac=0.03):
                     a_min, a_max = float(np.nanmin(arr)), float(np.nanmax(arr))
                     if a_min == a_max:
                         a_min -= 1e-6; a_max += 1e-6
                     span = (a_max - a_min)
                     pad = span * pad_frac
-                    return a_min - pad, a_max + pad + span * headroom
+                    return a_min - pad, a_max + pad
 
-        xlim = padded_limits(x_vals, pad_frac=0.03, headroom=0.00)
-        ylim = padded_limits(y_vals, pad_frac=0.03, headroom=0.00)
-
+                # Choose scaling mode (NEW)
+                if scale_mode.startswith("Ignore outliers"):
+                    x_lo, x_hi = np.nanpercentile(x_vals, [1, 99])
+                    y_lo, y_hi = np.nanpercentile(y_vals, [1, 99])
+                    ax.set_xlim(x_lo, x_hi)
+                    ax.set_ylim(y_lo, y_hi)
+                    xlim = (x_lo, x_hi)
+                    ylim = (y_lo, y_hi)
+                    # small margins so points don't touch frame
+                    ax.margins(x=0.02, y=0.02)
+                else:
+                    xlim = padded_limits(x_vals, pad_frac=0.03)
+                    ylim = padded_limits(y_vals, pad_frac=0.03)
+                    ax.set_xlim(*xlim); ax.set_ylim(*ylim)
 
                 # ---- Colour mapping ----
                 cvals = pool_sc[colour_metric].to_numpy(float)
@@ -4560,13 +4576,12 @@ with st.expander("Scatter settings", expanded=False):
                         marker=marker, zorder=4
                     )
 
-                # Highlight team overlay
                 if team_highlight != "(None)":
                     hl = pool_sc[pool_sc["Team"] == team_highlight]
                     if not hl.empty:
                         ax.scatter(
                             hl[x_metric], hl[y_metric],
-                            s=point_size, c="#f59e0b",  # amber highlight
+                            s=point_size, c="#f59e0b",
                             alpha=1.0, edgecolors="white", linewidths=1.6,
                             marker=marker, zorder=5
                         )
@@ -4583,7 +4598,7 @@ with st.expander("Scatter settings", expanded=False):
                     ax.axvline(med_x, color=med_col, ls=(0, (4, 4)), lw=2.2, zorder=3)
                     ax.axhline(med_y, color=med_col, ls=(0, (4, 4)), lw=2.2, zorder=3)
 
-                # ---------- Labels (FIXED: clip to axes + keep inside + correct prioritisation) ----------
+                # ---------- Labels (clipped + inside axes + stable ordering) ----------
                 texts = []
 
                 def _clip_text(tt):
@@ -4605,12 +4620,10 @@ with st.expander("Scatter settings", expanded=False):
                     if label_only_u23:
                         candidates = candidates[pd.to_numeric(candidates["Age"], errors="coerce") < 23]
 
-                    # FIX: closest-to-centre labels first (stable, avoids “labels everywhere”)
                     cx, cy = float(np.nanmedian(x_vals)), float(np.nanmedian(y_vals))
                     dist = (candidates[x_metric]-cx)**2 + (candidates[y_metric]-cy)**2
                     candidates = candidates.assign(_dist=dist.values).sort_values("_dist", ascending=True)
 
-                    # data-space “no label near label” gate
                     x_tol = (xlim[1]-xlim[0]) * 0.035
                     y_tol = (ylim[1]-ylim[0]) * 0.035
                     placed = []
@@ -4619,20 +4632,17 @@ with st.expander("Scatter settings", expanded=False):
 
                     for _, r in candidates.iterrows():
                         px, py = float(r[x_metric]), float(r[y_metric])
-
                         if not allow_overlap and any(abs(px-qx) < x_tol and abs(py-qy) < y_tol for (qx, qy) in placed):
                             continue
-
                         placed.append((px, py))
-                        t = ax.annotate(
+                        tt = ax.annotate(
                             r["Player"], (px, py), xytext=(10, 12), textcoords="offset points",
                             fontsize=label_size, fontweight="semibold", color=txt_col, ha="left", va="bottom", zorder=4
                         )
-                        t.set_path_effects([pe.withStroke(linewidth=2.0, foreground=("#ffffff" if theme == "Light" else "#1e293b"), alpha=0.9)])
-                        _clip_text(t)
-                        texts.append(t)
+                        tt.set_path_effects([pe.withStroke(linewidth=2.0, foreground=("#ffffff" if theme == "Light" else "#1e293b"), alpha=0.9)])
+                        _clip_text(tt)
+                        texts.append(tt)
 
-                    # Keep labels inside axes if adjustText is available
                     try:
                         if _HAS_ADJUST and not allow_overlap and texts:
                             adjust_text(
@@ -4643,7 +4653,6 @@ with st.expander("Scatter settings", expanded=False):
                                 force_text=(0.08, 0.12), force_points=(0.08, 0.12),
                                 ensure_inside_axes=True
                             )
-                            # re-clip after adjustment
                             for tt in texts:
                                 _clip_text(tt)
                     except Exception:
@@ -4653,7 +4662,6 @@ with st.expander("Scatter settings", expanded=False):
                 ax.set_xlabel(x_metric, fontsize=14, fontweight="semibold", color=txt_col)
                 ax.set_ylabel(y_metric, fontsize=14, fontweight="semibold", color=txt_col)
 
-                # Denser auto ticks (≈2×)
                 if tick_mode.startswith("Auto"):
                     step_x = nice_step(*xlim, target_ticks=12)
                     step_y = nice_step(*ylim, target_ticks=12)
@@ -4669,12 +4677,13 @@ with st.expander("Scatter settings", expanded=False):
                     if step >= 0.01: return 2
                     return 3
 
-                ax.xaxis.set_major_formatter(FormatStrFormatter(f'%.{decimals(step_x)}f'))
-                ax.yaxis.set_major_formatter(FormatStrFormatter(f'%.{decimals(step_y)}f'))
+                ax.xaxis.set_major_formatter(FormatStrFormatter(f"%.{decimals(step_x)}f"))
+                ax.yaxis.set_major_formatter(FormatStrFormatter(f"%.{decimals(step_y)}f"))
                 ax.minorticks_off()
 
                 for tick in ax.get_xticklabels() + ax.get_yticklabels():
-                    tick.set_fontweight("semibold"); tick.set_color(txt_col)
+                    tick.set_fontweight("semibold")
+                    tick.set_color(txt_col)
 
                 ax.grid(True, which="major", linewidth=0.9, color=GRID_MAJ)
                 for s in ax.spines.values():
@@ -4685,7 +4694,6 @@ with st.expander("Scatter settings", expanded=False):
                 top_frac = 1.0 - (top_gap_px / float(h_px))
                 fig.subplots_adjust(left=0.075, right=0.985, bottom=0.105, top=top_frac)
 
-                # Optional title slightly lower within the gap
                 if show_title and custom_title.strip():
                     title_col = "#111111" if theme == "Light" else "#f5f5f5"
                     y_gap_pos = top_frac + (1 - top_frac) * 0.44
@@ -4697,7 +4705,6 @@ with st.expander("Scatter settings", expanded=False):
                 if render_exact:
                     from io import BytesIO
                     buf = BytesIO()
-                    # FIX: avoid bbox_inches="tight" to prevent unexpected shifting/cropping
                     fig.savefig(buf, format="png", dpi=100, facecolor=fig.get_facecolor())
                     buf.seek(0)
                     st.image(buf, width=w_px)
@@ -4706,7 +4713,8 @@ with st.expander("Scatter settings", expanded=False):
 
     except Exception as e:
         st.info(f"Scatter could not be drawn: {e}")
-# ==========================================================================================================
+# =========================================================================================================================
+
 
 # ==========================================================================================================
 
