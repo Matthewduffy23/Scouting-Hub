@@ -4276,7 +4276,7 @@ else:
 
 
 
-# ============================== SCATTERPLOT — FIX: no cut-off points/labels + slight wiggle room ==============================
+# ============================== SCATTERPLOT — Tableau-ish smart labels + full-range scaling + wiggle room ==============================
 st.markdown("---")
 st.header("📈 Scatterplot")
 
@@ -4338,6 +4338,15 @@ with st.expander("Scatter settings", expanded=False):
     label_only_u23 = st.checkbox("Label only U23 players", value=False, key="sc_lbl_u23")
     allow_overlap = st.toggle("Allow overlapping labels (not recommended)", value=False, key="sc_overlap")
     label_size = st.slider("Label size", 8, 20, 13, 1, key="sc_lbl_sz")
+
+    # Tableau-ish label controls (NEW)
+    max_labels = st.slider("Max labels (Tableau style)", 0, 40, 18, 1, key="sc_max_labels")
+    label_strategy = st.selectbox(
+        "Label strategy",
+        ["Smart (recommended)", "Selected only", "Outliers only", "Top-right performers"],
+        index=0,
+        key="sc_label_strategy",
+    )
 
     # Visual aids
     show_medians = st.checkbox("Show median reference lines", value=True, key="sc_medians")
@@ -4408,7 +4417,7 @@ with st.expander("Scatter settings", expanded=False):
         key="sc_scale_mode",
     )
 
-    # NEW: wiggle room (requested)
+    # Wiggle room (requested)
     wiggle_pct = st.slider("Wiggle room (%)", 0.0, 12.0, 4.0, 0.5, key="sc_wiggle") / 100.0
 
     # ---- Build pool ----
@@ -4495,14 +4504,10 @@ with st.expander("Scatter settings", expanded=False):
                         k = 10
                     return k * power
 
-                # ----- Axis limits with point-radius safety + wiggle room -----
-                # Convert marker size (points^2) to a data-space pad so circles don't get clipped by axes frame.
+                # ----- Axis limits with wiggle room + dot-radius safety (prevents cut-off) -----
                 def _data_pad_from_points(ax, s_pts2, x_span, y_span):
-                    # marker radius in points (s is area)
-                    r_pt = float(np.sqrt(max(s_pts2, 1e-9))) / 2.0
-                    # points -> pixels
-                    r_px = r_pt * ax.figure.dpi / 72.0
-                    # pixels -> axes fraction
+                    r_pt = float(np.sqrt(max(s_pts2, 1e-9))) / 2.0  # radius in points
+                    r_px = r_pt * ax.figure.dpi / 72.0              # points -> px
                     bbox = ax.get_window_extent().transformed(ax.figure.dpi_scale_trans.inverted())
                     w_in, h_in = bbox.width, bbox.height
                     w_px, h_px_ = w_in * ax.figure.dpi, h_in * ax.figure.dpi
@@ -4510,7 +4515,6 @@ with st.expander("Scatter settings", expanded=False):
                     fy = r_px / max(h_px_, 1)
                     return x_span * fx, y_span * fy
 
-                # initial limits based on mode
                 if scale_mode.startswith("Ignore outliers"):
                     x_lo, x_hi = np.nanpercentile(x_vals, [1, 99])
                     y_lo, y_hi = np.nanpercentile(y_vals, [1, 99])
@@ -4526,17 +4530,16 @@ with st.expander("Scatter settings", expanded=False):
                 x_span = x_hi - x_lo
                 y_span = y_hi - y_lo
 
-                # apply wiggle room
+                # wiggle
                 x_lo -= x_span * wiggle_pct
                 x_hi += x_span * wiggle_pct
                 y_lo -= y_span * wiggle_pct
                 y_hi += y_span * wiggle_pct
 
-                # draw now so ax bbox exists for pad calc
+                # need a draw for accurate bbox (pad calc)
                 fig.canvas.draw()
-
-                # add extra pad so big dots don't clip against spines
                 pad_x, pad_y = _data_pad_from_points(ax, point_size, (x_hi - x_lo), (y_hi - y_lo))
+
                 ax.set_xlim(x_lo - pad_x, x_hi + pad_x)
                 ax.set_ylim(y_lo - pad_y, y_hi + pad_y)
 
@@ -4548,9 +4551,9 @@ with st.expander("Scatter settings", expanded=False):
                 cmin, cmax = float(np.nanmin(cvals)), float(np.nanmax(cvals))
                 if cmin == cmax:
                     cmax = cmin + 1e-6
-                t = (cvals - cmin) / (cmax - cmin)
+                tt = (cvals - cmin) / (cmax - cmin)
                 if reverse_scale:
-                    t = 1.0 - t
+                    tt = 1.0 - tt
 
                 def interp(a, b, u):
                     a = np.array(a, dtype=float); b = np.array(b, dtype=float)
@@ -4577,7 +4580,7 @@ with st.expander("Scatter settings", expanded=False):
                 else:
                     def map_col(v): return np.array([0, 0, 0]) / 255.0
 
-                col_array = np.vstack([map_col(v) for v in t])
+                col_array = np.vstack([map_col(v) for v in tt])
                 color_series = pd.Series(list(map(tuple, col_array)), index=pool_sc.index)
 
                 # Split selected
@@ -4625,128 +4628,104 @@ with st.expander("Scatter settings", expanded=False):
                     ax.axvline(med_x, color=med_col, ls=(0, (4, 4)), lw=2.2, zorder=3)
                     ax.axhline(med_y, color=med_col, ls=(0, (4, 4)), lw=2.2, zorder=3)
 
-# ---------- Labels (Tableau-ish: label a small smart subset + stable placement) ----------
-texts = []
+                # ---------- Labels (Tableau-ish: small smart subset, stable, no chaos) ----------
+                texts = []
 
-def _clip_text(tt):
-    tt.set_clip_on(True)
-    tt.set_clip_path(ax.patch)
+                def _clip_text(tobj):
+                    tobj.set_clip_on(True)
+                    tobj.set_clip_path(ax.patch)
 
-# How many labels max (Tableau labels only a subset)
-max_labels = st.slider("Max labels (Tableau style)", 0, 40, 18, 1, key="sc_max_labels")
+                def _zscore(a):
+                    a = np.asarray(a, dtype=float)
+                    med = float(np.nanmedian(a))
+                    iqr = float(np.nanpercentile(a, 75) - np.nanpercentile(a, 25))
+                    if not np.isfinite(iqr) or iqr <= 1e-9:
+                        iqr = float(np.nanstd(a) + 1e-9)
+                    return (a - med) / iqr
 
-# Strategy
-label_strategy = st.selectbox(
-    "Label strategy",
-    ["Smart (recommended)", "Selected only", "Outliers only", "Top-right performers"],
-    index=0,
-    key="sc_label_strategy",
-)
+                # candidates for labeling (exclude selected)
+                cand = others.copy()
+                if label_only_u23:
+                    cand = cand[pd.to_numeric(cand["Age"], errors="coerce") < 23]
 
-# Build candidate set (exclude selected from "others" labels so it doesn't duplicate)
-candidates = others.copy()
-if label_only_u23:
-    candidates = candidates[pd.to_numeric(candidates["Age"], errors="coerce") < 23]
+                # Always label selected
+                if not sel.empty:
+                    sx, sy = float(sel.iloc[0][x_metric]), float(sel.iloc[0][y_metric])
+                    tsel = ax.annotate(
+                        sel.iloc[0]["Player"], (sx, sy),
+                        xytext=(10, 10), textcoords="offset points",
+                        fontsize=label_size, fontweight="semibold", color=txt_col,
+                        ha="left", va="bottom", zorder=7
+                    )
+                    tsel.set_path_effects([pe.withStroke(linewidth=2.2, foreground=("#ffffff" if theme == "Light" else "#1e293b"), alpha=0.95)])
+                    _clip_text(tsel)
+                    texts.append(tsel)
 
-# Always label selected player
-if not sel.empty:
-    sx, sy = float(sel.iloc[0][x_metric]), float(sel.iloc[0][y_metric])
-    tsel = ax.annotate(
-        sel.iloc[0]["Player"], (sx, sy),
-        xytext=(10, 10), textcoords="offset points",
-        fontsize=label_size, fontweight="semibold", color=txt_col,
-        ha="left", va="bottom", zorder=7
-    )
-    tsel.set_path_effects([pe.withStroke(linewidth=2.2, foreground=("#ffffff" if theme == "Light" else "#1e293b"), alpha=0.95)])
-    _clip_text(tsel)
-    texts.append(tsel)
+                # Label subset
+                if show_labels and max_labels > 0 and not cand.empty and label_strategy != "Selected only":
+                    xv = cand[x_metric].to_numpy(float)
+                    yv = cand[y_metric].to_numpy(float)
+                    zx, zy = _zscore(xv), _zscore(yv)
 
-# Nothing else to do
-if max_labels == 0 or candidates.empty or (label_strategy == "Selected only"):
-    pass
-else:
-    # Compute “importance” scores (Tableau-ish heuristics)
-    x = candidates[x_metric].to_numpy(float)
-    y = candidates[y_metric].to_numpy(float)
+                    outlier = zx**2 + zy**2
+                    topright = zx + zy
+                    extremes = np.maximum(np.abs(zx), np.abs(zy))
 
-    # Standardize (robust-ish) so x/y are comparable
-    def zscore(a):
-        m = float(np.nanmedian(a))
-        s = float(np.nanpercentile(a, 75) - np.nanpercentile(a, 25))
-        s = s if s > 1e-9 else float(np.nanstd(a) + 1e-9)
-        return (a - m) / s
+                    if label_strategy == "Outliers only":
+                        score = outlier
+                    elif label_strategy == "Top-right performers":
+                        score = topright
+                    else:
+                        score = 0.55*outlier + 0.35*topright + 0.10*extremes
 
-    zx, zy = zscore(x), zscore(y)
+                    cand = cand.assign(_score=score).sort_values("_score", ascending=False)
 
-    # Outlierness: distance from center
-    outlier = zx**2 + zy**2
+                    # Collision gate (skip instead of moving wildly)
+                    placed = []
+                    if not sel.empty:
+                        placed.append((sx, sy))
 
-    # Top-right performance: high x and high y
-    topright = zx + zy
+                    x_tol = (xlim[1]-xlim[0]) * 0.055
+                    y_tol = (ylim[1]-ylim[0]) * 0.055
 
-    # Extreme axes: very high/low x or y
-    extremes = np.maximum(np.abs(zx), np.abs(zy))
+                    count = 0
+                    for _, r in cand.iterrows():
+                        if count >= max_labels:
+                            break
+                        px, py = float(r[x_metric]), float(r[y_metric])
 
-    if label_strategy == "Outliers only":
-        score = outlier
-    elif label_strategy == "Top-right performers":
-        score = topright
-    else:
-        # Smart (recommended): blend of outlierness + top-right + extremes
-        score = 0.55*outlier + 0.35*topright + 0.10*extremes
+                        if not allow_overlap and any(abs(px-qx) < x_tol and abs(py-qy) < y_tol for (qx, qy) in placed):
+                            continue
 
-    candidates = candidates.assign(_score=score).sort_values("_score", ascending=False)
+                        placed.append((px, py))
+                        ttxt = ax.annotate(
+                            r["Player"], (px, py),
+                            xytext=(8, 8), textcoords="offset points",
+                            fontsize=label_size, fontweight="semibold", color=txt_col,
+                            ha="left", va="bottom", zorder=6
+                        )
+                        ttxt.set_path_effects([pe.withStroke(linewidth=2.0, foreground=("#ffffff" if theme == "Light" else "#1e293b"), alpha=0.9)])
+                        _clip_text(ttxt)
+                        texts.append(ttxt)
+                        count += 1
 
-    # Place labels with a strict collision gate (skip if collision)
-    placed = []
-    # include selected point in collision set
-    if not sel.empty:
-        placed.append((sx, sy))
-
-    x_tol = (ax.get_xlim()[1] - ax.get_xlim()[0]) * 0.045
-    y_tol = (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.045
-
-    count = 0
-    for _, r in candidates.iterrows():
-        if count >= max_labels:
-            break
-
-        px, py = float(r[x_metric]), float(r[y_metric])
-
-        # Skip if too close to an already-labeled point (Tableau style)
-        if not allow_overlap and any(abs(px-qx) < x_tol and abs(py-qy) < y_tol for (qx, qy) in placed):
-            continue
-
-        placed.append((px, py))
-
-        tt = ax.annotate(
-            r["Player"], (px, py),
-            xytext=(8, 8), textcoords="offset points",
-            fontsize=label_size, fontweight="semibold", color=txt_col,
-            ha="left", va="bottom", zorder=6
-        )
-        tt.set_path_effects([pe.withStroke(linewidth=2.0, foreground=("#ffffff" if theme == "Light" else "#1e293b"), alpha=0.9)])
-        _clip_text(tt)
-        texts.append(tt)
-        count += 1
-
-    # Small, controlled nudge using adjustText (no wild moves)
-    try:
-        if _HAS_ADJUST and not allow_overlap and texts:
-            adjust_text(
-                texts, ax=ax,
-                only_move={"text": "xy"},
-                ensure_inside_axes=True,
-                lim=60,
-                force_text=(0.03, 0.06),
-                expand_text=(1.02, 1.04),
-                expand_points=(1.01, 1.02),
-                arrowprops=dict(arrowstyle="-", lw=0.7, alpha=0.35)  # leader lines when nudged
-            )
-            for tt in texts:
-                _clip_text(tt)
-    except Exception:
-        pass
+                    # Small controlled nudge + leader lines (Tableau-ish)
+                    try:
+                        if _HAS_ADJUST and not allow_overlap and texts:
+                            adjust_text(
+                                texts, ax=ax,
+                                only_move={"text": "xy"},
+                                ensure_inside_axes=True,
+                                lim=60,
+                                force_text=(0.03, 0.06),
+                                expand_text=(1.02, 1.04),
+                                expand_points=(1.01, 1.02),
+                                arrowprops=dict(arrowstyle="-", lw=0.7, alpha=0.35)
+                            )
+                            for ttxt in texts:
+                                _clip_text(ttxt)
+                    except Exception:
+                        pass
 
                 # ---------- Axes & grid ----------
                 ax.set_xlabel(x_metric, fontsize=14, fontweight="semibold", color=txt_col)
@@ -4804,6 +4783,7 @@ else:
     except Exception as e:
         st.info(f"Scatter could not be drawn: {e}")
 # =========================================================================================================================
+
 
 
 
