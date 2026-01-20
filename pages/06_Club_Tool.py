@@ -1856,11 +1856,11 @@ for txt, weight in runs:
     x_meta += _text_width_frac(fig, txt, fontsize=fs, weight=("900" if weight == "bold" else "normal")) + (0.004 if txt.strip() else 0)
 
 # -------------------- Strengths / Weaknesses / Styles (chips) --------------------
-y_chips = 0.872
+y_chips = 0.88
 y_chips = chip_row_exact(fig, strengths,  y_chips, CHIP_G_BG, fs=10.1, max_rows=1, max_per_row=6)
 y_chips = chip_row_exact(fig, weaknesses, y_chips, CHIP_R_BG, fs=10.1, max_rows=1, max_per_row=6)
 y_chips = chip_row_exact(fig, styles,     y_chips, CHIP_B_BG, fs=10.1, max_rows=1, max_per_row=6)
-y_chips -= 0.006
+y_chips -= 0.009
 
 # -------------------- Roles row (DISPLAY ALL roles incl Target Man) --------------------
 roles_for_row = dict(sorted(role_scores.items(), key=lambda kv: -kv[1])[:10])
