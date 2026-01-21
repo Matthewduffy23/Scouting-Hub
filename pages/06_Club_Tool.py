@@ -2043,10 +2043,10 @@ st.download_button(
 
 # ============================ END ONE-PAGER ============================
 
-# ============================ SHORTLIST (T20) — ELITE TABLE (v3.3+) ============================
+# ============================ SHORTLIST (T20) — ELITE TABLE (v3.3++) ============================
 # EXACT SAME AS YOUR v3.3, plus:
 # ✅ Display-only filters: Contract expires (year), Foot, Birth country, Market value (0–150m, 0.5m)
-# ✅ Best-role DISPLAY uses ALL roles (including label-only); scoring still excludes BADGE_EXCLUDE + LABEL_ONLY
+# ✅ Best-role DISPLAY uses ALL roles (including label-only + Target Man); scoring excludes them UNLESS selected
 # ✅ Best-role display formatting: first two words + position label (POS_LABEL_MAP)
 # ✅ POS_LABEL_MAP applied to the player's first position token
 # ✅ If crest/badge cannot be found -> uses FALLBACK_BADGE url
@@ -2065,7 +2065,7 @@ st.markdown("---")
 st.header("📋 Shortlist (T20)")
 
 # ---------- role exclusions (same logic as one-pager badge) ----------
-BADGE_EXCLUDE_ROLES = {"target man cf"}  # excluded from badge/base score
+BADGE_EXCLUDE_ROLES = {"target man cf"}  # excluded from badge/base score by default
 LABEL_ONLY_ROLES = {
     "box-to-box cm",
     "wide creator fb",
@@ -2073,6 +2073,18 @@ LABEL_ONLY_ROLES = {
     "false-9 runner cf",
     "false-9 passer cf",
 }
+
+def _norm_role_name(x: str) -> str:
+    return str(x or "").strip().lower()
+
+_BADGE_EXCLUDE_N = {_norm_role_name(r) for r in BADGE_EXCLUDE_ROLES}
+_LABEL_ONLY_N = {_norm_role_name(r) for r in LABEL_ONLY_ROLES}
+
+def _is_badge_excluded(role_name: str) -> bool:
+    return _norm_role_name(role_name) in _BADGE_EXCLUDE_N
+
+def _is_label_only(role_name: str) -> bool:
+    return _norm_role_name(role_name) in _LABEL_ONLY_N
 
 # ---------- POS label map (user spec) ----------
 POS_LABEL_MAP = {
@@ -2167,7 +2179,6 @@ def _contract_year(x):
     s = _strip_tags(x)
     if not s:
         return np.nan
-    # try ISO date first
     m = re.search(r"(\d{4})", s)
     if m:
         try:
@@ -2188,7 +2199,6 @@ def _norm_foot(x) -> str:
         return "unknown"
     if s == "":
         return ""
-    # if something else, keep raw but lowercased
     return s
 
 def _parse_market_value_to_m(x):
@@ -2371,44 +2381,39 @@ with d2:
 st.markdown("#### 🧾 Player filters (display only)")
 p1, p2, p3, p4 = st.columns([1.2, 1.2, 1.6, 1.2])
 
-# Contract year: derive range from df if available
 contract_col = "Contract expires"
 foot_col = "Foot"
 birth_col = "Birth country"
 mv_col = "Market value"
 
-# We'll compute min/max from df later once df_base exists; UI uses safe defaults
 with p1:
     contract_year_range = st.slider("Contract year", 2000, 2035, (2000, 2035), 1, key="t20_contract_year_v33")
 with p2:
     foot_opts = ["", "right", "left", "both", "unknown"]
     foot_sel = st.multiselect("Foot", foot_opts, default=[], key="t20_foot_v33")
 with p3:
-    # Your allowed list (plus blank). We'll also union with df values later safely.
     BIRTH_COUNTRIES_ALLOWED = [
-        "", "Netherlands", "Spain", "Serbia", "Germany", "England", "Republic of Ireland", "France", "Slovakia",
-        "Italy", "Switzerland", "Wales", "Belgium", "Hungary", "Côte d'Ivoire", "Portugal", "Brazil", "Argentina",
-        "Denmark", "Northern Ireland", "Sierra Leone", "Norway", "Sweden", "United States", "Gambia", "Ukraine",
-        "Ghana", "Scotland", "Paraguay", "Senegal", "Uruguay", "Czech Republic", "Guernsey", "Croatia", "Nigeria",
-        "Ecuador", "Colombia", "Mexico", "Egypt", "Angola", "French Guiana", "Japan", "Burkina Faso", "Mozambique",
-        "Greece", "Slovenia", "Guinea-Bissau", "Zimbabwe", "Cameroon", "South Africa", "Korea Republic", "Chad",
-        "Congo DR", "Austria", "Bulgaria", "Türkiye", "New Zealand", "Georgia", "Uzbekistan", "Morocco",
-        "Bosnia and Herzegovina", "Poland", "Australia", "Saudi Arabia", "Chile", "Mali", "Tanzania", "Canada",
-        "Montenegro", "Zambia", "Panama", "Jersey", "Iceland", "Algeria", "Curaçao", "Finland", "Bermuda",
-        "Barbados", "Congo", "Grenada", "Montserrat", "Liberia", "Jamaica", "Lithuania", "Afghanistan", "Malawi",
-        "Belize", "Guadeloupe", "Albania", "Somalia", "Guyana", "British Virgin Islands", "Suriname", "Gibraltar",
-        "Honduras", "Mauritius", "Great Britain", "Russia", "Cyprus", "Fiji", "Thailand", "Hong Kong", "Latvia",
-        "Trinidad and Tobago", "Eritrea", "North Macedonia", "Kosovo", "Azerbaijan", "Luxembourg", "Venezuela",
-        "Peru", "Israel", "Moldova", "Estonia", "Costa Rica", "Armenia", "Guinea", "Comoros", "Kenya", "Vanuatu",
-        "Malta", "Iraq", "Dominica", "Réunion", "Cape Verde Islands", "Romania", "Liechtenstein", "Kazakhstan",
-        "Belarus", "Benin", "Rwanda", "Dominican Republic", "Iran", "Niger", "Singapore", "Burundi",
-        "Madagascar", "Togo", "Central African Republic", "Bolivia", "Tajikistan", "Martinique", "Cuba",
-        "China PR", "Equatorial Guinea", "Gabon", "Chinese Taipei", "Guatemala", "Tunisia", "Lebanon", "Bahrain",
-        "Uganda", "Oman", "Faroe Islands", "Jordan", "Haiti", "Africa", "Syria", "St. Lucia", "Indonesia",
-        "Ethiopia", "Philippines", "Mauritania", "Palestine", "Libya", "Malaysia", "Korea DPR", "Nicaragua",
-        "South Sudan", "Bonaire", "São Tomé e Príncipe", "St. Kitts and Nevis", "El Salvador", "New Caledonia",
-        "Kyrgyzstan", "Isle of Man", "Lesotho", "United Arab Emirates", "Andorra", "Mongolia", "Namibia",
-        "Eswatini", "Pakistan", "Djibouti", "Antigua and Barbuda", "Puerto Rico", "Cayman Islands",
+        "", "Netherlands","Spain","Serbia","Germany","England","Republic of Ireland","France","Slovakia","Italy",
+        "Switzerland","Wales","Belgium","Hungary","Côte d'Ivoire","Portugal","Brazil","Argentina","Denmark",
+        "Northern Ireland","Sierra Leone","Norway","Sweden","United States","Gambia","Ukraine","Ghana","Scotland",
+        "Paraguay","Senegal","Uruguay","Czech Republic","Guernsey","Croatia","Nigeria","Ecuador","Colombia","Mexico",
+        "Egypt","Angola","French Guiana","Japan","Burkina Faso","Mozambique","Greece","Slovenia","Guinea-Bissau",
+        "Zimbabwe","Cameroon","South Africa","Korea Republic","Chad","Congo DR","Austria","Bulgaria","Türkiye",
+        "New Zealand","Georgia","Uzbekistan","Morocco","Bosnia and Herzegovina","Poland","Australia","Saudi Arabia",
+        "Chile","Mali","Tanzania","Canada","Montenegro","Zambia","Panama","Jersey","Iceland","Algeria","Curaçao",
+        "Finland","Bermuda","Barbados","Congo","Grenada","Montserrat","Liberia","Jamaica","Lithuania","Afghanistan",
+        "Malawi","Belize","Guadeloupe","Albania","Somalia","Guyana","British Virgin Islands","Suriname","Gibraltar",
+        "Honduras","Mauritius","Great Britain","Russia","Cyprus","Fiji","Thailand","Hong Kong","Latvia",
+        "Trinidad and Tobago","Eritrea","North Macedonia","Kosovo","Azerbaijan","Luxembourg","Venezuela","Peru",
+        "Israel","Moldova","Estonia","Costa Rica","Armenia","Guinea","Comoros","Kenya","Vanuatu","Malta","Iraq",
+        "Dominica","Réunion","Cape Verde Islands","Romania","Liechtenstein","Kazakhstan","Belarus","Benin","Rwanda",
+        "Dominican Republic","Iran","Niger","Singapore","Burundi","Madagascar","Togo","Central African Republic",
+        "Bolivia","Tajikistan","Martinique","Cuba","China PR","Equatorial Guinea","Gabon","Chinese Taipei",
+        "Guatemala","Tunisia","Lebanon","Bahrain","Uganda","Oman","Faroe Islands","Jordan","Haiti","Africa","Syria",
+        "St. Lucia","Indonesia","Ethiopia","Philippines","Mauritania","Palestine","Libya","Malaysia","Korea DPR",
+        "Nicaragua","South Sudan","Bonaire","São Tomé e Príncipe","St. Kitts and Nevis","El Salvador",
+        "New Caledonia","Kyrgyzstan","Isle of Man","Lesotho","United Arab Emirates","Andorra","Mongolia","Namibia",
+        "Eswatini","Pakistan","Djibouti","Antigua and Barbuda","Puerto Rico","Cayman Islands",
         "St. Vincent and the Grenadines"
     ]
     birth_sel = st.multiselect("Birth country", sorted(set(BIRTH_COUNTRIES_ALLOWED)), default=[], key="t20_birth_v33")
@@ -2552,12 +2557,10 @@ if team_q.strip():
     df_disp = df_disp[df_disp["Team"].astype(str).str.contains(team_q.strip(), case=False, na=False)]
 
 # ✅ NEW display-only filters
-# Contract year
+# Contract year (keeps NaNs visible)
 if "_contract_year" in df_disp.columns:
-    df_disp = df_disp[
-        df_disp["_contract_year"].fillna(-1).astype(int).between(int(contract_year_range[0]), int(contract_year_range[1]))
-        | df_disp["_contract_year"].isna()
-    ].copy()
+    lo_y, hi_y = int(contract_year_range[0]), int(contract_year_range[1])
+    df_disp = df_disp[df_disp["_contract_year"].between(lo_y, hi_y) | df_disp["_contract_year"].isna()].copy()
 
 # Foot
 if foot_sel:
@@ -2567,10 +2570,10 @@ if foot_sel:
 if birth_sel:
     df_disp = df_disp[df_disp["_birth_country"].isin(set(birth_sel))].copy()
 
-# Market value (€m)
+# Market value (€m) (keeps NaNs visible)
 if "_mv_m" in df_disp.columns:
     lo_mv, hi_mv = float(mv_range[0]), float(mv_range[1])
-    df_disp = df_disp[df_disp["_mv_m"].fillna(-1).between(lo_mv, hi_mv) | df_disp["_mv_m"].isna()].copy()
+    df_disp = df_disp[df_disp["_mv_m"].between(lo_mv, hi_mv) | df_disp["_mv_m"].isna()].copy()
 
 # league display filters
 if "League" in df_disp.columns:
@@ -2606,13 +2609,20 @@ def _role_score_series_from_pcts(pcts: pd.DataFrame, spec: dict, idx: pd.Index) 
         return pd.Series(np.nan, index=idx)
     M = pcts.loc[idx, cols].astype(float)
     w = np.array(wts, dtype=float)
-    return (M.mul(w, axis=1).sum(axis=1) / w.sum())
+    s = (M.mul(w, axis=1).sum(axis=1) / w.sum())
+    return pd.to_numeric(s, errors="coerce")
 
-def _score_subset_against_league_pos_ref(df_subset: pd.DataFrame, rk: str, allowed_pos_tokens: set):
+def _score_subset_against_league_pos_ref(
+    df_subset: pd.DataFrame,
+    rk: str,
+    allowed_pos_tokens: set,
+    selected_roles_for_scoring: set | None = None
+):
     """
     Computes:
-      - _best_role_badge + _best_raw_badge using badge-eligible roles only
-      - _best_role_display using ALL roles (including label-only)
+      - _best_role_badge + _best_raw_badge using eligible roles
+        (default excludes BADGE_EXCLUDE + LABEL_ONLY, but you can include them if selected)
+      - _best_role_display using ALL roles (including label-only + Target Man)
       - _complete_raw using your formula
       - role_scores_by_league for ordering by specific role
     Reference percentiles: df_base filtered to SAME LEAGUE + SAME POS GROUP
@@ -2634,11 +2644,14 @@ def _score_subset_against_league_pos_ref(df_subset: pd.DataFrame, rk: str, allow
 
     base_pos = df_base[df_base["_pos_tok"].isin(allowed_pos_tokens)].copy()
 
-    eligible_roles = [
-        rname for rname in specs.keys()
-        if str(rname).strip().lower() not in BADGE_EXCLUDE_ROLES
-        and str(rname).strip().lower() not in LABEL_ONLY_ROLES
-    ]
+    # default eligible roles for numeric scoring
+    eligible_default = [rname for rname in specs.keys() if (not _is_badge_excluded(rname)) and (not _is_label_only(rname))]
+
+    # allow excluded/label-only roles to contribute ONLY if user selected them
+    selected_roles_for_scoring = set(selected_roles_for_scoring or [])
+    eligible_selected = [r for r in specs.keys() if r in selected_roles_for_scoring]
+
+    eligible_roles_for_scoring = list(dict.fromkeys(eligible_default + eligible_selected))
 
     best_role_badge_s = pd.Series("", index=df_subset.index, dtype="object")
     best_raw_s        = pd.Series(0.0, index=df_subset.index, dtype="float")
@@ -2663,14 +2676,16 @@ def _score_subset_against_league_pos_ref(df_subset: pd.DataFrame, rk: str, allow
             role_scores_tbl = pd.DataFrame(index=idx)
             for rname, spec in specs.items():
                 role_scores_tbl[rname] = _role_score_series_from_pcts(pcts, spec, idx)
+
             role_scores_by_league[str(lg)] = role_scores_tbl
 
-            # BEST ROLE DISPLAY: use ALL roles (including label-only)
+            # BEST ROLE DISPLAY: use ALL roles (includes label-only + target man)
             best_role_disp_s.loc[idx] = role_scores_tbl.idxmax(axis=1).astype(str).fillna("")
 
-            # BADGE/base best role: eligible only
-            if eligible_roles:
-                elig_tbl = role_scores_tbl[eligible_roles]
+            # BADGE/base best role: eligible scoring roles only
+            cols = [c for c in eligible_roles_for_scoring if c in role_scores_tbl.columns]
+            if cols:
+                elig_tbl = role_scores_tbl[cols]
                 best_role_badge_s.loc[idx] = elig_tbl.idxmax(axis=1).astype(str).fillna("")
                 best_raw_s.loc[idx]        = pd.to_numeric(elig_tbl.max(axis=1), errors="coerce").fillna(0.0)
         else:
@@ -2734,7 +2749,11 @@ if group_filter != "All positions":
     allowed_pos_tokens = allowed_pos
 
     df_scored = df_disp.copy()
-    scored = _score_subset_against_league_pos_ref(df_scored, rk, allowed_pos_tokens)
+
+    # IMPORTANT: allow label-only + target man to affect score ONLY if selected
+    selected_for_scoring = set(role_thresholds.keys()) if role_thresholds else set()
+
+    scored = _score_subset_against_league_pos_ref(df_scored, rk, allowed_pos_tokens, selected_for_scoring)
 
     df_scored["_best_role_badge"]   = scored["_best_role_badge"]
     df_scored["_best_raw_badge"]    = scored["_best_raw_badge"]
@@ -2771,7 +2790,9 @@ else:
         part = df_disp[df_disp["_pos_tok"].isin(toks)].copy()
         if part.empty:
             continue
-        scored = _score_subset_against_league_pos_ref(part, rk, toks)
+
+        scored = _score_subset_against_league_pos_ref(part, rk, toks, set())  # no selected roles in all-positions mode
+
         part["_best_role_badge"]   = scored["_best_role_badge"]
         part["_best_raw_badge"]    = scored["_best_raw_badge"]
         part["_best_role_display"] = scored["_best_role_display"]
@@ -2816,14 +2837,21 @@ df_scored.insert(0, "Rank", range(1, len(df_scored) + 1))
 # ============================== Images (safe) ==============================
 def _photo_url(row) -> str:
     try:
-        u = resolve_player_photo(str(row.get("Player", "")), str(row.get("Team", "")), str(row.get("League", "")))
+        u = resolve_player_photo(
+            str(row.get("Player", "")),
+            str(row.get("Team", "")),
+            str(row.get("League", "")),
+        )
         return u if _is_http_url(u) else PLACEHOLDER_IMG
     except Exception:
         return PLACEHOLDER_IMG
 
 def _crest_url(row) -> str:
     try:
-        u = resolve_team_crest(str(row.get("Team", "")), str(row.get("League", "")))
+        u = resolve_team_crest(
+            str(row.get("Team", "")),
+            str(row.get("League", "")),
+        )
         return u if _is_http_url(u) else FALLBACK_BADGE
     except Exception:
         return FALLBACK_BADGE
@@ -2981,8 +3009,7 @@ with st.expander("Debug (scoring fields)", expanded=False):
     show_cols = [c for c in show_cols if c in df_scored.columns]
     st.dataframe(df_scored[show_cols], use_container_width=True)
 
-# ============================ END SHORTLIST (T20) — v3.3+ ============================
-
+# ============================ END SHORTLIST (T20) — ELITE TABLE (v3.3++) ============================
 
 
 
