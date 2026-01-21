@@ -3130,7 +3130,7 @@ st.markdown(
 
 .t20-rank{ font-weight:900; width:48px; }
 
-.t20-player{ display:flex; align-items:center; gap:8px; min-width:190px; }
+.t20-player{ display:flex; align-items:center; gap:8px; min-width:180px; }
 .t20-photo{
   width:32px; height:32px; border-radius:9px; object-fit:cover;
   border:1px solid rgba(148,163,184,.22);
@@ -3152,7 +3152,7 @@ st.markdown(
   background:#0f172a;
 }
 
-.t20-team{ display:flex; align-items:center; gap:8px; min-width:170px; }
+.t20-team{ display:flex; align-items:center; gap:8px; min-width:160px; }
 .t20-crest{
   width:18px; height:18px; border-radius:6px; object-fit:contain;
   border:1px solid rgba(148,163,184,.22);
