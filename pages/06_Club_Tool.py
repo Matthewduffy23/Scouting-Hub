@@ -3132,7 +3132,7 @@ st.markdown(
 
 .t20-player{ display:flex; align-items:center; gap:8px; min-width:180px; }
 .t20-photo{
-  width:32px; height:32px; border-radius:9px; object-fit:cover;
+  width:36px; height:36px; border-radius:9px; object-fit:cover;
   border:1px solid rgba(148,163,184,.22);
   background:#0f172a;
 }
