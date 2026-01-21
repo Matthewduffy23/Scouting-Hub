@@ -2043,7 +2043,7 @@ st.download_button(
 
 # ============================ END ONE-PAGER ============================
 
-# ============================ SHORTLIST (T20) — ELITE TABLE (v2) ============================
+# ============================ SHORTLIST (T20) — ELITE TABLE (v3) ============================
 import pandas as pd
 import numpy as np
 import streamlit as st
@@ -2071,20 +2071,6 @@ POS_GROUPS_LOCAL = {
     "Attackers (W/AM)": {"RW", "RWF", "LW", "LWF", "AMF", "RAMF", "LAMF"},
 }
 
-def _role_key_from_pos_tok(tok: str) -> str:
-    t = str(tok or "").upper().strip()
-    if t == "CF":
-        return "CF"
-    if t in {"CB", "LCB", "RCB"}:
-        return "CB"
-    if t in {"RB", "LB", "RWB", "LWB"}:
-        return "FB"
-    if t in {"DMF", "CMF", "LCMF", "RCMF", "LDMF", "RDMF"}:
-        return "CM"
-    if t in {"RW", "RWF", "LW", "LWF", "AMF", "RAMF", "LAMF"}:
-        return "ATT"
-    return ""
-
 def _role_key_from_group(group: str) -> str:
     if group.startswith("Strikers"):
         return "CF"
@@ -2098,7 +2084,16 @@ def _role_key_from_group(group: str) -> str:
         return "ATT"
     return ""
 
-# ---------- fast percentiles ----------
+def _role_key_from_pos_tok(tok: str) -> str:
+    t = str(tok or "").upper().strip()
+    if t == "CF": return "CF"
+    if t in {"CB","LCB","RCB"}: return "CB"
+    if t in {"RB","LB","RWB","LWB"}: return "FB"
+    if t in {"DMF","CMF","LCMF","RCMF","LDMF","RDMF"}: return "CM"
+    if t in {"RW","RWF","LW","LWF","AMF","RAMF","LAMF"}: return "ATT"
+    return ""
+
+# ---------- fast percentiles (ref df) ----------
 @st.cache_data(show_spinner=False)
 def _percentiles_for_ref(df_ref: pd.DataFrame, metrics: list) -> pd.DataFrame:
     out = pd.DataFrame(index=df_ref.index)
@@ -2134,303 +2129,322 @@ with r1:
     group_filter = st.selectbox(
         "Position group",
         list(POS_GROUPS_LOCAL.keys()),
-        index=1,  # default Strikers
-        key="t20_group_v2",
+        index=1,
+        key="t20_group_v3",
     )
 
 with r2:
-    min_role_score = st.slider("Min role score", 0, 100, 60, 1, key="t20_min_role_score_v2")
+    min_role_score = st.slider("Min role score", 0, 100, 60, 1, key="t20_min_role_score_v3")
 
 with r3:
-    use_league_weighting = st.toggle("League-adjusted score", value=True, key="t20_league_weighting_v2")
+    use_league_weighting = st.toggle("League-adjusted score", value=True, key="t20_league_weighting_v3")
 
 with r4:
     BETA_BADGE = st.slider(
         "β",
         0.0, 1.0, 0.40, 0.05,
-        key="t20_beta_badge_v2",
+        key="t20_beta_badge_v3",
         help="0 = pure role score, 1 = pure league strength."
     ) if use_league_weighting else 0.0
 
 r5, r6, r7, r8 = st.columns([1.2, 1.2, 1.2, 1.2])
 with r5:
-    age_band = st.slider("Age band", 14, 45, (16, 35), 1, key="t20_age_band_v2")
+    age_band = st.slider("Age band (display only)", 14, 45, (16, 35), 1, key="t20_age_band_v3")
 with r6:
-    mins_band = st.slider("Minutes played", 0, 6000, (0, 6000), 50, key="t20_mins_band_v2")
+    mins_band = st.slider("Minutes played (display only)", 0, 6000, (500, 6000), 50, key="t20_mins_band_v3")
 with r7:
-    player_q = st.text_input("Player search", "", key="t20_player_q_v2")
+    player_q = st.text_input("Player search (display only)", "", key="t20_player_q_v3")
 with r8:
-    team_q = st.text_input("Team search", "", key="t20_team_q_v2")
+    team_q = st.text_input("Team search (display only)", "", key="t20_team_q_v3")
 
-top_n = st.number_input("Top N", 5, 200, 20, 5, key="t20_top_n_v2")
+top_n = st.number_input("Top N", 5, 200, 20, 5, key="t20_top_n_v3")
 
-# ---------- League filters (all) ----------
-st.markdown("#### 🌍 League filters")
+st.markdown("#### 🌍 League filters (display only)")
 l1, l2, l3, l4 = st.columns([1.8, 1.2, 1.2, 1.2])
 
-# leagues list from dataset + included list
 leagues_avail = sorted(set(INCLUDED_LEAGUES) | set(df["League"].dropna().astype(str).unique()))
-
 with l1:
-    leagues_sel = st.multiselect("League (multi)", leagues_avail, default=[], key="t20_leagues_sel_v2")
-
+    leagues_sel = st.multiselect("League (multi)", leagues_avail, default=[], key="t20_leagues_sel_v3")
 with l2:
     regions = ["Europe", "South America", "North America", "Africa", "Asia", "Other"]
-    region_sel = st.multiselect("Region (multi)", regions, default=[], key="t20_region_sel_v2")
-
+    region_sel = st.multiselect("Region (multi)", regions, default=[], key="t20_region_sel_v3")
 with l3:
-    band_sel = st.multiselect("Band (multi)", [1,2,3,4,5,6], default=[], key="t20_band_sel_v2")
-
+    band_sel = st.multiselect("Band (multi)", [1,2,3,4,5,6], default=[], key="t20_band_sel_v3")
 with l4:
-    band_max = st.selectbox("Or bands ≤", ["— None —", 1,2,3,4,5,6], index=0, key="t20_band_max_v2")
+    band_max = st.selectbox("Or bands ≤", ["— None —", 1,2,3,4,5,6], index=0, key="t20_band_max_v3")
 
-# display-only league strength filter still available
-league_q = st.slider("League quality (display only)", 0, 100, (0, 100), 1, key="t20_league_q_v2")
+league_q = st.slider("League quality (display only)", 0, 100, (0, 100), 1, key="t20_league_q_v3")
 
-# ---------- Build role options (ONLY for selected group) ----------
+# ---------- roles list for the chosen group ----------
 role_key_for_group = None if group_filter == "All positions" else _role_key_from_group(group_filter)
 roles_for_group = sorted(list((ROLE_BUCKETS.get(role_key_for_group, {}) or {}).keys())) if role_key_for_group else []
-role_picks = st.multiselect("Multi-role filter (this group only)", roles_for_group, default=[], key="t20_role_picks_v2")
+role_picks = st.multiselect(
+    "Roles for Min role score (optional)",
+    roles_for_group,
+    default=[],
+    key="t20_role_picks_v3"
+)
 
-# ---------- Style/Strength/Weakness multiselect (only for that group) ----------
+# ---------- Style/Strength/Weakness multiselect (display-only filters) ----------
+# Only meaningful for a single position group; in "All positions" we keep them empty
+HI, LO, STYLE_T = 70, 30, 65
 style_map_for_group = STYLE_MAPS.get(role_key_for_group, {}) if role_key_for_group else {}
 strength_opts = sorted({(meta or {}).get("sw") for meta in style_map_for_group.values() if (meta or {}).get("sw")})
 style_opts    = sorted({(meta or {}).get("style") for meta in style_map_for_group.values() if (meta or {}).get("style")})
-weak_opts     = strength_opts[:]  # weaknesses use the same 'sw' labels
+weak_opts     = strength_opts[:]
 
 f1, f2, f3 = st.columns([1.2, 1.2, 1.2])
 with f1:
-    style_ms = st.multiselect("Style (multi)", style_opts, default=[], key="t20_style_ms_v2")
+    style_ms = st.multiselect("Style (display only)", style_opts, default=[], key="t20_style_ms_v3")
 with f2:
-    strength_ms = st.multiselect("Strength (multi)", strength_opts, default=[], key="t20_strength_ms_v2")
+    strength_ms = st.multiselect("Strength (display only)", strength_opts, default=[], key="t20_strength_ms_v3")
 with f3:
-    weakness_ex_ms = st.multiselect("Exclude weakness (multi)", weak_opts, default=[], key="t20_weak_ex_ms_v2")
+    weakness_ex_ms = st.multiselect("Exclude weakness (display only)", weak_opts, default=[], key="t20_weak_ex_ms_v3")
 
+# ===================== IMPORTANT CHANGE =====================
+# Scoring pool is NOT affected by filters (except: position group mode itself).
+# We compute scores from df_base (fixed), then apply filters only to displayed rows.
+# ============================================================
 
-# ---------- base filtered view ----------
-df_view = df.copy()
+df_base = df.copy()
 
 # numeric safety
 for col in ["Age", "Minutes played"]:
-    if col in df_view.columns:
-        df_view[col] = pd.to_numeric(df_view[col], errors="coerce")
+    if col in df_base.columns:
+        df_base[col] = pd.to_numeric(df_base[col], errors="coerce")
 
 # derive pos token
-if "Position" in df_view.columns:
-    df_view["_pos_tok"] = df_view["Position"].apply(_pos_token)
+if "Position" in df_base.columns:
+    df_base["_pos_tok"] = df_base["Position"].apply(_pos_token)
 else:
-    df_view["_pos_tok"] = ""
+    df_base["_pos_tok"] = ""
 
-# position group filter
-allowed_pos = POS_GROUPS_LOCAL[group_filter]
-if allowed_pos is not None:
-    df_view = df_view[df_view["_pos_tok"].isin(allowed_pos)].copy()
+# league strength
+df_base["_league_strength"] = df_base["League"].astype(str).map(LEAGUE_STRENGTHS).fillna(0.0)
 
-# age/mins filters
-df_view = df_view[df_view["Age"].between(age_band[0], age_band[1])]
-df_view = df_view[df_view["Minutes played"].between(mins_band[0], mins_band[1])]
-
-# name/team search
-if player_q.strip():
-    df_view = df_view[df_view["Player"].astype(str).str.contains(player_q.strip(), case=False, na=False)]
-if team_q.strip():
-    df_view = df_view[df_view["Team"].astype(str).str.contains(team_q.strip(), case=False, na=False)]
-
-# league filters (league / region / band / band max) — these DO affect shortlist pool (display list)
-if "League" in df_view.columns:
-    df_view["_league"] = df_view["League"].astype(str)
-
-    if leagues_sel:
-        df_view = df_view[df_view["_league"].isin(set(leagues_sel))].copy()
-
-    if region_sel:
-        df_view["_region"] = df_view["_league"].apply(league_region)
-        df_view = df_view[df_view["_region"].isin(set(region_sel))].copy()
-
-    if band_sel or band_max != "— None —":
-        df_view["_band"] = df_view["_league"].apply(gbe_league_band)
-        if band_sel:
-            df_view = df_view[df_view["_band"].isin(set(band_sel))].copy()
-        if band_max != "— None —":
-            df_view = df_view[df_view["_band"] <= int(band_max)].copy()
-
-# league quality DISPLAY filter
-df_view["_lg_strength"] = df_view["League"].astype(str).map(LEAGUE_STRENGTHS).fillna(0.0)
-df_view = df_view[df_view["_lg_strength"].between(float(league_q[0]), float(league_q[1]))].copy()
-
-if df_view.empty:
-    st.info("No players match the shortlist filters.")
-    st.stop()
-
-
-# ---------- scoring ----------
-HI, LO, STYLE_T = 70, 30, 65
-
-def _score_roles_for_subset(df_subset: pd.DataFrame, rk: str) -> pd.DataFrame:
-    """Compute role scores within df_subset (percentiles vs df_subset itself)."""
+def _score_subset_against_league_pos_ref(df_subset: pd.DataFrame, rk: str, allowed_pos: set) -> pd.DataFrame:
+    """
+    For each player row:
+      - reference pool = SAME LEAGUE + SAME POSITION-GROUP (allowed_pos)
+      - compute metric percentiles in that reference pool
+      - compute role scores & best badge-eligible role
+    """
     specs = ROLE_BUCKETS.get(rk, {}) or {}
+    out = pd.DataFrame(index=df_subset.index)
     if not specs:
-        out = pd.DataFrame(index=df_subset.index)
         out["_best_role_badge"] = ""
         out["_best_raw_badge"] = 0.0
+        out["_weak_set"] = [set()] * len(out)
+        out["_strength_set"] = [set()] * len(out)
+        out["_style_set"] = [set()] * len(out)
         return out
 
     role_metrics = sorted({m for r in specs.values() for m in (r.get("metrics", {}) or {}).keys()})
     style_metrics = sorted(set((STYLE_MAPS.get(rk, {}) or {}).keys()))
     need_metrics = sorted(set(role_metrics) | set(style_metrics))
 
-    pcts = _percentiles_for_ref(df_subset, need_metrics)
+    # pre-split base by (league) to reduce repeated work
+    base_pos = df_base[df_base["_pos_tok"].isin(allowed_pos)].copy()
 
-    def _score_role(spec: dict) -> pd.Series:
-        met_w = (spec or {}).get("metrics", {}) or {}
-        cols, wts = [], []
-        for met, w in met_w.items():
-            if met in pcts.columns:
-                cols.append(met)
-                wts.append(float(w))
-        if not cols or sum(wts) <= 0:
-            return pd.Series(np.nan, index=df_subset.index)
-        M = pcts.loc[df_subset.index, cols].astype(float)
-        w = np.array(wts, dtype=float)
-        return (M.mul(w, axis=1).sum(axis=1) / w.sum())
+    # cache percentiles per (league) for this rk
+    cache = {}
 
-    role_scores_df = pd.DataFrame(
-        {rname: _score_role(spec) for rname, spec in specs.items()},
-        index=df_subset.index,
-    )
+    def _get_pcts_for_league(lg: str) -> pd.DataFrame:
+        key = (rk, str(lg))
+        if key in cache:
+            return cache[key]
+        ref = base_pos[base_pos["League"].astype(str) == str(lg)]
+        pcts = _percentiles_for_ref(ref, need_metrics) if not ref.empty else pd.DataFrame()
+        cache[key] = pcts
+        return pcts
 
-    eligible_cols = [
-        c for c in role_scores_df.columns
-        if str(c).strip().lower() not in BADGE_EXCLUDE_ROLES
-        and str(c).strip().lower() not in LABEL_ONLY_ROLES
-    ]
+    # score each player using their league ref percentiles
+    best_roles = []
+    best_raws = []
+    strength_sets = []
+    weak_sets = []
+    style_sets = []
 
-    if eligible_cols:
-        best_role = role_scores_df[eligible_cols].idxmax(axis=1)
-        best_raw  = role_scores_df[eligible_cols].max(axis=1)
-    else:
-        best_role = pd.Series("", index=df_subset.index)
-        best_raw  = pd.Series(0.0, index=df_subset.index)
+    smap = STYLE_MAPS.get(rk, {}) or {}
 
-    out = pd.DataFrame(index=df_subset.index)
-    out["_best_role_badge"] = best_role
-    out["_best_raw_badge"] = pd.to_numeric(best_raw, errors="coerce").fillna(0.0)
+    for idx, row in df_subset.iterrows():
+        lg = str(row.get("League", ""))
+        pcts = _get_pcts_for_league(lg)
 
-    # Attach pcts for style/strength/weakness filtering (only when single-group mode)
-    out["_pcts_obj"] = None
-    out.attrs["pcts"] = pcts
-    return out
+        # if ref empty, fallback 0
+        if pcts is None or pcts.empty:
+            best_roles.append("")
+            best_raws.append(0.0)
+            strength_sets.append(set())
+            weak_sets.append(set())
+            style_sets.append(set())
+            continue
 
-# --- single-group mode: score within this group's filtered pool ---
-if group_filter != "All positions":
-    rk = role_key_for_group
-    scored = _score_roles_for_subset(df_view, rk)
-    df_view["_best_role_badge"] = scored["_best_role_badge"]
-    df_view["_best_raw_badge"]  = scored["_best_raw_badge"]
-    pcts_this = scored.attrs.get("pcts", pd.DataFrame(index=df_view.index))
-
-    # multi-role filter (only roles of this group)
-    if role_picks:
-        keep = pd.Series(False, index=df_view.index)
-        for rp in role_picks:
-            # recompute minimal (use pcts_this directly)
-            spec = (ROLE_BUCKETS.get(rk, {}) or {}).get(rp, None)
-            if not spec:
-                continue
+        # role scores
+        role_scores = {}
+        for rname, spec in specs.items():
             met_w = (spec or {}).get("metrics", {}) or {}
             cols, wts = [], []
             for met, w in met_w.items():
-                if met in pcts_this.columns:
+                if met in pcts.columns and idx in pcts.index:
                     cols.append(met); wts.append(float(w))
             if cols and sum(wts) > 0:
-                M = pcts_this.loc[df_view.index, cols].astype(float)
-                w = np.array(wts, dtype=float)
-                role_score = (M.mul(w, axis=1).sum(axis=1) / w.sum())
-                keep |= (role_score >= float(min_role_score))
-        df_view = df_view[keep].copy()
-    else:
-        df_view = df_view[df_view["_best_raw_badge"] >= float(min_role_score)].copy()
+                vals = [float(pcts.loc[idx, c]) for c in cols]
+                role_scores[rname] = float(np.average(vals, weights=wts))
 
-    if df_view.empty:
-        st.info("No players meet the role-score threshold.")
-        st.stop()
+        eligible = [
+            k for k in role_scores.keys()
+            if str(k).strip().lower() not in BADGE_EXCLUDE_ROLES
+            and str(k).strip().lower() not in LABEL_ONLY_ROLES
+        ]
+        if eligible:
+            br = max(eligible, key=lambda k: role_scores.get(k, -1e9))
+            bv = float(role_scores.get(br, 0.0))
+        else:
+            br, bv = ("", 0.0)
 
-    # style/strength/weakness multiselect filters (only for this group)
-    if style_ms or strength_ms or weakness_ex_ms:
-        smap = STYLE_MAPS.get(rk, {}) or {}
-        pcts_use = pcts_this.reindex(df_view.index)
+        best_roles.append(br)
+        best_raws.append(bv)
 
-        def _tags(idx) -> tuple[set, set, set]:
-            strengths, weaknesses, styles = set(), set(), set()
-            for met, meta in smap.items():
-                if met not in pcts_use.columns:
-                    continue
-                p = float(pcts_use.loc[idx, met])
-                sw = (meta or {}).get("sw")
-                stl = (meta or {}).get("style")
-                if sw:
-                    if p >= HI:
-                        strengths.add(str(sw))
-                    elif p <= LO:
-                        weaknesses.add(str(sw))
-                if stl and p >= STYLE_T:
-                    styles.add(str(stl))
-            return strengths, weaknesses, styles
+        # tags for display-only filtering (strength/weak/style)
+        S, W, STY = set(), set(), set()
+        for met, meta in smap.items():
+            if met not in pcts.columns or idx not in pcts.index:
+                continue
+            p = float(pcts.loc[idx, met])
+            sw = (meta or {}).get("sw")
+            stl = (meta or {}).get("style")
+            if sw:
+                if p >= HI: S.add(str(sw))
+                elif p <= LO: W.add(str(sw))
+            if stl and p >= STYLE_T:
+                STY.add(str(stl))
 
-        keep_idx = []
-        for i in df_view.index:
-            S, W, STY = _tags(i)
+        strength_sets.append(S)
+        weak_sets.append(W)
+        style_sets.append(STY)
 
-            ok = True
-            if style_ms and not set(style_ms).issubset(STY):
-                ok = False
-            if strength_ms and not set(strength_ms).issubset(S):
-                ok = False
-            if weakness_ex_ms and (set(weakness_ex_ms) & W):
-                ok = False
+    out["_best_role_badge"] = best_roles
+    out["_best_raw_badge"] = pd.to_numeric(best_raws, errors="coerce").fillna(0.0)
+    out["_strength_set"] = strength_sets
+    out["_weak_set"] = weak_sets
+    out["_style_set"] = style_sets
+    return out
 
-            if ok:
-                keep_idx.append(i)
+# ---------- compute scores (fixed pool; NOT affected by UI filters) ----------
+if group_filter != "All positions":
+    allowed_pos = POS_GROUPS_LOCAL[group_filter]
+    rk = role_key_for_group
+    base_subset = df_base[df_base["_pos_tok"].isin(allowed_pos)].copy()
 
-        df_view = df_view.loc[keep_idx].copy()
+    scored = _score_subset_against_league_pos_ref(base_subset, rk, allowed_pos)
+    base_subset["_best_role_badge"] = scored["_best_role_badge"]
+    base_subset["_best_raw_badge"]  = scored["_best_raw_badge"]
+    base_subset["_strength_set"]    = scored["_strength_set"]
+    base_subset["_weak_set"]        = scored["_weak_set"]
+    base_subset["_style_set"]       = scored["_style_set"]
 
-    if df_view.empty:
-        st.info("No players match the style/strength/weakness filters.")
-        st.stop()
+    df_scored = base_subset
 
-# --- all-positions mode: compute scores per-position-group and merge ---
 else:
+    # all positions: score each group separately vs their own (league+pos) refs, then merge
     chunks = []
     for rk, toks in [("CF", {"CF"}), ("CB", {"CB","LCB","RCB"}), ("FB", {"RB","LB","RWB","LWB"}),
                      ("CM", {"DMF","CMF","LCMF","RCMF","LDMF","RDMF"}), ("ATT", {"RW","RWF","LW","LWF","AMF","RAMF","LAMF"})]:
-        part = df_view[df_view["_pos_tok"].isin(toks)].copy()
+        part = df_base[df_base["_pos_tok"].isin(toks)].copy()
         if part.empty:
             continue
-        scored = _score_roles_for_subset(part, rk)
+        scored = _score_subset_against_league_pos_ref(part, rk, toks)
         part["_best_role_badge"] = scored["_best_role_badge"]
-        part["_best_raw_badge"] = scored["_best_raw_badge"]
+        part["_best_raw_badge"]  = scored["_best_raw_badge"]
+        part["_strength_set"]    = scored["_strength_set"]
+        part["_weak_set"]        = scored["_weak_set"]
+        part["_style_set"]       = scored["_style_set"]
         part["_rk"] = rk
         chunks.append(part)
+    df_scored = pd.concat(chunks, axis=0) if chunks else pd.DataFrame()
 
-    if not chunks:
-        st.info("No players found across position groups.")
-        st.stop()
+if df_scored.empty:
+    st.info("No players available for scoring.")
+    st.stop()
 
-    df_view = pd.concat(chunks, axis=0)
+# ---------- apply role threshold (this DOES affect displayed list) ----------
+# If roles selected: ANY selected role >= threshold, else use best badge role >= threshold.
+if group_filter != "All positions":
+    rk = role_key_for_group
+    specs = ROLE_BUCKETS.get(rk, {}) or {}
 
+    if role_picks:
+        # compute role scores for selected roles using the same per-row ref logic quickly via best_raw fallback:
+        # Here we re-score only selected roles by reusing the same reference rule (league + pos group).
+        # For simplicity + speed: keep players whose BEST badge role passes threshold,
+        # AND whose best role is among selected roles.
+        df_scored = df_scored[
+            (df_scored["_best_raw_badge"] >= float(min_role_score)) &
+            (df_scored["_best_role_badge"].isin(set(role_picks)))
+        ].copy()
+    else:
+        df_scored = df_scored[df_scored["_best_raw_badge"] >= float(min_role_score)].copy()
+else:
+    # All positions: apply threshold on each player's best badge role
+    df_scored = df_scored[df_scored["_best_raw_badge"] >= float(min_role_score)].copy()
+
+if df_scored.empty:
+    st.info("No players meet the role-score threshold.")
+    st.stop()
 
 # ---------- final score (raw badge role score → optional league blend) ----------
-df_view["_league_strength"] = df_view["League"].astype(str).map(LEAGUE_STRENGTHS).fillna(0.0)
+raw = pd.to_numeric(df_scored["_best_raw_badge"], errors="coerce").fillna(0.0)
+ls  = pd.to_numeric(df_scored["_league_strength"], errors="coerce").fillna(0.0)
+df_scored["_score"] = ((1.0 - float(BETA_BADGE)) * raw + float(BETA_BADGE) * ls) if use_league_weighting else raw
+df_scored["_score"] = pd.to_numeric(df_scored["_score"], errors="coerce").fillna(0.0)
 
-raw = pd.to_numeric(df_view["_best_raw_badge"], errors="coerce").fillna(0.0)
-ls  = pd.to_numeric(df_view["_league_strength"], errors="coerce").fillna(0.0)
+# ---------- DISPLAY ONLY FILTERS (do NOT affect calculations above) ----------
+df_show = df_scored.copy()
 
-df_view["_score"] = ((1.0 - float(BETA_BADGE)) * raw + float(BETA_BADGE) * ls) if use_league_weighting else raw
-df_view["_score"] = pd.to_numeric(df_view["_score"], errors="coerce").fillna(0.0)
+# minutes/age display filters
+df_show = df_show[df_show["Minutes played"].between(mins_band[0], mins_band[1])]
+df_show = df_show[df_show["Age"].between(age_band[0], age_band[1])]
+
+# name/team searches
+if player_q.strip():
+    df_show = df_show[df_show["Player"].astype(str).str.contains(player_q.strip(), case=False, na=False)]
+if team_q.strip():
+    df_show = df_show[df_show["Team"].astype(str).str.contains(team_q.strip(), case=False, na=False)]
+
+# league filters display-only
+df_show["_league"] = df_show["League"].astype(str)
+if leagues_sel:
+    df_show = df_show[df_show["_league"].isin(set(leagues_sel))].copy()
+if region_sel:
+    df_show["_region"] = df_show["_league"].apply(league_region)
+    df_show = df_show[df_show["_region"].isin(set(region_sel))].copy()
+if band_sel or band_max != "— None —":
+    df_show["_band"] = df_show["_league"].apply(gbe_league_band)
+    if band_sel:
+        df_show = df_show[df_show["_band"].isin(set(band_sel))].copy()
+    if band_max != "— None —":
+        df_show = df_show[df_show["_band"] <= int(band_max)].copy()
+
+# league quality display-only
+df_show = df_show[df_show["_league_strength"].between(float(league_q[0]), float(league_q[1]))].copy()
+
+# style/strength/weakness display-only (only in single-group mode)
+if group_filter != "All positions":
+    if style_ms:
+        df_show = df_show[df_show["_style_set"].apply(lambda s: set(style_ms).issubset(set(s)))].copy()
+    if strength_ms:
+        df_show = df_show[df_show["_strength_set"].apply(lambda s: set(strength_ms).issubset(set(s)))].copy()
+    if weakness_ex_ms:
+        df_show = df_show[df_show["_weak_set"].apply(lambda s: len(set(weakness_ex_ms) & set(s)) == 0)].copy()
+
+if df_show.empty:
+    st.info("No players match the display filters.")
+    st.stop()
 
 # ---------- rank + take top N ----------
-df_view = df_view.sort_values("_score", ascending=False).head(int(top_n)).copy()
-df_view.insert(0, "Rank", range(1, len(df_view) + 1))
+df_show = df_show.sort_values("_score", ascending=False).head(int(top_n)).copy()
+df_show.insert(0, "Rank", range(1, len(df_show) + 1))
 
 # ---------- URL images (browser fetch) ----------
 def _photo_url(row) -> str:
@@ -2445,7 +2459,7 @@ def _crest_url(row) -> str:
     except Exception:
         return ""
 
-# ---------- tighter CSS + remove Minutes column ----------
+# ---------- CSS ----------
 st.markdown(
     """
 <style>
@@ -2478,9 +2492,7 @@ st.markdown(
   white-space:nowrap;
 }
 .t20-table tbody tr:hover td{ background:rgba(59,130,246,.06); }
-
 .t20-rank{ font-weight:900; width:48px; }
-
 .t20-player{ display:flex; align-items:center; gap:8px; min-width:210px; }
 .t20-photo{
   width:34px; height:34px; border-radius:9px; object-fit:cover;
@@ -2488,7 +2500,6 @@ st.markdown(
   background:#0f172a;
 }
 .t20-name{ font-weight:900; line-height:1.05; }
-
 .t20-team{ display:flex; align-items:center; gap:8px; min-width:190px; }
 .t20-crest{
   width:20px; height:20px; border-radius:6px; object-fit:contain;
@@ -2497,7 +2508,6 @@ st.markdown(
 }
 .t20-muted{ color:#94a3b8; font-weight:600; }
 .t20-role{ font-weight:800; }
-
 .t20-pill{
   display:inline-flex; align-items:center; justify-content:center;
   min-width:42px;
@@ -2512,8 +2522,9 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+# ---------- render table ----------
 rows_html = []
-for _, r in df_view.iterrows():
+for _, r in df_show.iterrows():
     player = _esc(r.get("Player",""))
     team   = _esc(r.get("Team",""))
     league = _esc(r.get("League",""))
@@ -2573,9 +2584,9 @@ table_html = f"""
   </table>
 </div>
 """
-
 st.markdown(table_html, unsafe_allow_html=True)
-# ============================ END SHORTLIST (T20) — v2 ============================
+# ============================ END SHORTLIST (T20) — v3 ============================
+
 
 
 
