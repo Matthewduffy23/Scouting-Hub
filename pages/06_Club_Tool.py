@@ -2065,6 +2065,8 @@ st.download_button(
 # ✅ If crest/badge cannot be found -> uses FALLBACK_BADGE url
 # ✅ Strips accidental HTML tags from Team/Player strings (prevents <span> showing in table)
 # ✅ Minutes is still the ONLY filter that changes the scoring pool (percentile reference)
+# ✅ (NEW) Output table: hides Region column
+# ✅ (NEW) Output table: adds small Birth-country flag beside player name (emoji flag system)
 # ---------------------------------------------------------------------------------------------
 
 import pandas as pd
@@ -2169,6 +2171,63 @@ def _esc(x) -> str:
 def _is_http_url(u: str) -> bool:
     u = (u or "").strip()
     return u.startswith("http://") or u.startswith("https://")
+
+def _country_to_flag_emoji(country_name: str) -> str:
+    """
+    Returns a flag emoji (or "" if unknown).
+    Uses pycountry when available, with a few common football dataset aliases.
+    """
+    c = _strip_tags(country_name).strip()
+    if not c:
+        return ""
+
+    alias = {
+        "Republic of Ireland": "Ireland",
+        "Great Britain": "United Kingdom",
+        "England": "England",
+        "Scotland": "Scotland",
+        "Wales": "Wales",
+        "Northern Ireland": "Northern Ireland",
+        "Korea Republic": "South Korea",
+        "Korea DPR": "North Korea",
+        "China PR": "China",
+        "Congo DR": "Congo, The Democratic Republic of the",
+        "Congo": "Congo",
+        "Côte d'Ivoire": "Cote d'Ivoire",
+        "Türkiye": "Turkey",
+        "Cape Verde Islands": "Cabo Verde",
+        "São Tomé e Príncipe": "Sao Tome and Principe",
+        "Réunion": "Reunion",
+        "Chinese Taipei": "Taiwan",
+        "Africa": "",
+        "Other": "",
+    }
+    c2 = alias.get(c, c)
+    if not c2:
+        return ""
+
+    # Subnational UK flags (may render as black flag on some devices)
+    if c2 == "England":
+        return "🏴"
+    if c2 == "Scotland":
+        return "🏴"
+    if c2 == "Wales":
+        return "🏴"
+    if c2 == "Northern Ireland":
+        return "🇬🇧"
+
+    try:
+        import pycountry  # type: ignore
+        obj = pycountry.countries.lookup(c2)
+        code = getattr(obj, "alpha_2", "")
+    except Exception:
+        code = ""
+
+    if not code or len(code) != 2:
+        return ""
+
+    code = code.upper()
+    return chr(0x1F1E6 + (ord(code[0]) - ord("A"))) + chr(0x1F1E6 + (ord(code[1]) - ord("A")))
 
 def _first_pos_label(position_str: str) -> str:
     # takes first token from "CF, LWF, LW" etc; maps via POS_LABEL_MAP if present
@@ -2911,7 +2970,14 @@ st.markdown(
   border:1px solid rgba(148,163,184,.22);
   background:#0f172a;
 }
-.t20-name{ font-weight:900; line-height:1.00; }
+.t20-name{ font-weight:900; line-height:1.00; display:flex; align-items:center; }
+.t20-flag{
+  font-size:14px;
+  line-height:1;
+  margin-left:6px;
+  transform: translateY(1px);
+  display:inline-block;
+}
 
 .t20-team{ display:flex; align-items:center; gap:8px; min-width:190px; }
 .t20-crest{
@@ -2944,10 +3010,13 @@ for _, r in df_scored.iterrows():
     player = _esc(_strip_tags(r.get("Player", "")))
     team   = _esc(_strip_tags(r.get("Team", "")))
     league = _esc(_strip_tags(r.get("League", "")))
-    region = _esc(_strip_tags(r.get("_region", "")))
     band   = _esc(r.get("_band", ""))
     pos    = _esc(_strip_tags(r.get("Position", "")))
     age    = _esc(r.get("Age", "—"))
+
+    birth_country = _strip_tags(r.get("_birth_country", ""))
+    flag = _country_to_flag_emoji(birth_country)
+    flag_html = f"<span class='t20-flag' title='{_esc(birth_country)}'>{flag}</span>" if flag else ""
 
     best_role_raw_name = _strip_tags(r.get("_best_role_display", ""))
     best_role_disp = _esc(_format_best_role_display(best_role_raw_name, r.get("Position", "")))
@@ -2966,7 +3035,7 @@ for _, r in df_scored.iterrows():
   <td>
     <div class="t20-player">
       <img class="t20-photo" src="{photo}" />
-      <span class="t20-name">{player}</span>
+      <span class="t20-name">{player}{flag_html}</span>
     </div>
   </td>
   <td>
@@ -2976,7 +3045,6 @@ for _, r in df_scored.iterrows():
     </div>
   </td>
   <td><span class="t20-muted">{league}</span></td>
-  <td><span class="t20-muted">{region}</span></td>
   <td><span class="t20-muted">{band}</span></td>
   <td><span class="t20-muted">{pos}</span></td>
   <td>{age}</td>
@@ -2995,7 +3063,6 @@ table_html = f"""
         <th>Player</th>
         <th>Team</th>
         <th>League</th>
-        <th>Region</th>
         <th>Band</th>
         <th>Position</th>
         <th>Age</th>
@@ -3023,10 +3090,6 @@ with st.expander("Debug (scoring fields)", expanded=False):
     st.dataframe(df_scored[show_cols], use_container_width=True)
 
 # ============================ END SHORTLIST (T20) — ELITE TABLE (v3.3++) ============================
-
-
-
-
 
 
 
