@@ -2065,6 +2065,8 @@ st.download_button(
 # ✅ If crest/badge cannot be found -> uses FALLBACK_BADGE url
 # ✅ Strips accidental HTML tags from Team/Player strings (prevents <span> showing in table)
 # ✅ Minutes is still the ONLY filter that changes the scoring pool (percentile reference)
+# ✅ (NEW) Output table: hides Region column
+# ✅ (NEW) Output table: adds small Birth-country flag beside player name (IMAGE flags)
 # ---------------------------------------------------------------------------------------------
 
 import pandas as pd
@@ -2169,6 +2171,86 @@ def _esc(x) -> str:
 def _is_http_url(u: str) -> bool:
     u = (u or "").strip()
     return u.startswith("http://") or u.startswith("https://")
+
+@st.cache_data(show_spinner=False)
+def _country_to_flag_url(country_name: str) -> str:
+    """
+    Returns a small flag IMAGE url (or "" if unknown).
+    Uses explicit mapping for your dataset + pycountry fallback for anything standard.
+    """
+    c = _strip_tags(country_name).strip()
+    if not c:
+        return ""
+
+    # Normalize common variants in your dataset
+    alias_to_code = {
+        # UK home nations (FlagCDN supports these)
+        "England": "gb-eng",
+        "Scotland": "gb-sct",
+        "Wales": "gb-wls",
+        "Northern Ireland": "gb-nir",
+        "Great Britain": "gb",
+        "Republic of Ireland": "ie",
+
+        # Common football dataset names
+        "Korea Republic": "kr",
+        "Korea DPR": "kp",
+        "China PR": "cn",
+        "Chinese Taipei": "tw",
+
+        "Côte d'Ivoire": "ci",
+        "Türkiye": "tr",
+
+        "Congo DR": "cd",
+        "Congo": "cg",
+
+        "Cape Verde Islands": "cv",
+        "São Tomé e Príncipe": "st",
+        "Réunion": "re",
+
+        "French Guiana": "gf",
+        "Guadeloupe": "gp",
+        "Martinique": "mq",
+        "New Caledonia": "nc",
+
+        "Curaçao": "cw",
+        "Bonaire": "bq",
+
+        "Faroe Islands": "fo",
+        "British Virgin Islands": "vg",
+
+        "St. Lucia": "lc",
+        "St. Kitts and Nevis": "kn",
+        "St. Vincent and the Grenadines": "vc",
+
+        "Hong Kong": "hk",
+        "Palestine": "ps",
+
+        "North Macedonia": "mk",
+        "Kosovo": "xk",
+
+        "Eswatini": "sz",
+
+        # Non-countries / placeholders in list
+        "Africa": "",
+        "Other": "",
+    }
+
+    code = alias_to_code.get(c, "")
+    if code:
+        return f"https://flagcdn.com/w20/{code}.png"
+
+    # Try pycountry for everything else (Netherlands, Spain, etc.)
+    try:
+        import pycountry  # type: ignore
+        obj = pycountry.countries.lookup(c)
+        a2 = getattr(obj, "alpha_2", "")
+        if a2 and len(a2) == 2:
+            return f"https://flagcdn.com/w20/{a2.lower()}.png"
+    except Exception:
+        pass
+
+    return ""
 
 def _first_pos_label(position_str: str) -> str:
     # takes first token from "CF, LWF, LW" etc; maps via POS_LABEL_MAP if present
@@ -2911,7 +2993,21 @@ st.markdown(
   border:1px solid rgba(148,163,184,.22);
   background:#0f172a;
 }
-.t20-name{ font-weight:900; line-height:1.00; }
+.t20-name{
+  font-weight:900;
+  line-height:1.00;
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.t20-flagimg{
+  width:18px;
+  height:12px;
+  border-radius:3px;
+  object-fit:cover;
+  border:1px solid rgba(148,163,184,.22);
+  background:#0f172a;
+}
 
 .t20-team{ display:flex; align-items:center; gap:8px; min-width:190px; }
 .t20-crest{
@@ -2944,10 +3040,13 @@ for _, r in df_scored.iterrows():
     player = _esc(_strip_tags(r.get("Player", "")))
     team   = _esc(_strip_tags(r.get("Team", "")))
     league = _esc(_strip_tags(r.get("League", "")))
-    region = _esc(_strip_tags(r.get("_region", "")))
     band   = _esc(r.get("_band", ""))
     pos    = _esc(_strip_tags(r.get("Position", "")))
     age    = _esc(r.get("Age", "—"))
+
+    birth_country = _strip_tags(r.get("_birth_country", ""))
+    flag_url = _country_to_flag_url(birth_country)
+    flag_html = f"<img class='t20-flagimg' src='{_esc(flag_url)}' title='{_esc(birth_country)}' />" if _is_http_url(flag_url) else ""
 
     best_role_raw_name = _strip_tags(r.get("_best_role_display", ""))
     best_role_disp = _esc(_format_best_role_display(best_role_raw_name, r.get("Position", "")))
@@ -2966,7 +3065,7 @@ for _, r in df_scored.iterrows():
   <td>
     <div class="t20-player">
       <img class="t20-photo" src="{photo}" />
-      <span class="t20-name">{player}</span>
+      <span class="t20-name">{player}{flag_html}</span>
     </div>
   </td>
   <td>
@@ -2976,7 +3075,6 @@ for _, r in df_scored.iterrows():
     </div>
   </td>
   <td><span class="t20-muted">{league}</span></td>
-  <td><span class="t20-muted">{region}</span></td>
   <td><span class="t20-muted">{band}</span></td>
   <td><span class="t20-muted">{pos}</span></td>
   <td>{age}</td>
@@ -2995,7 +3093,6 @@ table_html = f"""
         <th>Player</th>
         <th>Team</th>
         <th>League</th>
-        <th>Region</th>
         <th>Band</th>
         <th>Position</th>
         <th>Age</th>
