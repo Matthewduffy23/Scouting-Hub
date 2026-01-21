@@ -2056,6 +2056,7 @@ st.download_button(
 import pandas as pd
 import numpy as np
 import streamlit as st
+FALLBACK_BADGE = "https://clipart-library.com/images/5cRX8Kx9i.png"
 
 st.markdown("---")
 st.header("📋 Shortlist (T20)")
@@ -2628,10 +2629,16 @@ def _photo_url(row) -> str:
 
 def _crest_url(row) -> str:
     try:
-        u = resolve_team_crest(str(row.get("Team", "")), str(row.get("League", "")))
-        return u if _is_http_url(u) else ""
+        u = resolve_team_crest(
+            str(row.get("Team", "")),
+            str(row.get("League", ""))
+        )
+        if _is_http_url(u):
+            return u
+        return FALLBACK_BADGE
     except Exception:
-        return ""
+        return FALLBACK_BADGE
+
 
 # ============================== Tight CSS table (no nested <div> that can leak as text) ==============================
 st.markdown(
