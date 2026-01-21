@@ -2043,32 +2043,57 @@ st.download_button(
 
 # ============================ END ONE-PAGER ============================
 
-# ============================ SHORTLIST (T20) — ELITE TABLE (v3.3) ============================
-# Changes:
-# ✅ If crest URL missing/invalid → show team name only (no broken HTML / no “error message” text)
-# ✅ League quality (display) default MIN = 20 (still adjustable 0–100)
-# ✅ Order options: by Score / Best role / (role score of a chosen role) / Complete Score
-# ✅ Adds "Complete Score" per position-group using your weighted-percentile formulas
-# ✅ Toggle: use Complete Score as the base score (still shows Best role; filters still work)
-# ✅ Keeps: minutes (pool) is the only filter that changes the scoring pool
+# ============================ SHORTLIST (T20) — ELITE TABLE (v3.3+) ============================
+# EXACT SAME AS YOUR v3.3, plus:
+# ✅ Display-only filters: Contract expires (year), Foot, Birth country, Market value (0–150m, 0.5m)
+# ✅ Best-role DISPLAY uses ALL roles (including label-only); scoring still excludes BADGE_EXCLUDE + LABEL_ONLY
+# ✅ Best-role display formatting: first two words + position label (POS_LABEL_MAP)
+# ✅ POS_LABEL_MAP applied to the player's first position token
+# ✅ If crest/badge cannot be found -> uses FALLBACK_BADGE url
+# ✅ Strips accidental HTML tags from Team/Player strings (prevents <span> showing in table)
+# ✅ Minutes is still the ONLY filter that changes the scoring pool (percentile reference)
 # ---------------------------------------------------------------------------------------------
 
 import pandas as pd
 import numpy as np
 import streamlit as st
+import re
+
 FALLBACK_BADGE = "https://clipart-library.com/images/5cRX8Kx9i.png"
 
 st.markdown("---")
 st.header("📋 Shortlist (T20)")
 
 # ---------- role exclusions (same logic as one-pager badge) ----------
-BADGE_EXCLUDE_ROLES = {"target man cf"}  # excluded from badge score
+BADGE_EXCLUDE_ROLES = {"target man cf"}  # excluded from badge/base score
 LABEL_ONLY_ROLES = {
     "box-to-box cm",
     "wide creator fb",
     "wide carrier fb",
     "false-9 runner cf",
     "false-9 passer cf",
+}
+
+# ---------- POS label map (user spec) ----------
+POS_LABEL_MAP = {
+    "LCB": "CB",
+    "CB": "CB",
+    "RCB": "CB",
+
+    "RDMF": "DM",
+    "LDMF": "DM",
+    "DMF": "DM",
+
+    "LCMF": "CM",
+    "RCMF": "CM",
+
+    "RAMF": "RW",
+    "RW": "RW",
+    "RWF": "RW",
+
+    "LAMF": "LW",
+    "LW": "LW",
+    "LWF": "LW",
 }
 
 # ---------- group → allowed pos tokens ----------
@@ -2108,6 +2133,93 @@ def _role_key_from_group(group: str) -> str:
         return "ATT"
     return ""
 
+# ---------- helpers ----------
+def _strip_tags(x) -> str:
+    s = "" if x is None else str(x)
+    return re.sub(r"<[^>]+>", "", s).strip()
+
+def _esc(x) -> str:
+    return str(x if x is not None else "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+def _is_http_url(u: str) -> bool:
+    u = (u or "").strip()
+    return u.startswith("http://") or u.startswith("https://")
+
+def _first_pos_label(position_str: str) -> str:
+    # takes first token from "CF, LWF, LW" etc; maps via POS_LABEL_MAP if present
+    p = _strip_tags(position_str)
+    tok = (p.split(",")[0].strip().upper() if p else "")
+    return POS_LABEL_MAP.get(tok, tok)
+
+def _format_best_role_display(role_name: str, position_str: str) -> str:
+    # "ball playing cb" -> "Ball Playing CB" (first two words + pos label)
+    r = _strip_tags(role_name).strip()
+    if not r:
+        return ""
+    parts = r.split()
+    prefix = " ".join(parts[:2]).title() if len(parts) >= 2 else r.title()
+    pos_lab = _first_pos_label(position_str)
+    if pos_lab:
+        return f"{prefix} {pos_lab}"
+    return prefix
+
+def _contract_year(x):
+    s = _strip_tags(x)
+    if not s:
+        return np.nan
+    # try ISO date first
+    m = re.search(r"(\d{4})", s)
+    if m:
+        try:
+            return int(m.group(1))
+        except Exception:
+            return np.nan
+    return np.nan
+
+def _norm_foot(x) -> str:
+    s = _strip_tags(x).lower()
+    if s in {"r", "right"}:
+        return "right"
+    if s in {"l", "left"}:
+        return "left"
+    if s in {"both", "b"}:
+        return "both"
+    if s in {"unknown", "unk", "?"}:
+        return "unknown"
+    if s == "":
+        return ""
+    # if something else, keep raw but lowercased
+    return s
+
+def _parse_market_value_to_m(x):
+    """
+    Returns value in millions (float).
+    Supports:
+      - numbers already in millions
+      - strings like "€12.5m", "12.5m", "500k", "€1.2bn"
+    If can't parse, returns NaN.
+    """
+    if x is None or (isinstance(x, float) and np.isnan(x)):
+        return np.nan
+    if isinstance(x, (int, float)) and np.isfinite(x):
+        return float(x)
+    s = _strip_tags(x).lower().replace(",", "").replace("€", "").replace("$", "").strip()
+    if not s:
+        return np.nan
+    m = re.search(r"(-?\d+(\.\d+)?)\s*([a-z]+)?", s)
+    if not m:
+        return np.nan
+    num = float(m.group(1))
+    suf = (m.group(3) or "").strip()
+    if suf in {"m", "mil", "million"}:
+        return num
+    if suf in {"k", "thousand"}:
+        return num / 1000.0
+    if suf in {"bn", "b", "billion"}:
+        return num * 1000.0
+    # no suffix: assume already millions
+    return num
+
 # ---------- fast percentiles (rank pct) ----------
 @st.cache_data(show_spinner=False)
 def _percentiles_for_ref(df_ref: pd.DataFrame, metrics: list) -> pd.DataFrame:
@@ -2134,13 +2246,6 @@ def _div_color_hex(v: float) -> str:
         c2 = np.array([34, 197, 94])   # green
     rgb = (c1 + (c2 - c1) * t).astype(int)
     return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
-
-def _esc(x) -> str:
-    return str(x if x is not None else "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-def _is_http_url(u: str) -> bool:
-    u = (u or "").strip()
-    return u.startswith("http://") or u.startswith("https://")
 
 # ============================== Complete Score weights (your formulas) ==============================
 COMPLETE_WEIGHTS = {
@@ -2218,9 +2323,7 @@ def _complete_score_from_pcts(pcts: pd.DataFrame, rk: str, idx: pd.Index) -> pd.
 
     M = pcts.loc[idx, cols].astype(float)
     w = np.array(wts, dtype=float)
-
-    # Renormalize to available weights (so missing metrics don’t auto-kill)
-    return (M.mul(w, axis=1).sum(axis=1) / w.sum())
+    return (M.mul(w, axis=1).sum(axis=1) / w.sum())  # renormalized
 
 # ============================== UI (controls) ==============================
 r1, r2, r3, r4, r5 = st.columns([1.5, 1.2, 1.2, 1.2, 1.2])
@@ -2257,20 +2360,66 @@ with b3:
 with b4:
     team_q = st.text_input("Team search", "", key="t20_team_q_v33")
 
-# Display-only filters
+# Display-only filters (original)
 d1, d2 = st.columns([1.2, 1.2])
 with d1:
     age_band = st.slider("Age band (display)", 14, 45, (16, 35), 1, key="t20_age_band_v33")
 with d2:
-    # default min=20, max=100; still adjustable 0–100
     league_q = st.slider("League quality (display)", 0, 100, (20, 100), 1, key="t20_league_q_v33")
+
+# ✅ NEW display-only filters (requested)
+st.markdown("#### 🧾 Player filters (display only)")
+p1, p2, p3, p4 = st.columns([1.2, 1.2, 1.6, 1.2])
+
+# Contract year: derive range from df if available
+contract_col = "Contract expires"
+foot_col = "Foot"
+birth_col = "Birth country"
+mv_col = "Market value"
+
+# We'll compute min/max from df later once df_base exists; UI uses safe defaults
+with p1:
+    contract_year_range = st.slider("Contract year", 2000, 2035, (2000, 2035), 1, key="t20_contract_year_v33")
+with p2:
+    foot_opts = ["", "right", "left", "both", "unknown"]
+    foot_sel = st.multiselect("Foot", foot_opts, default=[], key="t20_foot_v33")
+with p3:
+    # Your allowed list (plus blank). We'll also union with df values later safely.
+    BIRTH_COUNTRIES_ALLOWED = [
+        "", "Netherlands", "Spain", "Serbia", "Germany", "England", "Republic of Ireland", "France", "Slovakia",
+        "Italy", "Switzerland", "Wales", "Belgium", "Hungary", "Côte d'Ivoire", "Portugal", "Brazil", "Argentina",
+        "Denmark", "Northern Ireland", "Sierra Leone", "Norway", "Sweden", "United States", "Gambia", "Ukraine",
+        "Ghana", "Scotland", "Paraguay", "Senegal", "Uruguay", "Czech Republic", "Guernsey", "Croatia", "Nigeria",
+        "Ecuador", "Colombia", "Mexico", "Egypt", "Angola", "French Guiana", "Japan", "Burkina Faso", "Mozambique",
+        "Greece", "Slovenia", "Guinea-Bissau", "Zimbabwe", "Cameroon", "South Africa", "Korea Republic", "Chad",
+        "Congo DR", "Austria", "Bulgaria", "Türkiye", "New Zealand", "Georgia", "Uzbekistan", "Morocco",
+        "Bosnia and Herzegovina", "Poland", "Australia", "Saudi Arabia", "Chile", "Mali", "Tanzania", "Canada",
+        "Montenegro", "Zambia", "Panama", "Jersey", "Iceland", "Algeria", "Curaçao", "Finland", "Bermuda",
+        "Barbados", "Congo", "Grenada", "Montserrat", "Liberia", "Jamaica", "Lithuania", "Afghanistan", "Malawi",
+        "Belize", "Guadeloupe", "Albania", "Somalia", "Guyana", "British Virgin Islands", "Suriname", "Gibraltar",
+        "Honduras", "Mauritius", "Great Britain", "Russia", "Cyprus", "Fiji", "Thailand", "Hong Kong", "Latvia",
+        "Trinidad and Tobago", "Eritrea", "North Macedonia", "Kosovo", "Azerbaijan", "Luxembourg", "Venezuela",
+        "Peru", "Israel", "Moldova", "Estonia", "Costa Rica", "Armenia", "Guinea", "Comoros", "Kenya", "Vanuatu",
+        "Malta", "Iraq", "Dominica", "Réunion", "Cape Verde Islands", "Romania", "Liechtenstein", "Kazakhstan",
+        "Belarus", "Benin", "Rwanda", "Dominican Republic", "Iran", "Niger", "Singapore", "Burundi",
+        "Madagascar", "Togo", "Central African Republic", "Bolivia", "Tajikistan", "Martinique", "Cuba",
+        "China PR", "Equatorial Guinea", "Gabon", "Chinese Taipei", "Guatemala", "Tunisia", "Lebanon", "Bahrain",
+        "Uganda", "Oman", "Faroe Islands", "Jordan", "Haiti", "Africa", "Syria", "St. Lucia", "Indonesia",
+        "Ethiopia", "Philippines", "Mauritania", "Palestine", "Libya", "Malaysia", "Korea DPR", "Nicaragua",
+        "South Sudan", "Bonaire", "São Tomé e Príncipe", "St. Kitts and Nevis", "El Salvador", "New Caledonia",
+        "Kyrgyzstan", "Isle of Man", "Lesotho", "United Arab Emirates", "Andorra", "Mongolia", "Namibia",
+        "Eswatini", "Pakistan", "Djibouti", "Antigua and Barbuda", "Puerto Rico", "Cayman Islands",
+        "St. Vincent and the Grenadines"
+    ]
+    birth_sel = st.multiselect("Birth country", sorted(set(BIRTH_COUNTRIES_ALLOWED)), default=[], key="t20_birth_v33")
+with p4:
+    mv_range = st.slider("Market value (€m)", 0.0, 150.0, (0.0, 150.0), 0.5, key="t20_mv_v33")
 
 # ---------- League filters (display only) ----------
 st.markdown("#### 🌍 League filters (display only)")
 l1, l2, l3, l4 = st.columns([1.8, 1.2, 1.2, 1.2])
 
 leagues_avail = sorted(set(INCLUDED_LEAGUES) | set(df["League"].dropna().astype(str).unique()))
-
 with l1:
     leagues_sel = st.multiselect("League (multi)", leagues_avail, default=[], key="t20_leagues_sel_v33")
 with l2:
@@ -2325,7 +2474,6 @@ order_dir_desc = True
 
 if group_filter != "All positions":
     order_choices = ["Score", "Best role (A→Z)", "Complete Score"]
-    # add role ordering options
     order_choices += [f"Role: {r}" for r in (sorted(list((ROLE_BUCKETS.get(role_key_for_group, {}) or {}).keys())))]
     oc1, oc2 = st.columns([2.0, 1.0])
     with oc1:
@@ -2344,9 +2492,35 @@ else:
 # ============================== Build scoring pool (ONLY minutes affects pool) ==============================
 df_base = df.copy()
 
+# strip tags in key string columns (prevents <span ...> showing)
+for c in ["Player", "Team", "League", "Position"]:
+    if c in df_base.columns:
+        df_base[c] = df_base[c].apply(_strip_tags)
+
 for col in ["Age", "Minutes played"]:
     if col in df_base.columns:
         df_base[col] = pd.to_numeric(df_base[col], errors="coerce")
+
+# derive contract year / market value / foot / birth fields (for display filters)
+if contract_col in df_base.columns:
+    df_base["_contract_year"] = df_base[contract_col].apply(_contract_year)
+else:
+    df_base["_contract_year"] = np.nan
+
+if mv_col in df_base.columns:
+    df_base["_mv_m"] = df_base[mv_col].apply(_parse_market_value_to_m)
+else:
+    df_base["_mv_m"] = np.nan
+
+if foot_col in df_base.columns:
+    df_base["_foot"] = df_base[foot_col].apply(_norm_foot)
+else:
+    df_base["_foot"] = ""
+
+if birth_col in df_base.columns:
+    df_base["_birth_country"] = df_base[birth_col].apply(lambda x: _strip_tags(x))
+else:
+    df_base["_birth_country"] = ""
 
 if "Position" in df_base.columns:
     df_base["_pos_tok"] = df_base["Position"].apply(_pos_token)
@@ -2368,6 +2542,7 @@ allowed_pos = POS_GROUPS_LOCAL[group_filter]
 if allowed_pos is not None:
     df_disp = df_disp[df_disp["_pos_tok"].isin(allowed_pos)].copy()
 
+# original display filters
 if "Age" in df_disp.columns:
     df_disp = df_disp[df_disp["Age"].between(age_band[0], age_band[1])].copy()
 
@@ -2376,6 +2551,28 @@ if player_q.strip():
 if team_q.strip():
     df_disp = df_disp[df_disp["Team"].astype(str).str.contains(team_q.strip(), case=False, na=False)]
 
+# ✅ NEW display-only filters
+# Contract year
+if "_contract_year" in df_disp.columns:
+    df_disp = df_disp[
+        df_disp["_contract_year"].fillna(-1).astype(int).between(int(contract_year_range[0]), int(contract_year_range[1]))
+        | df_disp["_contract_year"].isna()
+    ].copy()
+
+# Foot
+if foot_sel:
+    df_disp = df_disp[df_disp["_foot"].isin(set(foot_sel))].copy()
+
+# Birth country
+if birth_sel:
+    df_disp = df_disp[df_disp["_birth_country"].isin(set(birth_sel))].copy()
+
+# Market value (€m)
+if "_mv_m" in df_disp.columns:
+    lo_mv, hi_mv = float(mv_range[0]), float(mv_range[1])
+    df_disp = df_disp[df_disp["_mv_m"].fillna(-1).between(lo_mv, hi_mv) | df_disp["_mv_m"].isna()].copy()
+
+# league display filters
 if "League" in df_disp.columns:
     df_disp["_league"] = df_disp["League"].astype(str)
 
@@ -2398,8 +2595,6 @@ if df_disp.empty:
     st.stop()
 
 # ============================== Scoring helpers ==============================
-HI, LO, STYLE_T = 70, 30, 65
-
 def _role_score_series_from_pcts(pcts: pd.DataFrame, spec: dict, idx: pd.Index) -> pd.Series:
     met_w = (spec or {}).get("metrics", {}) or {}
     cols, wts = [], []
@@ -2416,10 +2611,11 @@ def _role_score_series_from_pcts(pcts: pd.DataFrame, spec: dict, idx: pd.Index) 
 def _score_subset_against_league_pos_ref(df_subset: pd.DataFrame, rk: str, allowed_pos_tokens: set):
     """
     Computes:
-      - best badge-eligible role + best raw score
-      - complete score (your formula) for the same reference
-      - (optional) per-role scores if needed later (ordering by a role)
-    Reference percentiles computed on df_base filtered to SAME LEAGUE + SAME POS GROUP.
+      - _best_role_badge + _best_raw_badge using badge-eligible roles only
+      - _best_role_display using ALL roles (including label-only)
+      - _complete_raw using your formula
+      - role_scores_by_league for ordering by specific role
+    Reference percentiles: df_base filtered to SAME LEAGUE + SAME POS GROUP
     """
     specs = ROLE_BUCKETS.get(rk, {}) or {}
     out = pd.DataFrame(index=df_subset.index)
@@ -2427,12 +2623,11 @@ def _score_subset_against_league_pos_ref(df_subset: pd.DataFrame, rk: str, allow
     if df_subset.empty:
         out["_best_role_badge"] = ""
         out["_best_raw_badge"] = 0.0
+        out["_best_role_display"] = ""
         out["_complete_raw"] = np.nan
-        out.attrs["pcts_by_league"] = {}
         out.attrs["role_scores_by_league"] = {}
         return out
 
-    # metrics we may need
     role_metrics = sorted({m for r in specs.values() for m in (r.get("metrics", {}) or {}).keys()}) if specs else []
     complete_metrics = sorted(set((COMPLETE_WEIGHTS.get(rk, {}) or {}).keys()))
     need_metrics = sorted(set(role_metrics) | set(complete_metrics))
@@ -2445,17 +2640,16 @@ def _score_subset_against_league_pos_ref(df_subset: pd.DataFrame, rk: str, allow
         and str(rname).strip().lower() not in LABEL_ONLY_ROLES
     ]
 
-    best_role_s = pd.Series("", index=df_subset.index, dtype="object")
-    best_raw_s  = pd.Series(0.0, index=df_subset.index, dtype="float")
-    comp_s      = pd.Series(np.nan, index=df_subset.index, dtype="float")
+    best_role_badge_s = pd.Series("", index=df_subset.index, dtype="object")
+    best_raw_s        = pd.Series(0.0, index=df_subset.index, dtype="float")
+    best_role_disp_s  = pd.Series("", index=df_subset.index, dtype="object")
+    comp_s            = pd.Series(np.nan, index=df_subset.index, dtype="float")
 
-    pcts_by_league = {}
     role_scores_by_league = {}
 
     for lg, part in df_subset.groupby(df_subset["League"].astype(str)):
         ref = base_pos[base_pos["League"].astype(str) == str(lg)]
         pcts = _percentiles_for_ref(ref, need_metrics) if (not ref.empty and need_metrics) else pd.DataFrame(index=ref.index)
-        pcts_by_league[str(lg)] = pcts
 
         idx = part.index.intersection(pcts.index)
         if len(idx) == 0:
@@ -2464,25 +2658,29 @@ def _score_subset_against_league_pos_ref(df_subset: pd.DataFrame, rk: str, allow
         # complete score
         comp_s.loc[idx] = _complete_score_from_pcts(pcts, rk, idx)
 
-        # role scores (for best role and for ordering by a specific role)
+        # role scores table for all roles
         if specs and role_metrics:
             role_scores_tbl = pd.DataFrame(index=idx)
             for rname, spec in specs.items():
                 role_scores_tbl[rname] = _role_score_series_from_pcts(pcts, spec, idx)
             role_scores_by_league[str(lg)] = role_scores_tbl
 
+            # BEST ROLE DISPLAY: use ALL roles (including label-only)
+            best_role_disp_s.loc[idx] = role_scores_tbl.idxmax(axis=1).astype(str).fillna("")
+
+            # BADGE/base best role: eligible only
             if eligible_roles:
                 elig_tbl = role_scores_tbl[eligible_roles]
-                best_role_s.loc[idx] = elig_tbl.idxmax(axis=1).astype(str)
-                best_raw_s.loc[idx]  = pd.to_numeric(elig_tbl.max(axis=1), errors="coerce").fillna(0.0)
+                best_role_badge_s.loc[idx] = elig_tbl.idxmax(axis=1).astype(str).fillna("")
+                best_raw_s.loc[idx]        = pd.to_numeric(elig_tbl.max(axis=1), errors="coerce").fillna(0.0)
         else:
             role_scores_by_league[str(lg)] = pd.DataFrame(index=idx)
 
-    out["_best_role_badge"] = best_role_s.fillna("")
-    out["_best_raw_badge"]  = pd.to_numeric(best_raw_s, errors="coerce").fillna(0.0)
-    out["_complete_raw"]    = pd.to_numeric(comp_s, errors="coerce")  # may be NaN if metrics missing
+    out["_best_role_badge"]   = best_role_badge_s.fillna("")
+    out["_best_raw_badge"]    = pd.to_numeric(best_raw_s, errors="coerce").fillna(0.0)
+    out["_best_role_display"] = best_role_disp_s.fillna("")
+    out["_complete_raw"]      = pd.to_numeric(comp_s, errors="coerce")
 
-    out.attrs["pcts_by_league"] = pcts_by_league
     out.attrs["role_scores_by_league"] = role_scores_by_league
     return out
 
@@ -2503,6 +2701,7 @@ def _apply_role_thresholds(df_scored: pd.DataFrame, rk: str, allowed_pos_tokens:
     for lg, part in df_scored.groupby(df_scored["League"].astype(str)):
         ref = base_pos[base_pos["League"].astype(str) == str(lg)]
         pcts = _percentiles_for_ref(ref, need_metrics) if (not ref.empty and need_metrics) else pd.DataFrame(index=ref.index)
+
         idx = part.index.intersection(pcts.index)
         if len(idx) == 0:
             keep_mask.loc[part.index] = False
@@ -2532,17 +2731,17 @@ def _apply_role_thresholds(df_scored: pd.DataFrame, rk: str, allowed_pos_tokens:
 # ============================== Run scoring ==============================
 if group_filter != "All positions":
     rk = role_key_for_group
-    allowed_pos_tokens = allowed_pos  # set
+    allowed_pos_tokens = allowed_pos
 
     df_scored = df_disp.copy()
     scored = _score_subset_against_league_pos_ref(df_scored, rk, allowed_pos_tokens)
 
-    df_scored["_best_role_badge"] = scored["_best_role_badge"]
-    df_scored["_best_raw_badge"]  = scored["_best_raw_badge"]
-    df_scored["_complete_raw"]    = scored["_complete_raw"]
+    df_scored["_best_role_badge"]   = scored["_best_role_badge"]
+    df_scored["_best_raw_badge"]    = scored["_best_raw_badge"]
+    df_scored["_best_role_display"] = scored["_best_role_display"]
+    df_scored["_complete_raw"]      = scored["_complete_raw"]
     role_scores_by_league = scored.attrs.get("role_scores_by_league", {})
 
-    # Apply role thresholds
     if role_thresholds:
         df_scored = _apply_role_thresholds(df_scored, rk, allowed_pos_tokens, role_thresholds, mode_any)
 
@@ -2550,9 +2749,7 @@ if group_filter != "All positions":
         st.info("No players meet the selected role threshold rules.")
         st.stop()
 
-    # Ordering by a specific role (compute a per-row column for that role)
     if order_role:
-        # build per-row role score column from cached league tables (fallback safe)
         order_vals = pd.Series(np.nan, index=df_scored.index)
         for lg, part in df_scored.groupby(df_scored["League"].astype(str)):
             tbl = role_scores_by_league.get(str(lg), None)
@@ -2562,7 +2759,6 @@ if group_filter != "All positions":
         df_scored["_order_role_val"] = pd.to_numeric(order_vals, errors="coerce").fillna(-1.0)
 
 else:
-    # All positions: score each chunk vs its own pos tokens + same league
     df_scored_chunks = []
     GROUPS = [
         ("CF", {"CF"}),
@@ -2576,9 +2772,10 @@ else:
         if part.empty:
             continue
         scored = _score_subset_against_league_pos_ref(part, rk, toks)
-        part["_best_role_badge"] = scored["_best_role_badge"]
-        part["_best_raw_badge"]  = scored["_best_raw_badge"]
-        part["_complete_raw"]    = scored["_complete_raw"]
+        part["_best_role_badge"]   = scored["_best_role_badge"]
+        part["_best_raw_badge"]    = scored["_best_raw_badge"]
+        part["_best_role_display"] = scored["_best_role_display"]
+        part["_complete_raw"]      = scored["_complete_raw"]
         part["_rk"] = rk
         df_scored_chunks.append(part)
 
@@ -2589,11 +2786,9 @@ else:
     df_scored = pd.concat(df_scored_chunks, axis=0)
 
 # ============================== Base score (best-role vs complete) ==============================
-# Always keep best role displayed; base score only affects ranking/colour pill/blend.
 best_role_raw = pd.to_numeric(df_scored["_best_raw_badge"], errors="coerce").fillna(0.0)
 complete_raw  = pd.to_numeric(df_scored["_complete_raw"], errors="coerce")
 
-# If Complete Score missing (metrics absent), fall back to best-role raw for that row
 base_raw = complete_raw.where(complete_raw.notna(), best_role_raw) if use_complete_base else best_role_raw
 df_scored["_base_raw"] = pd.to_numeric(base_raw, errors="coerce").fillna(0.0)
 
@@ -2605,9 +2800,8 @@ df_scored["_score"] = pd.to_numeric(df_scored["_score"], errors="coerce").fillna
 
 # ============================== Ordering + top N ==============================
 if order_by == "Best role (A→Z)":
-    df_scored = df_scored.sort_values(["_best_role_badge", "_score"], ascending=[True, False]).copy()
+    df_scored = df_scored.sort_values(["_best_role_display", "_score"], ascending=[True, False]).copy()
 elif order_by == "Complete Score":
-    # sort by complete (fallback to base_raw), then score
     tmp = pd.to_numeric(df_scored["_complete_raw"], errors="coerce")
     df_scored["_order_complete"] = tmp.where(tmp.notna(), df_scored["_base_raw"]).fillna(0.0)
     df_scored = df_scored.sort_values(["_order_complete", "_score"], ascending=[not order_dir_desc, not order_dir_desc]).copy()
@@ -2629,18 +2823,12 @@ def _photo_url(row) -> str:
 
 def _crest_url(row) -> str:
     try:
-        u = resolve_team_crest(
-            str(row.get("Team", "")),
-            str(row.get("League", ""))
-        )
-        if _is_http_url(u):
-            return u
-        return FALLBACK_BADGE
+        u = resolve_team_crest(str(row.get("Team", "")), str(row.get("League", "")))
+        return u if _is_http_url(u) else FALLBACK_BADGE
     except Exception:
         return FALLBACK_BADGE
 
-
-# ============================== Tight CSS table (no nested <div> that can leak as text) ==============================
+# ============================== Tight CSS table ==============================
 st.markdown(
     """
 <style>
@@ -2712,20 +2900,23 @@ st.markdown(
 # ============================== Render HTML table ==============================
 rows_html = []
 for _, r in df_scored.iterrows():
-    player = _esc(r.get("Player", ""))
-    team   = _esc(r.get("Team", ""))
-    league = _esc(r.get("League", ""))
-    region = _esc(r.get("_region", ""))
+    player = _esc(_strip_tags(r.get("Player", "")))
+    team   = _esc(_strip_tags(r.get("Team", "")))
+    league = _esc(_strip_tags(r.get("League", "")))
+    region = _esc(_strip_tags(r.get("_region", "")))
     band   = _esc(r.get("_band", ""))
-    pos    = _esc(r.get("Position", ""))
+    pos    = _esc(_strip_tags(r.get("Position", "")))
     age    = _esc(r.get("Age", "—"))
-    best_role = _esc(r.get("_best_role_badge", ""))
+
+    best_role_raw_name = _strip_tags(r.get("_best_role_display", ""))
+    best_role_disp = _esc(_format_best_role_display(best_role_raw_name, r.get("Position", "")))
+
     score = float(pd.to_numeric(r.get("_score", 0.0), errors="coerce") or 0.0)
     pill_col = _div_color_hex(score)
 
     photo = _esc(_photo_url(r))
     crest = _esc(_crest_url(r))
-    crest_img = f"<img class='t20-crest' src='{crest}' />" if crest else ""  # if missing -> just name
+    crest_img = f"<img class='t20-crest' src='{crest}' />" if crest else ""
 
     rows_html.append(
         f"""
@@ -2748,7 +2939,7 @@ for _, r in df_scored.iterrows():
   <td><span class="t20-muted">{band}</span></td>
   <td><span class="t20-muted">{pos}</span></td>
   <td>{age}</td>
-  <td class="t20-role">{best_role}</td>
+  <td class="t20-role">{best_role_disp}</td>
   <td><span class="t20-pill" style="background:{pill_col};">{int(round(score))}</span></td>
 </tr>
 """
@@ -2780,15 +2971,18 @@ table_html = f"""
 
 st.markdown(table_html, unsafe_allow_html=True)
 
-# (Optional) quick debug readout
 with st.expander("Debug (scoring fields)", expanded=False):
     show_cols = [
         "Player", "Team", "League", "_region", "_band", "Position", "Age",
-        "_best_role_badge", "_best_raw_badge", "_complete_raw", "_base_raw", "_league_strength", "_score"
+        "_contract_year", "_foot", "_birth_country", "_mv_m",
+        "_best_role_display", "_best_role_badge", "_best_raw_badge",
+        "_complete_raw", "_base_raw", "_league_strength", "_score"
     ]
     show_cols = [c for c in show_cols if c in df_scored.columns]
     st.dataframe(df_scored[show_cols], use_container_width=True)
-# ============================ END SHORTLIST (T20) — v3.3 ============================
+
+# ============================ END SHORTLIST (T20) — v3.3+ ============================
+
 
 
 
