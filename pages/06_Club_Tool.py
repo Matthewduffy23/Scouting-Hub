@@ -1472,13 +1472,20 @@ def build_triples(ply: pd.Series, df_all: pd.DataFrame, ref_df: pd.DataFrame, pa
 group = st.selectbox("Position group", list(POS_GROUPS.keys()), index=0)
 pos_prefixes = {p.upper() for p in POS_GROUPS[group]}
 
+# ✅ NEW: minutes slider for one-pager (affects dropdown eligibility + ref pool calculations)
+min_mins_onepager = st.slider("Min minutes (one-pager)", 0, 6000, 600, 50)
+
 df_view = df.copy()
 if "Position" in df_view.columns:
     df_view["_pos_tok"] = df_view["Position"].apply(_pos_token)
     df_view = df_view[df_view["_pos_tok"].isin(pos_prefixes)].copy()
 
+# ✅ NEW: apply minutes filter to the dropdown pool
+df_view["Minutes played"] = pd.to_numeric(df_view.get("Minutes played", np.nan), errors="coerce")
+df_view = df_view[df_view["Minutes played"] >= min_mins_onepager].copy()
+
 if df_view.empty:
-    st.info("No players for that position group in this dataset.")
+    st.info("No players for that position group + minutes filter in this dataset.")
     st.stop()
 
 def _player_label(row: pd.Series) -> str:
@@ -1550,6 +1557,10 @@ if "Position" in ref_df.columns:
         allowed = set()
     if allowed:
         ref_df = ref_df[ref_df["_pos_tok"].isin(allowed)].copy()
+
+# ✅ NEW: apply minutes filter to the reference pool used for percentiles/role scores/styles
+ref_df["Minutes played"] = pd.to_numeric(ref_df.get("Minutes played", np.nan), errors="coerce")
+ref_df = ref_df[ref_df["Minutes played"] >= min_mins_onepager].copy()
 
 # -------------------- Badge options --------------------
 use_league_weighting = st.toggle(
@@ -1961,17 +1972,19 @@ ROLE_LABEL_FS = name_fs * 0.60   # slightly smaller than name
 ROLE_LABEL_COL = "#9CA3AF"       # lighter grey
 ROLE_LABEL_GAP = 0.012           # gap after crest (or after badge if no crest)
 
+label_x = None
 if best_role_pos_label:
     label_x = (crest_x + CREST_W + ROLE_LABEL_GAP) if crest_drawn else (badge_x + bw + ROLE_LABEL_GAP)
     label_x = min(label_x, 0.975)
 
-fig.text(
-    label_x, NAME_YC, best_role_pos_label,
-    color=ROLE_LABEL_COL,
-    fontsize=ROLE_LABEL_FS,
-    fontweight="700",
-    va="center", ha="left"
-)
+if best_role_pos_label and label_x is not None:
+    fig.text(
+        label_x, NAME_YC, best_role_pos_label,
+        color=ROLE_LABEL_COL,
+        fontsize=ROLE_LABEL_FS,
+        fontweight="700",
+        va="center", ha="left"
+    )
 
 # -------------------- META line (NO leading score; tighter) --------------------
 age = int(ply["Age"]) if pd.notna(ply.get("Age")) else None
