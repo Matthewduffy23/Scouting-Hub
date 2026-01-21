@@ -1215,7 +1215,7 @@ ROLE_BUCKETS = {
         "Defensive Midfielder DM": {"metrics": {"Defensive duels per 90": 4, "Defensive duels won, %": 4,
                                                "PAdj Interceptions": 3, "Aerial duels per 90": 0.5, "Aerial duels won, %": 1}},
         "Goal Threat CM": {"metrics": {"Non-penalty goals per 90": 3, "xG per 90": 3, "Shots per 90": 1.5, "Touches in box per 90": 2}},
-        "Ball-Carrying CM": {"metrics": {"Dribbles per 90": 4, "Successful dribbles, %": 2, "Progressive runs per 90": 3, "Accelerations per 90": 3}},
+        "Ball Carrying CM": {"metrics": {"Dribbles per 90": 4, "Successful dribbles, %": 2, "Progressive runs per 90": 3, "Accelerations per 90": 3}},
 
         # ===== NEW ROLE (display/label-eligible; excluded from badge) =====
         "Box-to-Box CM": {"metrics": {
@@ -2402,16 +2402,31 @@ def _first_pos_label(position_str: str) -> str:
     return POS_LABEL_MAP.get(tok, tok)
 
 def _format_best_role_display(role_name: str, position_str: str) -> str:
-    # "ball playing cb" -> "Ball Playing CB" (first two words + pos label)
+    # "ball-carrying cm" -> "Ball-Carrying CM" (no double CM)
     r = _strip_tags(role_name).strip()
     if not r:
         return ""
+
     parts = r.split()
-    prefix = " ".join(parts[:2]).title() if len(parts) >= 2 else r.title()
-    pos_lab = _first_pos_label(position_str)
-    if pos_lab:
-        return f"{prefix} {pos_lab}"
-    return prefix
+    prefix_parts = parts[:2] if len(parts) >= 2 else parts[:1]
+    prefix = " ".join(prefix_parts).title()
+
+    pos_lab = _first_pos_label(position_str).upper().strip()
+    if not pos_lab:
+        return prefix
+
+    # If the role already contains the pos in its first two words, don't append again
+    # e.g. "Ball-Carrying Cm" already implies CM
+    last_word = prefix_parts[-1].upper().strip() if prefix_parts else ""
+    if last_word == pos_lab:
+        return prefix_parts[0].replace("-", "-").title() + f" {pos_lab}" if len(prefix_parts) == 2 else prefix
+
+    # Also guard against common role suffix tokens (cm/cb/fb/cf/att/dm/rw/lw)
+    common_pos_words = {"CM","CB","FB","CF","ATT","DM","RW","LW"}
+    if last_word in common_pos_words:
+        return " ".join([w.title() for w in prefix_parts[:-1]]) + f" {pos_lab}"
+
+    return f"{prefix} {pos_lab}"
 
 def _contract_year(x):
     s = _strip_tags(x)
