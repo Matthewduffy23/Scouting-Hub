@@ -3222,9 +3222,7 @@ for _, r in df_scored.iterrows():
   <td class="t20-rank">{int(r.get("Rank",0))}</td>
   <td>
     <div class="t20-player">
-      <img class="t20-photo" 
-                 src="{photo}" 
-                 onerror="this.onerror=null;this.src='{_esc(PLACEHOLDER_IMG)}';" />
+      <img class="t20-photo" src="{photo}" />
       <span class="t20-name">{player}{flag_html}</span>
     </div>
   </td>
