@@ -2194,10 +2194,10 @@ def _is_http_url(u: str) -> bool:
     return u.startswith("http://") or u.startswith("https://")
 
 def _pos_token(position_str: str) -> str:
-    s = _strip_tags(position_str).replace("\u00a0", " ").strip().upper()
-    toks = [t for t in re.split(r"[,/;]\s*|\s+", s) if t]
-    return toks[0] if toks else ""
-
+    s = _strip_tags(position_str)
+    if not s:
+        return ""
+    return s.split(",")[0].strip().upper()
 
 # ---- z-score -> 0..100 via Normal CDF ----
 def _z_to_0_100(z: float) -> float:
@@ -2877,16 +2877,10 @@ else:
 # ============================== Build scoring pool (ONLY minutes affects pool) ==============================
 df_base = df.copy()
 
-# strip tags + normalize whitespace (prevents <span ...> and fixes hidden NBSP issues)
+# strip tags in key string columns (prevents <span ...> showing)
 for c in ["Player", "Team", "League", "Position"]:
     if c in df_base.columns:
-        df_base[c] = (
-            df_base[c].astype(str)
-            .apply(_strip_tags)
-            .str.replace("\u00a0", " ", regex=False)  # NBSP -> normal space
-            .str.strip()
-        )
-
+        df_base[c] = df_base[c].apply(_strip_tags)
 
 for col in ["Age", "Minutes played"]:
     if col in df_base.columns:
