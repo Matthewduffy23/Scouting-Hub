@@ -3423,6 +3423,84 @@ with st.expander("Debug (scoring fields)", expanded=False):
     show_cols = [c for c in show_cols if c in df_scored.columns]
     st.dataframe(df_scored[show_cols], use_container_width=True)
 
+# ================= PLAYER DROP DEBUGGER =================
+with st.expander("🕵️ Why is my player missing?", expanded=False):
+
+    q = st.text_input("Type player name", "")
+
+    if q.strip():
+        q = q.strip()
+
+        def find(df):
+            return df[df["Player"].str.contains(q, case=False, na=False)]
+
+        b = find(df_base)
+        d = find(df_disp)
+        s = find(df_scored)
+
+        st.markdown("### Presence check")
+        st.write({
+            "In pool (df_base)": len(b),
+            "After display filters (df_disp)": len(d),
+            "After scoring/thresholds (df_scored)": len(s),
+        })
+
+        if not b.empty:
+            st.markdown("### Pool row (df_base)")
+            st.dataframe(
+                b[["Player","Team","League","Position","Age","Minutes played"]]
+                .head(3),
+                use_container_width=True
+            )
+
+        if b.empty:
+            st.error("❌ Player not even in scoring pool → MINUTES or youth league filter removed them")
+
+        elif d.empty:
+            st.error("❌ Player removed by DISPLAY FILTERS")
+            st.dataframe(
+                b[["Age","_contract_year","_foot","_birth_country","_mv_m",
+                   "_region","_band","_league_strength"]]
+                .head(3),
+                use_container_width=True
+            )
+
+        elif s.empty:
+            st.error("❌ Player removed during SCORING stage")
+            st.info("Most common causes:")
+            st.markdown("""
+            • Wrong position token for selected group  
+            • Role thresholds too strict  
+            • No league+position reference group  
+            • Raw metric rules  
+            """)
+
+            # show their role scores if available
+            try:
+                lg = d.iloc[0]["League"]
+                tbl = role_scores_by_league.get(str(lg), None)
+                if isinstance(tbl, pd.DataFrame):
+                    pid = d.index[0]
+                    st.markdown("### Their role scores")
+                    st.dataframe(tbl.loc[[pid]], use_container_width=True)
+            except:
+                pass
+
+        else:
+            st.success("✅ Player survived all filters — just outside Top N")
+
+            st.markdown("### Final row")
+            st.dataframe(
+                s[[
+                    "Player","Team","League","Position","Age",
+                    "_best_role_display","_best_raw_badge",
+                    "_complete_raw","_score"
+                ]],
+                use_container_width=True
+            )
+# =======================================================
+
+
 # ============================ END SHORTLIST (T20) — ELITE TABLE (v3.3++) ============================
 
 
