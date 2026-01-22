@@ -19,6 +19,7 @@ from numpy.linalg import norm
 from numpy import exp
 import requests
 from difflib import SequenceMatcher
+from sklearn.preprocessing import StandardScaler
 
 # ========================= PAGE =========================
 st.set_page_config(page_title="Club Scouting — Pro Tiles (FotMob)", layout="wide")
@@ -266,7 +267,7 @@ def league_region(league: str) -> str:
 
 # ========================= TOP BAR: FILTERS + SCORING =========================
 # Paste this WHOLE block to replace your entire current TOP BAR section
-# (from `st.markdown("---")` down to the end of `compute_center_backs()`)
+# (from st.markdown("---") down to the end of compute_center_backs())
 
 st.markdown("---")
 st.header("⚙️ Adjustments & Candidate Pool")
@@ -477,6 +478,179 @@ def render_template_players_used(role_name: str, tmpl_src: pd.DataFrame):
         st.info("No eligible template players for the selected team/filters.")
         return
     st.dataframe(tmpl_src[showcols].sort_values("Minutes played", ascending=False), use_container_width=True)
+
+# ========================= SIMILARITY (PER ROLE) =========================
+SIM_WEIGHTS = {
+    "CB": {
+        'Passes per 90': 2,
+        'Accurate passes, %': 2,
+        'Long passes per 90': 2,
+        'Progressive passes per 90': 2,
+        'Defensive duels per 90': 2,
+        'Defensive duels won, %': 2,
+        'Dribbles per 90': 2,
+        'PAdj Interceptions': 1,
+        'Progressive runs per 90': 2,
+        'Aerial duels per 90': 2,
+        'Aerial duels won, %': 3,
+    },
+    "FB": {
+        'Passes per 90': 3,
+        'Passes to penalty area per 90': 2,
+        'Dribbles per 90': 2,
+        'xA per 90': 2,
+        'Progressive passes per 90': 3,
+        'Defensive duels per 90': 2,
+        'Forward passes per 90': 3,
+        'PAdj Interceptions': 2,
+        'Aerial duels won, %': 2,
+        'Touches in box per 90': 2,
+        'Crosses per 90': 2,
+    },
+    "CM": {
+        'Passes per 90': 2,
+        'Progressive runs per 90': 2,
+        'Progressive passes per 90': 2,
+        'Dribbles per 90': 2,
+        'xA per 90': 2,
+        'Touches in box per 90': 2,
+        'Accurate passes, %': 2,
+        'Aerial duels won, %': 2,
+        'Non-penalty goals per 90': 2,
+        'Passes to penalty area per 90': 2,
+        'Defensive duels per 90': 2,
+        'PAdj Interceptions': 2,
+        'Defensive duels won, %': 2,
+    },
+    "ATT": {
+        'Passes per 90': 3,
+        'Accurate passes, %': 2,
+        'Dribbles per 90': 3,
+        'Non-penalty goals per 90': 2,
+        'Shots per 90': 2,
+        'Successful dribbles, %': 2,
+        'Aerial duels won, %': 2,
+        'xA per 90': 2,
+        'xG per 90': 2,
+        'Touches in box per 90': 2,
+        'Passes to penalty area per 90': 2,
+        'Passes to final third per 90': 2,
+        'Crosses per 90': 2,
+    },
+    "ST": {
+        'Passes per 90': 3,
+        'Dribbles per 90': 3,
+        'Non-penalty goals per 90': 2,
+        'Aerial duels per 90': 2,
+        'Aerial duels won, %': 3,
+        'xA per 90': 2,
+        'xG per 90': 3,
+        'Touches in box per 90': 2,
+        'Progressive runs per 90': 2,
+        'Shots per 90': 2,
+        'Accurate passes, %': 2,
+    },
+}
+
+def _percentile_of_value(series: pd.Series, value: float) -> float:
+    s = pd.to_numeric(series, errors="coerce").dropna()
+    if s.empty:
+        return 0.5
+    return float((s <= float(value)).mean())
+
+def compute_similarity_from_template(
+    tmpl_src: pd.DataFrame,
+    pool: pd.DataFrame,
+    sim_features: List[str],
+    weights_dict: dict,
+    target_league: str,
+    percentile_weight: float = 0.70,
+    apply_league_adjust: bool = True,
+    league_weight_sim: float = 0.20,
+) -> pd.DataFrame:
+    """
+    Similarity follows top-bar pool filters (build_base_pool) EXCEPT:
+      - ignores exp decay
+      - ignores league mismatch penalty
+      - ignores penalty combine
+    """
+    if tmpl_src.empty or pool.empty:
+        return pd.DataFrame()
+
+    # target vector: avg across template players (or single if already filtered upstream)
+    tmpl_numeric = tmpl_src.copy()
+    for f in sim_features:
+        tmpl_numeric[f] = pd.to_numeric(tmpl_numeric.get(f), errors="coerce")
+    tmpl_numeric = tmpl_numeric.dropna(subset=sim_features)
+    if tmpl_numeric.empty:
+        return pd.DataFrame()
+
+    target_vals = tmpl_numeric[sim_features].mean().astype(float).values
+
+    # candidates: ensure numeric, dropna
+    cand = pool.copy()
+    for f in sim_features:
+        cand[f] = pd.to_numeric(cand.get(f), errors="coerce")
+    cand = cand.dropna(subset=sim_features)
+
+    if cand.empty:
+        return pd.DataFrame()
+
+    # one row per player (keep most minutes, then stronger league)
+    cand["Minutes played"] = pd.to_numeric(cand.get("Minutes played"), errors="coerce")
+    cand["League strength"] = cand["League"].map(LEAGUE_STRENGTHS).fillna(0.0)
+    cand = (
+        cand.sort_values(["Player", "Minutes played", "League strength"], ascending=[True, False, False])
+            .drop_duplicates(subset=["Player"], keep="first")
+    )
+
+    # weights
+    weights_vec = np.array([float(weights_dict.get(f, 1.0)) for f in sim_features], dtype=float)
+
+    # percentile target vs target league distribution
+    league_block = df.loc[df["League"].astype(str) == str(target_league), sim_features].copy()
+    for f in sim_features:
+        league_block[f] = pd.to_numeric(league_block.get(f), errors="coerce")
+    target_pct = []
+    for i, f in enumerate(sim_features):
+        target_pct.append(_percentile_of_value(league_block[f], float(target_vals[i])))
+    target_pct = np.asarray(target_pct, dtype=float)
+
+    # candidate percentiles per league
+    percl = cand.groupby("League")[sim_features].rank(pct=True).values
+
+    # standardize on candidate pool (actual values)
+    scaler = StandardScaler()
+    standardized_features = scaler.fit_transform(cand[sim_features])
+    target_features_standardized = scaler.transform([target_vals])
+
+    # distances + blend
+    percentile_distances = np.linalg.norm((percl - target_pct) * weights_vec, axis=1)
+    actual_value_distances = np.linalg.norm((standardized_features - target_features_standardized) * weights_vec, axis=1)
+    combined = percentile_distances * float(percentile_weight) + actual_value_distances * (1.0 - float(percentile_weight))
+
+    # normalize -> similarity 0..100
+    arr = np.asarray(combined, dtype=float).ravel()
+    rng = np.ptp(arr)
+    normed = (arr - arr.min()) / (rng if rng != 0 else 1.0)
+    similarities = ((1.0 - normed) * 100.0)
+
+    out = cand[["Player", "Team", "League", "Position", "Age", "Minutes played", "Market value"]].copy()
+    out["League strength"] = out["League"].map(LEAGUE_STRENGTHS).fillna(0.0)
+
+    tgt_ls = float(LEAGUE_STRENGTHS.get(str(target_league), 1.0))
+    eps = 1e-6
+    cand_ls = np.maximum(out["League strength"].astype(float).values, eps)
+    tgt_ls_safe = max(tgt_ls, eps)
+    league_ratio = np.minimum(cand_ls / tgt_ls_safe, tgt_ls_safe / cand_ls)
+
+    out["Similarity"] = np.round(similarities, 2)
+    out["Adjusted Similarity"] = (
+        out["Similarity"] * ((1.0 - float(league_weight_sim)) + float(league_weight_sim) * league_ratio)
+    ) if apply_league_adjust else out["Similarity"]
+
+    out = out.sort_values("Adjusted Similarity", ascending=False).reset_index(drop=True)
+    return out
 
 # ========================= ROLE CALCULATORS =========================
 def compute_strikers():
@@ -972,7 +1146,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-def render_tiles(ranked: pd.DataFrame, role_title: str):
+def render_tiles(ranked: pd.DataFrame, role_title: str, score_col: str = "Role Fit Score", badge_label: str = "Match"):
     df_view = ranked.head(int(top_n)).copy()
     if df_view.empty:
         st.info("No matches.")
@@ -987,7 +1161,7 @@ def render_tiles(ranked: pd.DataFrame, role_title: str):
         age = row.get("Age", "")
         minutes = row.get("Minutes played", "")
         foot = str(row.get("Foot", "")).strip()
-        score = float(pd.to_numeric(row.get("Role Fit Score", 0.0), errors="coerce") or 0.0)
+        score = float(pd.to_numeric(row.get(score_col, 0.0), errors="coerce") or 0.0)
         match_pct = max(0, min(100, int(round(score))))
 
         avatar = resolve_player_photo(player, team, league)
@@ -1000,7 +1174,7 @@ def render_tiles(ranked: pd.DataFrame, role_title: str):
         html.append(
             f"""
 <div class="tile">
-  <div class="match">{match_pct}%<small>Match</small></div>
+  <div class="match">{match_pct}%<small>{badge_label}</small></div>
   <div class="row">
     <img class="avatar" src="{avatar}" />
     <div>
@@ -1021,20 +1195,199 @@ def render_tiles(ranked: pd.DataFrame, role_title: str):
     st.markdown("".join(html), unsafe_allow_html=True)
 
 
-def render_matches_table(ranked: pd.DataFrame):
-    cols = [c for c in ["Player","Team","League","Position","Age","Minutes played","Market value","Role Fit Score"] if c in ranked.columns]
-    st.dataframe(ranked[cols].head(int(top_n)), use_container_width=True)
+def render_matches_table(ranked: pd.DataFrame, top_n_override: int = None, score_col: str = "Role Fit Score"):
+    n = int(top_n_override) if top_n_override is not None else int(top_n)
+    cols = [c for c in ["Player","Team","League","Position","Age","Minutes played","Market value",score_col] if c in ranked.columns]
+    st.dataframe(ranked[cols].head(n), use_container_width=True)
 
+# ========================= SIMILARITY UI (per tab) =========================
+def similarity_settings_ui(sim_key_prefix: str, default_leagues: List[str]):
+    # league strength map (supports either variable name)
+    LS_MAP = globals().get('LEAGUE_STRENGTHS', globals().get('league_strengths', {}))
+
+    _leagues_from_df = df['League'].dropna().unique().tolist() if 'League' in df.columns else []
+    _included_from_global = list(globals().get('INCLUDED_LEAGUES', []))
+    _included_leagues_cf = sorted(set(_included_from_global) | set(_leagues_from_df))
+
+    _PRESET_LEAGUES_SAFE = globals().get('PRESET_LEAGUES', {})
+    _PRESETS_SIM = {
+        "All listed leagues": _included_leagues_cf,
+        "T5":  sorted(list(_PRESET_LEAGUES_SAFE.get("Top 5 Europe", []))),
+        "T20": sorted(list(_PRESET_LEAGUES_SAFE.get("Top 20 Europe", []))),
+        "EFL": sorted(list(_PRESET_LEAGUES_SAFE.get("EFL (England 2–4)", []))),
+        "Custom": None,
+    }
+
+    with st.expander("Similarity settings", expanded=False):
+        candidate_league_options = sorted(_included_leagues_cf or _leagues_from_df)
+        default_sel = default_leagues if default_leagues else candidate_league_options
+
+        sim_preset_choices = list(_PRESETS_SIM.keys())
+        sim_preset = st.selectbox(
+            "Candidate league preset",
+            sim_preset_choices,
+            index=sim_preset_choices.index("All listed leagues"),
+            key=f"{sim_key_prefix}_sim_preset"
+        )
+
+        preset_vals_raw = _PRESETS_SIM.get(sim_preset) or []
+        preset_vals = sorted([lg for lg in preset_vals_raw if lg in candidate_league_options])
+
+        _last_key = f"{sim_key_prefix}__last_sim_preset"
+        if st.session_state.get(_last_key) != sim_preset:
+            st.session_state[f"{sim_key_prefix}_sim_leagues"] = preset_vals if preset_vals else default_sel
+            st.session_state[_last_key] = sim_preset
+
+        sim_leagues = st.multiselect(
+            "Candidate leagues",
+            candidate_league_options,
+            default=st.session_state.get(f"{sim_key_prefix}_sim_leagues", preset_vals if preset_vals else default_sel),
+            key=f"{sim_key_prefix}_sim_leagues",
+        )
+
+        if preset_vals_raw and not preset_vals:
+            st.warning("Preset has leagues, but none match your allowed list/dataset.")
+        elif preset_vals_raw:
+            st.caption(f"Preset: {sim_preset} — {len(preset_vals)} league(s). You can add/prune below.")
+
+        sim_min_minutes, sim_max_minutes = st.slider("Minutes played (candidates)", 0, 6000, (750, 6000), key=f"{sim_key_prefix}_sim_min")
+        sim_min_age, sim_max_age = st.slider("Age (candidates)", 14, 50, (16, 50), key=f"{sim_key_prefix}_sim_age")
+
+        use_strength_filter = st.toggle("Filter by league quality (0–101)", value=False, key=f"{sim_key_prefix}_sim_use_strength")
+        if use_strength_filter:
+            sim_min_strength, sim_max_strength = st.slider("League quality (strength)", 0, 101, (0, 101), key=f"{sim_key_prefix}_sim_strength")
+        else:
+            sim_min_strength, sim_max_strength = 0, 101
+
+        percentile_weight = st.slider("Percentile weight", 0.0, 1.0, 0.7, 0.05, key=f"{sim_key_prefix}_sim_pw")
+
+        apply_league_adjust = st.toggle("Apply league difficulty adjustment", value=True, key=f"{sim_key_prefix}_sim_apply_ladj")
+        league_weight_sim = st.slider(
+            "League weight (difficulty adj.)", 0.0, 1.0, 0.2, 0.05, key=f"{sim_key_prefix}_sim_lw",
+            disabled=not apply_league_adjust
+        )
+
+        top_n_sim = st.number_input("Show top N", min_value=5, max_value=200, value=50, step=5, key=f"{sim_key_prefix}_sim_top")
+
+    return {
+        "LS_MAP": LS_MAP,
+        "sim_leagues": sim_leagues,
+        "sim_min_minutes": sim_min_minutes,
+        "sim_max_minutes": sim_max_minutes,
+        "sim_min_age": sim_min_age,
+        "sim_max_age": sim_max_age,
+        "use_strength_filter": use_strength_filter,
+        "sim_min_strength": sim_min_strength,
+        "sim_max_strength": sim_max_strength,
+        "percentile_weight": percentile_weight,
+        "apply_league_adjust": apply_league_adjust,
+        "league_weight_sim": league_weight_sim,
+        "top_n_sim": top_n_sim,
+    }
+
+def compute_similarity_candidates_from_pool(
+    ranked_pool: pd.DataFrame,
+    tmpl_src: pd.DataFrame,
+    sim_features: List[str],
+    weights_dict: dict,
+    target_league: str,
+    settings: dict,
+) -> pd.DataFrame:
+    if tmpl_src.empty or ranked_pool.empty:
+        return pd.DataFrame()
+
+    df_candidates = ranked_pool.copy()
+
+    # candidates league filter
+    df_candidates = df_candidates[df_candidates["League"].isin(settings["sim_leagues"])].copy()
+
+    # optional league quality filter
+    LS_MAP = settings.get("LS_MAP") or {}
+    if settings["use_strength_filter"] and LS_MAP:
+        df_candidates["League strength"] = df_candidates["League"].map(LS_MAP).fillna(0.0)
+        df_candidates = df_candidates[
+            (df_candidates["League strength"] >= float(settings["sim_min_strength"])) &
+            (df_candidates["League strength"] <= float(settings["sim_max_strength"]))
+        ]
+
+    # base filters
+    df_candidates["Minutes played"] = pd.to_numeric(df_candidates.get("Minutes played"), errors="coerce")
+    df_candidates["Age"] = pd.to_numeric(df_candidates.get("Age"), errors="coerce")
+    df_candidates = df_candidates[
+        df_candidates["Minutes played"].between(settings["sim_min_minutes"], settings["sim_max_minutes"]) &
+        df_candidates["Age"].between(settings["sim_min_age"], settings["sim_max_age"])
+    ]
+
+    # exclude template team/league players
+    df_candidates = df_candidates[~((df_candidates["Team"].astype(str) == template_team) & (df_candidates["League"].astype(str) == template_league))].copy()
+
+    # compute similarity (template avg as target)
+    sim_out = compute_similarity_from_template(
+        tmpl_src=tmpl_src,
+        pool=df_candidates,
+        sim_features=sim_features,
+        weights_dict=weights_dict,
+        target_league=target_league,
+        percentile_weight=float(settings["percentile_weight"]),
+        apply_league_adjust=bool(settings["apply_league_adjust"]),
+        league_weight_sim=float(settings["league_weight_sim"]),
+    )
+    return sim_out
 
 # ========================= TAB WRAPPER =========================
-def role_tab(role_title: str, compute_fn):
+def role_tab(role_title: str, compute_fn, sim_role_key: str):
     ranked, title, tmpl_src = compute_fn()
 
-    t1, t2, t3 = st.tabs(["Matches", "Tiles", "Template players"])
+    # Tabs: Role Fit (tiles first), Similar Players, Template players
+    t1, t2, t3 = st.tabs(["Role Fit", "Similar players", "Template players"])
+
     with t1:
-        render_matches_table(ranked)
+        render_tiles(ranked, title, score_col="Role Fit Score", badge_label="Match")
+
     with t2:
-        render_tiles(ranked, title)
+        # similarity features and weights by role key
+        weights_dict = SIM_WEIGHTS.get(sim_role_key, {})
+        sim_features = [f for f in list(weights_dict.keys()) if f in df.columns]
+
+        if not sim_features:
+            st.info("No similarity features found in dataset for this role.")
+        else:
+            # settings UI (separate filters; follows top function except scoring controls)
+            settings = similarity_settings_ui(sim_key_prefix=f"sim_{sim_role_key}", default_leagues=leagues_sel)
+
+            # compute similarity based on the same base pool filters (already in ranked via build_base_pool)
+            sim_out = compute_similarity_candidates_from_pool(
+                ranked_pool=ranked,
+                tmpl_src=tmpl_src,
+                sim_features=sim_features,
+                weights_dict=weights_dict,
+                target_league=template_league,
+                settings=settings,
+            )
+
+            if sim_out.empty:
+                st.info("No candidates after similarity filters.")
+            else:
+                sim_out = sim_out.head(int(settings["top_n_sim"])).copy()
+
+                # show as tiles (same layout as role fit)
+                sim_tiles = sim_out.copy()
+                # normalize to 0..100 already "Adjusted Similarity"
+                sim_tiles["Adjusted Similarity"] = pd.to_numeric(sim_tiles["Adjusted Similarity"], errors="coerce").fillna(0.0)
+                sim_tiles = sim_tiles.rename(columns={"Adjusted Similarity": "Similarity Score"})
+                # reuse global top_n temporarily
+                old_top_n = top_n
+                try:
+                    # render tiles using Similarity Score as badge
+                    # (render_tiles uses global top_n, so we temporarily set it)
+                    globals()["top_n"] = int(settings["top_n_sim"])
+                    render_tiles(sim_tiles.rename(columns={"Similarity Score": "Role Fit Score"}), title, score_col="Role Fit Score", badge_label="Similar")
+                finally:
+                    globals()["top_n"] = old_top_n
+
+                st.markdown("---")
+                render_matches_table(sim_out, top_n_override=int(settings["top_n_sim"]), score_col="Adjusted Similarity")
+
     with t3:
         render_template_players_used(title, tmpl_src)
 
@@ -1043,7 +1396,7 @@ def role_tab(role_title: str, compute_fn):
 tabs = st.tabs(["Strikers", "Attackers", "Central Midfield", "Fullbacks", "Center Backs"])
 
 with tabs[0]:
-    role_tab("Strikers", compute_strikers)
+    role_tab("Strikers", compute_strikers, sim_role_key="ST")
 
 with tabs[1]:
     att_choice = st.selectbox(
@@ -1052,18 +1405,17 @@ with tabs[1]:
         index=0,
         key="att_role_choice",
     )
-    role_tab(f"Attackers ({att_choice})", lambda: compute_attackers(att_choice))
+    role_tab(f"Attackers ({att_choice})", lambda: compute_attackers(att_choice), sim_role_key="ATT")
 
 with tabs[2]:
-    role_tab("Central Midfield", compute_central_mid)
+    role_tab("Central Midfield", compute_central_mid, sim_role_key="CM")
 
 with tabs[3]:
     fb_choice = st.selectbox("Fullback side", ["All", "Right Backs", "Left Backs"], index=0, key="fb_role_choice")
-    role_tab(f"Fullbacks ({fb_choice})", lambda: compute_fullbacks(fb_choice))
+    role_tab(f"Fullbacks ({fb_choice})", lambda: compute_fullbacks(fb_choice), sim_role_key="FB")
 
 with tabs[4]:
-    role_tab("Center Backs", compute_center_backs)
-
+    role_tab("Center Backs", compute_center_backs, sim_role_key="CB")
 
 # ============================ CLUB TOOL — ONE-PAGER (FULL) + STYLES / STRENGTHS / WEAKNESSES ============================
 # Paste this WHOLE block into your Club Tool page where you want the one-pager section.
