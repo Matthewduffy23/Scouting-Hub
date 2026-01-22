@@ -2067,35 +2067,14 @@ st.download_button(
 # ✅ Minutes is still the ONLY filter that changes the scoring pool (percentile reference)
 # ✅ (NEW) Output table: hides Region column
 # ✅ (NEW) Output table: adds small Birth-country flag beside player name (IMAGE flags)
-#
-# NEW (your latest asks):
-# ✅ Outlier Search toggle: uses Z-scores on RAW metrics (per-league+pos ref), mapped to 0–100 via Normal CDF
-# ✅ Display-only raw metric filters (>= / <=) for the given list
-# ✅ Youth leagues excluded by default; toggle to include back
 # ---------------------------------------------------------------------------------------------
 
 import pandas as pd
 import numpy as np
 import streamlit as st
 import re
-import math
 
 FALLBACK_BADGE = "https://clipart-library.com/images/5cRX8Kx9i.png"
-
-# --- Youth leagues: excluded by default, optional toggle to include ---
-YOUTH_LEAGUES = {
-    "Brazil 3.",
-    "England 7.",
-    "England 8.",
-    "England 9.",
-    "England 10.",
-    "Portugal 3.",
-    "Denmark 3.",
-    "Germany 4.",
-    "USA 2.",
-    "Ireland 2.",
-    "Estonia 2.",
-}
 
 st.markdown("---")
 st.header("📋 Shortlist (T20)")
@@ -2192,21 +2171,6 @@ def _esc(x) -> str:
 def _is_http_url(u: str) -> bool:
     u = (u or "").strip()
     return u.startswith("http://") or u.startswith("https://")
-
-def _pos_token(position_str: str) -> str:
-    s = _strip_tags(position_str)
-    if not s:
-        return ""
-    return s.split(",")[0].strip().upper()
-
-# ---- z-score -> 0..100 via Normal CDF ----
-def _z_to_0_100(z: float) -> float:
-    # Phi(z) = 0.5*(1+erf(z/sqrt(2)))
-    try:
-        p = 0.5 * (1.0 + math.erf(float(z) / math.sqrt(2.0)))
-        return float(np.clip(p * 100.0, 0.0, 100.0))
-    except Exception:
-        return 50.0
 
 @st.cache_data(show_spinner=False)
 def _country_to_flag_url(country_name: str) -> str:
@@ -2413,10 +2377,13 @@ def _country_to_flag_url(country_name: str) -> str:
     }
 
     code = NAME_TO_CODE.get(c, "")
-    if code:
-        return f"https://flagcdn.com/w20/{code}.png"
+    if not code:
+        return ""
 
-    # Fallback: try pycountry if installed
+    return f"https://flagcdn.com/w20/{code}.png"
+
+
+    # Try pycountry for everything else (Netherlands, Spain, etc.)
     try:
         import pycountry  # type: ignore
         obj = pycountry.countries.lookup(c)
@@ -2449,6 +2416,7 @@ def _format_best_role_display(role_name: str, position_str: str) -> str:
         return prefix
 
     # If the role already contains the pos in its first two words, don't append again
+    # e.g. "Ball-Carrying Cm" already implies CM
     last_word = prefix_parts[-1].upper().strip() if prefix_parts else ""
     if last_word == pos_lab:
         return prefix_parts[0].replace("-", "-").title() + f" {pos_lab}" if len(prefix_parts) == 2 else prefix
@@ -2515,27 +2483,14 @@ def _parse_market_value_to_m(x):
     # no suffix: assume already millions
     return num
 
-# ---------- percentiles OR outlier z-score mode (raw metrics) ----------
+# ---------- fast percentiles (rank pct) ----------
 @st.cache_data(show_spinner=False)
-def _scores_for_ref(df_ref: pd.DataFrame, metrics: list, outlier_mode: bool) -> pd.DataFrame:
-    """
-    If outlier_mode=False: rank percentiles (0..100) like before.
-    If outlier_mode=True: compute Z-score on RAW metric values per ref, map to 0..100 via Normal CDF.
-    """
+def _percentiles_for_ref(df_ref: pd.DataFrame, metrics: list) -> pd.DataFrame:
     out = pd.DataFrame(index=df_ref.index)
     for m in metrics:
         if m in df_ref.columns:
             s = pd.to_numeric(df_ref[m], errors="coerce")
-            if not outlier_mode:
-                out[m] = s.rank(pct=True) * 100.0
-            else:
-                mu = float(np.nanmean(s.values)) if np.isfinite(np.nanmean(s.values)) else 0.0
-                sd = float(np.nanstd(s.values)) if np.isfinite(np.nanstd(s.values)) else 0.0
-                if sd <= 1e-12:
-                    z = pd.Series(0.0, index=s.index)
-                else:
-                    z = (s - mu) / sd
-                out[m] = z.apply(_z_to_0_100)
+            out[m] = s.rank(pct=True) * 100.0
     return out
 
 def _div_color_hex(v: float) -> str:
@@ -2634,7 +2589,7 @@ def _complete_score_from_pcts(pcts: pd.DataFrame, rk: str, idx: pd.Index) -> pd.
     return (M.mul(w, axis=1).sum(axis=1) / w.sum())  # renormalized
 
 # ============================== UI (controls) ==============================
-r1, r2, r3, r4, r5, r6 = st.columns([1.5, 1.2, 1.3, 1.2, 1.2, 1.2])
+r1, r2, r3, r4, r5 = st.columns([1.5, 1.2, 1.2, 1.2, 1.2])
 with r1:
     group_filter = st.selectbox(
         "Position group",
@@ -2646,21 +2601,19 @@ with r2:
     # Only thing that affects scoring pool
     min_minutes_pool = st.slider("Min minutes (pool)", 0, 6000, 500, 50, key="t20_min_minutes_pool_v33")
 with r3:
-    outlier_search = st.toggle(
-        "🔍 Outlier Search",
-        value=False,
-        key="t20_outlier_search_v33",
-        help="Uses Z-scores on RAW metrics (per league+pos reference), mapped to 0–100 via Normal CDF."
-    )
-with r4:
     default_thr = st.slider("Default role threshold", 0, 100, 60, 1, key="t20_default_thr_v33")
-with r5:
+with r4:
     use_league_weighting = st.toggle("League-adjusted score", value=True, key="t20_league_weighting_v33")
-with r6:
-    include_youth_leagues = st.toggle("Include youth leagues", value=False, key="t20_include_youth_v33")
+with r5:
+    BETA_BADGE = st.slider(
+        "β",
+        0.0, 1.0, 0.40, 0.05,
+        key="t20_beta_badge_v33",
+        help="0 = pure base score, 1 = pure league strength."
+    ) if use_league_weighting else 0.0
 
 # Base score toggle
-b1, b2, b3, b4, b5 = st.columns([1.4, 1.2, 1.2, 1.2, 1.2])
+b1, b2, b3, b4 = st.columns([1.4, 1.2, 1.2, 1.2])
 with b1:
     use_complete_base = st.toggle("Use Complete Score as base", value=False, key="t20_use_complete_v33")
 with b2:
@@ -2669,13 +2622,6 @@ with b3:
     player_q = st.text_input("Player search", "", key="t20_player_q_v33")
 with b4:
     team_q = st.text_input("Team search", "", key="t20_team_q_v33")
-with b5:
-    BETA_BADGE = st.slider(
-        "β",
-        0.0, 1.0, 0.40, 0.05,
-        key="t20_beta_badge_v33",
-        help="0 = pure base score, 1 = pure league strength."
-    ) if use_league_weighting else 0.0
 
 # Display-only filters (original)
 d1, d2 = st.columns([1.2, 1.2])
@@ -2741,79 +2687,6 @@ with l3:
     band_sel = st.multiselect("Band (multi)", [1, 2, 3, 4, 5, 6], default=[], key="t20_band_sel_v33")
 with l4:
     band_max = st.selectbox("Or bands ≤", ["— None —", 1, 2, 3, 4, 5, 6], index=0, key="t20_band_max_v33")
-
-# ============================== NEW: RAW METRIC FILTERS (DISPLAY ONLY) ==============================
-st.markdown("#### 📏 Raw metric filters (display only)")
-
-RAW_METRIC_OPTIONS = [
-    "Defensive duels per 90",
-    "Defensive duels won, %",
-    "Aerial duels per 90",
-    "Aerial duels won, %",
-    "PAdj Interceptions",
-    "Non-penalty goals per 90",
-    "xG per 90",
-    "Shots per 90",
-    "Crosses per 90",
-    "Accurate crosses, %",
-    "Dribbles per 90",
-    "Successful dribbles, %",
-    "Touches in box per 90",
-    "Progressive runs per 90",
-    "Accelerations per 90",
-    "Passes per 90",
-    "Accurate passes, %",
-    "Forward passes per 90",
-    "Accurate forward passes, %",
-    "Long passes per 90",
-    "Accurate long passes, %",
-    "xA per 90",
-    "Smart passes per 90",
-    "Passes to final third per 90",
-    "Passes to penalty area per 90",
-    "Deep completions per 90",
-    "Progressive passes per 90",
-]
-
-# Only show metrics that exist in the dataset
-raw_metric_avail = [m for m in RAW_METRIC_OPTIONS if m in df.columns]
-
-rm1, rm2 = st.columns([2.0, 3.0])
-with rm1:
-    raw_metric_picks = st.multiselect(
-        "Add raw metric filters",
-        raw_metric_avail,
-        default=[],
-        key="t20_raw_metric_picks_v33",
-    )
-
-raw_metric_rules = []
-if raw_metric_picks:
-    with rm2:
-        st.caption("Each selected metric becomes an AND rule.")
-    with st.expander("Configure raw metric rules", expanded=True):
-        for m in raw_metric_picks:
-            cA, cB, cC = st.columns([2.8, 1.2, 1.2])
-            with cA:
-                st.markdown(f"**{m}**")
-            with cB:
-                op = st.selectbox(
-                    "Op",
-                    [">=", "<="],
-                    index=0,
-                    key=f"t20_rm_op_{m}_v33",
-                    label_visibility="collapsed",
-                )
-            with cC:
-                thr = st.number_input(
-                    "Value",
-                    value=0.0,
-                    step=0.05,
-                    format="%.3f",
-                    key=f"t20_rm_thr_{m}_v33",
-                    label_visibility="collapsed",
-                )
-            raw_metric_rules.append((m, op, float(thr)))
 
 # ============================== Role threshold UI ==============================
 st.markdown("#### 🎯 Role thresholds")
@@ -2885,10 +2758,6 @@ for c in ["Player", "Team", "League", "Position"]:
 for col in ["Age", "Minutes played"]:
     if col in df_base.columns:
         df_base[col] = pd.to_numeric(df_base[col], errors="coerce")
-
-# youth leagues excluded by default (THIS AFFECTS POOL)
-if ("League" in df_base.columns) and (not include_youth_leagues):
-    df_base = df_base[~df_base["League"].astype(str).isin(YOUTH_LEAGUES)].copy()
 
 # derive contract year / market value / foot / birth fields (for display filters)
 if contract_col in df_base.columns:
@@ -2977,15 +2846,6 @@ if "League" in df_disp.columns:
 
 df_disp = df_disp[df_disp["_league_strength"].between(float(league_q[0]), float(league_q[1]))].copy()
 
-# NEW: display-only RAW metric rules
-for m, op, thr in raw_metric_rules:
-    if m in df_disp.columns:
-        s = pd.to_numeric(df_disp[m], errors="coerce")
-        if op == ">=":
-            df_disp = df_disp[s >= float(thr)].copy()
-        else:
-            df_disp = df_disp[s <= float(thr)].copy()
-
 if df_disp.empty:
     st.info("No players match the display filters (note: minutes affects the pool).")
     st.stop()
@@ -3019,7 +2879,6 @@ def _score_subset_against_league_pos_ref(
       - _complete_raw using your formula
       - role_scores_by_league for ordering by specific role
     Reference percentiles: df_base filtered to SAME LEAGUE + SAME POS GROUP
-    (Outlier Search: uses RAW metric Z-scores mapped to 0..100)
     """
     specs = ROLE_BUCKETS.get(rk, {}) or {}
     out = pd.DataFrame(index=df_subset.index)
@@ -3056,7 +2915,7 @@ def _score_subset_against_league_pos_ref(
 
     for lg, part in df_subset.groupby(df_subset["League"].astype(str)):
         ref = base_pos[base_pos["League"].astype(str) == str(lg)]
-        pcts = _scores_for_ref(ref, need_metrics, bool(outlier_search)) if (not ref.empty and need_metrics) else pd.DataFrame(index=ref.index)
+        pcts = _percentiles_for_ref(ref, need_metrics) if (not ref.empty and need_metrics) else pd.DataFrame(index=ref.index)
 
         idx = part.index.intersection(pcts.index)
         if len(idx) == 0:
@@ -3109,7 +2968,7 @@ def _apply_role_thresholds(df_scored: pd.DataFrame, rk: str, allowed_pos_tokens:
 
     for lg, part in df_scored.groupby(df_scored["League"].astype(str)):
         ref = base_pos[base_pos["League"].astype(str) == str(lg)]
-        pcts = _scores_for_ref(ref, need_metrics, bool(outlier_search)) if (not ref.empty and need_metrics) else pd.DataFrame(index=ref.index)
+        pcts = _percentiles_for_ref(ref, need_metrics) if (not ref.empty and need_metrics) else pd.DataFrame(index=ref.index)
 
         idx = part.index.intersection(pcts.index)
         if len(idx) == 0:
@@ -3415,16 +3274,10 @@ with st.expander("Debug (scoring fields)", expanded=False):
         "_best_role_display", "_best_role_badge", "_best_raw_badge",
         "_complete_raw", "_base_raw", "_league_strength", "_score"
     ]
-    # include raw-metric columns for sanity if user used those filters
-    for m, _, _ in raw_metric_rules:
-        if m not in show_cols:
-            show_cols.append(m)
-
     show_cols = [c for c in show_cols if c in df_scored.columns]
     st.dataframe(df_scored[show_cols], use_container_width=True)
 
 # ============================ END SHORTLIST (T20) — ELITE TABLE (v3.3++) ============================
-
 
 
 
