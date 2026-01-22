@@ -421,10 +421,8 @@ def build_base_pool():
         if c in p.columns:
             p[c] = pd.to_numeric(p[c], errors="coerce")
 
-    # These are the ONLY pool filters now (top-bar controls)
+    # ✅ SCORING POOL FILTERS (hardcoded): Age + MV do NOT affect pool, only display.
     p = p[p["Minutes played"].between(min_minutes, max_minutes)]
-    p = p[p["Age"].between(min_age, max_age)]
-    p = p[p["Market value"].between(pool_min_value, pool_max_value)]
 
     p["League Strength"] = p["League"].map(LEAGUE_STRENGTHS).fillna(0.0)
     p = p[(p["League Strength"] >= float(min_strength)) & (p["League Strength"] <= float(max_strength))]
@@ -478,6 +476,28 @@ def render_template_players_used(role_name: str, tmpl_src: pd.DataFrame):
         st.info("No eligible template players for the selected team/filters.")
         return
     st.dataframe(tmpl_src[showcols].sort_values("Minutes played", ascending=False), use_container_width=True)
+
+def apply_display_filters(df_in: pd.DataFrame) -> pd.DataFrame:
+    """
+    ✅ Hardcoded display-only filters:
+      - Age slider affects display only (not scoring pool)
+      - Market value slider affects display only (not scoring pool)
+    """
+    if df_in is None or df_in.empty:
+        return df_in
+
+    out = df_in.copy()
+
+    if "Age" in out.columns:
+        out["Age"] = pd.to_numeric(out["Age"], errors="coerce")
+        out = out[out["Age"].between(min_age, max_age)]
+
+    if "Market value" in out.columns:
+        out["Market value"] = pd.to_numeric(out["Market value"], errors="coerce")
+        out = out[out["Market value"].between(pool_min_value, pool_max_value)]
+
+    return out
+
 
 # ========================= SIMILARITY (PER ROLE) =========================
 SIM_WEIGHTS = {
@@ -635,7 +655,12 @@ def compute_similarity_from_template(
     normed = (arr - arr.min()) / (rng if rng != 0 else 1.0)
     similarities = ((1.0 - normed) * 100.0)
 
-    out = cand[["Player", "Team", "League", "Position", "Age", "Minutes played", "Market value"]].copy()
+    # ✅ include Foot so tiles show it in Similar players tab
+    base_cols = ["Player", "Team", "League", "Position", "Age", "Minutes played", "Market value"]
+    if "Foot" in cand.columns:
+        base_cols.append("Foot")
+
+    out = cand[base_cols].copy()
     out["League strength"] = out["League"].map(LEAGUE_STRENGTHS).fillna(0.0)
 
     tgt_ls = float(LEAGUE_STRENGTHS.get(str(target_league), 1.0))
@@ -651,6 +676,7 @@ def compute_similarity_from_template(
 
     out = out.sort_values("Adjusted Similarity", ascending=False).reset_index(drop=True)
     return out
+
 
 # ========================= ROLE CALCULATORS =========================
 def compute_strikers():
@@ -682,8 +708,6 @@ def compute_strikers():
     pool = base_pool.copy()
     pool = pool[pool["Position"].str.upper().str.startswith("CF")]
     pool = pool[~((pool["Team"].astype(str) == template_team) & (pool["League"].astype(str) == template_league))].copy()
-
-    # ✅ REMOVED hard-coded Age/MV/Minutes filters: pool already follows the top-bar sliders
 
     for c in feats:
         pool[c] = pd.to_numeric(pool[c], errors="coerce")
@@ -753,8 +777,6 @@ def compute_attackers(role_choice: str):
     pool = base_pool[base_pool["Position"].apply(pos_ok)].copy()
     pool = pool[~((pool["Team"].astype(str) == template_team) & (pool["League"].astype(str) == template_league))]
 
-    # ✅ REMOVED hard-coded Age/MV/Minutes filters: pool already follows the top-bar sliders
-
     for c in feats:
         pool[c] = pd.to_numeric(pool[c], errors="coerce")
     pool = pool.dropna(subset=feats)
@@ -810,8 +832,6 @@ def compute_central_mid():
     base_pool = build_base_pool()
     pool = base_pool[base_pool["Position"].apply(pos_ok)].copy()
     pool = pool[~((pool["Team"].astype(str) == template_team) & (pool["League"].astype(str) == template_league))]
-
-    # ✅ REMOVED hard-coded Age/MV/Minutes filters: pool already follows the top-bar sliders
 
     for c in feats:
         pool[c] = pd.to_numeric(pool[c], errors="coerce")
@@ -876,8 +896,6 @@ def compute_fullbacks(role_choice: str):
     pool = base_pool[base_pool["Position"].apply(pos_ok)].copy()
     pool = pool[~((pool["Team"].astype(str) == template_team) & (pool["League"].astype(str) == template_league))]
 
-    # ✅ REMOVED hard-coded Age/MV/Minutes filters: pool already follows the top-bar sliders
-
     for c in feats:
         pool[c] = pd.to_numeric(pool[c], errors="coerce")
     pool = pool.dropna(subset=feats)
@@ -931,8 +949,6 @@ def compute_center_backs():
     pool = base_pool[base_pool["Position"].apply(pos_ok)].copy()
     pool = pool[~((pool["Team"].astype(str) == template_team) & (pool["League"].astype(str) == template_league))]
 
-    # ✅ REMOVED hard-coded Age/MV/Minutes filters: pool already follows the top-bar sliders
-
     for c in feats:
         pool[c] = pd.to_numeric(pool[c], errors="coerce")
     pool = pool.dropna(subset=feats)
@@ -952,253 +968,6 @@ def compute_center_backs():
     ranked = _score_block(pool.copy())
     return ranked, "Center Backs", tmpl_src
 
-
-# ========================= FOTMOB PHOTO + CREST =========================
-# Provide a mapping file team_fotmob_urls.py with:
-# FOTMOB_TEAM_URLS = {"Arsenal":"https://www.fotmob.com/teams/9825/overview/arsenal", ...}
-
-def _fotmob_team_id_from_url(team_url: str) -> str:
-    m = re.search(r"/teams/(\d+)/", str(team_url or ""))
-    return m.group(1) if m else ""
-
-def _fotmob_crest_url(team_url: str) -> str:
-    tid = _fotmob_team_id_from_url(team_url)
-    return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png" if tid else ""
-
-def _fotmob_team_squad(team_id: str) -> List[dict]:
-    cache = st.session_state.setdefault("_fotmob_team_squad_cache", {})
-    if team_id in cache:
-        return cache[team_id] or []
-
-    squad: List[dict] = []
-    try:
-        url = f"https://www.fotmob.com/api/teams?id={team_id}"
-        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-        if r.status_code == 200:
-            data = r.json() or {}
-            raw = data.get("squad", None)
-
-            if isinstance(raw, list):
-                for sec in raw:
-                    members = sec.get("members") or sec.get("players") or []
-                    if isinstance(members, list):
-                        squad.extend([m for m in members if isinstance(m, dict)])
-
-            elif isinstance(raw, dict):
-                for k in ("members", "players"):
-                    members = raw.get(k)
-                    if isinstance(members, list):
-                        squad.extend([m for m in members if isinstance(m, dict)])
-                nested = raw.get("squad")
-                if isinstance(nested, list):
-                    for sec in nested:
-                        members = sec.get("members") or sec.get("players") or []
-                        if isinstance(members, list):
-                            squad.extend([m for m in members if isinstance(m, dict)])
-    except Exception:
-        squad = []
-
-    cache[team_id] = squad
-    return squad
-
-def _slug_name(s: str) -> str:
-    if not s:
-        return ""
-    s = str(s).strip().lower()
-    repl = {
-        "ø": "o", "œ": "oe", "æ": "ae", "å": "a", "ä": "a", "ö": "o", "ü": "u",
-        "ß": "ss", "ł": "l", "đ": "d", "ð": "d", "þ": "th", "ç": "c", "ş": "s",
-        "ğ": "g", "ı": "i",
-    }
-    for k, v in repl.items():
-        s = s.replace(k, v)
-    s = unicodedata.normalize("NFKD", s)
-    s = "".join(ch for ch in s if not unicodedata.combining(ch))
-    s = re.sub(r"[^a-z0-9]+", "", s)
-    return s
-
-def _similar(a: str, b: str) -> float:
-    return SequenceMatcher(None, a, b).ratio()
-
-def _player_surname(player: str) -> str:
-    p = (player or "").strip()
-    if not p:
-        return ""
-    if "," in p:
-        return p.split(",", 1)[0].strip()
-    parts = p.split()
-    return parts[-1].strip() if parts else ""
-
-PLACEHOLDER_IMG = "https://i.redd.it/43axcjdu59nd1.jpeg"
-
-def resolve_player_photo(player: str, team: str, league: str) -> str:
-    """
-    Priority:
-      1) session override (photo_map)
-      2) try fotmob squad match -> playerimages/{id}.png
-      3) placeholder
-    """
-    key_id = f"{player}|||{team}|||{league}"
-    override = st.session_state.get("photo_map", {}).get(key_id, "")
-    if override:
-        return override
-
-    team_url = ""
-    try:
-        from team_fotmob_urls import FOTMOB_TEAM_URLS
-        team_url = (FOTMOB_TEAM_URLS.get(team) or "").strip()
-    except Exception:
-        team_url = ""
-
-    tid = _fotmob_team_id_from_url(team_url)
-    if not tid:
-        return PLACEHOLDER_IMG
-
-    squad = _fotmob_team_squad(tid)
-    target_surname = _slug_name(_player_surname(player))
-    target_full = _slug_name(player)
-
-    best_id = ""
-
-    # exact surname match first
-    if target_surname:
-        for m in squad:
-            name = m.get("name") or m.get("playerName") or ""
-            pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
-            if not pid:
-                continue
-            if _slug_name(_player_surname(name)) == target_surname:
-                best_id = str(pid)
-                if target_full and target_full in _slug_name(name):
-                    break
-
-    # exact full match fallback
-    if not best_id and target_full:
-        for m in squad:
-            name = m.get("name") or m.get("playerName") or ""
-            pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
-            if not pid:
-                continue
-            if target_full in _slug_name(name):
-                best_id = str(pid)
-                break
-
-    # fuzzy surname fallback
-    if not best_id and target_surname:
-        best_score, best_pid = 0.0, ""
-        for m in squad:
-            name = m.get("name") or m.get("playerName") or ""
-            pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
-            if not pid:
-                continue
-            sn = _slug_name(_player_surname(name))
-            sc = _similar(sn, target_surname)
-            if sc > best_score:
-                best_score, best_pid = sc, str(pid)
-        if best_score >= 0.86:
-            best_id = best_pid
-
-    if best_id and str(best_id).isdigit():
-        return f"https://images.fotmob.com/image_resources/playerimages/{best_id}.png"
-
-    return PLACEHOLDER_IMG
-
-def resolve_team_crest(team: str, league: str) -> str:
-    """
-    Priority:
-      1) session override (crest_map)
-      2) fotmob teamlogo/{team_id}.png
-      3) ""
-    """
-    crest_key = f"{team}|||{league}"
-    override = st.session_state.get("crest_map", {}).get(crest_key, "")
-    if override:
-        return override
-
-    team_url = ""
-    try:
-        from team_fotmob_urls import FOTMOB_TEAM_URLS
-        team_url = (FOTMOB_TEAM_URLS.get(team) or "").strip()
-    except Exception:
-        team_url = ""
-
-    return _fotmob_crest_url(team_url) if team_url else ""
-
-
-# ========================= UI: TILE LAYOUT =========================
-st.markdown(
-    """
-<style>
-:root{ --bg:#0f1115; --card:#161a22; --stroke:#252b3a; --muted:#a8b3cf; --soft:#202633; }
-.tiles{ display:grid; grid-template-columns:repeat(auto-fill, minmax(330px, 1fr)); gap:14px; }
-.tile{ position:relative; background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:14px; overflow:hidden; box-shadow: 0 2px 12px rgba(0,0,0,.22); }
-.row{ display:flex; gap:12px; align-items:flex-start; }
-.avatar{ width:72px; height:72px; border-radius:14px; object-fit:cover; background:#0b0d12; border:1px solid #2a3145; }
-.name{ font-weight:900; font-size:18px; color:#e8ecff; line-height:1.1; }
-.teamline{ margin-top:6px; color:#cbd5f5; font-size:13px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-.crest{ width:20px; height:20px; object-fit:contain; border-radius:4px; background:#0b0d12; border:1px solid #2a3145; }
-.meta{ margin-top:8px; color:var(--muted); font-size:12px; display:flex; gap:8px; flex-wrap:wrap; }
-.chip{ background:var(--soft); color:#cbd5f5; border:1px solid #2d3550; padding:2px 8px; border-radius:10px; }
-.match{ position:absolute; top:10px; right:10px; background:#0b0d12; border:1px solid #2a3145; color:#e8ecff; border-radius:12px; padding:6px 10px; font-weight:900; }
-.match small{ display:block; font-size:10px; color:var(--muted); font-weight:700; margin-top:1px; text-align:right; }
-</style>
-""",
-    unsafe_allow_html=True
-)
-
-def render_tiles(ranked: pd.DataFrame, role_title: str, score_col: str = "Role Fit Score", badge_label: str = "Match"):
-    df_view = ranked.head(int(top_n)).copy()
-    if df_view.empty:
-        st.info("No matches.")
-        return
-
-    html = ["<div class='tiles'>"]
-    for _, row in df_view.iterrows():
-        player = str(row.get("Player", ""))
-        team = str(row.get("Team", ""))
-        league = str(row.get("League", ""))
-        pos = str(row.get("Position", ""))
-        age = row.get("Age", "")
-        minutes = row.get("Minutes played", "")
-        foot = str(row.get("Foot", "")).strip()
-        score = float(pd.to_numeric(row.get(score_col, 0.0), errors="coerce") or 0.0)
-        match_pct = max(0, min(100, int(round(score))))
-
-        avatar = resolve_player_photo(player, team, league)
-        crest = resolve_team_crest(team, league)
-
-        if DEBUG_PHOTOS:
-            st.write(player, team, "→", avatar)
-
-        crest_html = f"<img class='crest' src='{crest}' />" if crest else ""
-        html.append(
-            f"""
-<div class="tile">
-  <div class="match">{match_pct}%<small>{badge_label}</small></div>
-  <div class="row">
-    <img class="avatar" src="{avatar}" />
-    <div>
-      <div class="name">{player}</div>
-      <div class="teamline">{crest_html}<span>{team} · {league}</span></div>
-      <div class="meta">
-        <span class="chip">{pos}</span>
-        <span class="chip">Age {age}</span>
-        <span class="chip">{int(minutes) if str(minutes).isdigit() else minutes} min</span>
-        <span class="chip">{foot}</span>
-      </div>
-    </div>
-  </div>
-</div>
-"""
-        )
-    html.append("</div>")
-    st.markdown("".join(html), unsafe_allow_html=True)
-
-
-def render_matches_table(ranked: pd.DataFrame, top_n_override: int = None, score_col: str = "Role Fit Score"):
-    n = int(top_n_override) if top_n_override is not None else int(top_n)
-    cols = [c for c in ["Player","Team","League","Position","Age","Minutes played","Market value",score_col] if c in ranked.columns]
-    st.dataframe(ranked[cols].head(n), use_container_width=True)
 
 # ========================= SIMILARITY UI (per tab) =========================
 def similarity_settings_ui(sim_key_prefix: str, default_leagues: List[str]):
@@ -1250,32 +1019,56 @@ def similarity_settings_ui(sim_key_prefix: str, default_leagues: List[str]):
         elif preset_vals_raw:
             st.caption(f"Preset: {sim_preset} — {len(preset_vals)} league(s). You can add/prune below.")
 
-        sim_min_minutes, sim_max_minutes = st.slider("Minutes played (candidates)", 0, 6000, (750, 6000), key=f"{sim_key_prefix}_sim_min")
-        sim_min_age, sim_max_age = st.slider("Age (candidates)", 14, 50, (16, 50), key=f"{sim_key_prefix}_sim_age")
+        sim_min_minutes, sim_max_minutes = st.slider(
+            "Minutes played (candidates)",
+            0, 6000, (750, 6000),
+            key=f"{sim_key_prefix}_sim_min"
+        )
 
-        use_strength_filter = st.toggle("Filter by league quality (0–101)", value=False, key=f"{sim_key_prefix}_sim_use_strength")
+        use_strength_filter = st.toggle(
+            "Filter by league quality (0–101)",
+            value=False,
+            key=f"{sim_key_prefix}_sim_use_strength"
+        )
         if use_strength_filter:
-            sim_min_strength, sim_max_strength = st.slider("League quality (strength)", 0, 101, (0, 101), key=f"{sim_key_prefix}_sim_strength")
+            sim_min_strength, sim_max_strength = st.slider(
+                "League quality (strength)",
+                0, 101, (0, 101),
+                key=f"{sim_key_prefix}_sim_strength"
+            )
         else:
             sim_min_strength, sim_max_strength = 0, 101
 
-        percentile_weight = st.slider("Percentile weight", 0.0, 1.0, 0.7, 0.05, key=f"{sim_key_prefix}_sim_pw")
+        percentile_weight = st.slider(
+            "Percentile weight",
+            0.0, 1.0, 0.7, 0.05,
+            key=f"{sim_key_prefix}_sim_pw"
+        )
 
-        apply_league_adjust = st.toggle("Apply league difficulty adjustment", value=True, key=f"{sim_key_prefix}_sim_apply_ladj")
+        apply_league_adjust = st.toggle(
+            "Apply league difficulty adjustment",
+            value=True,
+            key=f"{sim_key_prefix}_sim_apply_ladj"
+        )
         league_weight_sim = st.slider(
-            "League weight (difficulty adj.)", 0.0, 1.0, 0.2, 0.05, key=f"{sim_key_prefix}_sim_lw",
+            "League weight (difficulty adj.)",
+            0.0, 1.0, 0.2, 0.05,
+            key=f"{sim_key_prefix}_sim_lw",
             disabled=not apply_league_adjust
         )
 
-        top_n_sim = st.number_input("Show top N", min_value=5, max_value=200, value=50, step=5, key=f"{sim_key_prefix}_sim_top")
+        top_n_sim = st.number_input(
+            "Show top N",
+            min_value=5, max_value=200,
+            value=50, step=5,
+            key=f"{sim_key_prefix}_sim_top"
+        )
 
     return {
         "LS_MAP": LS_MAP,
         "sim_leagues": sim_leagues,
         "sim_min_minutes": sim_min_minutes,
         "sim_max_minutes": sim_max_minutes,
-        "sim_min_age": sim_min_age,
-        "sim_max_age": sim_max_age,
         "use_strength_filter": use_strength_filter,
         "sim_min_strength": sim_min_strength,
         "sim_max_strength": sim_max_strength,
@@ -1310,12 +1103,10 @@ def compute_similarity_candidates_from_pool(
             (df_candidates["League strength"] <= float(settings["sim_max_strength"]))
         ]
 
-    # base filters
+    # base filters (minutes only) — ✅ Age/MV are display-only globally
     df_candidates["Minutes played"] = pd.to_numeric(df_candidates.get("Minutes played"), errors="coerce")
-    df_candidates["Age"] = pd.to_numeric(df_candidates.get("Age"), errors="coerce")
     df_candidates = df_candidates[
-        df_candidates["Minutes played"].between(settings["sim_min_minutes"], settings["sim_max_minutes"]) &
-        df_candidates["Age"].between(settings["sim_min_age"], settings["sim_max_age"])
+        df_candidates["Minutes played"].between(settings["sim_min_minutes"], settings["sim_max_minutes"])
     ]
 
     # exclude template team/league players
@@ -1334,6 +1125,7 @@ def compute_similarity_candidates_from_pool(
     )
     return sim_out
 
+
 # ========================= TAB WRAPPER =========================
 def role_tab(role_title: str, compute_fn, sim_role_key: str):
     ranked, title, tmpl_src = compute_fn()
@@ -1342,7 +1134,14 @@ def role_tab(role_title: str, compute_fn, sim_role_key: str):
     t1, t2, t3 = st.tabs(["Role Fit", "Similar players", "Template players"])
 
     with t1:
-        render_tiles(ranked, title, score_col="Role Fit Score", badge_label="Match")
+        ranked_display = apply_display_filters(ranked)
+        render_tiles(ranked_display, title, score_col="Role Fit Score", badge_label="Match")
+        st.markdown("---")
+        render_matches_table(
+            apply_display_filters(ranked),
+            top_n_override=int(top_n),
+            score_col="Role Fit Score"
+        )
 
     with t2:
         # similarity features and weights by role key
@@ -1352,10 +1151,8 @@ def role_tab(role_title: str, compute_fn, sim_role_key: str):
         if not sim_features:
             st.info("No similarity features found in dataset for this role.")
         else:
-            # settings UI (separate filters; follows top function except scoring controls)
             settings = similarity_settings_ui(sim_key_prefix=f"sim_{sim_role_key}", default_leagues=leagues_sel)
 
-            # compute similarity based on the same base pool filters (already in ranked via build_base_pool)
             sim_out = compute_similarity_candidates_from_pool(
                 ranked_pool=ranked,
                 tmpl_src=tmpl_src,
@@ -1368,20 +1165,22 @@ def role_tab(role_title: str, compute_fn, sim_role_key: str):
             if sim_out.empty:
                 st.info("No candidates after similarity filters.")
             else:
-                sim_out = sim_out.head(int(settings["top_n_sim"])).copy()
+                sim_out = apply_display_filters(sim_out).head(int(settings["top_n_sim"])).copy()
 
-                # show as tiles (same layout as role fit)
+                # tiles
                 sim_tiles = sim_out.copy()
-                # normalize to 0..100 already "Adjusted Similarity"
                 sim_tiles["Adjusted Similarity"] = pd.to_numeric(sim_tiles["Adjusted Similarity"], errors="coerce").fillna(0.0)
                 sim_tiles = sim_tiles.rename(columns={"Adjusted Similarity": "Similarity Score"})
-                # reuse global top_n temporarily
+
                 old_top_n = top_n
                 try:
-                    # render tiles using Similarity Score as badge
-                    # (render_tiles uses global top_n, so we temporarily set it)
                     globals()["top_n"] = int(settings["top_n_sim"])
-                    render_tiles(sim_tiles.rename(columns={"Similarity Score": "Role Fit Score"}), title, score_col="Role Fit Score", badge_label="Similar")
+                    render_tiles(
+                        sim_tiles.rename(columns={"Similarity Score": "Role Fit Score"}),
+                        title,
+                        score_col="Role Fit Score",
+                        badge_label="Similar"
+                    )
                 finally:
                     globals()["top_n"] = old_top_n
 
@@ -1416,7 +1215,6 @@ with tabs[3]:
 
 with tabs[4]:
     role_tab("Center Backs", compute_center_backs, sim_role_key="CB")
-
 # ============================ CLUB TOOL — ONE-PAGER (FULL) + STYLES / STRENGTHS / WEAKNESSES ============================
 # Paste this WHOLE block into your Club Tool page where you want the one-pager section.
 #
