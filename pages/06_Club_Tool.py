@@ -2487,33 +2487,32 @@ def _norm_foot(x) -> str:
     return s
 
 def _parse_market_value_to_m(x):
-    """
-    Returns value in millions (float).
-    Supports:
-      - numbers already in millions
-      - strings like "€12.5m", "12.5m", "500k", "€1.2bn"
-    If can't parse, returns NaN.
-    """
     if x is None or (isinstance(x, float) and np.isnan(x)):
         return np.nan
-    if isinstance(x, (int, float)) and np.isfinite(x):
-        return float(x)
-    s = _strip_tags(x).lower().replace(",", "").replace("€", "").replace("$", "").strip()
+
+    s = str(x).lower().replace(",", "").replace("€", "").replace("$", "").strip()
+
     if not s:
         return np.nan
-    m = re.search(r"(-?\d+(\.\d+)?)\s*([a-z]+)?", s)
-    if not m:
+
+    # Explicit suffix handling
+    if s.endswith("k"):
+        return float(s.replace("k","")) / 1000
+
+    if s.endswith("m"):
+        return float(s.replace("m",""))
+
+    if s.endswith("bn") or s.endswith("b"):
+        return float(s.replace("bn","").replace("b","")) * 1000
+
+    # Raw numbers (e.g. 500000) → assume euros → convert to millions
+    try:
+        v = float(s)
+        if v > 1000:      # clearly not already millions
+            return v / 1_000_000
+        return v
+    except:
         return np.nan
-    num = float(m.group(1))
-    suf = (m.group(3) or "").strip()
-    if suf in {"m", "mil", "million"}:
-        return num
-    if suf in {"k", "thousand"}:
-        return num / 1000.0
-    if suf in {"bn", "b", "billion"}:
-        return num * 1000.0
-    # no suffix: assume already millions
-    return num
 
 # ---------- percentiles OR outlier z-score mode (raw metrics) ----------
 @st.cache_data(show_spinner=False)
