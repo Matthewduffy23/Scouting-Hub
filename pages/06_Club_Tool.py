@@ -2145,13 +2145,14 @@ POS_LABEL_MAP = {
 }
 
 # ---------- group → allowed pos tokens ----------
-POS_GROUPS_LOCAL = {
-    "All positions": None,  # special mode
-    "Strikers (CF)": {"CF"},
-    "Center Backs (CB)": {"CB", "LCB", "RCB"},
-    "Fullbacks (RB/LB/WB)": {"RB", "LB", "RWB", "LWB"},
-    "Central Mid (DM/CM)": {"DMF", "CMF", "LCMF", "RCMF", "LDMF", "RDMF"},
-    "Attackers (W/AM)": {"RW", "RWF", "LW", "LWF", "AMF", "RAMF", "LAMF"},
+POS_GROUPS = {
+    "Strikers (CF)": ["CF"],
+    "Center Backs (CB)": ["CB", "LCB", "RCB"],
+    "Fullbacks (RB/LB/WB)": ["RB", "LB", "RWB", "LWB"],
+    "Central Mid (DM/CM)": ["DMF", "CMF", "LCMF", "RCMF", "LDMF", "RDMF"],
+    "Attackers (W/AM)": ["RW", "RWF", "LW", "LWF", "AMF", "RAMF", "LAMF"],
+}
+
 }
 
 def _role_key_from_pos_tok(tok: str) -> str:
@@ -2195,9 +2196,10 @@ def _is_http_url(u: str) -> bool:
 
 def _pos_token(position_str: str) -> str:
     s = _strip_tags(position_str)
-    if not s:
-        return ""
-    return s.split(",")[0].strip().upper()
+    s = s.replace("\u00a0", " ").strip().upper()
+    toks = [t for t in re.split(r"[,/;]\s*|\s+", s) if t]
+    return toks[0] if toks else ""
+
 
 # ---- z-score -> 0..100 via Normal CDF ----
 def _z_to_0_100(z: float) -> float:
