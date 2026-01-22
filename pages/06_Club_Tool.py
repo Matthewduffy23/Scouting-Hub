@@ -10,7 +10,7 @@
 
 import io, math, re, time, os, json, base64, unicodedata
 from pathlib import Path
-from typing import List, Tuple, Dict, Callable, Any
+from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -478,305 +478,563 @@ def render_template_players_used(role_name: str, tmpl_src: pd.DataFrame):
         return
     st.dataframe(tmpl_src[showcols].sort_values("Minutes played", ascending=False), use_container_width=True)
 
-# ========================= SIMILARITY (NEW) =========================
-LS_MAP = globals().get("LEAGUE_STRENGTHS", globals().get("league_strengths", {}))
-
-SIM_WEIGHTS_BY_ROLE: Dict[str, Dict[str, int]] = {
-    "CB": {
-        "Passes per 90": 2,
-        "Accurate passes, %": 2,
-        "Long passes per 90": 2,
-        "Progressive passes per 90": 2,
-        "Defensive duels per 90": 2,
-        "Defensive duels won, %": 2,
-        "Dribbles per 90": 2,
-        "PAdj Interceptions": 1,
-        "Progressive runs per 90": 2,
-        "Aerial duels per 90": 2,
-        "Aerial duels won, %": 3,
-    },
-    "FB": {
-        "Passes per 90": 3,
-        "Passes to penalty area per 90": 2,
-        "Dribbles per 90": 2,
-        "xA per 90": 2,
-        "Progressive passes per 90": 3,
-        "Defensive duels per 90": 2,
-        "Forward passes per 90": 3,
-        "PAdj Interceptions": 2,
-        "Aerial duels won, %": 2,
-        "Touches in box per 90": 2,
-        "Crosses per 90": 2,
-    },
-    "CM": {
-        "Passes per 90": 2,
-        "Progressive runs per 90": 2,
-        "Progressive passes per 90": 2,
-        "Dribbles per 90": 2,
-        "xA per 90": 2,
-        "Touches in box per 90": 2,
-        "Accurate passes, %": 2,
-        "Aerial duels won, %": 2,
-        "Non-penalty goals per 90": 2,
-        "Passes to penalty area per 90": 2,
-        "Defensive duels per 90": 2,
-        "PAdj Interceptions": 2,
-        "Defensive duels won, %": 2,
-    },
-    "ATT": {
-        "Passes per 90": 3,
-        "Accurate passes, %": 2,
-        "Dribbles per 90": 3,
-        "Non-penalty goals per 90": 2,
-        "Shots per 90": 2,
-        "Successful dribbles, %": 2,
-        "Aerial duels won, %": 2,
-        "xA per 90": 2,
-        "xG per 90": 2,
-        "Touches in box per 90": 2,
-        "Passes to penalty area per 90": 2,
-        "Passes to final third per 90": 2,
-        "Crosses per 90": 2,
-    },
-    "ST": {
-        "Passes per 90": 3,
-        "Dribbles per 90": 3,
-        "Non-penalty goals per 90": 2,
-        "Aerial duels per 90": 2,
-        "Aerial duels won, %": 3,
-        "xA per 90": 2,
-        "xG per 90": 3,
-        "Touches in box per 90": 2,
-        "Progressive runs per 90": 2,
-        "Shots per 90": 2,
-        "Accurate passes, %": 2,
-    },
-}
-
-def _zscore(df_mat: pd.DataFrame) -> pd.DataFrame:
-    mu = df_mat.mean(axis=0)
-    sd = df_mat.std(axis=0).replace(0, 1.0)
-    return (df_mat - mu) / sd
-
-def _percentile_vector_from_values(league_block: pd.DataFrame, target_vals: np.ndarray) -> np.ndarray:
-    # proportion <= target (per feature), robust to NaNs
-    out = []
-    for j, col in enumerate(league_block.columns):
-        s = league_block[col].dropna().values
-        if s.size == 0 or not np.isfinite(target_vals[j]):
-            out.append(0.5)
-        else:
-            out.append(float(np.mean(s <= float(target_vals[j]))))
-    return np.array(out, dtype=float)
-
-def compute_similarity(
-    tmpl_src: pd.DataFrame,
-    pos_ok: Callable[[Any], bool],
-    role_key: str,
-    role_title: str,
-) -> pd.DataFrame:
-    weights = SIM_WEIGHTS_BY_ROLE.get(role_key, {})
-    sim_features = [f for f in weights.keys()]
-
-    # must have a template set
-    if tmpl_src is None or tmpl_src.empty:
-        st.info("No eligible template players for similarity.")
-        return pd.DataFrame()
-
-    # build a clean template block with required features
-    tmpl = tmpl_src.copy()
-    for f in sim_features:
-        if f not in tmpl.columns:
-            # missing feature in dataset -> cannot compute similarity
-            st.warning(f"Missing feature in dataset: '{f}'. Similar players disabled for {role_title}.")
-            return pd.DataFrame()
-        tmpl[f] = pd.to_numeric(tmpl[f], errors="coerce")
-
-    tmpl = tmpl.dropna(subset=sim_features)
-    if tmpl.empty:
-        st.info("Template players missing required similarity metrics.")
-        return pd.DataFrame()
-
-    # pick similarity target
-    players = sorted(tmpl["Player"].dropna().astype(str).unique())
-    default_target = "Role average (template set)"
-    target_pick = st.selectbox(
-        "Similarity target",
-        [default_target] + players,
-        index=0,
-        key=f"sim_target_{role_key}_{role_title}",
-        help="Choose a template player, or use the average across the eligible template set.",
-    )
-
-    # controls (no exp-decay, no league mismatch penalty, no penalty combine)
-    c1, c2, c3 = st.columns([1.2, 1.2, 1.2])
-    with c1:
-        percentile_weight = st.slider(
-            "Percentile weight",
-            0.0, 1.0, 0.70, 0.05,
-            key=f"sim_pw_{role_key}_{role_title}",
-            help="Blend of within-league percentiles vs standardized raw values.",
-        )
-    with c2:
-        apply_league_adjust = st.toggle(
-            "Apply league difficulty adjustment",
-            value=True,
-            key=f"sim_ladj_{role_key}_{role_title}",
-        )
-    with c3:
-        league_weight_sim = st.slider(
-            "League weight (difficulty adj.)",
-            0.0, 1.0, 0.20, 0.05,
-            key=f"sim_lw_{role_key}_{role_title}",
-            disabled=not apply_league_adjust
-        )
-
-    top_n_sim = st.number_input(
-        "Top N (similar players)",
-        min_value=5, max_value=200, value=min(50, int(top_n)), step=5,
-        key=f"sim_top_{role_key}_{role_title}",
-    )
-
-    # target definition
-    if target_pick == default_target:
-        target_vals = tmpl[sim_features].mean().values.astype(float)
-        target_player_name = "Role average"
-        target_league = str(template_league)
-    else:
-        trow = tmpl[tmpl["Player"].astype(str) == target_pick].head(1)
-        if trow.empty:
-            st.info("Target template player row not found.")
-            return pd.DataFrame()
-        target_vals = trow[sim_features].iloc[0].astype(float).values
-        target_player_name = str(target_pick)
-        target_league = str(trow["League"].iloc[0]) if "League" in trow.columns else str(template_league)
-
-    # candidate pool (same top filters)
-    base_pool = build_base_pool()
-    df_candidates = base_pool.copy()
-
-    # position filter
-    if "Position" in df_candidates.columns:
-        df_candidates = df_candidates[df_candidates["Position"].astype(str).apply(pos_ok)]
-    else:
-        st.warning("No 'Position' column found; cannot apply position filter.")
-        return pd.DataFrame()
-
-    # exclude template team+league and (if applicable) target pick
-    df_candidates = df_candidates[~((df_candidates["Team"].astype(str) == template_team) & (df_candidates["League"].astype(str) == template_league))].copy()
-    if target_pick != default_target:
-        df_candidates = df_candidates[df_candidates["Player"].astype(str) != target_pick]
-
-    # ensure numeric feature cols
-    for f in sim_features:
-        df_candidates[f] = pd.to_numeric(df_candidates[f], errors="coerce")
-    df_candidates = df_candidates.dropna(subset=sim_features)
-
-    if df_candidates.empty:
-        st.info("No candidates after similarity filters / missing metrics.")
-        return pd.DataFrame()
-
-    # one row per player: keep most minutes, then stronger league
-    df_candidates["League strength"] = df_candidates["League"].map(LS_MAP).fillna(0.0) if LS_MAP else 0.0
-    df_candidates = (
-        df_candidates.sort_values(["Player", "Minutes played", "League strength"], ascending=[True, False, False])
-                     .drop_duplicates(subset=["Player"], keep="first")
-    )
-
-    if df_candidates.empty:
-        st.info("No candidates after de-duplication.")
-        return pd.DataFrame()
-
-    # per-league percentiles for candidates
-    percl = df_candidates.groupby("League")[sim_features].rank(pct=True).values
-
-    # target percentiles within target league distribution (using raw df, not filtered pool)
-    league_mask = (df["League"].astype(str) == str(target_league))
-    league_block = df.loc[league_mask, sim_features].apply(pd.to_numeric, errors="coerce")
-
-    if league_block.dropna(how="all").empty:
-        target_percentiles_vec = np.full(len(sim_features), 0.5, dtype=float)
-    else:
-        target_percentiles_vec = _percentile_vector_from_values(league_block, target_vals)
-
-    # standardize on candidate pool (actual values)
-    cand_mat = df_candidates[sim_features].astype(float)
-    cand_z = _zscore(cand_mat)
-    target_z = ((pd.Series(target_vals, index=sim_features) - cand_mat.mean(axis=0)) / cand_mat.std(axis=0).replace(0, 1.0)).values.astype(float)
-
-    # weights
-    weights_vec = np.array([float(weights.get(f, 1)) for f in sim_features], dtype=float)
-
-    percentile_distances = np.linalg.norm((percl - target_percentiles_vec) * weights_vec, axis=1)
-    actual_value_distances = np.linalg.norm((cand_z.values - target_z) * weights_vec, axis=1)
-    combined = percentile_distances * float(percentile_weight) + actual_value_distances * (1.0 - float(percentile_weight))
-
-    # normalize -> similarity 0..100
-    arr = np.asarray(combined, dtype=float).ravel()
-    rng = np.ptp(arr)
-    normed = (arr - arr.min()) / (rng if rng != 0 else 1.0)
-    similarities = ((1.0 - normed) * 100.0)
-
-    out = df_candidates[["Player", "Team", "League", "Position", "Age", "Minutes played", "Market value"]].copy()
-    out["League strength"] = out["League"].map(LS_MAP).fillna(0.0) if LS_MAP else 0.0
-
-    eps = 1e-6
-    tgt_ls = float(LS_MAP.get(target_league, 1.0)) if LS_MAP else 1.0
-    cand_ls = np.maximum(out["League strength"].astype(float), eps)
-    tgt_ls_safe = max(tgt_ls, eps)
-    league_ratio = np.minimum(cand_ls / tgt_ls_safe, tgt_ls_safe / cand_ls)
-
-    out["Similarity"] = similarities.round(2)
-    out["Adjusted Similarity"] = (
-        out["Similarity"] * ((1 - league_weight_sim) + league_weight_sim * league_ratio)
-    ) if apply_league_adjust else out["Similarity"]
-
-    out = out.sort_values("Adjusted Similarity", ascending=False).reset_index(drop=True)
-    out.insert(0, "Rank", np.arange(1, len(out) + 1))
-
-    st.caption(f"Similarity target: **{target_player_name}**")
-    st.caption(f"Candidates after filters: **{len(out):,}**")
-
-    return out.head(int(top_n_sim))
-
-
 # ========================= ROLE CALCULATORS =========================
-# (UNCHANGED – your existing compute_* functions stay exactly as-is)
-# compute_strikers()
-# compute_attackers()
-# compute_central_mid()
-# compute_fullbacks()
-# compute_center_backs()
+def compute_strikers():
+    feats = ['Touches in box per 90','xG per 90','Dribbles per 90','Progressive runs per 90',
+             'Aerial duels per 90','Aerial duels won, %','Passes per 90','Non-penalty goals per 90','Accurate passes, %']
+
+    tmpl_src = _template_rows_for_role(lambda p: p.strip().upper().startswith("CF")).dropna(subset=feats)
+
+    if use_single_template_player:
+        players = sorted(tmpl_src["Player"].dropna().astype(str).unique())
+        chosen = st.selectbox("Template player (ST)", ["— Select —"] + players, index=0, key="st_tmpl_pick")
+        if chosen and not chosen.startswith("—"):
+            tmpl_src = tmpl_src[tmpl_src["Player"].astype(str) == chosen]
+
+    if tmpl_src.empty:
+        st.error("No strikers found for template conditions.")
+        st.stop()
+
+    f = tmpl_src.copy()
+    f["Opportunities"]     = 0.7*f['Touches in box per 90'] + 0.3*f['xG per 90']
+    f["Ball Carrying"]     = 0.65*f['Dribbles per 90'] + 0.35*f['Progressive runs per 90']
+    f["Aerial Requirement"]= f['Aerial duels per 90'] * f['Aerial duels won, %'] / 100.0
+    f["Passing Volume"]    = f['Passes per 90']
+    f["Goal Output"]       = f['Non-penalty goals per 90']
+    f["Retention"]         = f['Accurate passes, %']
+    tmpl_vec = f[["Opportunities","Ball Carrying","Aerial Requirement","Passing Volume","Goal Output","Retention"]].mean()
+
+    base_pool = build_base_pool()
+    pool = base_pool.copy()
+    pool = pool[pool["Position"].str.upper().str.startswith("CF")]
+    pool = pool[~((pool["Team"].astype(str) == template_team) & (pool["League"].astype(str) == template_league))].copy()
+
+    # ✅ REMOVED hard-coded Age/MV/Minutes filters: pool already follows the top-bar sliders
+
+    for c in feats:
+        pool[c] = pd.to_numeric(pool[c], errors="coerce")
+    pool = pool.dropna(subset=feats)
+
+    pool["Opportunities"]      = 0.7*pool['Touches in box per 90'] + 0.3*pool['xG per 90']
+    pool["Ball Carrying"]      = 0.65*pool['Dribbles per 90'] + 0.35*pool['Progressive runs per 90']
+    pool["Aerial Requirement"] = pool['Aerial duels per 90'] * pool['Aerial duels won, %'] / 100.0
+    pool["Passing Volume"]     = pool['Passes per 90']
+    pool["Goal Output"]        = pool['Non-penalty goals per 90']
+    pool["Retention"]          = pool['Accurate passes, %']
+
+    cols = ["Opportunities","Ball Carrying","Aerial Requirement","Passing Volume","Goal Output","Retention"]
+    for c in cols:
+        pool[f"__tmpl__{c}"] = tmpl_vec[c]
+    pool["BaseDist"] = pool.apply(lambda r: norm([r[c]-r[f"__tmpl__{c}"] for c in cols]), axis=1)
+
+    ranked = _score_block(pool.copy())
+    return ranked, "Strikers (CF)", tmpl_src
+
+def compute_attackers(role_choice: str):
+    feats = [
+        'Accurate passes, %','xG per 90','Non-penalty goals per 90','Touches in box per 90',
+        'xA per 90','Passes to penalty area per 90','Passes per 90',
+        'Progressive passes per 90','Passes to final third per 90',
+        'Dribbles per 90','Progressive runs per 90'
+    ]
+
+    def pos_ok(p):
+        s = str(p).upper().strip()
+        tokens = [t for t in re.split(r"[,/;]\s*|\s+", s) if t]
+        if not tokens:
+            return False
+        t0 = tokens[0]
+        if role_choice == "All":
+            return t0 in {"RW","RWF","RAMF","LW","LWF","LAMF","AMF"}
+        if role_choice == "Right Wingers":
+            return t0 in {"RW","RWF","RAMF"}
+        if role_choice == "Left Wingers":
+            return t0 in {"LW","LWF","LAMF"}
+        if role_choice == "Attacking Midfielders":
+            return t0 == "AMF"
+        return False
+
+    tmpl_src = _template_rows_for_role(pos_ok).dropna(subset=feats)
+    if use_single_template_player:
+        players = sorted(tmpl_src["Player"].dropna().astype(str).unique())
+        chosen = st.selectbox("Template player (Attackers)", ["— Select —"] + players, index=0, key="att_tmpl_pick")
+        if chosen and not chosen.startswith("—"):
+            tmpl_src = tmpl_src[tmpl_src["Player"].astype(str) == chosen]
+
+    if tmpl_src.empty:
+        st.error("No attackers found for template conditions.")
+        st.stop()
+
+    f = tmpl_src.copy()
+    f["Retention Style"]    = f['Accurate passes, %']
+    f["Goal Threat"]        = 0.4*f['xG per 90'] + 0.4*f['Non-penalty goals per 90'] + 0.2*f['Touches in box per 90']
+    f["Creativity Threat"]  = 0.65*f['xA per 90'] + 0.35*f['Passes to penalty area per 90']
+    f["Passing Volume"]     = f['Passes per 90']
+    f["Deeper Playmaking"]  = 0.5*f['Progressive passes per 90'] + 0.5*f['Passes to final third per 90']
+    f["Ball Carrying"]      = 0.6*f['Dribbles per 90'] + 0.4*f['Progressive runs per 90']
+    cols = ["Retention Style","Goal Threat","Creativity Threat","Passing Volume","Deeper Playmaking","Ball Carrying"]
+    tmpl_vec = f[cols].mean()
+
+    base_pool = build_base_pool()
+    pool = base_pool[base_pool["Position"].apply(pos_ok)].copy()
+    pool = pool[~((pool["Team"].astype(str) == template_team) & (pool["League"].astype(str) == template_league))]
+
+    # ✅ REMOVED hard-coded Age/MV/Minutes filters: pool already follows the top-bar sliders
+
+    for c in feats:
+        pool[c] = pd.to_numeric(pool[c], errors="coerce")
+    pool = pool.dropna(subset=feats)
+
+    pool["Retention Style"]   = pool['Accurate passes, %']
+    pool["Goal Threat"]       = 0.4*pool['xG per 90'] + 0.4*pool['Non-penalty goals per 90'] + 0.2*pool['Touches in box per 90']
+    pool["Creativity Threat"] = 0.65*pool['xA per 90'] + 0.35*pool['Passes to penalty area per 90']
+    pool["Passing Volume"]    = pool['Passes per 90']
+    pool["Deeper Playmaking"] = 0.5*pool['Progressive passes per 90'] + 0.5*pool['Passes to final third per 90']
+    pool["Ball Carrying"]     = 0.6*pool['Dribbles per 90'] + 0.4*pool['Progressive runs per 90']
+
+    for c in cols:
+        pool[f"__tmpl__{c}"] = tmpl_vec[c]
+    pool["BaseDist"] = pool.apply(lambda r: norm([r[c]-r[f"__tmpl__{c}"] for c in cols]), axis=1)
+
+    ranked = _score_block(pool.copy())
+    return ranked, f"Attackers ({role_choice})", tmpl_src
+
+def compute_central_mid():
+    feats = [
+        'Passes per 90','Forward passes per 90',
+        'Progressive passes per 90','Progressive runs per 90',
+        'Defensive duels per 90','PAdj Interceptions',
+        'Touches in box per 90','Shots per 90','Accurate passes, %'
+    ]
+
+    def pos_ok(p):
+        s = str(p).strip().upper()
+        return s.startswith(("DMF","CMF","LCMF","RCMF","LDMF","RDMF"))
+
+    tmpl_src = _template_rows_for_role(pos_ok).dropna(subset=feats)
+    if use_single_template_player:
+        players = sorted(tmpl_src["Player"].dropna().astype(str).unique())
+        chosen = st.selectbox("Template player (CM)", ["— Select —"] + players, index=0, key="cm_tmpl_pick")
+        if chosen and not chosen.startswith("—"):
+            tmpl_src = tmpl_src[tmpl_src["Player"].astype(str) == chosen]
+
+    if tmpl_src.empty:
+        st.error("No central midfielders found for template conditions.")
+        st.stop()
+
+    f = tmpl_src.copy()
+    f["Pass Verticality"]    = _safe_verticality(f['Forward passes per 90'], f['Passes per 90'])
+    f["Progression Volume"]  = f['Progressive passes per 90'] + f['Progressive runs per 90']
+    f["Attacking Contribution"] = f['Touches in box per 90'] + f['Shots per 90']
+    f["Defensive Volume"]    = f['Defensive duels per 90']
+    f["Interception Volume"] = f['PAdj Interceptions']
+    f["Retention"]           = f['Accurate passes, %']
+
+    cols = ["Passes per 90","Pass Verticality","Progression Volume","Defensive Volume","Interception Volume","Attacking Contribution","Retention"]
+    tmpl_vec = f[cols].mean()
+
+    base_pool = build_base_pool()
+    pool = base_pool[base_pool["Position"].apply(pos_ok)].copy()
+    pool = pool[~((pool["Team"].astype(str) == template_team) & (pool["League"].astype(str) == template_league))]
+
+    # ✅ REMOVED hard-coded Age/MV/Minutes filters: pool already follows the top-bar sliders
+
+    for c in feats:
+        pool[c] = pd.to_numeric(pool[c], errors="coerce")
+    pool = pool.dropna(subset=feats)
+
+    pool["Pass Verticality"]    = _safe_verticality(pool['Forward passes per 90'], pool['Passes per 90'])
+    pool["Progression Volume"]  = pool['Progressive passes per 90'] + pool['Progressive runs per 90']
+    pool["Attacking Contribution"] = pool['Touches in box per 90'] + pool['Shots per 90']
+    pool["Defensive Volume"]    = pool['Defensive duels per 90']
+    pool["Interception Volume"] = pool['PAdj Interceptions']
+    pool["Retention"]           = pool['Accurate passes, %']
+
+    for c in cols:
+        pool[f"__tmpl__{c}"] = tmpl_vec[c]
+    pool["BaseDist"] = pool.apply(lambda r: norm([r[c]-r[f"__tmpl__{c}"] for c in cols]), axis=1)
+
+    ranked = _score_block(pool.copy())
+    return ranked, "Central Midfield", tmpl_src
+
+def compute_fullbacks(role_choice: str):
+    feats = [
+        'Passes per 90','Forward passes per 90',
+        'Progressive passes per 90','Progressive runs per 90',
+        'Defensive duels per 90','PAdj Interceptions','Aerial duels per 90',
+        'xA per 90','Crosses per 90','Touches in box per 90',
+        'Shots per 90','Passes to penalty area per 90',
+        'Accurate passes, %'
+    ]
+
+    def pos_ok(p):
+        s = str(p).strip().upper()
+        if role_choice == "Right Backs":
+            prefixes = ("RB","RWB")
+        elif role_choice == "Left Backs":
+            prefixes = ("LB","LWB")
+        else:
+            prefixes = ("RB","RWB","LB","LWB")
+        return any(s.startswith(px) for px in prefixes)
+
+    tmpl_src = _template_rows_for_role(pos_ok).dropna(subset=feats)
+    if use_single_template_player:
+        players = sorted(tmpl_src["Player"].dropna().astype(str).unique())
+        chosen = st.selectbox("Template player (FB)", ["— Select —"] + players, index=0, key="fb_tmpl_pick")
+        if chosen and not chosen.startswith("—"):
+            tmpl_src = tmpl_src[tmpl_src["Player"].astype(str) == chosen]
+
+    if tmpl_src.empty:
+        st.error("No fullbacks found for template conditions.")
+        st.stop()
+
+    f = tmpl_src.copy()
+    f["Pass Verticality"]    = _safe_verticality(f['Forward passes per 90'], f['Passes per 90'])
+    f["Progression Volume"]  = f['Progressive passes per 90'] + f['Progressive runs per 90']
+    f["Attacking Contribution"]= 0.4*f['xA per 90'] + 0.2*f['Crosses per 90'] + 0.2*f['Touches in box per 90'] + 0.1*f['Shots per 90'] + 0.1*f['Passes to penalty area per 90']
+    f["Defensive Volume"]    = 0.5*f['Defensive duels per 90'] + 0.3*f['PAdj Interceptions'] + 0.2*f['Aerial duels per 90']
+    f["Retention"]           = f['Accurate passes, %']
+
+    cols = ["Passes per 90","Pass Verticality","Progression Volume","Attacking Contribution","Defensive Volume","Retention"]
+    tmpl_vec = f[cols].mean()
+
+    base_pool = build_base_pool()
+    pool = base_pool[base_pool["Position"].apply(pos_ok)].copy()
+    pool = pool[~((pool["Team"].astype(str) == template_team) & (pool["League"].astype(str) == template_league))]
+
+    # ✅ REMOVED hard-coded Age/MV/Minutes filters: pool already follows the top-bar sliders
+
+    for c in feats:
+        pool[c] = pd.to_numeric(pool[c], errors="coerce")
+    pool = pool.dropna(subset=feats)
+
+    pool["Pass Verticality"]     = _safe_verticality(pool['Forward passes per 90'], pool['Passes per 90'])
+    pool["Progression Volume"]   = pool['Progressive passes per 90'] + pool['Progressive runs per 90']
+    pool["Attacking Contribution"]= 0.4*pool['xA per 90'] + 0.2*pool['Crosses per 90'] + 0.2*pool['Touches in box per 90'] + 0.1*pool['Shots per 90'] + 0.1*pool['Passes to penalty area per 90']
+    pool["Defensive Volume"]     = 0.5*pool['Defensive duels per 90'] + 0.3*pool['PAdj Interceptions'] + 0.2*pool['Aerial duels per 90']
+    pool["Retention"]            = pool['Accurate passes, %']
+
+    for c in cols:
+        pool[f"__tmpl__{c}"] = tmpl_vec[c]
+    pool["BaseDist"] = pool.apply(lambda r: norm([r[c]-r[f"__tmpl__{c}"] for c in cols]), axis=1)
+
+    ranked = _score_block(pool.copy())
+    return ranked, f"Fullbacks ({role_choice})", tmpl_src
+
+def compute_center_backs():
+    feats = [
+        'Aerial duels per 90','Defensive duels per 90',
+        'Passes per 90','Forward passes per 90',
+        'Progressive passes per 90','Progressive runs per 90',
+        'PAdj Interceptions','Shots blocked per 90'
+    ]
+
+    def pos_ok(p):
+        s = str(p).strip().upper()
+        return s.startswith(("CB","RCB","LCB"))
+
+    tmpl_src = _template_rows_for_role(pos_ok).dropna(subset=feats)
+    if use_single_template_player:
+        players = sorted(tmpl_src["Player"].dropna().astype(str).unique())
+        chosen = st.selectbox("Template player (CB)", ["— Select —"] + players, index=0, key="cb_tmpl_pick")
+        if chosen and not chosen.startswith("—"):
+            tmpl_src = tmpl_src[tmpl_src["Player"].astype(str) == chosen]
+
+    if tmpl_src.empty:
+        st.error("No centre-backs found for template conditions.")
+        st.stop()
+
+    f = tmpl_src.copy()
+    f["Passing Verticality"] = _safe_verticality(f['Forward passes per 90'], f['Passes per 90'])
+    f["Passing Volume"]      = f['Passes per 90']
+    f["Positional Demand"]   = f['PAdj Interceptions'] + f['Shots blocked per 90']
+    f["Progression Volume"]  = f['Progressive passes per 90'] + f['Progressive runs per 90']
+
+    cols = ["Aerial duels per 90","Defensive duels per 90","Positional Demand","Passing Volume","Passing Verticality","Progression Volume"]
+    tmpl_vec = f[cols].mean()
+
+    base_pool = build_base_pool()
+    pool = base_pool[base_pool["Position"].apply(pos_ok)].copy()
+    pool = pool[~((pool["Team"].astype(str) == template_team) & (pool["League"].astype(str) == template_league))]
+
+    # ✅ REMOVED hard-coded Age/MV/Minutes filters: pool already follows the top-bar sliders
+
+    for c in feats:
+        pool[c] = pd.to_numeric(pool[c], errors="coerce")
+    pool = pool.dropna(subset=feats)
+
+    pool["Passing Verticality"] = _safe_verticality(pool['Forward passes per 90'], pool['Passes per 90'])
+    pool["Passing Volume"]      = pool['Passes per 90']
+    pool["Positional Demand"]   = pool['PAdj Interceptions'] + pool['Shots blocked per 90']
+    pool["Progression Volume"]  = pool['Progressive passes per 90'] + pool['Progressive runs per 90']
+
+    for c in cols:
+        pool[f"__tmpl__{c}"] = tmpl_vec[c]
+    pool["BaseDist"] = pool.apply(
+        lambda r: norm([r[c] - r[f"__tmpl__{c}"] for c in cols]),
+        axis=1
+    )
+
+    ranked = _score_block(pool.copy())
+    return ranked, "Center Backs", tmpl_src
+
+
+# ========================= FOTMOB PHOTO + CREST =========================
+# Provide a mapping file team_fotmob_urls.py with:
+# FOTMOB_TEAM_URLS = {"Arsenal":"https://www.fotmob.com/teams/9825/overview/arsenal", ...}
+
+def _fotmob_team_id_from_url(team_url: str) -> str:
+    m = re.search(r"/teams/(\d+)/", str(team_url or ""))
+    return m.group(1) if m else ""
+
+def _fotmob_crest_url(team_url: str) -> str:
+    tid = _fotmob_team_id_from_url(team_url)
+    return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png" if tid else ""
+
+def _fotmob_team_squad(team_id: str) -> List[dict]:
+    cache = st.session_state.setdefault("_fotmob_team_squad_cache", {})
+    if team_id in cache:
+        return cache[team_id] or []
+
+    squad: List[dict] = []
+    try:
+        url = f"https://www.fotmob.com/api/teams?id={team_id}"
+        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code == 200:
+            data = r.json() or {}
+            raw = data.get("squad", None)
+
+            if isinstance(raw, list):
+                for sec in raw:
+                    members = sec.get("members") or sec.get("players") or []
+                    if isinstance(members, list):
+                        squad.extend([m for m in members if isinstance(m, dict)])
+
+            elif isinstance(raw, dict):
+                for k in ("members", "players"):
+                    members = raw.get(k)
+                    if isinstance(members, list):
+                        squad.extend([m for m in members if isinstance(m, dict)])
+                nested = raw.get("squad")
+                if isinstance(nested, list):
+                    for sec in nested:
+                        members = sec.get("members") or sec.get("players") or []
+                        if isinstance(members, list):
+                            squad.extend([m for m in members if isinstance(m, dict)])
+    except Exception:
+        squad = []
+
+    cache[team_id] = squad
+    return squad
+
+def _slug_name(s: str) -> str:
+    if not s:
+        return ""
+    s = str(s).strip().lower()
+    repl = {
+        "ø": "o", "œ": "oe", "æ": "ae", "å": "a", "ä": "a", "ö": "o", "ü": "u",
+        "ß": "ss", "ł": "l", "đ": "d", "ð": "d", "þ": "th", "ç": "c", "ş": "s",
+        "ğ": "g", "ı": "i",
+    }
+    for k, v in repl.items():
+        s = s.replace(k, v)
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    s = re.sub(r"[^a-z0-9]+", "", s)
+    return s
+
+def _similar(a: str, b: str) -> float:
+    return SequenceMatcher(None, a, b).ratio()
+
+def _player_surname(player: str) -> str:
+    p = (player or "").strip()
+    if not p:
+        return ""
+    if "," in p:
+        return p.split(",", 1)[0].strip()
+    parts = p.split()
+    return parts[-1].strip() if parts else ""
+
+PLACEHOLDER_IMG = "https://i.redd.it/43axcjdu59nd1.jpeg"
+
+def resolve_player_photo(player: str, team: str, league: str) -> str:
+    """
+    Priority:
+      1) session override (photo_map)
+      2) try fotmob squad match -> playerimages/{id}.png
+      3) placeholder
+    """
+    key_id = f"{player}|||{team}|||{league}"
+    override = st.session_state.get("photo_map", {}).get(key_id, "")
+    if override:
+        return override
+
+    team_url = ""
+    try:
+        from team_fotmob_urls import FOTMOB_TEAM_URLS
+        team_url = (FOTMOB_TEAM_URLS.get(team) or "").strip()
+    except Exception:
+        team_url = ""
+
+    tid = _fotmob_team_id_from_url(team_url)
+    if not tid:
+        return PLACEHOLDER_IMG
+
+    squad = _fotmob_team_squad(tid)
+    target_surname = _slug_name(_player_surname(player))
+    target_full = _slug_name(player)
+
+    best_id = ""
+
+    # exact surname match first
+    if target_surname:
+        for m in squad:
+            name = m.get("name") or m.get("playerName") or ""
+            pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
+            if not pid:
+                continue
+            if _slug_name(_player_surname(name)) == target_surname:
+                best_id = str(pid)
+                if target_full and target_full in _slug_name(name):
+                    break
+
+    # exact full match fallback
+    if not best_id and target_full:
+        for m in squad:
+            name = m.get("name") or m.get("playerName") or ""
+            pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
+            if not pid:
+                continue
+            if target_full in _slug_name(name):
+                best_id = str(pid)
+                break
+
+    # fuzzy surname fallback
+    if not best_id and target_surname:
+        best_score, best_pid = 0.0, ""
+        for m in squad:
+            name = m.get("name") or m.get("playerName") or ""
+            pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
+            if not pid:
+                continue
+            sn = _slug_name(_player_surname(name))
+            sc = _similar(sn, target_surname)
+            if sc > best_score:
+                best_score, best_pid = sc, str(pid)
+        if best_score >= 0.86:
+            best_id = best_pid
+
+    if best_id and str(best_id).isdigit():
+        return f"https://images.fotmob.com/image_resources/playerimages/{best_id}.png"
+
+    return PLACEHOLDER_IMG
+
+def resolve_team_crest(team: str, league: str) -> str:
+    """
+    Priority:
+      1) session override (crest_map)
+      2) fotmob teamlogo/{team_id}.png
+      3) ""
+    """
+    crest_key = f"{team}|||{league}"
+    override = st.session_state.get("crest_map", {}).get(crest_key, "")
+    if override:
+        return override
+
+    team_url = ""
+    try:
+        from team_fotmob_urls import FOTMOB_TEAM_URLS
+        team_url = (FOTMOB_TEAM_URLS.get(team) or "").strip()
+    except Exception:
+        team_url = ""
+
+    return _fotmob_crest_url(team_url) if team_url else ""
 
 
 # ========================= UI: TILE LAYOUT =========================
-# (UNCHANGED – your CSS + render_tiles + render_matches_table stay)
+st.markdown(
+    """
+<style>
+:root{ --bg:#0f1115; --card:#161a22; --stroke:#252b3a; --muted:#a8b3cf; --soft:#202633; }
+.tiles{ display:grid; grid-template-columns:repeat(auto-fill, minmax(330px, 1fr)); gap:14px; }
+.tile{ position:relative; background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:14px; overflow:hidden; box-shadow: 0 2px 12px rgba(0,0,0,.22); }
+.row{ display:flex; gap:12px; align-items:flex-start; }
+.avatar{ width:72px; height:72px; border-radius:14px; object-fit:cover; background:#0b0d12; border:1px solid #2a3145; }
+.name{ font-weight:900; font-size:18px; color:#e8ecff; line-height:1.1; }
+.teamline{ margin-top:6px; color:#cbd5f5; font-size:13px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.crest{ width:20px; height:20px; object-fit:contain; border-radius:4px; background:#0b0d12; border:1px solid #2a3145; }
+.meta{ margin-top:8px; color:var(--muted); font-size:12px; display:flex; gap:8px; flex-wrap:wrap; }
+.chip{ background:var(--soft); color:#cbd5f5; border:1px solid #2d3550; padding:2px 8px; border-radius:10px; }
+.match{ position:absolute; top:10px; right:10px; background:#0b0d12; border:1px solid #2a3145; color:#e8ecff; border-radius:12px; padding:6px 10px; font-weight:900; }
+.match small{ display:block; font-size:10px; color:var(--muted); font-weight:700; margin-top:1px; text-align:right; }
+</style>
+""",
+    unsafe_allow_html=True
+)
+
+def render_tiles(ranked: pd.DataFrame, role_title: str):
+    df_view = ranked.head(int(top_n)).copy()
+    if df_view.empty:
+        st.info("No matches.")
+        return
+
+    html = ["<div class='tiles'>"]
+    for _, row in df_view.iterrows():
+        player = str(row.get("Player", ""))
+        team = str(row.get("Team", ""))
+        league = str(row.get("League", ""))
+        pos = str(row.get("Position", ""))
+        age = row.get("Age", "")
+        minutes = row.get("Minutes played", "")
+        foot = str(row.get("Foot", "")).strip()
+        score = float(pd.to_numeric(row.get("Role Fit Score", 0.0), errors="coerce") or 0.0)
+        match_pct = max(0, min(100, int(round(score))))
+
+        avatar = resolve_player_photo(player, team, league)
+        crest = resolve_team_crest(team, league)
+
+        if DEBUG_PHOTOS:
+            st.write(player, team, "→", avatar)
+
+        crest_html = f"<img class='crest' src='{crest}' />" if crest else ""
+        html.append(
+            f"""
+<div class="tile">
+  <div class="match">{match_pct}%<small>Match</small></div>
+  <div class="row">
+    <img class="avatar" src="{avatar}" />
+    <div>
+      <div class="name">{player}</div>
+      <div class="teamline">{crest_html}<span>{team} · {league}</span></div>
+      <div class="meta">
+        <span class="chip">{pos}</span>
+        <span class="chip">Age {age}</span>
+        <span class="chip">{int(minutes) if str(minutes).isdigit() else minutes} min</span>
+        <span class="chip">{foot}</span>
+      </div>
+    </div>
+  </div>
+</div>
+"""
+        )
+    html.append("</div>")
+    st.markdown("".join(html), unsafe_allow_html=True)
+
+
+def render_matches_table(ranked: pd.DataFrame):
+    cols = [c for c in ["Player","Team","League","Position","Age","Minutes played","Market value","Role Fit Score"] if c in ranked.columns]
+    st.dataframe(ranked[cols].head(int(top_n)), use_container_width=True)
 
 
 # ========================= TAB WRAPPER =========================
-def role_tab(role_title: str, compute_fn, sim_role_key: str, pos_filter_fn):
+def role_tab(role_title: str, compute_fn):
     ranked, title, tmpl_src = compute_fn()
 
-    t1, t2, t3 = st.tabs(["Role Fit", "Similar players", "Template players"])
-
-    # --- ROLE FIT (tiles first) ---
+    t1, t2, t3 = st.tabs(["Matches", "Tiles", "Template players"])
     with t1:
-        render_tiles(ranked, title)
-
-    # --- SIMILAR PLAYERS ---
+        render_matches_table(ranked)
     with t2:
-        sim_df = compute_similarity(
-            tmpl_src=tmpl_src,
-            pos_ok=pos_filter_fn,
-            role_key=sim_role_key,
-            role_title=role_title,
-        )
-        if sim_df is not None and not sim_df.empty:
-            render_tiles(sim_df, f"Similar — {role_title}")
-        else:
-            st.info("No similar players found.")
-
-    # --- TEMPLATE PLAYERS ---
+        render_tiles(ranked, title)
     with t3:
         render_template_players_used(title, tmpl_src)
 
@@ -785,12 +1043,7 @@ def role_tab(role_title: str, compute_fn, sim_role_key: str, pos_filter_fn):
 tabs = st.tabs(["Strikers", "Attackers", "Central Midfield", "Fullbacks", "Center Backs"])
 
 with tabs[0]:
-    role_tab(
-        "Strikers",
-        compute_strikers,
-        sim_role_key="ST",
-        pos_filter_fn=lambda p: str(p).upper().startswith("CF"),
-    )
+    role_tab("Strikers", compute_strikers)
 
 with tabs[1]:
     att_choice = st.selectbox(
@@ -799,70 +1052,17 @@ with tabs[1]:
         index=0,
         key="att_role_choice",
     )
-
-    def _att_pos_ok(p):
-        s = str(p).upper().strip()
-        tokens = [t for t in re.split(r"[,/;]\s*|\s+", s) if t]
-        if not tokens:
-            return False
-        t0 = tokens[0]
-        if att_choice == "All":
-            return t0 in {"RW","RWF","RAMF","LW","LWF","LAMF","AMF"}
-        if att_choice == "Right Wingers":
-            return t0 in {"RW","RWF","RAMF"}
-        if att_choice == "Left Wingers":
-            return t0 in {"LW","LWF","LAMF"}
-        if att_choice == "Attacking Midfielders":
-            return t0 == "AMF"
-        return False
-
-    role_tab(
-        f"Attackers ({att_choice})",
-        lambda: compute_attackers(att_choice),
-        sim_role_key="ATT",
-        pos_filter_fn=_att_pos_ok,
-    )
+    role_tab(f"Attackers ({att_choice})", lambda: compute_attackers(att_choice))
 
 with tabs[2]:
-    role_tab(
-        "Central Midfield",
-        compute_central_mid,
-        sim_role_key="CM",
-        pos_filter_fn=lambda p: str(p).upper().startswith(("DMF","CMF","LCMF","RCMF","LDMF","RDMF")),
-    )
+    role_tab("Central Midfield", compute_central_mid)
 
 with tabs[3]:
-    fb_choice = st.selectbox(
-        "Fullback side",
-        ["All", "Right Backs", "Left Backs"],
-        index=0,
-        key="fb_role_choice"
-    )
-
-    def _fb_pos_ok(p):
-        s = str(p).upper().strip()
-        if fb_choice == "Right Backs":
-            prefixes = ("RB","RWB")
-        elif fb_choice == "Left Backs":
-            prefixes = ("LB","LWB")
-        else:
-            prefixes = ("RB","RWB","LB","LWB")
-        return any(s.startswith(px) for px in prefixes)
-
-    role_tab(
-        f"Fullbacks ({fb_choice})",
-        lambda: compute_fullbacks(fb_choice),
-        sim_role_key="FB",
-        pos_filter_fn=_fb_pos_ok,
-    )
+    fb_choice = st.selectbox("Fullback side", ["All", "Right Backs", "Left Backs"], index=0, key="fb_role_choice")
+    role_tab(f"Fullbacks ({fb_choice})", lambda: compute_fullbacks(fb_choice))
 
 with tabs[4]:
-    role_tab(
-        "Center Backs",
-        compute_center_backs,
-        sim_role_key="CB",
-        pos_filter_fn=lambda p: str(p).upper().startswith(("CB","RCB","LCB")),
-    )
+    role_tab("Center Backs", compute_center_backs)
 
 
 # ============================ CLUB TOOL — ONE-PAGER (FULL) + STYLES / STRENGTHS / WEAKNESSES ============================
