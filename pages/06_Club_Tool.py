@@ -423,8 +423,6 @@ def build_base_pool():
 
     # These are the ONLY pool filters now (top-bar controls)
     p = p[p["Minutes played"].between(min_minutes, max_minutes)]
-    p = p[p["Age"].between(min_age, max_age)]
-    p = p[p["Market value"].between(pool_min_value, pool_max_value)]
 
     p["League Strength"] = p["League"].map(LEAGUE_STRENGTHS).fillna(0.0)
     p = p[(p["League Strength"] >= float(min_strength)) & (p["League Strength"] <= float(max_strength))]
@@ -1146,8 +1144,25 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-def render_tiles(ranked: pd.DataFrame, role_title: str, score_col: str = "Role Fit Score", badge_label: str = "Match"):
-    df_view = ranked.head(int(top_n)).copy()
+
+def render_tiles(
+    ranked: pd.DataFrame,
+    role_title: str,
+    score_col: str = "Role Fit Score",
+    badge_label: str = "Match"
+):
+    df_view = ranked.copy()
+
+    # ✅ Display-only filters (Age + Market Value)
+    if "Age" in df_view.columns:
+        df_view["Age"] = pd.to_numeric(df_view["Age"], errors="coerce")
+        df_view = df_view[df_view["Age"].between(min_age, max_age)]
+
+    if "Market value" in df_view.columns:
+        df_view["Market value"] = pd.to_numeric(df_view["Market value"], errors="coerce")
+        df_view = df_view[df_view["Market value"].between(pool_min_value, pool_max_value)]
+
+    df_view = df_view.head(int(top_n)).copy()
     if df_view.empty:
         st.info("No matches.")
         return
@@ -1191,14 +1206,36 @@ def render_tiles(ranked: pd.DataFrame, role_title: str, score_col: str = "Role F
 </div>
 """
         )
+
     html.append("</div>")
     st.markdown("".join(html), unsafe_allow_html=True)
 
 
-def render_matches_table(ranked: pd.DataFrame, top_n_override: int = None, score_col: str = "Role Fit Score"):
+def render_matches_table(
+    ranked: pd.DataFrame,
+    top_n_override: int = None,
+    score_col: str = "Role Fit Score"
+):
     n = int(top_n_override) if top_n_override is not None else int(top_n)
-    cols = [c for c in ["Player","Team","League","Position","Age","Minutes played","Market value",score_col] if c in ranked.columns]
-    st.dataframe(ranked[cols].head(n), use_container_width=True)
+    df_view = ranked.copy()
+
+    # ✅ Display-only filters (Age + Market Value)
+    if "Age" in df_view.columns:
+        df_view["Age"] = pd.to_numeric(df_view["Age"], errors="coerce")
+        df_view = df_view[df_view["Age"].between(min_age, max_age)]
+
+    if "Market value" in df_view.columns:
+        df_view["Market value"] = pd.to_numeric(df_view["Market value"], errors="coerce")
+        df_view = df_view[df_view["Market value"].between(pool_min_value, pool_max_value)]
+
+    cols = [
+        c for c in
+        ["Player", "Team", "League", "Position", "Age", "Minutes played", "Market value", score_col]
+        if c in df_view.columns
+    ]
+    st.dataframe(df_view[cols].head(n), use_container_width=True)
+
+
 
 # ========================= SIMILARITY UI (per tab) =========================
 def similarity_settings_ui(sim_key_prefix: str, default_leagues: List[str]):
@@ -1267,7 +1304,7 @@ def similarity_settings_ui(sim_key_prefix: str, default_leagues: List[str]):
             disabled=not apply_league_adjust
         )
 
-        top_n_sim = st.number_input("Show top N", min_value=5, max_value=200, value=50, step=5, key=f"{sim_key_prefix}_sim_top")
+        top_n_sim = st.number_input("Show top N", min_value=5, max_value=200, value=14, step=5, key=f"{sim_key_prefix}_sim_top")
 
     return {
         "LS_MAP": LS_MAP,
@@ -1416,7 +1453,6 @@ with tabs[3]:
 
 with tabs[4]:
     role_tab("Center Backs", compute_center_backs, sim_role_key="CB")
-
 # ============================ CLUB TOOL — ONE-PAGER (FULL) + STYLES / STRENGTHS / WEAKNESSES ============================
 # Paste this WHOLE block into your Club Tool page where you want the one-pager section.
 #
