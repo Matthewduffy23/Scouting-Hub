@@ -4226,6 +4226,9 @@ from matplotlib.font_manager import FontProperties
 from PIL import Image
 import streamlit as st
 
+# ✅ NEW: league logo lookup helper (your league_logo_urls.py)
+from league_logo_urls import get_league_logo_url
+
 st.markdown("---")
 st.header("📋 Feature Z — White Percentile Board")
 
@@ -4260,6 +4263,12 @@ with st.expander("Feature Z options", expanded=False):
     except Exception: pass
     foot_override_on = st.checkbox("Edit foot in info row", value=False, key="fz_foot_edit")
     foot_override_text = st.text_input("Foot value (e.g., Left)", default_foot, disabled=not foot_override_on, key="fz_foot_text")
+
+    # ✅ NEW: Auto header images (FotMob + league logo file) + URL overrides
+    auto_images = st.checkbox("Use automatic player / team / league images", value=True)
+    player_photo_override = st.text_input("Override player photo URL", "", help="Optional")
+    team_badge_override   = st.text_input("Override team badge URL", "", help="Optional")
+    league_logo_override  = st.text_input("Override league logo URL", "", help="Optional")
 
     if enable_images:
         st.caption("Upload up to three header images (PNG recommended). Rightmost is the anchor.")
@@ -4318,6 +4327,7 @@ else:
     name_ = _safe_get(player_row, "Player", _safe_get(player_row, "Name", "Kadeem Harris"))
     if name_override_on and name_override.strip(): name_ = name_override.strip()
     team  = _safe_get(player_row, "Team", "Carlisle United")
+    league = _safe_get(player_row, "League", "England 2.")
     age_raw = _safe_get(player_row, "Age", "31.0")
     try: age = f"{float(age_raw):.0f}"
     except Exception: age = age_raw
@@ -4329,6 +4339,21 @@ else:
 
     # Apply foot override (if enabled)
     foot_display = (foot_override_text.strip() if (foot_override_on and foot_override_text and foot_override_text.strip()) else foot)
+
+    # ✅ NEW: Resolve header images (FotMob + overrides)
+    auto_player_img = ""
+    auto_team_img   = ""
+    auto_league_img = ""
+
+    if auto_images:
+        # assumes these already exist in your app (from earlier FotMob system)
+        auto_player_img = resolve_player_photo(name_, team, league)
+        auto_team_img   = resolve_team_crest(team, league)
+        auto_league_img = get_league_logo_url(league)
+
+    player_img_url = player_photo_override.strip() or auto_player_img
+    team_img_url   = team_badge_override.strip()   or auto_team_img
+    league_img_url = league_logo_override.strip()  or auto_league_img
 
     # === sections (unchanged) ===
     ATTACKING = []
@@ -4459,6 +4484,18 @@ else:
         try: return Image.open(u).convert("RGBA")
         except Exception: return None
 
+    # ✅ NEW: open a URL into a PIL image (safe)
+    def _open_url(url):
+        if not url:
+            return None
+        try:
+            import requests
+            r = requests.get(url, timeout=6)
+            r.raise_for_status()
+            return Image.open(BytesIO(r.content)).convert("RGBA")
+        except Exception:
+            return None
+
     if enable_images:
         def add_header_image(pil_img, right_index=0):
             if pil_img is None: return
@@ -4477,9 +4514,10 @@ else:
             ax_img = fig.add_axes([x, y, img_box_w, img_box_h])
             ax_img.imshow(pil_img); ax_img.axis("off")
 
-        add_header_image(_open_upload(up_img1), right_index=0)
-        add_header_image(_open_upload(up_img2), right_index=1)
-        add_header_image(_open_upload(up_img3), right_index=2)
+        # ✅ CHANGED: upload wins; otherwise use auto/override URLs
+        add_header_image(_open_upload(up_img1) or _open_url(player_img_url), right_index=0)
+        add_header_image(_open_upload(up_img2) or _open_url(team_img_url),   right_index=1)
+        add_header_image(_open_upload(up_img3) or _open_url(league_img_url), right_index=2)
 
     # --- divider a touch lower (headroom) ---
     fig.lines.append(plt.Line2D([LEFT, 1 - RIGHT],
@@ -4555,6 +4593,7 @@ else:
     )
     plt.close(fig)
 # ============================ END — Feature Z ============================
+
 
 # ============================== SCATTERPLOT — FIXED layout + smart non-overlap labels ==============================
 st.markdown("---")
