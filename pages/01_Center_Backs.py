@@ -4226,28 +4226,6 @@ from matplotlib.font_manager import FontProperties
 from PIL import Image
 import streamlit as st
 
-# --- NEW (auto header image fetching, same system style as your other feature) ---
-import io
-import re
-import unicodedata
-from pathlib import Path
-from typing import Optional
-import requests
-from matplotlib.offsetbox import OffsetImage, AnnotationBbox
-
-# --- NEW: league logo lookup file you added ---
-try:
-    from league_logo_urls import get_league_logo_url
-except Exception:
-    def get_league_logo_url(_league: str) -> str:
-        return ""
-
-# --- NEW: optional FotMob team URL mapping (same pattern as your other feature) ---
-try:
-    from team_fotmob_urls import FOTMOB_TEAM_URLS as _FZ_FOTMOB_TEAM_URLS
-except Exception:
-    _FZ_FOTMOB_TEAM_URLS = {}
-
 st.markdown("---")
 st.header("📋 Feature Z — White Percentile Board")
 
@@ -4284,13 +4262,6 @@ with st.expander("Feature Z options", expanded=False):
     foot_override_text = st.text_input("Foot value (e.g., Left)", default_foot, disabled=not foot_override_on, key="fz_foot_text")
 
     if enable_images:
-        # --- NEW: auto images toggle (falls back only if upload is missing) ---
-        auto_images = st.checkbox(
-            "Auto header images (team crest / league logo / flag) if not uploaded",
-            value=True,
-            help="Uses the same remote-fetch approach as your other feature; uploads override auto."
-        )
-
         st.caption("Upload up to three header images (PNG recommended). Rightmost is the anchor.")
         up_img1 = st.file_uploader("Image 1 (rightmost)", type=["png","jpg","jpeg","webp"], key="fz_img1")
         up_img2 = st.file_uploader("Image 2 (middle)",   type=["png","jpg","jpeg","webp"], key="fz_img2")
@@ -4313,7 +4284,6 @@ with st.expander("Feature Z options", expanded=False):
         up_img1 = up_img2 = up_img3 = None
         spacing_preset = "Tight (default)"  # unused when images disabled
         img1_dx = img2_dx = img3_dx = 0.0   # ensure defined even when disabled
-        auto_images = False                 # ensure defined even when disabled
 
 def _safe_get(df_or_series, key, default="—"):
     try:
@@ -4340,206 +4310,6 @@ INFO_VALUE_FP= FontProperties(family=FONT_BOOK_FAMILY,  weight='regular',  size=
 BAR_VALUE_FP = FontProperties(family=FONT_BOOK_FAMILY,  weight='regular',  size=8)
 TICK_FP      = FontProperties(family=FONT_BOOK_FAMILY,  weight='medium',   size=10)
 FOOTER_FP    = FontProperties(family=FONT_BOOK_FAMILY,  weight='medium', size=10)
-
-# =====================================================
-# NEW: AUTO HEADER IMAGE PIPELINE (team crest + league logo + flag)
-# =====================================================
-
-@st.cache_data(show_spinner=False)
-def _load_remote_png(url: str):
-    try:
-        r = requests.get(url, timeout=6)
-        r.raise_for_status()
-        return plt.imread(io.BytesIO(r.content))
-    except Exception:
-        return None
-
-def _norm_country(name: str) -> str:
-    return unicodedata.normalize("NFKD", str(name)).encode("ascii", "ignore").decode("ascii").strip().lower()
-
-_CC_MAP = {
-    "england": "FLAG_ENG",
-    "scotland": "FLAG_SCT",
-    "wales": "FLAG_WLS",
-    "northern ireland": "FLAG_NIR",
-    "north ireland": "FLAG_NIR",
-}
-
-_TWEMOJI_SPECIAL = {
-    "FLAG_ENG": "1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
-    "FLAG_SCT": "1f3f4-e0067-e0062-e0073-e0063-e0074-e007f",
-    "FLAG_WLS": "1f3f4-e0067-e0062-e0077-e006c-e0073-e007f",
-}
-
-_SPECIAL_FLAG_URLS = {
-    "FLAG_NIR": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Ulster_banner.svg/200px-Ulster_banner.svg.png"
-}
-
-_COUNTRY_OVERRIDES = {
-    # paste your mapping here (optional)
-}
-
-def _twemoji_code_from_cc(cc: str) -> str:
-    a, b = cc.upper()
-    cp1 = 0x1F1E6 + (ord(a) - ord("A"))
-    cp2 = 0x1F1E6 + (ord(b) - ord("A"))
-    return f"{cp1:x}-{cp2:x}"
-
-@st.cache_data(show_spinner=False)
-def _load_twemoji_png_by_code(code: str):
-    try:
-        url = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/{code}.png"
-        r = requests.get(url, timeout=4)
-        r.raise_for_status()
-        return plt.imread(io.BytesIO(r.content))
-    except Exception:
-        return None
-
-@st.cache_data(show_spinner=False)
-def _country_to_iso2_soft(name: str) -> Optional[str]:
-    n = _norm_country(name)
-    if not n:
-        return None
-
-    if n in _COUNTRY_OVERRIDES:
-        return _COUNTRY_OVERRIDES[n]
-
-    try:
-        r = requests.get(
-            "https://restcountries.com/v3.1/name/" + requests.utils.quote(n),
-            params={"fields": "cca2,name"},
-            timeout=4,
-        )
-        if r.status_code != 200:
-            return None
-        data = r.json()
-        if not isinstance(data, list) or not data:
-            return None
-        cca2 = data[0].get("cca2")
-        if isinstance(cca2, str) and len(cca2) == 2:
-            return cca2.lower()
-    except Exception:
-        return None
-    return None
-
-def _birth_country_flag_image(birth_country: Optional[str]):
-    if not birth_country:
-        return None
-    norm = _norm_country(birth_country)
-
-    key = _CC_MAP.get(norm)
-
-    if key is None and norm in _COUNTRY_OVERRIDES:
-        cc = _COUNTRY_OVERRIDES[norm]
-        if cc is None:
-            return None
-        key = cc
-
-    if key is None:
-        iso2 = _country_to_iso2_soft(birth_country)
-        if iso2:
-            key = iso2
-
-    if key is None:
-        return None
-
-    if key in _TWEMOJI_SPECIAL:
-        return _load_twemoji_png_by_code(_TWEMOJI_SPECIAL[key])
-    if key in _SPECIAL_FLAG_URLS:
-        return _load_remote_png(_SPECIAL_FLAG_URLS[key])
-    if isinstance(key, str) and len(key) == 2:
-        return _load_twemoji_png_by_code(_twemoji_code_from_cc(key))
-    return None
-
-BADGE_DIRS = [
-    Path.cwd() / "badges",
-    Path.cwd() / "crests",
-]
-for d in BADGE_DIRS:
-    try:
-        d.mkdir(exist_ok=True)
-    except Exception:
-        pass
-
-def _clean_filename(name: str) -> str:
-    return re.sub(r"[^a-zA-Z0-9]+", "_", (name or "").lower()).strip("_")
-
-@st.cache_data(show_spinner=False)
-def _load_local_badge(team: str):
-    key = _clean_filename(team)
-    if not key:
-        return None
-    for folder in BADGE_DIRS:
-        for ext in (".png", ".jpg", ".jpeg", ".webp"):
-            p = folder / f"{key}{ext}"
-            if p.exists():
-                try:
-                    return plt.imread(str(p))
-                except Exception:
-                    continue
-    return None
-
-def _get_fotmob_url(team: str) -> str:
-    return (_FZ_FOTMOB_TEAM_URLS.get(team) or "").strip()
-
-def _fotmob_team_id_from_url(team_url: str) -> str:
-    m = re.search(r"/teams/(\d+)/", str(team_url or ""))
-    return m.group(1) if m else ""
-
-def _fotmob_crest_url(team: str) -> str:
-    team_url = _get_fotmob_url(team)
-    tid = _fotmob_team_id_from_url(team_url)
-    return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png" if tid else ""
-
-@st.cache_data(show_spinner=False)
-def _load_fotmob_crest(team: str):
-    url = _fotmob_crest_url(team)
-    if not url:
-        return None
-    return _load_remote_png(url)
-
-def _get_team_badge_img(player_row_like):
-    team = _safe_get(player_row_like, "Team", "").strip()
-    img = _load_local_badge(team)
-    if img is not None:
-        return img
-    crest = _load_fotmob_crest(team)
-    if crest is not None:
-        return crest
-
-    birth = (
-        _safe_get(player_row_like, "Birth country", "") or
-        _safe_get(player_row_like, "Birth Country", "") or
-        _safe_get(player_row_like, "Nationality", "")
-    )
-    return _birth_country_flag_image(birth)
-
-def _get_league_logo_img(player_row_like):
-    league = _safe_get(player_row_like, "League", "").strip()
-    url = (get_league_logo_url(league) or "").strip()
-    if not url:
-        return None
-    return _load_remote_png(url)
-
-def _mplimg_to_pil_rgba(img):
-    if img is None:
-        return None
-    try:
-        arr = np.asarray(img)
-        if arr.ndim == 2:
-            arr = np.stack([arr, arr, arr, np.ones_like(arr)], axis=-1)
-        elif arr.shape[-1] == 3:
-            a = (np.ones((arr.shape[0], arr.shape[1], 1), dtype=arr.dtype)
-                 if arr.dtype != np.uint8 else
-                 (np.ones((arr.shape[0], arr.shape[1], 1), dtype=np.uint8) * 255))
-            arr = np.concatenate([arr, a], axis=-1)
-
-        if arr.dtype != np.uint8:
-            arr = np.clip(arr * 255.0, 0, 255).astype(np.uint8)
-
-        return Image.fromarray(arr, mode="RGBA")
-    except Exception:
-        return None
 
 if player_row.empty:
     st.info("Pick a player above.")
@@ -4689,21 +4459,6 @@ else:
         try: return Image.open(u).convert("RGBA")
         except Exception: return None
 
-    # --- NEW: auto-fallback images (only used if upload missing) ---
-    auto_img1 = auto_img2 = auto_img3 = None
-    if enable_images and auto_images:
-        # rightmost: team crest
-        auto_img1 = _mplimg_to_pil_rgba(_get_team_badge_img(player_row))
-        # middle: league logo (your league_logo_urls.py)
-        auto_img2 = _mplimg_to_pil_rgba(_get_league_logo_img(player_row))
-        # leftmost: flag (birth country / nationality)
-        birth = (
-            _safe_get(player_row, "Birth country", "") or
-            _safe_get(player_row, "Birth Country", "") or
-            _safe_get(player_row, "Nationality", "")
-        )
-        auto_img3 = _mplimg_to_pil_rgba(_birth_country_flag_image(birth))
-
     if enable_images:
         def add_header_image(pil_img, right_index=0):
             if pil_img is None: return
@@ -4722,14 +4477,9 @@ else:
             ax_img = fig.add_axes([x, y, img_box_w, img_box_h])
             ax_img.imshow(pil_img); ax_img.axis("off")
 
-        # uploaded if present, otherwise auto
-        img1 = _open_upload(up_img1) or auto_img1
-        img2 = _open_upload(up_img2) or auto_img2
-        img3 = _open_upload(up_img3) or auto_img3
-
-        add_header_image(img1, right_index=0)
-        add_header_image(img2, right_index=1)
-        add_header_image(img3, right_index=2)
+        add_header_image(_open_upload(up_img1), right_index=0)
+        add_header_image(_open_upload(up_img2), right_index=1)
+        add_header_image(_open_upload(up_img3), right_index=2)
 
     # --- divider a touch lower (headroom) ---
     fig.lines.append(plt.Line2D([LEFT, 1 - RIGHT],
@@ -4793,14 +4543,8 @@ else:
 
     st.pyplot(fig, use_container_width=True)
 
-    buf = BytesIO()
-    fig.savefig(
-        buf,
-        format="png",
-        dpi=(150 if enable_images else 130),
-        bbox_inches="tight",
-        facecolor=fig.get_facecolor()
-    )
+    buf = BytesIO(); fig.savefig(buf, format="png", dpi=(150 if enable_images else 130),
+                                 bbox_inches="tight", facecolor=fig.get_facecolor())
     buf.seek(0)
     st.download_button(
         "⬇️ Download Feature Z (PNG)",
