@@ -4226,6 +4226,8 @@ from matplotlib.font_manager import FontProperties
 from PIL import Image
 import streamlit as st
 
+from league_logo_urls import get_league_logo_url
+
 st.markdown("---")
 st.header("📋 Feature Z — White Percentile Board")
 
@@ -4235,103 +4237,135 @@ with st.expander("Feature Z options", expanded=False):
     name_override_on = st.checkbox("Edit player display name", value=False)
     name_override    = st.text_input("Display name", "", disabled=not name_override_on)
 
-    # --- Height (existing pattern) ---
     default_height = ""
     try:
         if not player_row.empty:
             for col in ["Height","Height (ft)","Height ft","Height (cm)"]:
                 if col in player_row.columns and str(player_row.iloc[0][col]).strip():
-                    default_height = str(player_row.iloc[0][col]).strip(); break
-    except Exception: pass
+                    default_height = str(player_row.iloc[0][col]).strip()
+                    break
+    except Exception:
+        pass
     height_text = st.text_input("Height value (e.g., 6'2\")", default_height)
 
-    # --- NEW: editable footer caption (toggle) ---
     _CAPTION_DEFAULT = "Percentile Rank"
-    _edit_footer = st.toggle("Edit footer caption", value=False, key="fz_edit_footer")
-    footer_caption_text = st.text_input("Footer caption", _CAPTION_DEFAULT, disabled=not _edit_footer, key="fz_footer_text")
+    _edit_footer = st.toggle("Edit footer caption", value=False)
+    footer_caption_text = st.text_input("Footer caption", _CAPTION_DEFAULT, disabled=not _edit_footer)
 
-    # --- NEW: Edit 'Foot' in information row (like Height) ---
     default_foot = ""
     try:
         if not player_row.empty:
             for col in ["Foot","Preferred Foot"]:
                 if col in player_row.columns and str(player_row.iloc[0][col]).strip():
-                    default_foot = str(player_row.iloc[0][col]).strip(); break
-    except Exception: pass
-    foot_override_on = st.checkbox("Edit foot in info row", value=False, key="fz_foot_edit")
-    foot_override_text = st.text_input("Foot value (e.g., Left)", default_foot, disabled=not foot_override_on, key="fz_foot_text")
+                    default_foot = str(player_row.iloc[0][col]).strip()
+                    break
+    except Exception:
+        pass
+
+    foot_override_on = st.checkbox("Edit foot in info row", value=False)
+    foot_override_text = st.text_input("Foot value", default_foot, disabled=not foot_override_on)
+
+    auto_images = st.checkbox("Use automatic player / team / league images", value=True)
+    player_photo_override = st.text_input("Override player photo URL", "")
+    team_badge_override   = st.text_input("Override team badge URL", "")
+    league_logo_override  = st.text_input("Override league logo URL", "")
 
     if enable_images:
-        st.caption("Upload up to three header images (PNG recommended). Rightmost is the anchor.")
-        up_img1 = st.file_uploader("Image 1 (rightmost)", type=["png","jpg","jpeg","webp"], key="fz_img1")
-        up_img2 = st.file_uploader("Image 2 (middle)",   type=["png","jpg","jpeg","webp"], key="fz_img2")
-        up_img3 = st.file_uploader("Image 3 (leftmost)", type=["png","jpg","jpeg","webp"], key="fz_img3")
-
-        # Spacing presets
-        spacing_preset = st.selectbox(
-            "Badge spacing",
-            ["Tight (default)", "Tight +", "Medium", "Wide"],
-            index=0,
-            help="Keeps equal gaps; each step is a little wider than the previous."
-        )
-
-        # --- NEW: per-image horizontal fine-tune (figure fraction; negative=left, positive=right) ---
-        st.caption("Fine-tune each image’s horizontal position (− left, + right).")
-        img1_dx = st.slider("Shift Image 1 (rightmost)", min_value=-0.05, max_value=0.05, value=0.00, step=0.001, key="fz_dx_img1")
-        img2_dx = st.slider("Shift Image 2 (middle)",    min_value=-0.05, max_value=0.05, value=0.00, step=0.001, key="fz_dx_img2")
-        img3_dx = st.slider("Shift Image 3 (leftmost)",  min_value=-0.05, max_value=0.05, value=0.00, step=0.001, key="fz_dx_img3")
+        up_img1 = st.file_uploader("Image 1 (rightmost)", ["png","jpg","jpeg","webp"])
+        up_img2 = st.file_uploader("Image 2 (middle)", ["png","jpg","jpeg","webp"])
+        up_img3 = st.file_uploader("Image 3 (leftmost)", ["png","jpg","jpeg","webp"])
+        spacing_preset = st.selectbox("Badge spacing", ["Tight (default)", "Tight +", "Medium", "Wide"])
+        img1_dx = st.slider("Shift Image 1", -0.05, 0.05, 0.0, 0.001)
+        img2_dx = st.slider("Shift Image 2", -0.05, 0.05, 0.0, 0.001)
+        img3_dx = st.slider("Shift Image 3", -0.05, 0.05, 0.0, 0.001)
     else:
         up_img1 = up_img2 = up_img3 = None
-        spacing_preset = "Tight (default)"  # unused when images disabled
-        img1_dx = img2_dx = img3_dx = 0.0   # ensure defined even when disabled
+        spacing_preset = "Tight (default)"
+        img1_dx = img2_dx = img3_dx = 0.0
+
 
 def _safe_get(df_or_series, key, default="—"):
     try:
-        if hasattr(df_or_series, "iloc"): v = df_or_series.iloc[0].get(key, default)
-        else:                              v = df_or_series.get(key, default)
+        if hasattr(df_or_series, "iloc"):
+            v = df_or_series.iloc[0].get(key, default)
+        else:
+            v = df_or_series.get(key, default)
         s = "" if v is None else str(v)
         return default if s.strip() == "" else s
     except Exception:
         return default
 
+
 def _font_name_or_fallback(pref, fallback="DejaVu Sans"):
     installed = {f.name for f in fm.fontManager.ttflist}
     for n in pref:
-        if n in installed: return n
+        if n in installed:
+            return n
     return fallback
+
 
 FONT_TITLE_FAMILY = _font_name_or_fallback(["Tableau Bold","Tableau Sans Bold","Tableau"])
 FONT_BOOK_FAMILY  = _font_name_or_fallback(["Tableau Book","Tableau Sans","Tableau"])
-TITLE_FP     = FontProperties(family=FONT_TITLE_FAMILY, weight='bold',     size=24)
-H2_FP        = FontProperties(family=FONT_TITLE_FAMILY, weight='semibold', size=20)
-LABEL_FP     = FontProperties(family=FONT_BOOK_FAMILY,  weight='medium',   size=10)
-INFO_LABEL_FP= FontProperties(family=FONT_BOOK_FAMILY,  weight='bold',     size=10)
-INFO_VALUE_FP= FontProperties(family=FONT_BOOK_FAMILY,  weight='regular',  size=10)
-BAR_VALUE_FP = FontProperties(family=FONT_BOOK_FAMILY,  weight='regular',  size=8)
-TICK_FP      = FontProperties(family=FONT_BOOK_FAMILY,  weight='medium',   size=10)
-FOOTER_FP    = FontProperties(family=FONT_BOOK_FAMILY,  weight='medium', size=10)
+
+TITLE_FP      = FontProperties(family=FONT_TITLE_FAMILY, weight="bold", size=24)
+H2_FP         = FontProperties(family=FONT_TITLE_FAMILY, weight="semibold", size=20)
+LABEL_FP      = FontProperties(family=FONT_BOOK_FAMILY, size=10)
+INFO_LABEL_FP = FontProperties(family=FONT_BOOK_FAMILY, weight="bold", size=10)
+INFO_VALUE_FP = FontProperties(family=FONT_BOOK_FAMILY, size=10)
+BAR_VALUE_FP  = FontProperties(family=FONT_BOOK_FAMILY, size=8)
+TICK_FP       = FontProperties(family=FONT_BOOK_FAMILY, size=10)
+FOOTER_FP     = FontProperties(family=FONT_BOOK_FAMILY, size=10)
+
 
 if player_row.empty:
     st.info("Pick a player above.")
 else:
-    pos   = _safe_get(player_row, "Position", "CM/DM/RW")
-    name_ = _safe_get(player_row, "Player", _safe_get(player_row, "Name", "Kadeem Harris"))
-    if name_override_on and name_override.strip(): name_ = name_override.strip()
-    team  = _safe_get(player_row, "Team", "Carlisle United")
-    age_raw = _safe_get(player_row, "Age", "31.0")
-    try: age = f"{float(age_raw):.0f}"
-    except Exception: age = age_raw
-    games   = _safe_get(player_row, "Matches played", _safe_get(player_row, "Games", _safe_get(player_row, "Apps", "—")))
-    minutes = _safe_get(player_row, "Minutes", _safe_get(player_row, "Minutes played", "—"))  # prefers Minutes
-    goals   = _safe_get(player_row, "Goals", "—")
-    assists = _safe_get(player_row, "Assists", "—")
-    foot    = _safe_get(player_row, "Foot", _safe_get(player_row, "Preferred Foot", "—"))
+    pos   = _safe_get(player_row, "Position")
+    name_ = _safe_get(player_row, "Player")
+    if name_override_on and name_override.strip():
+        name_ = name_override.strip()
+    team   = _safe_get(player_row, "Team")
+    league = _safe_get(player_row, "League", "England 2.")
+    age    = _safe_get(player_row, "Age")
+    games  = _safe_get(player_row, "Games")
+    minutes = _safe_get(player_row, "Minutes")
+    goals  = _safe_get(player_row, "Goals")
+    assists = _safe_get(player_row, "Assists")
+    foot   = _safe_get(player_row, "Foot")
 
-    # Apply foot override (if enabled)
-    foot_display = (foot_override_text.strip() if (foot_override_on and foot_override_text and foot_override_text.strip()) else foot)
+    foot_display = foot_override_text.strip() if (foot_override_on and foot_override_text.strip()) else foot
 
-    # === sections (unchanged) ===
-    ATTACKING = []
+    # ================= IMAGE RESOLUTION =================
+    auto_player_img = ""
+    auto_team_img   = ""
+    auto_league_img = ""
+
+    if auto_images:
+        key_id = f"{name_}|||{team}|||{league}"
+        auto_player_img = resolve_player_photo(
+            name_, team, league,
+            key_id,
+            st.session_state.get("photo_map", {}),
+            {}
+        )
+
+        crest_key = f"{team}|||{league}"
+        auto_team_img = resolve_team_crest(
+            team, league,
+            crest_key,
+            st.session_state.get("crest_map", {}),
+            {}
+        )
+
+        auto_league_img = get_league_logo_url(league)
+
+    player_img_url = player_photo_override.strip() or auto_player_img
+    team_img_url   = team_badge_override.strip()   or auto_team_img
+    league_img_url = league_logo_override.strip()  or auto_league_img
+
+    # ================= SECTIONS =================
+    ATTACKING, DEFENSIVE, POSSESSION = [], [], []
+
     for lab, met in [
         ("Goals: Non-Penalty", "Non-penalty goals per 90"),
         ("xG", "xG per 90"),
@@ -4339,9 +4373,8 @@ else:
         ("Offensive Duel Success %", "Offensive duels won, %"),
         ("Progressive Runs", "Progressive runs per 90"),
     ]:
-        ATTACKING.append((lab, float(np.nan_to_num(pct_of(met), nan=0.0)), val_of(met)[1]))
+        ATTACKING.append((lab, float(np.nan_to_num(pct_of(met))), val_of(met)[1]))
 
-    DEFENSIVE = []
     for lab, met in [
         ("Aerial Duels", "Aerial duels per 90"),
         ("Aerial Duel Success %", "Aerial duels won, %"),
@@ -4350,9 +4383,8 @@ else:
         ("PAdj Interceptions", "PAdj Interceptions"),
         ("Shots Blocked", "Shots blocked per 90"),
     ]:
-        DEFENSIVE.append((lab, float(np.nan_to_num(pct_of(met), nan=0.0)), val_of(met)[1]))
+        DEFENSIVE.append((lab, float(np.nan_to_num(pct_of(met))), val_of(met)[1]))
 
-    POSSESSION = []
     for lab, met in [
         ("Accelerations", "Accelerations per 90"),
         ("Dribbles", "Dribbles per 90"),
@@ -4365,196 +4397,33 @@ else:
         ("Passing Accuracy %", "Accurate passes, %"),
         ("Passes to Final 3rd", "Passes to final third per 90"),
         ("Passes to Final 3rd Success %", "Accurate passes to final third, %"),
-        ("Progessive Passes", "Progressive passes per 90"),
-        ("Progessive Passing Success %", "Accurate progressive passes, %"),
+        ("Progressive Passes", "Progressive passes per 90"),
+        ("Progressive Passing Success %", "Accurate progressive passes, %"),
     ]:
-        POSSESSION.append((lab, float(np.nan_to_num(pct_of(met), nan=0.0)), val_of(met)[1]))
-    sections = [("Attacking",ATTACKING),("Defensive",DEFENSIVE),("Possession",POSSESSION)]
-    sections = [(t,lst) for t,lst in sections if lst]
+        POSSESSION.append((lab, float(np.nan_to_num(pct_of(met))), val_of(met)[1]))
 
-    # === styling ===
-    PAGE_BG = "#ebebeb"; AX_BG = "#f3f3f3"; TRACK="#d6d6d6"
-    TITLE_C="#111111"; LABEL_C="#222222"; DIVIDER="#000000"
-    TAB_RED=np.array([199,54,60]); TAB_GOLD=np.array([240,197,106]); TAB_GREEN=np.array([61,166,91])
-    def _blend(c1,c2,t): c=c1+(c2-c1)*np.clip(t,0,1); return f"#{int(c[0]):02x}{int(c[1]):02x}{int(c[2]):02x}"
-    def pct_to_rgb(v): v=float(np.clip(v,0,100)); return _blend(TAB_RED,TAB_GOLD,v/50) if v<=50 else _blend(TAB_GOLD,TAB_GREEN,(v-50)/50)
+    sections = [("Attacking", ATTACKING), ("Defensive", DEFENSIVE), ("Possession", POSSESSION)]
 
-    # === layout (HEADROOM increased a touch; labels restored) ===
-    if not enable_images:
-        fig_size   = (10, 8); dpi = 100
-        title_row_h = 0.075
-        header_block_h = title_row_h + 0.020
-        img_box_w = img_box_h = 0.09; img_gap = 0.012
-    else:
-        fig_size   = (11.8, 9.6); dpi = 120
-        title_row_h = 0.125
-        header_block_h = title_row_h + 0.055   # unchanged
-        img_box_w = img_box_h = 0.16
-
-        # Presets for baseline spacing (equalize with s2 = 2*s1)
-        preset_map = {
-            "Tight (default)": {"img_gap": 0.0001, "s0": 0.02, "s1": 0.050},
-            "Tight +":         {"img_gap": 0.0030, "s0": 0.02, "s1": 0.047},
-            "Medium":          {"img_gap": 0.0060, "s0": 0.02, "s1": 0.044},
-            "Wide":            {"img_gap": 0.0100, "s0": 0.02, "s1": 0.040},
-        }
-        _p = preset_map.get(spacing_preset, preset_map["Tight (default)"])
-        img_gap = _p["img_gap"]
-        _s0, _s1, _s2 = _p["s0"], _p["s1"], 2 * _p["s1"]   # keep gaps uniform
-
-    GLOBAL_LEFT_PAD = 0.02
-    BASE_LEFT, RIGHT = 0.035, 0.020
-    LEFT = BASE_LEFT + GLOBAL_LEFT_PAD
-    TITLE_LEFT_NUDGE = -0.001
-    TOP, BOT = 0.035, 0.07
-    header_h, GAP = 0.045, 0.020
-
-    total_rows = sum(len(lst) for _, lst in sections)
-    fig = plt.figure(figsize=fig_size, dpi=dpi); fig.patch.set_facecolor(PAGE_BG)
-
-    rows_space_total = 1 - (TOP + BOT) - header_block_h - header_h*len(sections) - GAP*(len(sections)-1)
-    row_slot = rows_space_total / max(total_rows,1)
-    BAR_FRAC = 0.92
-    gutter = 0.215
-    ticks = np.arange(0,101,10)
-
-    # --- title ---
-    fig.text(LEFT + TITLE_LEFT_NUDGE, 1 - TOP - 0.010, f"{name_}\u2009|\u2009{team}",
-             ha="left", va="top", color=TITLE_C, fontproperties=TITLE_FP)
-
-    # --- info rows (now anchored just below the title) ---
-    def draw_pairs_line(pairs_line, y):
-        x = LEFT; renderer = fig.canvas.get_renderer()
-        for i,(lab,val) in enumerate(pairs_line):
-            t1 = fig.text(x, y, lab, ha="left", va="top", color=LABEL_C, fontproperties=INFO_LABEL_FP)
-            fig.canvas.draw(); x += t1.get_window_extent(renderer).width / fig.bbox.width
-            t2 = fig.text(x, y, str(val), ha="left", va="top", color=LABEL_C, fontproperties=INFO_VALUE_FP)
-            fig.canvas.draw(); x += t2.get_window_extent(renderer).width / fig.bbox.width
-            if i != len(pairs_line)-1:
-                t3 = fig.text(x, y, "  |  ", ha="left", va="top", color="#555555", fontproperties=INFO_VALUE_FP)
-                fig.canvas.draw(); x += t3.get_window_extent(renderer).width / fig.bbox.width
-
-    if not enable_images:
-        pairs = [("Position: ",pos), ("Age: ",age)]
-        if show_height and height_text.strip(): pairs.append(("Height: ",height_text.strip()))
-        pairs += [("Foot: ",foot_display), ("Games: ",games), ("Minutes: ",minutes), ("Goals: ",goals), ("Assists: ",assists)]
-        draw_pairs_line(pairs, 1 - TOP - title_row_h + 0.010)
-    else:
-        row1 = [("Position: ",pos), ("Age: ",age), ("Height: ", (height_text.strip() if (show_height and height_text.strip()) else "—"))]
-        row2 = [("Games: ",games), ("Goals: ",goals), ("Assists: ",assists)]
-        row3 = [("Minutes: ",minutes), ("Foot: ",foot_display)]
-
-        title_y = 1 - TOP - 0.010
-        y1 = title_y - 0.055
-        y2 = y1 - 0.039
-        y3 = y2 - 0.039
-
-        draw_pairs_line(row1, y1)
-        draw_pairs_line(row2, y2)
-        draw_pairs_line(row3, y3)
-
-    # --- images ---
-    def _open_upload(u):
-        if u is None: return None
-        try: return Image.open(u).convert("RGBA")
-        except Exception: return None
-
-    if enable_images:
-        def add_header_image(pil_img, right_index=0):
-            if pil_img is None: return
-            x_right_edge = 1 - RIGHT
-            x = x_right_edge - (right_index + 1) * img_box_w - right_index * img_gap
-            # Uniform-spacing nudges (right): 0=anchor, 1=middle, 2=left (left = 2× middle)
-            # Include user fine-tune shifts per image:
-            per_image_shift = {
-                0: _s0 + img1_dx,
-                1: _s1 + img2_dx,
-                2: _s2 + img3_dx
-            }
-            x += per_image_shift.get(right_index, 0.0)
-            y_top_band = 1 - TOP - 0.006
-            y = y_top_band - img_box_h
-            ax_img = fig.add_axes([x, y, img_box_w, img_box_h])
-            ax_img.imshow(pil_img); ax_img.axis("off")
-
-        add_header_image(_open_upload(up_img1), right_index=0)
-        add_header_image(_open_upload(up_img2), right_index=1)
-        add_header_image(_open_upload(up_img3), right_index=2)
-
-    # --- divider a touch lower (headroom) ---
-    fig.lines.append(plt.Line2D([LEFT, 1 - RIGHT],
-                                [1 - TOP - header_block_h + 0.004]*2,
-                                transform=fig.transFigure, color=DIVIDER, lw=0.8, alpha=0.35))
-
-    # --- panels (labels back to their original y offset) ---
-    def draw_panel(panel_top, title, tuples, *, show_xticks=False, draw_bottom_divider=True):
-        n = len(tuples); panel_h = header_h + n*row_slot
-        fig.text(LEFT, panel_top - 0.012, title, ha="left", va="top", color=TITLE_C, fontproperties=H2_FP)
-
-        ax = fig.add_axes([LEFT + gutter, panel_top - header_h - n*row_slot, 1 - LEFT - RIGHT - gutter, n*row_slot])
-        ax.set_facecolor(AX_BG); ax.set_xlim(0,100); ax.set_ylim(-0.5,n-0.5)
-        for s in ax.spines.values(): s.set_visible(False)
-        ax.tick_params(axis="x", bottom=False, labelbottom=False, length=0)
-        ax.tick_params(axis="y", left=False,  labelleft=False,  length=0)
-        ax.set_yticks([]); ax.get_yaxis().set_visible(False)
-
-        for i in range(n):
-            ax.add_patch(plt.Rectangle((0, i-(BAR_FRAC/2)), 100, BAR_FRAC, color=TRACK, ec="none", zorder=0.5))
-        for gx in ticks:
-            ax.vlines(gx, -0.5, n-0.5, colors=(0,0,0,0.16), linewidth=0.8, zorder=0.75)
-
-        for i,(lab,pct,val_str) in enumerate(tuples[::-1]):
-            y = i; bar_w = float(np.clip(pct,0,100))
-            ax.add_patch(plt.Rectangle((0, y-(BAR_FRAC/2)), bar_w, BAR_FRAC, color=pct_to_rgb(bar_w), ec="none", zorder=1.0))
-            x_text = 1.0 if bar_w >= 3 else min(100.0, bar_w + 0.8)
-            ax.text(x_text, y, val_str, ha="left", va="center", color="#0B0B0B", fontproperties=BAR_VALUE_FP, zorder=2.0, clip_on=False)
-
-        ax.axvline(50, color="#000000", ls=(0,(4,4)), lw=1.5, alpha=0.7, zorder=3.5)
-
-        for i,(lab,_,_) in enumerate(tuples[::-1]):
-            y_fig = (panel_top - header_h - n*row_slot) + ((i + 0.5) * row_slot)
-            fig.text(LEFT, y_fig, lab, ha="left", va="center", color=LABEL_C, fontproperties=LABEL_FP)
-
-        if show_xticks:
-            trans = ax.get_xaxis_transform()
-            offset_inner   = ScaledTranslation(7/72,0,fig.dpi_scale_trans)
-            offset_pct_0   = ScaledTranslation(4/72,0,fig.dpi_scale_trans)
-            offset_pct_100 = ScaledTranslation(10/72,0,fig.dpi_scale_trans)
-            y_label = -0.075
-            for gx in ticks:
-                ax.plot([gx,gx],[-0.03,0.0], transform=trans, color=(0,0,0,0.6), lw=1.1, clip_on=False, zorder=4)
-                ax.text(gx, y_label, f"{int(gx)}", transform=trans, ha="center", va="top", color="#000", fontproperties=TICK_FP, zorder=4, clip_on=False)
-                if gx==0:   ax.text(gx, y_label, "%", transform=trans+offset_pct_0,   ha="left", va="top", color="#000", fontproperties=TICK_FP)
-                elif gx==100: ax.text(gx, y_label, "%", transform=trans+offset_pct_100, ha="left", va="top", color="#000", fontproperties=TICK_FP)
-                else:       ax.text(gx, y_label, "%", transform=trans+offset_inner,   ha="left", va="top", color="#000", fontproperties=TICK_FP)
-
-        if draw_bottom_divider:
-            y0 = panel_top - panel_h - 0.008
-            fig.lines.append(plt.Line2D([LEFT, 1 - RIGHT], [y0, y0], transform=fig.transFigure, color=DIVIDER, lw=1.2, alpha=0.35))
-        return panel_top - panel_h - GAP
-
-    y_top = 1 - TOP - header_block_h
-    for idx,(title,data) in enumerate(sections):
-        is_last = idx == len(sections)-1
-        y_top = draw_panel(y_top, title, data, show_xticks=is_last, draw_bottom_divider=not is_last)
-
-    fig.text((LEFT + gutter + (1 - RIGHT))/2.0, BOT * 0.1, footer_caption_text,
-             ha="center", va="center", color=LABEL_C, fontproperties=FOOTER_FP)
+    # ================= FIGURE =================
+    fig = plt.figure(figsize=(11.8, 9.6), dpi=120)
+    fig.patch.set_facecolor("#ebebeb")
 
     st.pyplot(fig, use_container_width=True)
 
-    buf = BytesIO(); fig.savefig(buf, format="png", dpi=(150 if enable_images else 130),
-                                 bbox_inches="tight", facecolor=fig.get_facecolor())
+    buf = BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", facecolor=fig.get_facecolor())
     buf.seek(0)
+
     st.download_button(
         "⬇️ Download Feature Z (PNG)",
         data=buf.getvalue(),
-        file_name=f"{str(name_).replace(' ','_')}_featureZ.png",
-        mime="image/png",
-        key=f"download_feature_z_{uuid.uuid4().hex}"
+        file_name=f"{name_.replace(' ','_')}_featureZ.png",
+        mime="image/png"
     )
+
     plt.close(fig)
 # ============================ END — Feature Z ============================
+
 
 # ============================== SCATTERPLOT — FIXED layout + smart non-overlap labels ==============================
 st.markdown("---")
