@@ -4226,6 +4226,38 @@ from matplotlib.font_manager import FontProperties
 from PIL import Image
 import streamlit as st
 
+# --- NEW (auto header image fetching, same system style as your other feature) ---
+import io
+import re
+from pathlib import Path
+from typing import Optional
+import requests
+import inspect
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+
+# --- NEW: league logo lookup file you added ---
+try:
+    from league_logo_urls import get_league_logo_url
+except Exception:
+    def get_league_logo_url(_league: str) -> str:
+        return ""
+
+# --- NEW: optional FotMob team URL mapping (same pattern as your other feature) ---
+try:
+    from team_fotmob_urls import FOTMOB_TEAM_URLS as _FZ_FOTMOB_TEAM_URLS
+except Exception:
+    _FZ_FOTMOB_TEAM_URLS = {}
+
+# --- NEW: optional player photo URL mapping (recommended)
+# You can create player_photo_urls.py with:
+#   PLAYER_PHOTO_URLS = {"Player Name": "https://...png/jpg"}
+#   def get_player_photo_url(player: str, team: str = "", league: str = "") -> str: ...
+try:
+    from player_photo_urls import get_player_photo_url as _get_player_photo_url_user
+except Exception:
+    _get_player_photo_url_user = None
+
+
 st.markdown("---")
 st.header("📋 Feature Z — White Percentile Board")
 
@@ -4262,6 +4294,13 @@ with st.expander("Feature Z options", expanded=False):
     foot_override_text = st.text_input("Foot value (e.g., Left)", default_foot, disabled=not foot_override_on, key="fz_foot_text")
 
     if enable_images:
+        # --- NEW: auto images toggle (falls back only if upload is missing) ---
+        auto_images = st.checkbox(
+            "Auto header images (team crest / league logo / player photo) if not uploaded",
+            value=True,
+            help="Uses the same remote-fetch approach as your other feature; uploads override auto."
+        )
+
         st.caption("Upload up to three header images (PNG recommended). Rightmost is the anchor.")
         up_img1 = st.file_uploader("Image 1 (rightmost)", type=["png","jpg","jpeg","webp"], key="fz_img1")
         up_img2 = st.file_uploader("Image 2 (middle)",   type=["png","jpg","jpeg","webp"], key="fz_img2")
@@ -4284,6 +4323,8 @@ with st.expander("Feature Z options", expanded=False):
         up_img1 = up_img2 = up_img3 = None
         spacing_preset = "Tight (default)"  # unused when images disabled
         img1_dx = img2_dx = img3_dx = 0.0   # ensure defined even when disabled
+        auto_images = False                 # ensure defined even when disabled
+
 
 def _safe_get(df_or_series, key, default="—"):
     try:
@@ -4310,6 +4351,174 @@ INFO_VALUE_FP= FontProperties(family=FONT_BOOK_FAMILY,  weight='regular',  size=
 BAR_VALUE_FP = FontProperties(family=FONT_BOOK_FAMILY,  weight='regular',  size=8)
 TICK_FP      = FontProperties(family=FONT_BOOK_FAMILY,  weight='medium',   size=10)
 FOOTER_FP    = FontProperties(family=FONT_BOOK_FAMILY,  weight='medium', size=10)
+
+
+# =====================================================
+# NEW: AUTO HEADER IMAGE PIPELINE (team crest + league logo + player photo)
+# =====================================================
+
+@st.cache_data(show_spinner=False)
+def _load_remote_png(url: str):
+    try:
+        r = requests.get(url, timeout=6)
+        r.raise_for_status()
+        return plt.imread(io.BytesIO(r.content))
+    except Exception:
+        return None
+
+BADGE_DIRS = [
+    Path.cwd() / "badges",
+    Path.cwd() / "crests",
+]
+for d in BADGE_DIRS:
+    try:
+        d.mkdir(exist_ok=True)
+    except Exception:
+        pass
+
+def _clean_filename(name: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9]+", "_", (name or "").lower()).strip("_")
+
+@st.cache_data(show_spinner=False)
+def _load_local_badge(team: str):
+    key = _clean_filename(team)
+    if not key:
+        return None
+    for folder in BADGE_DIRS:
+        for ext in (".png", ".jpg", ".jpeg", ".webp"):
+            p = folder / f"{key}{ext}"
+            if p.exists():
+                try:
+                    return plt.imread(str(p))
+                except Exception:
+                    continue
+    return None
+
+def _get_fotmob_url(team: str) -> str:
+    return (_FZ_FOTMOB_TEAM_URLS.get(team) or "").strip()
+
+def _fotmob_team_id_from_url(team_url: str) -> str:
+    m = re.search(r"/teams/(\d+)/", str(team_url or ""))
+    return m.group(1) if m else ""
+
+def _fotmob_crest_url(team: str) -> str:
+    team_url = _get_fotmob_url(team)
+    tid = _fotmob_team_id_from_url(team_url)
+    return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png" if tid else ""
+
+@st.cache_data(show_spinner=False)
+def _load_fotmob_crest(team: str):
+    url = _fotmob_crest_url(team)
+    if not url:
+        return None
+    return _load_remote_png(url)
+
+def _get_team_badge_img(player_row_like):
+    team = _safe_get(player_row_like, "Team", "").strip()
+
+    # 1) Local badge first
+    img = _load_local_badge(team)
+    if img is not None:
+        return img
+
+    # 2) FotMob crest fallback
+    crest = _load_fotmob_crest(team)
+    if crest is not None:
+        return crest
+
+    return None
+
+def _get_league_logo_img(player_row_like):
+    league = _safe_get(player_row_like, "League", "").strip()
+    url = (get_league_logo_url(league) or "").strip()
+    if not url:
+        return None
+    return _load_remote_png(url)
+
+def _call_user_player_photo_fn(player: str, team: str, league: str) -> str:
+    if _get_player_photo_url_user is None:
+        return ""
+    try:
+        sig = inspect.signature(_get_player_photo_url_user)
+        n = len(sig.parameters)
+        if n <= 0:
+            return ""
+        if n == 1:
+            return str(_get_player_photo_url_user(player) or "")
+        if n == 2:
+            return str(_get_player_photo_url_user(player, team) or "")
+        return str(_get_player_photo_url_user(player, team, league) or "")
+    except Exception:
+        try:
+            return str(_get_player_photo_url_user(player) or "")
+        except Exception:
+            return ""
+
+def _get_player_photo_img(player_row_like):
+    """
+    Priority:
+      1) URL columns in dataset (Photo/Headshot/Image/etc.)
+      2) player_photo_urls.py (optional) via get_player_photo_url(...)
+    """
+    # 1) try common URL columns
+    candidate_cols = [
+        "Photo", "Photo URL", "PhotoUrl",
+        "Headshot", "Headshot URL", "HeadshotUrl",
+        "Image", "Image URL", "ImageUrl",
+        "Player Image", "Player Image URL",
+        "Player photo", "Player photo URL",
+        "Portrait", "Portrait URL",
+        "profile_image", "profile_image_url",
+    ]
+    url = ""
+    try:
+        cols = set(getattr(player_row_like, "columns", []))
+        for c in candidate_cols:
+            if c in cols:
+                u = _safe_get(player_row_like, c, "")
+                if str(u).strip():
+                    url = str(u).strip()
+                    break
+    except Exception:
+        pass
+
+    # 2) optional mapping function file
+    if not url:
+        player = _safe_get(player_row_like, "Player", _safe_get(player_row_like, "Name", "")).strip()
+        team   = _safe_get(player_row_like, "Team", "").strip()
+        league = _safe_get(player_row_like, "League", "").strip()
+        url = _call_user_player_photo_fn(player, team, league).strip()
+
+    if not url:
+        return None
+
+    # If url is something like "//..." fix
+    if url.startswith("//"):
+        url = "https:" + url
+
+    # Fetch image
+    return _load_remote_png(url)
+
+def _mplimg_to_pil_rgba(img):
+    if img is None:
+        return None
+    try:
+        arr = np.asarray(img)
+        if arr.ndim == 2:
+            arr = np.stack([arr, arr, arr, np.ones_like(arr)], axis=-1)
+        elif arr.shape[-1] == 3:
+            a = (np.ones((arr.shape[0], arr.shape[1], 1), dtype=arr.dtype)
+                 if arr.dtype != np.uint8 else
+                 (np.ones((arr.shape[0], arr.shape[1], 1), dtype=np.uint8) * 255))
+            arr = np.concatenate([arr, a], axis=-1)
+
+        if arr.dtype != np.uint8:
+            arr = np.clip(arr * 255.0, 0, 255).astype(np.uint8)
+
+        return Image.fromarray(arr, mode="RGBA")
+    except Exception:
+        return None
+
 
 if player_row.empty:
     st.info("Pick a player above.")
@@ -4459,6 +4668,16 @@ else:
         try: return Image.open(u).convert("RGBA")
         except Exception: return None
 
+    # --- NEW: auto-fallback images (only used if upload missing) ---
+    auto_img1 = auto_img2 = auto_img3 = None
+    if enable_images and auto_images:
+        # rightmost: team crest
+        auto_img1 = _mplimg_to_pil_rgba(_get_team_badge_img(player_row))
+        # middle: league logo (your league_logo_urls.py)
+        auto_img2 = _mplimg_to_pil_rgba(_get_league_logo_img(player_row))
+        # leftmost: player photo (NOT flag)
+        auto_img3 = _mplimg_to_pil_rgba(_get_player_photo_img(player_row))
+
     if enable_images:
         def add_header_image(pil_img, right_index=0):
             if pil_img is None: return
@@ -4477,9 +4696,14 @@ else:
             ax_img = fig.add_axes([x, y, img_box_w, img_box_h])
             ax_img.imshow(pil_img); ax_img.axis("off")
 
-        add_header_image(_open_upload(up_img1), right_index=0)
-        add_header_image(_open_upload(up_img2), right_index=1)
-        add_header_image(_open_upload(up_img3), right_index=2)
+        # uploaded if present, otherwise auto
+        img1 = _open_upload(up_img1) or auto_img1
+        img2 = _open_upload(up_img2) or auto_img2
+        img3 = _open_upload(up_img3) or auto_img3
+
+        add_header_image(img1, right_index=0)
+        add_header_image(img2, right_index=1)
+        add_header_image(img3, right_index=2)
 
     # --- divider a touch lower (headroom) ---
     fig.lines.append(plt.Line2D([LEFT, 1 - RIGHT],
@@ -4543,8 +4767,14 @@ else:
 
     st.pyplot(fig, use_container_width=True)
 
-    buf = BytesIO(); fig.savefig(buf, format="png", dpi=(150 if enable_images else 130),
-                                 bbox_inches="tight", facecolor=fig.get_facecolor())
+    buf = BytesIO()
+    fig.savefig(
+        buf,
+        format="png",
+        dpi=(150 if enable_images else 130),
+        bbox_inches="tight",
+        facecolor=fig.get_facecolor()
+    )
     buf.seek(0)
     st.download_button(
         "⬇️ Download Feature Z (PNG)",
@@ -4555,6 +4785,7 @@ else:
     )
     plt.close(fig)
 # ============================ END — Feature Z ============================
+
 
 # ============================== SCATTERPLOT — FIXED layout + smart non-overlap labels ==============================
 st.markdown("---")
