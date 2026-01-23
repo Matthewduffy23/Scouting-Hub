@@ -3937,6 +3937,34 @@ from matplotlib.font_manager import FontProperties
 from PIL import Image
 import streamlit as st
 
+# --- NEW: auto image fetch helpers ---
+import io
+import re
+import unicodedata
+from difflib import SequenceMatcher
+from pathlib import Path
+import requests
+
+# --- NEW: league logos lookup (your new page) ---
+try:
+    from league_logo_urls import get_league_logo_url
+except Exception:
+    def get_league_logo_url(_league: str) -> str:
+        return ""
+
+# --- NEW: optional FotMob team URL mapping (if you have it) ---
+try:
+    from team_fotmob_urls import FOTMOB_TEAM_URLS as _FZ_FOTMOB_TEAM_URLS
+except Exception:
+    _FZ_FOTMOB_TEAM_URLS = {}
+
+# optional: external getter if you have it
+try:
+    from team_fotmob_urls import get_fotmob_url as _external_get_fotmob_url  # returns "" if not found
+except Exception:
+    _external_get_fotmob_url = None
+
+
 st.markdown("---")
 st.header("📋 Feature Z — White Percentile Board")
 
@@ -3973,6 +4001,19 @@ with st.expander("Feature Z options", expanded=False):
     foot_override_text = st.text_input("Foot value (e.g., Left)", default_foot, disabled=not foot_override_on, key="fz_foot_text")
 
     if enable_images:
+        # --- NEW: auto images toggle (uploads still override) ---
+        auto_images = st.checkbox(
+            "Auto header images (league logo / team badge / player photo) if not uploaded",
+            value=True,
+            key="fz_auto_images"
+        )
+
+        # --- NEW: remove individual images (per slot) ---
+        st.caption("Hide any header image slot (even if uploaded/auto).")
+        hide_img1 = st.checkbox("Hide Image 1 (rightmost / league logo)", value=False, key="fz_hide_img1")
+        hide_img2 = st.checkbox("Hide Image 2 (middle / team badge)",    value=False, key="fz_hide_img2")
+        hide_img3 = st.checkbox("Hide Image 3 (leftmost / player photo)",value=False, key="fz_hide_img3")
+
         st.caption("Upload up to three header images (PNG recommended). Rightmost is the anchor.")
         up_img1 = st.file_uploader("Image 1 (rightmost)", type=["png","jpg","jpeg","webp"], key="fz_img1")
         up_img2 = st.file_uploader("Image 2 (middle)",   type=["png","jpg","jpeg","webp"], key="fz_img2")
@@ -3995,6 +4036,9 @@ with st.expander("Feature Z options", expanded=False):
         up_img1 = up_img2 = up_img3 = None
         spacing_preset = "Tight (default)"  # unused when images disabled
         img1_dx = img2_dx = img3_dx = 0.0   # ensure defined even when disabled
+        auto_images = False
+        hide_img1 = hide_img2 = hide_img3 = False
+
 
 def _safe_get(df_or_series, key, default="—"):
     try:
@@ -4021,6 +4065,271 @@ INFO_VALUE_FP= FontProperties(family=FONT_BOOK_FAMILY,  weight='regular',  size=
 BAR_VALUE_FP = FontProperties(family=FONT_BOOK_FAMILY,  weight='regular',  size=8)
 TICK_FP      = FontProperties(family=FONT_BOOK_FAMILY,  weight='medium',   size=10)
 FOOTER_FP    = FontProperties(family=FONT_BOOK_FAMILY,  weight='medium', size=10)
+
+# ----------------------------
+# NEW: auto image utilities
+# ----------------------------
+def _try_load_img(url: str):
+    """
+    Returns an image array for a valid URL, else None.
+    Robust: uses PIL fallback for JPEG/odd formats.
+    """
+    if not url or not (str(url).startswith("http://") or str(url).startswith("https://")):
+        return None
+    try:
+        r = requests.get(str(url), timeout=12, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200 or not r.content:
+            return None
+
+        # First try matplotlib (works great for PNG)
+        try:
+            return plt.imread(io.BytesIO(r.content))
+        except Exception:
+            pass
+
+        # Fallback: PIL (handles JPEG/WebP/etc)
+        try:
+            im = Image.open(io.BytesIO(r.content)).convert("RGB")
+            return np.array(im)
+        except Exception:
+            return None
+
+    except Exception:
+        return None
+
+def _npimg_to_pil_rgba(arr):
+    if arr is None:
+        return None
+    try:
+        a = np.asarray(arr)
+        if a.ndim == 2:
+            a = np.stack([a, a, a], axis=-1)
+        if a.shape[-1] == 4:
+            if a.dtype != np.uint8:
+                a = np.clip(a * 255.0, 0, 255).astype(np.uint8)
+            return Image.fromarray(a, "RGBA")
+        if a.dtype != np.uint8:
+            a = np.clip(a * 255.0, 0, 255).astype(np.uint8)
+        return Image.fromarray(a, "RGB").convert("RGBA")
+    except Exception:
+        return None
+
+BADGE_DIRS = [
+    Path.cwd() / "badges",
+    Path.cwd() / "crests",
+]
+for d in BADGE_DIRS:
+    try: d.mkdir(exist_ok=True)
+    except Exception: pass
+
+def _clean_filename(name: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9]+", "_", (name or "").lower()).strip("_")
+
+@st.cache_data(show_spinner=False)
+def load_local_badge(team: str):
+    key = _clean_filename(team)
+    if not key:
+        return None
+    for folder in BADGE_DIRS:
+        for ext in (".png", ".jpg", ".jpeg", ".webp"):
+            p = folder / f"{key}{ext}"
+            if p.exists():
+                try:
+                    return plt.imread(str(p))
+                except Exception:
+                    continue
+    return None
+
+def _norm(s: str) -> str:
+    if not s: return ""
+    return unicodedata.normalize("NFKD", str(s)).encode("ascii","ignore").decode("ascii").strip().lower()
+
+def get_fotmob_url(team: str) -> str:
+    """
+    Priority:
+    1) dict from team_fotmob_urls (FOTMOB_TEAM_URLS)
+    2) external get_fotmob_url(team) if present
+    """
+    t = _norm(team)
+    for k, v in (_FZ_FOTMOB_TEAM_URLS or {}).items():
+        if _norm(k) == t and str(v).strip():
+            return str(v).strip()
+    if _external_get_fotmob_url is not None:
+        try:
+            u = _external_get_fotmob_url(team) or ""
+            return str(u).strip()
+        except Exception:
+            pass
+    return ""
+
+def _fotmob_team_id_from_url(team_url: str) -> str:
+    m = re.search(r"/teams/(\d+)/", str(team_url or ""))
+    return m.group(1) if m else ""
+
+def _fotmob_crest_url_from_team_url(team_url: str) -> str:
+    tid = _fotmob_team_id_from_url(team_url)
+    return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png" if tid else ""
+
+def _fotmob_crest_url(team: str) -> str:
+    team_url = get_fotmob_url(team)
+    return _fotmob_crest_url_from_team_url(team_url) if team_url else ""
+
+def load_fotmob_crest(team: str):
+    url = _fotmob_crest_url(team)
+    if not url:
+        return None
+    return _try_load_img(url)
+
+def _auto_team_badge(player_row_like):
+    team = _safe_get(player_row_like, "Team", "").strip()
+    if not team:
+        return None
+    img = load_local_badge(team)
+    if img is not None:
+        return img
+    crest = load_fotmob_crest(team)
+    if crest is not None:
+        return crest
+    return None
+
+def _auto_league_logo(player_row_like):
+    league = _safe_get(player_row_like, "League", "").strip()
+    url = (get_league_logo_url(league) or "").strip()
+    if not url:
+        return None
+    return _try_load_img(url)
+
+def _player_surname(player: str) -> str:
+    p = (player or "").strip()
+    if not p:
+        return ""
+    if "," in p:
+        return p.split(",", 1)[0].strip()
+    parts = p.split()
+    return parts[-1].strip() if parts else ""
+
+def _slug_name(s: str) -> str:
+    if not s:
+        return ""
+    s = str(s).strip().lower()
+    repl = {
+        "ø":"o","œ":"oe","æ":"ae","å":"a","ä":"a","ö":"o","ü":"u",
+        "ß":"ss","ł":"l","đ":"d","ð":"d","þ":"th","ç":"c",
+        "ş":"s","ğ":"g","ı":"i",
+    }
+    for k, v in repl.items():
+        s = s.replace(k, v)
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    s = re.sub(r"[^a-z0-9]+", "", s)
+    return s
+
+def _similar(a: str, b: str) -> float:
+    return SequenceMatcher(None, a, b).ratio()
+
+@st.cache_data(show_spinner=False, ttl=60*60*6)
+def _fotmob_team_squad(team_id: str) -> list[dict]:
+    squad: list[dict] = []
+    if not team_id:
+        return squad
+    try:
+        url = f"https://www.fotmob.com/api/teams?id={team_id}"
+        r = requests.get(url, timeout=12, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200:
+            return squad
+        data = r.json() or {}
+        raw_squad = data.get("squad", None)
+
+        if isinstance(raw_squad, list):
+            for section in raw_squad:
+                members = section.get("members") or section.get("players") or []
+                if isinstance(members, list):
+                    squad.extend([m for m in members if isinstance(m, dict)])
+
+        elif isinstance(raw_squad, dict):
+            for k in ("members", "players"):
+                members = raw_squad.get(k)
+                if isinstance(members, list):
+                    squad.extend([m for m in members if isinstance(m, dict)])
+
+            nested = raw_squad.get("squad")
+            if isinstance(nested, list):
+                for section in nested:
+                    members = section.get("members") or section.get("players") or []
+                    if isinstance(members, list):
+                        squad.extend([m for m in members if isinstance(m, dict)])
+    except Exception:
+        squad = []
+    return squad
+
+def _resolve_fotmob_player_photo_url(player: str, team: str) -> str:
+    team_url = get_fotmob_url(team)
+    tid = _fotmob_team_id_from_url(team_url)
+    if not tid:
+        return ""
+    squad = _fotmob_team_squad(tid)
+
+    target_surname = _slug_name(_player_surname(player))
+    target_full    = _slug_name(player)
+
+    best_id = ""
+
+    # exact surname match first
+    if target_surname:
+        for m in squad:
+            name = m.get("name") or m.get("playerName") or ""
+            pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
+            if not pid:
+                continue
+            if _slug_name(_player_surname(name)) == target_surname:
+                best_id = str(pid)
+                if target_full and target_full in _slug_name(name):
+                    break
+
+    # exact full-name contains
+    if not best_id and target_full:
+        for m in squad:
+            name = m.get("name") or m.get("playerName") or ""
+            pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
+            if not pid:
+                continue
+            if target_full in _slug_name(name):
+                best_id = str(pid)
+                break
+
+    # fuzzy surname fallback
+    if not best_id and target_surname:
+        best_score = 0.0
+        best_pid = ""
+        for m in squad:
+            name = m.get("name") or m.get("playerName") or ""
+            pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
+            if not pid:
+                continue
+            sn = _slug_name(_player_surname(name))
+            sc = _similar(sn, target_surname)
+            if sc > best_score:
+                best_score = sc
+                best_pid = str(pid)
+        if best_score >= 0.86:
+            best_id = best_pid
+
+    if best_id and str(best_id).isdigit():
+        return f"https://images.fotmob.com/image_resources/playerimages/{best_id}.png"
+    return ""
+
+def _auto_player_photo(player_row_like):
+    # IMPORTANT: NO placeholder, if fails -> None
+    player_name = _safe_get(player_row_like, "Player", _safe_get(player_row_like, "Name", "")).strip()
+    team = _safe_get(player_row_like, "Team", "").strip()
+    if not player_name or not team:
+        return None
+    url = _resolve_fotmob_player_photo_url(player_name, team)
+    if not url:
+        return None
+    img = _try_load_img(url)
+    return img  # may be None -> blank
+
 
 if player_row.empty:
     st.info("Pick a player above.")
@@ -4178,12 +4487,20 @@ else:
         except Exception: return None
 
     if enable_images:
+        # Order required:
+        # far left  = player photo
+        # center    = team badge
+        # far right = league logo
+        auto_pil_right = auto_pil_mid = auto_pil_left = None
+        if auto_images:
+            auto_pil_right = _npimg_to_pil_rgba(_auto_league_logo(player_row))
+            auto_pil_mid   = _npimg_to_pil_rgba(_auto_team_badge(player_row))
+            auto_pil_left  = _npimg_to_pil_rgba(_auto_player_photo(player_row))  # may be None; NO placeholder
+
         def add_header_image(pil_img, right_index=0):
             if pil_img is None: return
             x_right_edge = 1 - RIGHT
             x = x_right_edge - (right_index + 1) * img_box_w - right_index * img_gap
-            # Uniform-spacing nudges (right): 0=anchor, 1=middle, 2=left (left = 2× middle)
-            # Include user fine-tune shifts per image:
             per_image_shift = {
                 0: _s0 + img1_dx,
                 1: _s1 + img2_dx,
@@ -4195,9 +4512,22 @@ else:
             ax_img = fig.add_axes([x, y, img_box_w, img_box_h])
             ax_img.imshow(pil_img); ax_img.axis("off")
 
-        add_header_image(_open_upload(up_img1), right_index=0)
-        add_header_image(_open_upload(up_img2), right_index=1)
-        add_header_image(_open_upload(up_img3), right_index=2)
+        # Uploads override each slot:
+        # rightmost slot (img1) = league logo
+        # middle slot   (img2) = team badge
+        # leftmost slot (img3) = player photo
+        pil_right = _open_upload(up_img1) or auto_pil_right
+        pil_mid   = _open_upload(up_img2) or auto_pil_mid
+        pil_left  = _open_upload(up_img3) or auto_pil_left
+
+        # Respect per-slot hide toggles (remove individual images)
+        if hide_img1: pil_right = None
+        if hide_img2: pil_mid   = None
+        if hide_img3: pil_left  = None
+
+        add_header_image(pil_right, right_index=0)
+        add_header_image(pil_mid,   right_index=1)
+        add_header_image(pil_left,  right_index=2)
 
     # --- divider a touch lower (headroom) ---
     fig.lines.append(plt.Line2D([LEFT, 1 - RIGHT],
@@ -4273,6 +4603,7 @@ else:
     )
     plt.close(fig)
 # ============================ END — Feature Z ============================
+
 
 
 
