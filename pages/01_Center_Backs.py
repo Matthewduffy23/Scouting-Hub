@@ -4289,6 +4289,9 @@ with st.expander("Feature Z options", expanded=False):
     foot_override_on = st.checkbox("Edit foot in info row", value=False, key="fz_foot_edit")
     foot_override_text = st.text_input("Foot value (e.g., Left)", default_foot, disabled=not foot_override_on, key="fz_foot_text")
 
+    # ✅ NEW: option to remove ONLY the player photo (left badge), even if auto/ uploaded exists
+    hide_player_photo = st.checkbox("Hide player photo (left badge)", value=False, key="fz_hide_player_photo")
+
     if enable_images:
         # --- NEW: auto images toggle (uploads still override) ---
         auto_images = st.checkbox(
@@ -4347,33 +4350,24 @@ TICK_FP      = FontProperties(family=FONT_BOOK_FAMILY,  weight='medium',   size=
 FOOTER_FP    = FontProperties(family=FONT_BOOK_FAMILY,  weight='medium', size=10)
 
 # ----------------------------
-# NEW: auto image utilities
+# auto image utilities
 # ----------------------------
 def _try_load_img(url: str):
-    """
-    Returns an image array for a valid URL, else None.
-    Robust: uses PIL fallback for JPEG/odd formats.
-    """
     if not url or not (str(url).startswith("http://") or str(url).startswith("https://")):
         return None
     try:
         r = requests.get(str(url), timeout=12, headers={"User-Agent": "Mozilla/5.0"})
         if r.status_code != 200 or not r.content:
             return None
-
-        # First try matplotlib (works great for PNG)
         try:
             return plt.imread(io.BytesIO(r.content))
         except Exception:
             pass
-
-        # Fallback: PIL (handles JPEG/WebP/etc)
         try:
             im = Image.open(io.BytesIO(r.content)).convert("RGB")
             return np.array(im)
         except Exception:
             return None
-
     except Exception:
         return None
 
@@ -4425,11 +4419,6 @@ def _norm(s: str) -> str:
     return unicodedata.normalize("NFKD", str(s)).encode("ascii","ignore").decode("ascii").strip().lower()
 
 def get_fotmob_url(team: str) -> str:
-    """
-    Priority:
-    1) dict from team_fotmob_urls (FOTMOB_TEAM_URLS)
-    2) external get_fotmob_url(team) if present
-    """
     t = _norm(team)
     for k, v in (_FZ_FOTMOB_TEAM_URLS or {}).items():
         if _norm(k) == t and str(v).strip():
@@ -4480,10 +4469,7 @@ def _auto_league_logo(player_row_like):
     return _try_load_img(url)
 
 # ----------------------------
-# NEW: FotMob player photo resolver (same method as your working Pro Layout)
-# - uses https://www.fotmob.com/api/teams?id={team_id}
-# - matches surname/full-name with slug + fuzzy fallback
-# - IMPORTANT: if it can't load -> return None (blank), NO placeholder
+# FotMob player photo resolver (same method as your working Pro Layout)
 # ----------------------------
 def _player_surname(player: str) -> str:
     p = (player or "").strip()
@@ -4560,7 +4546,6 @@ def _resolve_fotmob_player_photo_url(player: str, team: str) -> str:
 
     best_id = ""
 
-    # exact surname match first
     if target_surname:
         for m in squad:
             name = m.get("name") or m.get("playerName") or ""
@@ -4572,7 +4557,6 @@ def _resolve_fotmob_player_photo_url(player: str, team: str) -> str:
                 if target_full and target_full in _slug_name(name):
                     break
 
-    # exact full-name contains
     if not best_id and target_full:
         for m in squad:
             name = m.get("name") or m.get("playerName") or ""
@@ -4583,7 +4567,6 @@ def _resolve_fotmob_player_photo_url(player: str, team: str) -> str:
                 best_id = str(pid)
                 break
 
-    # fuzzy surname fallback
     if not best_id and target_surname:
         best_score = 0.0
         best_pid = ""
@@ -4605,7 +4588,6 @@ def _resolve_fotmob_player_photo_url(player: str, team: str) -> str:
     return ""
 
 def _auto_player_photo(player_row_like):
-    # IMPORTANT: NO placeholder, if fails -> None
     player_name = _safe_get(player_row_like, "Player", _safe_get(player_row_like, "Name", "")).strip()
     team = _safe_get(player_row_like, "Team", "").strip()
     if not player_name or not team:
@@ -4613,8 +4595,7 @@ def _auto_player_photo(player_row_like):
     url = _resolve_fotmob_player_photo_url(player_name, team)
     if not url:
         return None
-    img = _try_load_img(url)
-    return img  # may be None -> blank
+    return _try_load_img(url)  # may be None -> blank
 
 if player_row.empty:
     st.info("Pick a player above.")
@@ -4627,15 +4608,13 @@ else:
     try: age = f"{float(age_raw):.0f}"
     except Exception: age = age_raw
     games   = _safe_get(player_row, "Matches played", _safe_get(player_row, "Games", _safe_get(player_row, "Apps", "—")))
-    minutes = _safe_get(player_row, "Minutes", _safe_get(player_row, "Minutes played", "—"))  # prefers Minutes
+    minutes = _safe_get(player_row, "Minutes", _safe_get(player_row, "Minutes played", "—"))
     goals   = _safe_get(player_row, "Goals", "—")
     assists = _safe_get(player_row, "Assists", "—")
     foot    = _safe_get(player_row, "Foot", _safe_get(player_row, "Preferred Foot", "—"))
 
-    # Apply foot override (if enabled)
     foot_display = (foot_override_text.strip() if (foot_override_on and foot_override_text and foot_override_text.strip()) else foot)
 
-    # === sections (unchanged) ===
     ATTACKING = []
     for lab, met in [
         ("Goals: Non-Penalty", "Non-penalty goals per 90"),
@@ -4677,14 +4656,12 @@ else:
     sections = [("Attacking",ATTACKING),("Defensive",DEFENSIVE),("Possession",POSSESSION)]
     sections = [(t,lst) for t,lst in sections if lst]
 
-    # === styling ===
     PAGE_BG = "#ebebeb"; AX_BG = "#f3f3f3"; TRACK="#d6d6d6"
     TITLE_C="#111111"; LABEL_C="#222222"; DIVIDER="#000000"
     TAB_RED=np.array([199,54,60]); TAB_GOLD=np.array([240,197,106]); TAB_GREEN=np.array([61,166,91])
     def _blend(c1,c2,t): c=c1+(c2-c1)*np.clip(t,0,1); return f"#{int(c[0]):02x}{int(c[1]):02x}{int(c[2]):02x}"
     def pct_to_rgb(v): v=float(np.clip(v,0,100)); return _blend(TAB_RED,TAB_GOLD,v/50) if v<=50 else _blend(TAB_GOLD,TAB_GREEN,(v-50)/50)
 
-    # === layout (HEADROOM increased a touch; labels restored) ===
     if not enable_images:
         fig_size   = (10, 8); dpi = 100
         title_row_h = 0.075
@@ -4693,10 +4670,9 @@ else:
     else:
         fig_size   = (11.8, 9.6); dpi = 120
         title_row_h = 0.125
-        header_block_h = title_row_h + 0.055   # unchanged
+        header_block_h = title_row_h + 0.055
         img_box_w = img_box_h = 0.16
 
-        # Presets for baseline spacing (equalize with s2 = 2*s1)
         preset_map = {
             "Tight (default)": {"img_gap": 0.0001, "s0": 0.02, "s1": 0.050},
             "Tight +":         {"img_gap": 0.0030, "s0": 0.02, "s1": 0.047},
@@ -4705,7 +4681,7 @@ else:
         }
         _p = preset_map.get(spacing_preset, preset_map["Tight (default)"])
         img_gap = _p["img_gap"]
-        _s0, _s1, _s2 = _p["s0"], _p["s1"], 2 * _p["s1"]   # keep gaps uniform
+        _s0, _s1, _s2 = _p["s0"], _p["s1"], 2 * _p["s1"]
 
     GLOBAL_LEFT_PAD = 0.02
     BASE_LEFT, RIGHT = 0.035, 0.020
@@ -4723,11 +4699,9 @@ else:
     gutter = 0.215
     ticks = np.arange(0,101,10)
 
-    # --- title ---
     fig.text(LEFT + TITLE_LEFT_NUDGE, 1 - TOP - 0.010, f"{name_}\u2009|\u2009{team}",
              ha="left", va="top", color=TITLE_C, fontproperties=TITLE_FP)
 
-    # --- info rows (now anchored just below the title) ---
     def draw_pairs_line(pairs_line, y):
         x = LEFT; renderer = fig.canvas.get_renderer()
         for i,(lab,val) in enumerate(pairs_line):
@@ -4758,29 +4732,25 @@ else:
         draw_pairs_line(row2, y2)
         draw_pairs_line(row3, y3)
 
-    # --- images ---
     def _open_upload(u):
         if u is None: return None
         try: return Image.open(u).convert("RGBA")
         except Exception: return None
 
     if enable_images:
-        # Order required:
-        # far left  = player photo
-        # center    = team badge
-        # far right = league logo
         auto_pil_right = auto_pil_mid = auto_pil_left = None
         if auto_images:
             auto_pil_right = _npimg_to_pil_rgba(_auto_league_logo(player_row))
             auto_pil_mid   = _npimg_to_pil_rgba(_auto_team_badge(player_row))
-            auto_pil_left  = _npimg_to_pil_rgba(_auto_player_photo(player_row))  # <- FotMob teams API method; may be None
+
+            # ✅ player photo obeys hide toggle
+            if not hide_player_photo:
+                auto_pil_left  = _npimg_to_pil_rgba(_auto_player_photo(player_row))
 
         def add_header_image(pil_img, right_index=0):
             if pil_img is None: return
             x_right_edge = 1 - RIGHT
             x = x_right_edge - (right_index + 1) * img_box_w - right_index * img_gap
-            # Uniform-spacing nudges (right): 0=anchor, 1=middle, 2=left (left = 2× middle)
-            # Include user fine-tune shifts per image:
             per_image_shift = {
                 0: _s0 + img1_dx,
                 1: _s1 + img2_dx,
@@ -4792,24 +4762,20 @@ else:
             ax_img = fig.add_axes([x, y, img_box_w, img_box_h])
             ax_img.imshow(pil_img); ax_img.axis("off")
 
-        # Uploads override each slot:
-        # rightmost slot (img1) = league logo
-        # middle slot   (img2) = team badge
-        # leftmost slot (img3) = player photo
         pil_right = _open_upload(up_img1) or auto_pil_right
         pil_mid   = _open_upload(up_img2) or auto_pil_mid
-        pil_left  = _open_upload(up_img3) or auto_pil_left
+
+        # ✅ player photo obeys hide toggle (also blocks uploaded img3)
+        pil_left  = None if hide_player_photo else (_open_upload(up_img3) or auto_pil_left)
 
         add_header_image(pil_right, right_index=0)
         add_header_image(pil_mid,   right_index=1)
         add_header_image(pil_left,  right_index=2)
 
-    # --- divider a touch lower (headroom) ---
     fig.lines.append(plt.Line2D([LEFT, 1 - RIGHT],
                                 [1 - TOP - header_block_h + 0.004]*2,
                                 transform=fig.transFigure, color=DIVIDER, lw=0.8, alpha=0.35))
 
-    # --- panels (labels back to their original y offset) ---
     def draw_panel(panel_top, title, tuples, *, show_xticks=False, draw_bottom_divider=True):
         n = len(tuples); panel_h = header_h + n*row_slot
         fig.text(LEFT, panel_top - 0.012, title, ha="left", va="top", color=TITLE_C, fontproperties=H2_FP)
@@ -4878,6 +4844,7 @@ else:
     )
     plt.close(fig)
 # ============================ END — Feature Z ============================
+
 
 
 # ============================== SCATTERPLOT — FIXED layout + smart non-overlap labels ==============================
