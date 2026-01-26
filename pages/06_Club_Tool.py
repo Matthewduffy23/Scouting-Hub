@@ -4412,10 +4412,10 @@ def _single_split_polar(team_labels, team_pcts, role_labels, role_pcts):
                 color="white", alpha=0.95, zorder=4)
 
     corner_col = "#9CA3AF"
-    fig.text(0.06, 0.965, "TEAM", ha="left", va="top",
-             fontsize=13.5, fontweight="900", color=corner_col)
-    fig.text(0.94, 0.965, "ROLE", ha="right", va="top",
-             fontsize=13.5, fontweight="900", color=corner_col)
+    fig.text(0.04, 0.965, "TEAM", ha="left", va="top",
+             fontsize=16, fontweight="900", color=corner_col)
+    fig.text(0.96, 0.965, "ROLE", ha="right", va="top",
+             fontsize=16, fontweight="900", color=corner_col)
 
     return fig
 
