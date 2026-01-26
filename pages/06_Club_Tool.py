@@ -266,9 +266,6 @@ def league_region(league: str) -> str:
 
 
 # ========================= TOP BAR: FILTERS + SCORING =========================
-# Paste this WHOLE block to replace your entire current TOP BAR section
-# (from st.markdown("---") down to the end of compute_center_backs())
-
 st.markdown("---")
 st.header("⚙️ Adjustments & Candidate Pool")
 
@@ -477,6 +474,96 @@ def render_template_players_used(role_name: str, tmpl_src: pd.DataFrame):
         return
     st.dataframe(tmpl_src[showcols].sort_values("Minutes played", ascending=False), use_container_width=True)
 
+# ---------- NEW: percentile helpers for ROLE FIT ----------
+def _percentile_of_value(series: pd.Series, value: float) -> float:
+    s = pd.to_numeric(series, errors="coerce").dropna()
+    if s.empty:
+        return 0.5
+    return float((s <= float(value)).mean())
+
+def _add_role_metric_percentiles_vs_league(
+    *,
+    pool_df: pd.DataFrame,
+    role_pos_predicate,
+    feats: List[str],
+    metric_cols: List[str],
+) -> pd.DataFrame:
+    """
+    For Role Fit: compute per-league percentiles for engineered role metrics, and attach
+    columns __pct__<metric> (0..100) to pool_df.
+    Reference distribution is: df filtered to same league, same role predicate, minutes within (min_minutes,max_minutes),
+    and non-missing feats + metric_cols.
+    """
+    out = pool_df.copy()
+
+    # make sure minutes numeric for reference filtering
+    ref = df.copy()
+    if "Minutes played" in ref.columns:
+        ref["Minutes played"] = pd.to_numeric(ref["Minutes played"], errors="coerce")
+    for c in feats:
+        if c in ref.columns:
+            ref[c] = pd.to_numeric(ref[c], errors="coerce")
+
+    # Build per-league reference ranks for each metric
+    leagues_needed = sorted(set(out["League"].dropna().astype(str).unique()).union({str(template_league)}))
+    pct_maps = {}
+
+    for lg in leagues_needed:
+        ref_lg = ref[ref["League"].astype(str) == str(lg)].copy()
+        ref_lg = ref_lg[ref_lg["Position"].apply(lambda p: role_pos_predicate(str(p)))].copy()
+
+        # align with pool minutes filter for stability
+        if "Minutes played" in ref_lg.columns:
+            ref_lg = ref_lg[ref_lg["Minutes played"].between(min_minutes, max_minutes)]
+
+        # compute metrics must already exist in ref_lg when called (caller ensures by computing on a copy if needed)
+        # Here we assume metrics exist in ref_lg; if not, we'll skip (handled by caller by computing on pool only).
+        if any(m not in ref_lg.columns for m in metric_cols):
+            pct_maps[str(lg)] = None
+            continue
+
+        ref_lg = ref_lg.dropna(subset=metric_cols)
+
+        if ref_lg.empty:
+            pct_maps[str(lg)] = None
+            continue
+
+        # ranks within league
+        pct_maps[str(lg)] = {m: ref_lg[m].rank(pct=True).astype(float) for m in metric_cols}
+
+    # Now compute percentiles for pool_df by league using rank(pct=True) inside pool,
+    # BUT we want vs full league reference (df), not vs pool slice.
+    # We'll do value->percentile lookup using _percentile_of_value per league/metric.
+    for m in metric_cols:
+        out[f"__pct__{m}"] = 50.0
+
+    for lg in leagues_needed:
+        idx = out["League"].astype(str) == str(lg)
+        if not idx.any():
+            continue
+
+        ref_lg = df[df["League"].astype(str) == str(lg)].copy()
+        if "Minutes played" in ref_lg.columns:
+            ref_lg["Minutes played"] = pd.to_numeric(ref_lg["Minutes played"], errors="coerce")
+            ref_lg = ref_lg[ref_lg["Minutes played"].between(min_minutes, max_minutes)]
+        ref_lg = ref_lg[ref_lg["Position"].apply(lambda p: role_pos_predicate(str(p)))].copy()
+
+        # Ensure numeric for metrics
+        for m in metric_cols:
+            ref_lg[m] = pd.to_numeric(ref_lg.get(m), errors="coerce")
+
+        ref_lg = ref_lg.dropna(subset=metric_cols)
+        if ref_lg.empty:
+            continue
+
+        for m in metric_cols:
+            series = ref_lg[m]
+            vals = pd.to_numeric(out.loc[idx, m], errors="coerce").astype(float)
+            out.loc[idx, f"__pct__{m}"] = vals.map(lambda v: _percentile_of_value(series, v) * 100.0)
+
+    return out
+
+
 # ========================= SIMILARITY (PER ROLE) =========================
 SIM_WEIGHTS = {
     "CB": {
@@ -549,12 +636,6 @@ SIM_WEIGHTS = {
         'Accurate passes, %': 2,
     },
 }
-
-def _percentile_of_value(series: pd.Series, value: float) -> float:
-    s = pd.to_numeric(series, errors="coerce").dropna()
-    if s.empty:
-        return 0.5
-    return float((s <= float(value)).mean())
 
 def compute_similarity_from_template(
     tmpl_src: pd.DataFrame,
@@ -655,7 +736,11 @@ def compute_strikers():
     feats = ['Touches in box per 90','xG per 90','Dribbles per 90','Progressive runs per 90',
              'Aerial duels per 90','Aerial duels won, %','Passes per 90','Non-penalty goals per 90','Accurate passes, %']
 
-    tmpl_src = _template_rows_for_role(lambda p: p.strip().upper().startswith("CF")).dropna(subset=feats)
+    # role predicate for reference distributions
+    def pos_ok(p):
+        return str(p).strip().upper().startswith("CF")
+
+    tmpl_src = _template_rows_for_role(pos_ok).dropna(subset=feats)
 
     if use_single_template_player:
         players = sorted(tmpl_src["Player"].dropna().astype(str).unique())
@@ -667,26 +752,59 @@ def compute_strikers():
         st.error("No strikers found for template conditions.")
         st.stop()
 
+    # ---- Template metrics (raw) ----
     f = tmpl_src.copy()
-    f["Opportunities"]     = 0.7*f['Touches in box per 90'] + 0.3*f['xG per 90']
-    f["Ball Carrying"]     = 0.65*f['Dribbles per 90'] + 0.35*f['Progressive runs per 90']
-    f["Aerial Requirement"]= f['Aerial duels per 90'] * f['Aerial duels won, %'] / 100.0
-    f["Passing Volume"]    = f['Passes per 90']
-    f["Goal Output"]       = f['Non-penalty goals per 90']
-    f["Retention"]         = f['Accurate passes, %']
-    tmpl_vec = f[["Opportunities","Ball Carrying","Aerial Requirement","Passing Volume","Goal Output","Retention"]].mean()
+    f["Opportunities"]      = 0.7*f['Touches in box per 90'] + 0.3*f['xG per 90']
+    f["Ball Carrying"]      = 0.65*f['Dribbles per 90'] + 0.35*f['Progressive runs per 90']
+    f["Aerial Requirement"] = f['Aerial duels per 90'] * f['Aerial duels won, %'] / 100.0
+    f["Passing Volume"]     = f['Passes per 90']
+    f["Goal Output"]        = f['Non-penalty goals per 90']
+    f["Retention"]          = f['Accurate passes, %']
 
+    metric_cols = ["Opportunities","Ball Carrying","Aerial Requirement","Passing Volume","Goal Output","Retention"]
+
+    # ---- Template vector in PERCENTILES vs TEMPLATE LEAGUE ----
+    # Use template league distribution for these role metrics (not pool)
+    ref_tmpl = df[(df["League"].astype(str) == str(template_league))].copy()
+    ref_tmpl["Minutes played"] = pd.to_numeric(ref_tmpl.get("Minutes played"), errors="coerce")
+    ref_tmpl = ref_tmpl[ref_tmpl["Minutes played"].between(min_minutes, max_minutes)]
+    ref_tmpl = ref_tmpl[ref_tmpl["Position"].apply(lambda p: pos_ok(str(p)))].copy()
+
+    # compute the same metrics on the reference block (so percentiles make sense)
+    for c in feats:
+        ref_tmpl[c] = pd.to_numeric(ref_tmpl.get(c), errors="coerce")
+    ref_tmpl = ref_tmpl.dropna(subset=feats)
+
+    if not ref_tmpl.empty:
+        ref_tmpl["Opportunities"]      = 0.7*ref_tmpl['Touches in box per 90'] + 0.3*ref_tmpl['xG per 90']
+        ref_tmpl["Ball Carrying"]      = 0.65*ref_tmpl['Dribbles per 90'] + 0.35*ref_tmpl['Progressive runs per 90']
+        ref_tmpl["Aerial Requirement"] = ref_tmpl['Aerial duels per 90'] * ref_tmpl['Aerial duels won, %'] / 100.0
+        ref_tmpl["Passing Volume"]     = ref_tmpl['Passes per 90']
+        ref_tmpl["Goal Output"]        = ref_tmpl['Non-penalty goals per 90']
+        ref_tmpl["Retention"]          = ref_tmpl['Accurate passes, %']
+        ref_tmpl = ref_tmpl.dropna(subset=metric_cols)
+
+    # turn template metric means into percentiles (0..100)
+    tmpl_means = f[metric_cols].mean().astype(float)
+    tmpl_vec_pct = {}
+    for m in metric_cols:
+        if ref_tmpl.empty:
+            tmpl_vec_pct[m] = 50.0
+        else:
+            tmpl_vec_pct[m] = _percentile_of_value(ref_tmpl[m], float(tmpl_means[m])) * 100.0
+    tmpl_vec_pct = pd.Series(tmpl_vec_pct)
+
+    # ---- Candidate pool ----
     base_pool = build_base_pool()
     pool = base_pool.copy()
     pool = pool[pool["Position"].str.upper().str.startswith("CF")]
     pool = pool[~((pool["Team"].astype(str) == template_team) & (pool["League"].astype(str) == template_league))].copy()
 
-    # ✅ REMOVED hard-coded Age/MV/Minutes filters: pool already follows the top-bar sliders
-
     for c in feats:
-        pool[c] = pd.to_numeric(pool[c], errors="coerce")
+        pool[c] = pd.to_numeric(pool.get(c), errors="coerce")
     pool = pool.dropna(subset=feats)
 
+    # compute metrics (raw)
     pool["Opportunities"]      = 0.7*pool['Touches in box per 90'] + 0.3*pool['xG per 90']
     pool["Ball Carrying"]      = 0.65*pool['Dribbles per 90'] + 0.35*pool['Progressive runs per 90']
     pool["Aerial Requirement"] = pool['Aerial duels per 90'] * pool['Aerial duels won, %'] / 100.0
@@ -694,13 +812,56 @@ def compute_strikers():
     pool["Goal Output"]        = pool['Non-penalty goals per 90']
     pool["Retention"]          = pool['Accurate passes, %']
 
-    cols = ["Opportunities","Ball Carrying","Aerial Requirement","Passing Volume","Goal Output","Retention"]
-    for c in cols:
-        pool[f"__tmpl__{c}"] = tmpl_vec[c]
-    pool["BaseDist"] = pool.apply(lambda r: norm([r[c]-r[f"__tmpl__{c}"] for c in cols]), axis=1)
+    # attach per-league percentiles for each role metric (0..100)
+    # reference distribution = df (same league, same role, minutes within top-bar minutes range)
+    # We do this by computing metrics on df and then percentile lookups per league.
+    ref_all = df.copy()
+    ref_all["Minutes played"] = pd.to_numeric(ref_all.get("Minutes played"), errors="coerce")
+    ref_all = ref_all[ref_all["Minutes played"].between(min_minutes, max_minutes)]
+    ref_all = ref_all[ref_all["Position"].apply(lambda p: pos_ok(str(p)))].copy()
+    for c in feats:
+        ref_all[c] = pd.to_numeric(ref_all.get(c), errors="coerce")
+    ref_all = ref_all.dropna(subset=feats)
+
+    if not ref_all.empty:
+        ref_all["Opportunities"]      = 0.7*ref_all['Touches in box per 90'] + 0.3*ref_all['xG per 90']
+        ref_all["Ball Carrying"]      = 0.65*ref_all['Dribbles per 90'] + 0.35*ref_all['Progressive runs per 90']
+        ref_all["Aerial Requirement"] = ref_all['Aerial duels per 90'] * ref_all['Aerial duels won, %'] / 100.0
+        ref_all["Passing Volume"]     = ref_all['Passes per 90']
+        ref_all["Goal Output"]        = ref_all['Non-penalty goals per 90']
+        ref_all["Retention"]          = ref_all['Accurate passes, %']
+        ref_all = ref_all.dropna(subset=metric_cols)
+
+    # compute pool metric percentiles vs each player's OWN league distribution
+    for m in metric_cols:
+        pool[f"{m} %ile"] = 50.0
+
+    for lg in sorted(pool["League"].dropna().astype(str).unique()):
+        idx = pool["League"].astype(str) == str(lg)
+        ref_lg = ref_all[ref_all["League"].astype(str) == str(lg)].copy()
+        if ref_lg.empty:
+            continue
+        for m in metric_cols:
+            series = pd.to_numeric(ref_lg[m], errors="coerce").dropna()
+            if series.empty:
+                continue
+            pool.loc[idx, f"{m} %ile"] = pd.to_numeric(pool.loc[idx, m], errors="coerce").map(
+                lambda v: _percentile_of_value(series, v) * 100.0
+            )
+
+    # ---- Distance now uses PERCENTILES (0..100), not raw metrics ----
+    pct_cols = [f"{m} %ile" for m in metric_cols]
+    for m in metric_cols:
+        pool[f"__tmpl__{m} %ile"] = float(tmpl_vec_pct[m])
+
+    pool["BaseDist"] = pool.apply(
+        lambda r: norm([float(r[f"{m} %ile"]) - float(r[f"__tmpl__{m} %ile"]) for m in metric_cols]),
+        axis=1
+    )
 
     ranked = _score_block(pool.copy())
     return ranked, "Strikers (CF)", tmpl_src
+
 
 def compute_attackers(role_choice: str):
     feats = [
@@ -737,6 +898,7 @@ def compute_attackers(role_choice: str):
         st.error("No attackers found for template conditions.")
         st.stop()
 
+    # ---- Template metrics ----
     f = tmpl_src.copy()
     f["Retention Style"]    = f['Accurate passes, %']
     f["Goal Threat"]        = 0.4*f['xG per 90'] + 0.4*f['Non-penalty goals per 90'] + 0.2*f['Touches in box per 90']
@@ -744,17 +906,39 @@ def compute_attackers(role_choice: str):
     f["Passing Volume"]     = f['Passes per 90']
     f["Deeper Playmaking"]  = 0.5*f['Progressive passes per 90'] + 0.5*f['Passes to final third per 90']
     f["Ball Carrying"]      = 0.6*f['Dribbles per 90'] + 0.4*f['Progressive runs per 90']
-    cols = ["Retention Style","Goal Threat","Creativity Threat","Passing Volume","Deeper Playmaking","Ball Carrying"]
-    tmpl_vec = f[cols].mean()
+    metric_cols = ["Retention Style","Goal Threat","Creativity Threat","Passing Volume","Deeper Playmaking","Ball Carrying"]
 
+    # template percentiles vs template league
+    ref_tmpl = df[(df["League"].astype(str) == str(template_league))].copy()
+    ref_tmpl["Minutes played"] = pd.to_numeric(ref_tmpl.get("Minutes played"), errors="coerce")
+    ref_tmpl = ref_tmpl[ref_tmpl["Minutes played"].between(min_minutes, max_minutes)]
+    ref_tmpl = ref_tmpl[ref_tmpl["Position"].apply(lambda p: pos_ok(str(p)))].copy()
+    for c in feats:
+        ref_tmpl[c] = pd.to_numeric(ref_tmpl.get(c), errors="coerce")
+    ref_tmpl = ref_tmpl.dropna(subset=feats)
+
+    if not ref_tmpl.empty:
+        ref_tmpl["Retention Style"]   = ref_tmpl['Accurate passes, %']
+        ref_tmpl["Goal Threat"]       = 0.4*ref_tmpl['xG per 90'] + 0.4*ref_tmpl['Non-penalty goals per 90'] + 0.2*ref_tmpl['Touches in box per 90']
+        ref_tmpl["Creativity Threat"] = 0.65*ref_tmpl['xA per 90'] + 0.35*ref_tmpl['Passes to penalty area per 90']
+        ref_tmpl["Passing Volume"]    = ref_tmpl['Passes per 90']
+        ref_tmpl["Deeper Playmaking"] = 0.5*ref_tmpl['Progressive passes per 90'] + 0.5*ref_tmpl['Passes to final third per 90']
+        ref_tmpl["Ball Carrying"]     = 0.6*ref_tmpl['Dribbles per 90'] + 0.4*ref_tmpl['Progressive runs per 90']
+        ref_tmpl = ref_tmpl.dropna(subset=metric_cols)
+
+    tmpl_means = f[metric_cols].mean().astype(float)
+    tmpl_vec_pct = {}
+    for m in metric_cols:
+        tmpl_vec_pct[m] = 50.0 if ref_tmpl.empty else _percentile_of_value(ref_tmpl[m], float(tmpl_means[m])) * 100.0
+    tmpl_vec_pct = pd.Series(tmpl_vec_pct)
+
+    # ---- Candidate pool ----
     base_pool = build_base_pool()
     pool = base_pool[base_pool["Position"].apply(pos_ok)].copy()
     pool = pool[~((pool["Team"].astype(str) == template_team) & (pool["League"].astype(str) == template_league))]
 
-    # ✅ REMOVED hard-coded Age/MV/Minutes filters: pool already follows the top-bar sliders
-
     for c in feats:
-        pool[c] = pd.to_numeric(pool[c], errors="coerce")
+        pool[c] = pd.to_numeric(pool.get(c), errors="coerce")
     pool = pool.dropna(subset=feats)
 
     pool["Retention Style"]   = pool['Accurate passes, %']
@@ -764,12 +948,49 @@ def compute_attackers(role_choice: str):
     pool["Deeper Playmaking"] = 0.5*pool['Progressive passes per 90'] + 0.5*pool['Passes to final third per 90']
     pool["Ball Carrying"]     = 0.6*pool['Dribbles per 90'] + 0.4*pool['Progressive runs per 90']
 
-    for c in cols:
-        pool[f"__tmpl__{c}"] = tmpl_vec[c]
-    pool["BaseDist"] = pool.apply(lambda r: norm([r[c]-r[f"__tmpl__{c}"] for c in cols]), axis=1)
+    # reference df for percentiles
+    ref_all = df.copy()
+    ref_all["Minutes played"] = pd.to_numeric(ref_all.get("Minutes played"), errors="coerce")
+    ref_all = ref_all[ref_all["Minutes played"].between(min_minutes, max_minutes)]
+    ref_all = ref_all[ref_all["Position"].apply(lambda p: pos_ok(str(p)))].copy()
+    for c in feats:
+        ref_all[c] = pd.to_numeric(ref_all.get(c), errors="coerce")
+    ref_all = ref_all.dropna(subset=feats)
+
+    if not ref_all.empty:
+        ref_all["Retention Style"]   = ref_all['Accurate passes, %']
+        ref_all["Goal Threat"]       = 0.4*ref_all['xG per 90'] + 0.4*ref_all['Non-penalty goals per 90'] + 0.2*ref_all['Touches in box per 90']
+        ref_all["Creativity Threat"] = 0.65*ref_all['xA per 90'] + 0.35*ref_all['Passes to penalty area per 90']
+        ref_all["Passing Volume"]    = ref_all['Passes per 90']
+        ref_all["Deeper Playmaking"] = 0.5*ref_all['Progressive passes per 90'] + 0.5*ref_all['Passes to final third per 90']
+        ref_all["Ball Carrying"]     = 0.6*ref_all['Dribbles per 90'] + 0.4*ref_all['Progressive runs per 90']
+        ref_all = ref_all.dropna(subset=metric_cols)
+
+    for m in metric_cols:
+        pool[f"{m} %ile"] = 50.0
+        pool[f"__tmpl__{m} %ile"] = float(tmpl_vec_pct[m])
+
+    for lg in sorted(pool["League"].dropna().astype(str).unique()):
+        idx = pool["League"].astype(str) == str(lg)
+        ref_lg = ref_all[ref_all["League"].astype(str) == str(lg)].copy()
+        if ref_lg.empty:
+            continue
+        for m in metric_cols:
+            series = pd.to_numeric(ref_lg[m], errors="coerce").dropna()
+            if series.empty:
+                continue
+            pool.loc[idx, f"{m} %ile"] = pd.to_numeric(pool.loc[idx, m], errors="coerce").map(
+                lambda v: _percentile_of_value(series, v) * 100.0
+            )
+
+    pool["BaseDist"] = pool.apply(
+        lambda r: norm([float(r[f"{m} %ile"]) - float(r[f"__tmpl__{m} %ile"]) for m in metric_cols]),
+        axis=1
+    )
 
     ranked = _score_block(pool.copy())
     return ranked, f"Attackers ({role_choice})", tmpl_src
+
 
 def compute_central_mid():
     feats = [
@@ -795,39 +1016,97 @@ def compute_central_mid():
         st.stop()
 
     f = tmpl_src.copy()
-    f["Pass Verticality"]    = _safe_verticality(f['Forward passes per 90'], f['Passes per 90'])
-    f["Progression Volume"]  = f['Progressive passes per 90'] + f['Progressive runs per 90']
+    f["Pass Verticality"]       = _safe_verticality(f['Forward passes per 90'], f['Passes per 90'])
+    f["Progression Volume"]     = f['Progressive passes per 90'] + f['Progressive runs per 90']
     f["Attacking Contribution"] = f['Touches in box per 90'] + f['Shots per 90']
-    f["Defensive Volume"]    = f['Defensive duels per 90']
-    f["Interception Volume"] = f['PAdj Interceptions']
-    f["Retention"]           = f['Accurate passes, %']
+    f["Defensive Volume"]       = f['Defensive duels per 90']
+    f["Interception Volume"]    = f['PAdj Interceptions']
+    f["Retention"]              = f['Accurate passes, %']
 
-    cols = ["Passes per 90","Pass Verticality","Progression Volume","Defensive Volume","Interception Volume","Attacking Contribution","Retention"]
-    tmpl_vec = f[cols].mean()
+    metric_cols = ["Passes per 90","Pass Verticality","Progression Volume","Defensive Volume","Interception Volume","Attacking Contribution","Retention"]
+
+    # template percentiles vs template league
+    ref_tmpl = df[(df["League"].astype(str) == str(template_league))].copy()
+    ref_tmpl["Minutes played"] = pd.to_numeric(ref_tmpl.get("Minutes played"), errors="coerce")
+    ref_tmpl = ref_tmpl[ref_tmpl["Minutes played"].between(min_minutes, max_minutes)]
+    ref_tmpl = ref_tmpl[ref_tmpl["Position"].apply(lambda p: pos_ok(str(p)))].copy()
+    for c in feats:
+        ref_tmpl[c] = pd.to_numeric(ref_tmpl.get(c), errors="coerce")
+    ref_tmpl = ref_tmpl.dropna(subset=feats)
+
+    if not ref_tmpl.empty:
+        ref_tmpl["Pass Verticality"]       = _safe_verticality(ref_tmpl['Forward passes per 90'], ref_tmpl['Passes per 90'])
+        ref_tmpl["Progression Volume"]     = ref_tmpl['Progressive passes per 90'] + ref_tmpl['Progressive runs per 90']
+        ref_tmpl["Attacking Contribution"] = ref_tmpl['Touches in box per 90'] + ref_tmpl['Shots per 90']
+        ref_tmpl["Defensive Volume"]       = ref_tmpl['Defensive duels per 90']
+        ref_tmpl["Interception Volume"]    = ref_tmpl['PAdj Interceptions']
+        ref_tmpl["Retention"]              = ref_tmpl['Accurate passes, %']
+        ref_tmpl = ref_tmpl.dropna(subset=metric_cols)
+
+    tmpl_means = f[metric_cols].mean().astype(float)
+    tmpl_vec_pct = {}
+    for m in metric_cols:
+        tmpl_vec_pct[m] = 50.0 if ref_tmpl.empty else _percentile_of_value(ref_tmpl[m], float(tmpl_means[m])) * 100.0
+    tmpl_vec_pct = pd.Series(tmpl_vec_pct)
 
     base_pool = build_base_pool()
     pool = base_pool[base_pool["Position"].apply(pos_ok)].copy()
     pool = pool[~((pool["Team"].astype(str) == template_team) & (pool["League"].astype(str) == template_league))]
 
-    # ✅ REMOVED hard-coded Age/MV/Minutes filters: pool already follows the top-bar sliders
-
     for c in feats:
-        pool[c] = pd.to_numeric(pool[c], errors="coerce")
+        pool[c] = pd.to_numeric(pool.get(c), errors="coerce")
     pool = pool.dropna(subset=feats)
 
-    pool["Pass Verticality"]    = _safe_verticality(pool['Forward passes per 90'], pool['Passes per 90'])
-    pool["Progression Volume"]  = pool['Progressive passes per 90'] + pool['Progressive runs per 90']
+    pool["Pass Verticality"]       = _safe_verticality(pool['Forward passes per 90'], pool['Passes per 90'])
+    pool["Progression Volume"]     = pool['Progressive passes per 90'] + pool['Progressive runs per 90']
     pool["Attacking Contribution"] = pool['Touches in box per 90'] + pool['Shots per 90']
-    pool["Defensive Volume"]    = pool['Defensive duels per 90']
-    pool["Interception Volume"] = pool['PAdj Interceptions']
-    pool["Retention"]           = pool['Accurate passes, %']
+    pool["Defensive Volume"]       = pool['Defensive duels per 90']
+    pool["Interception Volume"]    = pool['PAdj Interceptions']
+    pool["Retention"]              = pool['Accurate passes, %']
 
-    for c in cols:
-        pool[f"__tmpl__{c}"] = tmpl_vec[c]
-    pool["BaseDist"] = pool.apply(lambda r: norm([r[c]-r[f"__tmpl__{c}"] for c in cols]), axis=1)
+    # reference all leagues for percentiles
+    ref_all = df.copy()
+    ref_all["Minutes played"] = pd.to_numeric(ref_all.get("Minutes played"), errors="coerce")
+    ref_all = ref_all[ref_all["Minutes played"].between(min_minutes, max_minutes)]
+    ref_all = ref_all[ref_all["Position"].apply(lambda p: pos_ok(str(p)))].copy()
+    for c in feats:
+        ref_all[c] = pd.to_numeric(ref_all.get(c), errors="coerce")
+    ref_all = ref_all.dropna(subset=feats)
+
+    if not ref_all.empty:
+        ref_all["Pass Verticality"]       = _safe_verticality(ref_all['Forward passes per 90'], ref_all['Passes per 90'])
+        ref_all["Progression Volume"]     = ref_all['Progressive passes per 90'] + ref_all['Progressive runs per 90']
+        ref_all["Attacking Contribution"] = ref_all['Touches in box per 90'] + ref_all['Shots per 90']
+        ref_all["Defensive Volume"]       = ref_all['Defensive duels per 90']
+        ref_all["Interception Volume"]    = ref_all['PAdj Interceptions']
+        ref_all["Retention"]              = ref_all['Accurate passes, %']
+        ref_all = ref_all.dropna(subset=metric_cols)
+
+    for m in metric_cols:
+        pool[f"{m} %ile"] = 50.0
+        pool[f"__tmpl__{m} %ile"] = float(tmpl_vec_pct[m])
+
+    for lg in sorted(pool["League"].dropna().astype(str).unique()):
+        idx = pool["League"].astype(str) == str(lg)
+        ref_lg = ref_all[ref_all["League"].astype(str) == str(lg)].copy()
+        if ref_lg.empty:
+            continue
+        for m in metric_cols:
+            series = pd.to_numeric(ref_lg[m], errors="coerce").dropna()
+            if series.empty:
+                continue
+            pool.loc[idx, f"{m} %ile"] = pd.to_numeric(pool.loc[idx, m], errors="coerce").map(
+                lambda v: _percentile_of_value(series, v) * 100.0
+            )
+
+    pool["BaseDist"] = pool.apply(
+        lambda r: norm([float(r[f"{m} %ile"]) - float(r[f"__tmpl__{m} %ile"]) for m in metric_cols]),
+        axis=1
+    )
 
     ranked = _score_block(pool.copy())
     return ranked, "Central Midfield", tmpl_src
+
 
 def compute_fullbacks(role_choice: str):
     feats = [
@@ -861,37 +1140,92 @@ def compute_fullbacks(role_choice: str):
         st.stop()
 
     f = tmpl_src.copy()
-    f["Pass Verticality"]    = _safe_verticality(f['Forward passes per 90'], f['Passes per 90'])
-    f["Progression Volume"]  = f['Progressive passes per 90'] + f['Progressive runs per 90']
-    f["Attacking Contribution"]= 0.4*f['xA per 90'] + 0.2*f['Crosses per 90'] + 0.2*f['Touches in box per 90'] + 0.1*f['Shots per 90'] + 0.1*f['Passes to penalty area per 90']
-    f["Defensive Volume"]    = 0.5*f['Defensive duels per 90'] + 0.3*f['PAdj Interceptions'] + 0.2*f['Aerial duels per 90']
-    f["Retention"]           = f['Accurate passes, %']
+    f["Pass Verticality"]        = _safe_verticality(f['Forward passes per 90'], f['Passes per 90'])
+    f["Progression Volume"]      = f['Progressive passes per 90'] + f['Progressive runs per 90']
+    f["Attacking Contribution"]  = 0.4*f['xA per 90'] + 0.2*f['Crosses per 90'] + 0.2*f['Touches in box per 90'] + 0.1*f['Shots per 90'] + 0.1*f['Passes to penalty area per 90']
+    f["Defensive Volume"]        = 0.5*f['Defensive duels per 90'] + 0.3*f['PAdj Interceptions'] + 0.2*f['Aerial duels per 90']
+    f["Retention"]               = f['Accurate passes, %']
 
-    cols = ["Passes per 90","Pass Verticality","Progression Volume","Attacking Contribution","Defensive Volume","Retention"]
-    tmpl_vec = f[cols].mean()
+    metric_cols = ["Passes per 90","Pass Verticality","Progression Volume","Attacking Contribution","Defensive Volume","Retention"]
+
+    # template percentiles vs template league
+    ref_tmpl = df[(df["League"].astype(str) == str(template_league))].copy()
+    ref_tmpl["Minutes played"] = pd.to_numeric(ref_tmpl.get("Minutes played"), errors="coerce")
+    ref_tmpl = ref_tmpl[ref_tmpl["Minutes played"].between(min_minutes, max_minutes)]
+    ref_tmpl = ref_tmpl[ref_tmpl["Position"].apply(lambda p: pos_ok(str(p)))].copy()
+    for c in feats:
+        ref_tmpl[c] = pd.to_numeric(ref_tmpl.get(c), errors="coerce")
+    ref_tmpl = ref_tmpl.dropna(subset=feats)
+
+    if not ref_tmpl.empty:
+        ref_tmpl["Pass Verticality"]       = _safe_verticality(ref_tmpl['Forward passes per 90'], ref_tmpl['Passes per 90'])
+        ref_tmpl["Progression Volume"]     = ref_tmpl['Progressive passes per 90'] + ref_tmpl['Progressive runs per 90']
+        ref_tmpl["Attacking Contribution"] = 0.4*ref_tmpl['xA per 90'] + 0.2*ref_tmpl['Crosses per 90'] + 0.2*ref_tmpl['Touches in box per 90'] + 0.1*ref_tmpl['Shots per 90'] + 0.1*ref_tmpl['Passes to penalty area per 90']
+        ref_tmpl["Defensive Volume"]       = 0.5*ref_tmpl['Defensive duels per 90'] + 0.3*ref_tmpl['PAdj Interceptions'] + 0.2*ref_tmpl['Aerial duels per 90']
+        ref_tmpl["Retention"]              = ref_tmpl['Accurate passes, %']
+        ref_tmpl = ref_tmpl.dropna(subset=metric_cols)
+
+    tmpl_means = f[metric_cols].mean().astype(float)
+    tmpl_vec_pct = {}
+    for m in metric_cols:
+        tmpl_vec_pct[m] = 50.0 if ref_tmpl.empty else _percentile_of_value(ref_tmpl[m], float(tmpl_means[m])) * 100.0
+    tmpl_vec_pct = pd.Series(tmpl_vec_pct)
 
     base_pool = build_base_pool()
     pool = base_pool[base_pool["Position"].apply(pos_ok)].copy()
     pool = pool[~((pool["Team"].astype(str) == template_team) & (pool["League"].astype(str) == template_league))]
 
-    # ✅ REMOVED hard-coded Age/MV/Minutes filters: pool already follows the top-bar sliders
-
     for c in feats:
-        pool[c] = pd.to_numeric(pool[c], errors="coerce")
+        pool[c] = pd.to_numeric(pool.get(c), errors="coerce")
     pool = pool.dropna(subset=feats)
 
-    pool["Pass Verticality"]     = _safe_verticality(pool['Forward passes per 90'], pool['Passes per 90'])
-    pool["Progression Volume"]   = pool['Progressive passes per 90'] + pool['Progressive runs per 90']
-    pool["Attacking Contribution"]= 0.4*pool['xA per 90'] + 0.2*pool['Crosses per 90'] + 0.2*pool['Touches in box per 90'] + 0.1*pool['Shots per 90'] + 0.1*pool['Passes to penalty area per 90']
-    pool["Defensive Volume"]     = 0.5*pool['Defensive duels per 90'] + 0.3*pool['PAdj Interceptions'] + 0.2*pool['Aerial duels per 90']
-    pool["Retention"]            = pool['Accurate passes, %']
+    pool["Pass Verticality"]        = _safe_verticality(pool['Forward passes per 90'], pool['Passes per 90'])
+    pool["Progression Volume"]      = pool['Progressive passes per 90'] + pool['Progressive runs per 90']
+    pool["Attacking Contribution"]  = 0.4*pool['xA per 90'] + 0.2*pool['Crosses per 90'] + 0.2*pool['Touches in box per 90'] + 0.1*pool['Shots per 90'] + 0.1*pool['Passes to penalty area per 90']
+    pool["Defensive Volume"]        = 0.5*pool['Defensive duels per 90'] + 0.3*pool['PAdj Interceptions'] + 0.2*pool['Aerial duels per 90']
+    pool["Retention"]               = pool['Accurate passes, %']
 
-    for c in cols:
-        pool[f"__tmpl__{c}"] = tmpl_vec[c]
-    pool["BaseDist"] = pool.apply(lambda r: norm([r[c]-r[f"__tmpl__{c}"] for c in cols]), axis=1)
+    ref_all = df.copy()
+    ref_all["Minutes played"] = pd.to_numeric(ref_all.get("Minutes played"), errors="coerce")
+    ref_all = ref_all[ref_all["Minutes played"].between(min_minutes, max_minutes)]
+    ref_all = ref_all[ref_all["Position"].apply(lambda p: pos_ok(str(p)))].copy()
+    for c in feats:
+        ref_all[c] = pd.to_numeric(ref_all.get(c), errors="coerce")
+    ref_all = ref_all.dropna(subset=feats)
+
+    if not ref_all.empty:
+        ref_all["Pass Verticality"]       = _safe_verticality(ref_all['Forward passes per 90'], ref_all['Passes per 90'])
+        ref_all["Progression Volume"]     = ref_all['Progressive passes per 90'] + ref_all['Progressive runs per 90']
+        ref_all["Attacking Contribution"] = 0.4*ref_all['xA per 90'] + 0.2*ref_all['Crosses per 90'] + 0.2*ref_all['Touches in box per 90'] + 0.1*ref_all['Shots per 90'] + 0.1*ref_all['Passes to penalty area per 90']
+        ref_all["Defensive Volume"]       = 0.5*ref_all['Defensive duels per 90'] + 0.3*ref_all['PAdj Interceptions'] + 0.2*ref_all['Aerial duels per 90']
+        ref_all["Retention"]              = ref_all['Accurate passes, %']
+        ref_all = ref_all.dropna(subset=metric_cols)
+
+    for m in metric_cols:
+        pool[f"{m} %ile"] = 50.0
+        pool[f"__tmpl__{m} %ile"] = float(tmpl_vec_pct[m])
+
+    for lg in sorted(pool["League"].dropna().astype(str).unique()):
+        idx = pool["League"].astype(str) == str(lg)
+        ref_lg = ref_all[ref_all["League"].astype(str) == str(lg)].copy()
+        if ref_lg.empty:
+            continue
+        for m in metric_cols:
+            series = pd.to_numeric(ref_lg[m], errors="coerce").dropna()
+            if series.empty:
+                continue
+            pool.loc[idx, f"{m} %ile"] = pd.to_numeric(pool.loc[idx, m], errors="coerce").map(
+                lambda v: _percentile_of_value(series, v) * 100.0
+            )
+
+    pool["BaseDist"] = pool.apply(
+        lambda r: norm([float(r[f"{m} %ile"]) - float(r[f"__tmpl__{m} %ile"]) for m in metric_cols]),
+        axis=1
+    )
 
     ranked = _score_block(pool.copy())
     return ranked, f"Fullbacks ({role_choice})", tmpl_src
+
 
 def compute_center_backs():
     feats = [
@@ -922,17 +1256,36 @@ def compute_center_backs():
     f["Positional Demand"]   = f['PAdj Interceptions'] + f['Shots blocked per 90']
     f["Progression Volume"]  = f['Progressive passes per 90'] + f['Progressive runs per 90']
 
-    cols = ["Aerial duels per 90","Defensive duels per 90","Positional Demand","Passing Volume","Passing Verticality","Progression Volume"]
-    tmpl_vec = f[cols].mean()
+    metric_cols = ["Aerial duels per 90","Defensive duels per 90","Positional Demand","Passing Volume","Passing Verticality","Progression Volume"]
+
+    # template percentiles vs template league
+    ref_tmpl = df[(df["League"].astype(str) == str(template_league))].copy()
+    ref_tmpl["Minutes played"] = pd.to_numeric(ref_tmpl.get("Minutes played"), errors="coerce")
+    ref_tmpl = ref_tmpl[ref_tmpl["Minutes played"].between(min_minutes, max_minutes)]
+    ref_tmpl = ref_tmpl[ref_tmpl["Position"].apply(lambda p: pos_ok(str(p)))].copy()
+    for c in feats:
+        ref_tmpl[c] = pd.to_numeric(ref_tmpl.get(c), errors="coerce")
+    ref_tmpl = ref_tmpl.dropna(subset=feats)
+
+    if not ref_tmpl.empty:
+        ref_tmpl["Passing Verticality"] = _safe_verticality(ref_tmpl['Forward passes per 90'], ref_tmpl['Passes per 90'])
+        ref_tmpl["Passing Volume"]      = ref_tmpl['Passes per 90']
+        ref_tmpl["Positional Demand"]   = ref_tmpl['PAdj Interceptions'] + ref_tmpl['Shots blocked per 90']
+        ref_tmpl["Progression Volume"]  = ref_tmpl['Progressive passes per 90'] + ref_tmpl['Progressive runs per 90']
+        ref_tmpl = ref_tmpl.dropna(subset=metric_cols)
+
+    tmpl_means = f[metric_cols].mean().astype(float)
+    tmpl_vec_pct = {}
+    for m in metric_cols:
+        tmpl_vec_pct[m] = 50.0 if ref_tmpl.empty else _percentile_of_value(ref_tmpl[m], float(tmpl_means[m])) * 100.0
+    tmpl_vec_pct = pd.Series(tmpl_vec_pct)
 
     base_pool = build_base_pool()
     pool = base_pool[base_pool["Position"].apply(pos_ok)].copy()
     pool = pool[~((pool["Team"].astype(str) == template_team) & (pool["League"].astype(str) == template_league))]
 
-    # ✅ REMOVED hard-coded Age/MV/Minutes filters: pool already follows the top-bar sliders
-
     for c in feats:
-        pool[c] = pd.to_numeric(pool[c], errors="coerce")
+        pool[c] = pd.to_numeric(pool.get(c), errors="coerce")
     pool = pool.dropna(subset=feats)
 
     pool["Passing Verticality"] = _safe_verticality(pool['Forward passes per 90'], pool['Passes per 90'])
@@ -940,10 +1293,40 @@ def compute_center_backs():
     pool["Positional Demand"]   = pool['PAdj Interceptions'] + pool['Shots blocked per 90']
     pool["Progression Volume"]  = pool['Progressive passes per 90'] + pool['Progressive runs per 90']
 
-    for c in cols:
-        pool[f"__tmpl__{c}"] = tmpl_vec[c]
+    ref_all = df.copy()
+    ref_all["Minutes played"] = pd.to_numeric(ref_all.get("Minutes played"), errors="coerce")
+    ref_all = ref_all[ref_all["Minutes played"].between(min_minutes, max_minutes)]
+    ref_all = ref_all[ref_all["Position"].apply(lambda p: pos_ok(str(p)))].copy()
+    for c in feats:
+        ref_all[c] = pd.to_numeric(ref_all.get(c), errors="coerce")
+    ref_all = ref_all.dropna(subset=feats)
+
+    if not ref_all.empty:
+        ref_all["Passing Verticality"] = _safe_verticality(ref_all['Forward passes per 90'], ref_all['Passes per 90'])
+        ref_all["Passing Volume"]      = ref_all['Passes per 90']
+        ref_all["Positional Demand"]   = ref_all['PAdj Interceptions'] + ref_all['Shots blocked per 90']
+        ref_all["Progression Volume"]  = ref_all['Progressive passes per 90'] + ref_all['Progressive runs per 90']
+        ref_all = ref_all.dropna(subset=metric_cols)
+
+    for m in metric_cols:
+        pool[f"{m} %ile"] = 50.0
+        pool[f"__tmpl__{m} %ile"] = float(tmpl_vec_pct[m])
+
+    for lg in sorted(pool["League"].dropna().astype(str).unique()):
+        idx = pool["League"].astype(str) == str(lg)
+        ref_lg = ref_all[ref_all["League"].astype(str) == str(lg)].copy()
+        if ref_lg.empty:
+            continue
+        for m in metric_cols:
+            series = pd.to_numeric(ref_lg[m], errors="coerce").dropna()
+            if series.empty:
+                continue
+            pool.loc[idx, f"{m} %ile"] = pd.to_numeric(pool.loc[idx, m], errors="coerce").map(
+                lambda v: _percentile_of_value(series, v) * 100.0
+            )
+
     pool["BaseDist"] = pool.apply(
-        lambda r: norm([r[c] - r[f"__tmpl__{c}"] for c in cols]),
+        lambda r: norm([float(r[f"{m} %ile"]) - float(r[f"__tmpl__{m} %ile"]) for m in metric_cols]),
         axis=1
     )
 
@@ -1124,336 +1507,323 @@ def resolve_team_crest(team: str, league: str) -> str:
 
 
 # ========================= UI: TILE LAYOUT =========================
-st.markdown(
-    """
-<style>
-:root{ --bg:#0f1115; --card:#161a22; --stroke:#252b3a; --muted:#a8b3cf; --soft:#202633; }
-.tiles{ display:grid; grid-template-columns:repeat(auto-fill, minmax(330px, 1fr)); gap:14px; }
-.tile{ position:relative; background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:14px; overflow:hidden; box-shadow: 0 2px 12px rgba(0,0,0,.22); }
-.row{ display:flex; gap:12px; align-items:flex-start; }
-.avatar{ width:72px; height:72px; border-radius:14px; object-fit:cover; background:#0b0d12; border:1px solid #2a3145; }
-.name{ font-weight:900; font-size:18px; color:#e8ecff; line-height:1.1; }
-.teamline{ margin-top:6px; color:#cbd5f5; font-size:13px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-.crest{ width:20px; height:20px; object-fit:contain; border-radius:4px; background:#0b0d12; border:1px solid #2a3145; }
-.meta{ margin-top:8px; color:var(--muted); font-size:12px; display:flex; gap:8px; flex-wrap:wrap; }
-.chip{ background:var(--soft); color:#cbd5f5; border:1px solid #2d3550; padding:2px 8px; border-radius:10px; }
-.match{ position:absolute; top:10px; right:10px; background:#0b0d12; border:1px solid #2a3145; color:#e8ecff; border-radius:12px; padding:6px 10px; font-weight:900; }
-.match small{ display:block; font-size:10px; color:var(--muted); font-weight:700; margin-top:1px; text-align:right; }
-</style>
-""",
-    unsafe_allow_html=True
-)
 
+# Small helper: safe numeric
+def _to_int(x, default=0):
+    try:
+        v = int(float(x))
+        return v
+    except Exception:
+        return default
+
+def _to_float(x, default=0.0):
+    try:
+        return float(x)
+    except Exception:
+        return default
+
+def _fmt_mv(v):
+    v = _to_float(v, np.nan)
+    if not np.isfinite(v):
+        return "—"
+    if v >= 1_000_000:
+        return f"€{v/1_000_000:.1f}m"
+    if v >= 1_000:
+        return f"€{v/1_000:.0f}k"
+    return f"€{v:.0f}"
+
+def _fmt_age(v):
+    a = _to_int(v, 0)
+    return "—" if a <= 0 else str(a)
+
+def _tile_css():
+    st.markdown(
+        """
+        <style>
+        .tile{
+            border-radius:14px;
+            border:1px solid rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.03);
+            padding:10px 10px 8px 10px;
+            margin-bottom:12px;
+        }
+        .tile-top{
+            display:flex; align-items:center; justify-content:space-between;
+            margin-bottom:8px;
+        }
+        .crest{
+            width:26px; height:26px; border-radius:6px;
+            object-fit:contain; background:rgba(255,255,255,0.06);
+            padding:2px;
+        }
+        .match{
+            font-weight:800;
+            font-size:14px;
+            padding:4px 10px;
+            border-radius:999px;
+            border:1px solid rgba(255,255,255,0.12);
+            background: rgba(255,255,255,0.06);
+            white-space:nowrap;
+        }
+        .photo{
+            width:100%;
+            aspect-ratio: 4/5;
+            border-radius:14px;
+            object-fit:cover;
+            background: rgba(255,255,255,0.06);
+        }
+        .name{
+            font-weight:800; font-size:15px; line-height:1.1;
+            margin-top:8px;
+        }
+        .meta{
+            opacity:0.85; font-size:12px; line-height:1.25;
+            margin-top:4px;
+        }
+        .mini{
+            opacity:0.8; font-size:11px; margin-top:6px;
+            display:flex; gap:10px; flex-wrap:wrap;
+        }
+        .mini span{
+            padding:2px 8px; border-radius:999px;
+            background: rgba(255,255,255,0.05);
+            border:1px solid rgba(255,255,255,0.10);
+        }
+        .override-box{
+            margin-top:8px;
+            border-top:1px solid rgba(255,255,255,0.06);
+            padding-top:8px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+_tile_css()
+
+def _apply_pool_extra_filters(p: pd.DataFrame) -> pd.DataFrame:
+    """Age + market value filters (kept separate from build_base_pool for clarity)."""
+    out = p.copy()
+    if "Age" in out.columns:
+        out["Age"] = pd.to_numeric(out["Age"], errors="coerce")
+        out = out[out["Age"].between(min_age, max_age)]
+    if "Market value" in out.columns:
+        out["Market value"] = pd.to_numeric(out["Market value"], errors="coerce")
+        out = out[out["Market value"].between(pool_min_value, pool_max_value)]
+    return out
+
+def _render_photo_debug(player, team, league, url, crest_url):
+    if not DEBUG_PHOTOS:
+        return
+    st.caption(f"DEBUG — {player} | {team} | {league}")
+    st.code(url)
+    if crest_url:
+        st.code(crest_url)
 
 def render_tiles(
     ranked: pd.DataFrame,
     role_title: str,
-    score_col: str = "Role Fit Score",
-    badge_label: str = "Match"
+    tmpl_src: pd.DataFrame,
+    *,
+    show_template_table: bool = True,
+    cols_per_row: int = 5,
 ):
-    df_view = ranked.copy()
-
-    # ✅ Display-only filters (Age + Market Value)
-    if "Age" in df_view.columns:
-        df_view["Age"] = pd.to_numeric(df_view["Age"], errors="coerce")
-        df_view = df_view[df_view["Age"].between(min_age, max_age)]
-
-    if "Market value" in df_view.columns:
-        df_view["Market value"] = pd.to_numeric(df_view["Market value"], errors="coerce")
-        df_view = df_view[df_view["Market value"].between(pool_min_value, pool_max_value)]
-
-    df_view = df_view.head(int(top_n)).copy()
-    if df_view.empty:
-        st.info("No matches.")
+    if ranked is None or ranked.empty:
+        st.info("No candidates found for current filters.")
         return
 
-    html = ["<div class='tiles'>"]
-    for _, row in df_view.iterrows():
-        player = str(row.get("Player", ""))
-        team = str(row.get("Team", ""))
-        league = str(row.get("League", ""))
-        pos = str(row.get("Position", ""))
-        age = row.get("Age", "")
-        minutes = row.get("Minutes played", "")
-        foot = str(row.get("Foot", "")).strip()
-        score = float(pd.to_numeric(row.get(score_col, 0.0), errors="coerce") or 0.0)
-        match_pct = max(0, min(100, int(round(score))))
+    # Apply remaining pool filters (Age + MV), and take top_n
+    ranked2 = ranked.copy()
+    ranked2 = _apply_pool_extra_filters(ranked2)
+    if ranked2.empty:
+        st.info("No candidates after Age / Market Value filters.")
+        return
 
-        avatar = resolve_player_photo(player, team, league)
-        crest = resolve_team_crest(team, league)
+    ranked2 = ranked2.head(int(top_n)).reset_index(drop=True)
 
-        if DEBUG_PHOTOS:
-            st.write(player, team, "→", avatar)
-
-        crest_html = f"<img class='crest' src='{crest}' />" if crest else ""
-        html.append(
-            f"""
-<div class="tile">
-  <div class="match">{match_pct}%<small>{badge_label}</small></div>
-  <div class="row">
-    <img class="avatar" src="{avatar}" />
-    <div>
-      <div class="name">{player}</div>
-      <div class="teamline">{crest_html}<span>{team} · {league}</span></div>
-      <div class="meta">
-        <span class="chip">{pos}</span>
-        <span class="chip">Age {age}</span>
-        <span class="chip">{int(minutes) if str(minutes).isdigit() else minutes} min</span>
-        <span class="chip">{foot}</span>
-      </div>
-    </div>
-  </div>
-</div>
-"""
-        )
-
-    html.append("</div>")
-    st.markdown("".join(html), unsafe_allow_html=True)
-
-
-def render_matches_table(
-    ranked: pd.DataFrame,
-    top_n_override: int = None,
-    score_col: str = "Role Fit Score"
-):
-    n = int(top_n_override) if top_n_override is not None else int(top_n)
-    df_view = ranked.copy()
-
-    # ✅ Display-only filters (Age + Market Value)
-    if "Age" in df_view.columns:
-        df_view["Age"] = pd.to_numeric(df_view["Age"], errors="coerce")
-        df_view = df_view[df_view["Age"].between(min_age, max_age)]
-
-    if "Market value" in df_view.columns:
-        df_view["Market value"] = pd.to_numeric(df_view["Market value"], errors="coerce")
-        df_view = df_view[df_view["Market value"].between(pool_min_value, pool_max_value)]
-
-    cols = [
-        c for c in
-        ["Player", "Team", "League", "Position", "Age", "Minutes played", "Market value", score_col]
-        if c in df_view.columns
-    ]
-    st.dataframe(df_view[cols].head(n), use_container_width=True)
-
-
-
-# ========================= SIMILARITY UI (per tab) =========================
-def similarity_settings_ui(sim_key_prefix: str, default_leagues: List[str]):
-    # league strength map (supports either variable name)
-    LS_MAP = globals().get('LEAGUE_STRENGTHS', globals().get('league_strengths', {}))
-
-    _leagues_from_df = df['League'].dropna().unique().tolist() if 'League' in df.columns else []
-    _included_from_global = list(globals().get('INCLUDED_LEAGUES', []))
-    _included_leagues_cf = sorted(set(_included_from_global) | set(_leagues_from_df))
-
-    _PRESET_LEAGUES_SAFE = globals().get('PRESET_LEAGUES', {})
-    _PRESETS_SIM = {
-        "All listed leagues": _included_leagues_cf,
-        "T5":  sorted(list(_PRESET_LEAGUES_SAFE.get("Top 5 Europe", []))),
-        "T20": sorted(list(_PRESET_LEAGUES_SAFE.get("Top 20 Europe", []))),
-        "EFL": sorted(list(_PRESET_LEAGUES_SAFE.get("EFL (England 2–4)", []))),
-        "Custom": None,
-    }
-
-    with st.expander("Similarity settings", expanded=False):
-        candidate_league_options = sorted(_included_leagues_cf or _leagues_from_df)
-        default_sel = default_leagues if default_leagues else candidate_league_options
-
-        sim_preset_choices = list(_PRESETS_SIM.keys())
-        sim_preset = st.selectbox(
-            "Candidate league preset",
-            sim_preset_choices,
-            index=sim_preset_choices.index("All listed leagues"),
-            key=f"{sim_key_prefix}_sim_preset"
-        )
-
-        preset_vals_raw = _PRESETS_SIM.get(sim_preset) or []
-        preset_vals = sorted([lg for lg in preset_vals_raw if lg in candidate_league_options])
-
-        _last_key = f"{sim_key_prefix}__last_sim_preset"
-        if st.session_state.get(_last_key) != sim_preset:
-            st.session_state[f"{sim_key_prefix}_sim_leagues"] = preset_vals if preset_vals else default_sel
-            st.session_state[_last_key] = sim_preset
-
-        sim_leagues = st.multiselect(
-            "Candidate leagues",
-            candidate_league_options,
-            default=st.session_state.get(f"{sim_key_prefix}_sim_leagues", preset_vals if preset_vals else default_sel),
-            key=f"{sim_key_prefix}_sim_leagues",
-        )
-
-        if preset_vals_raw and not preset_vals:
-            st.warning("Preset has leagues, but none match your allowed list/dataset.")
-        elif preset_vals_raw:
-            st.caption(f"Preset: {sim_preset} — {len(preset_vals)} league(s). You can add/prune below.")
-
-        sim_min_minutes, sim_max_minutes = st.slider("Minutes played (candidates)", 0, 6000, (750, 6000), key=f"{sim_key_prefix}_sim_min")
-        sim_min_age, sim_max_age = st.slider("Age (candidates)", 14, 50, (16, 50), key=f"{sim_key_prefix}_sim_age")
-
-        use_strength_filter = st.toggle("Filter by league quality (0–101)", value=False, key=f"{sim_key_prefix}_sim_use_strength")
-        if use_strength_filter:
-            sim_min_strength, sim_max_strength = st.slider("League quality (strength)", 0, 101, (0, 101), key=f"{sim_key_prefix}_sim_strength")
+    # Header line + template players used
+    left, mid, right = st.columns([1.6, 1.0, 1.0])
+    with left:
+        st.subheader(role_title)
+        st.caption(f"Showing **Top {min(int(top_n), len(ranked2))}** by Role Fit Score (Match%).")
+    with mid:
+        if "Role Fit Score" in ranked2.columns:
+            st.metric("Best match", f"{ranked2.loc[0,'Role Fit Score']:.1f}%")
         else:
-            sim_min_strength, sim_max_strength = 0, 101
+            st.metric("Best match", "—")
+    with right:
+        st.metric("Candidates", str(len(ranked2)))
 
-        percentile_weight = st.slider("Percentile weight", 0.0, 1.0, 0.7, 0.05, key=f"{sim_key_prefix}_sim_pw")
+    if show_template_table:
+        with st.expander("Show template players used", expanded=False):
+            render_template_players_used(role_title, tmpl_src)
 
-        apply_league_adjust = st.toggle("Apply league difficulty adjustment", value=True, key=f"{sim_key_prefix}_sim_apply_ladj")
-        league_weight_sim = st.slider(
-            "League weight (difficulty adj.)", 0.0, 1.0, 0.2, 0.05, key=f"{sim_key_prefix}_sim_lw",
-            disabled=not apply_league_adjust
-        )
+    # Build rows of tiles
+    ncols = max(2, min(6, int(cols_per_row)))
+    rows = int(math.ceil(len(ranked2) / ncols))
 
-        top_n_sim = st.number_input("Show top N", min_value=5, max_value=200, value=14, step=5, key=f"{sim_key_prefix}_sim_top")
+    for r in range(rows):
+        row = st.columns(ncols)
+        for c in range(ncols):
+            i = r * ncols + c
+            if i >= len(ranked2):
+                row[c].empty()
+                continue
 
-    return {
-        "LS_MAP": LS_MAP,
-        "sim_leagues": sim_leagues,
-        "sim_min_minutes": sim_min_minutes,
-        "sim_max_minutes": sim_max_minutes,
-        "sim_min_age": sim_min_age,
-        "sim_max_age": sim_max_age,
-        "use_strength_filter": use_strength_filter,
-        "sim_min_strength": sim_min_strength,
-        "sim_max_strength": sim_max_strength,
-        "percentile_weight": percentile_weight,
-        "apply_league_adjust": apply_league_adjust,
-        "league_weight_sim": league_weight_sim,
-        "top_n_sim": top_n_sim,
-    }
+            player = str(ranked2.loc[i, "Player"]) if "Player" in ranked2.columns else "—"
+            team = str(ranked2.loc[i, "Team"]) if "Team" in ranked2.columns else "—"
+            league = str(ranked2.loc[i, "League"]) if "League" in ranked2.columns else "—"
+            pos = str(ranked2.loc[i, "Position"]) if "Position" in ranked2.columns else "—"
+            age = ranked2.loc[i, "Age"] if "Age" in ranked2.columns else np.nan
+            mins = ranked2.loc[i, "Minutes played"] if "Minutes played" in ranked2.columns else np.nan
+            mv = ranked2.loc[i, "Market value"] if "Market value" in ranked2.columns else np.nan
 
-def compute_similarity_candidates_from_pool(
-    ranked_pool: pd.DataFrame,
-    tmpl_src: pd.DataFrame,
-    sim_features: List[str],
-    weights_dict: dict,
-    target_league: str,
-    settings: dict,
-) -> pd.DataFrame:
-    if tmpl_src.empty or ranked_pool.empty:
-        return pd.DataFrame()
+            match = ranked2.loc[i, "Role Fit Score"] if "Role Fit Score" in ranked2.columns else np.nan
+            match_txt = "—" if not np.isfinite(_to_float(match, np.nan)) else f"{_to_float(match):.0f}%"
 
-    df_candidates = ranked_pool.copy()
+            photo_url = resolve_player_photo(player, team, league)
+            crest_url = resolve_team_crest(team, league)
 
-    # candidates league filter
-    df_candidates = df_candidates[df_candidates["League"].isin(settings["sim_leagues"])].copy()
+            _render_photo_debug(player, team, league, photo_url, crest_url)
 
-    # optional league quality filter
-    LS_MAP = settings.get("LS_MAP") or {}
-    if settings["use_strength_filter"] and LS_MAP:
-        df_candidates["League strength"] = df_candidates["League"].map(LS_MAP).fillna(0.0)
-        df_candidates = df_candidates[
-            (df_candidates["League strength"] >= float(settings["sim_min_strength"])) &
-            (df_candidates["League strength"] <= float(settings["sim_max_strength"]))
-        ]
+            key_id = f"{player}|||{team}|||{league}"
+            crest_key = f"{team}|||{league}"
 
-    # base filters
-    df_candidates["Minutes played"] = pd.to_numeric(df_candidates.get("Minutes played"), errors="coerce")
-    df_candidates["Age"] = pd.to_numeric(df_candidates.get("Age"), errors="coerce")
-    df_candidates = df_candidates[
-        df_candidates["Minutes played"].between(settings["sim_min_minutes"], settings["sim_max_minutes"]) &
-        df_candidates["Age"].between(settings["sim_min_age"], settings["sim_max_age"])
-    ]
+            with row[c]:
+                # tile top strip (crest + match)
+                crest_html = f'<img class="crest" src="{crest_url}" />' if crest_url else '<div style="width:26px;height:26px;"></div>'
+                st.markdown(
+                    f"""
+                    <div class="tile">
+                      <div class="tile-top">
+                        {crest_html}
+                        <div class="match">{match_txt}</div>
+                      </div>
+                      <img class="photo" src="{photo_url}" />
+                      <div class="name">{player}</div>
+                      <div class="meta">{team} • {league}</div>
+                      <div class="mini">
+                        <span>{pos}</span>
+                        <span>Age { _fmt_age(age) }</span>
+                        <span>{_to_int(mins)} mins</span>
+                        <span>{_fmt_mv(mv)}</span>
+                      </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
-    # exclude template team/league players
-    df_candidates = df_candidates[~((df_candidates["Team"].astype(str) == template_team) & (df_candidates["League"].astype(str) == template_league))].copy()
+                with st.expander("Overrides", expanded=False):
+                    st.markdown('<div class="override-box">', unsafe_allow_html=True)
 
-    # compute similarity (template avg as target)
-    sim_out = compute_similarity_from_template(
-        tmpl_src=tmpl_src,
-        pool=df_candidates,
-        sim_features=sim_features,
-        weights_dict=weights_dict,
-        target_league=target_league,
-        percentile_weight=float(settings["percentile_weight"]),
-        apply_league_adjust=bool(settings["apply_league_adjust"]),
-        league_weight_sim=float(settings["league_weight_sim"]),
-    )
-    return sim_out
+                    # Photo override
+                    current_photo_override = st.session_state.get("photo_map", {}).get(key_id, "")
+                    new_photo = st.text_input(
+                        "Player photo URL (override)",
+                        value=current_photo_override,
+                        key=f"photo_override__{role_title}__{i}",
+                        placeholder="https://… (leave blank to use FotMob/placeholder)",
+                    )
+                    b1, b2 = st.columns([1, 1])
+                    with b1:
+                        if st.button("Save photo override", key=f"save_photo__{role_title}__{i}"):
+                            if new_photo.strip():
+                                st.session_state["photo_map"][key_id] = new_photo.strip()
+                            else:
+                                st.session_state["photo_map"].pop(key_id, None)
+                            st.success("Saved.")
+                    with b2:
+                        if st.button("Clear photo override", key=f"clear_photo__{role_title}__{i}"):
+                            st.session_state["photo_map"].pop(key_id, None)
+                            st.success("Cleared.")
 
-# ========================= TAB WRAPPER =========================
-def role_tab(role_title: str, compute_fn, sim_role_key: str):
-    ranked, title, tmpl_src = compute_fn()
+                    st.markdown("---")
 
-    # Tabs: Role Fit (tiles first), Similar Players, Template players
-    t1, t2, t3 = st.tabs(["Role Fit", "Similar players", "Template players"])
+                    # Crest override
+                    current_crest_override = st.session_state.get("crest_map", {}).get(crest_key, "")
+                    new_crest = st.text_input(
+                        "Team crest URL (override)",
+                        value=current_crest_override,
+                        key=f"crest_override__{role_title}__{i}",
+                        placeholder="https://… (leave blank to use FotMob crest)",
+                    )
+                    b3, b4 = st.columns([1, 1])
+                    with b3:
+                        if st.button("Save crest override", key=f"save_crest__{role_title}__{i}"):
+                            if new_crest.strip():
+                                st.session_state["crest_map"][crest_key] = new_crest.strip()
+                            else:
+                                st.session_state["crest_map"].pop(crest_key, None)
+                            st.success("Saved.")
+                    with b4:
+                        if st.button("Clear crest override", key=f"clear_crest__{role_title}__{i}"):
+                            st.session_state["crest_map"].pop(crest_key, None)
+                            st.success("Cleared.")
 
-    with t1:
-        render_tiles(ranked, title, score_col="Role Fit Score", badge_label="Match")
-
-    with t2:
-        # similarity features and weights by role key
-        weights_dict = SIM_WEIGHTS.get(sim_role_key, {})
-        sim_features = [f for f in list(weights_dict.keys()) if f in df.columns]
-
-        if not sim_features:
-            st.info("No similarity features found in dataset for this role.")
-        else:
-            # settings UI (separate filters; follows top function except scoring controls)
-            settings = similarity_settings_ui(sim_key_prefix=f"sim_{sim_role_key}", default_leagues=leagues_sel)
-
-            # compute similarity based on the same base pool filters (already in ranked via build_base_pool)
-            sim_out = compute_similarity_candidates_from_pool(
-                ranked_pool=ranked,
-                tmpl_src=tmpl_src,
-                sim_features=sim_features,
-                weights_dict=weights_dict,
-                target_league=template_league,
-                settings=settings,
-            )
-
-            if sim_out.empty:
-                st.info("No candidates after similarity filters.")
-            else:
-                sim_out = sim_out.head(int(settings["top_n_sim"])).copy()
-
-                # show as tiles (same layout as role fit)
-                sim_tiles = sim_out.copy()
-                # normalize to 0..100 already "Adjusted Similarity"
-                sim_tiles["Adjusted Similarity"] = pd.to_numeric(sim_tiles["Adjusted Similarity"], errors="coerce").fillna(0.0)
-                sim_tiles = sim_tiles.rename(columns={"Adjusted Similarity": "Similarity Score"})
-                # reuse global top_n temporarily
-                old_top_n = top_n
-                try:
-                    # render tiles using Similarity Score as badge
-                    # (render_tiles uses global top_n, so we temporarily set it)
-                    globals()["top_n"] = int(settings["top_n_sim"])
-                    render_tiles(sim_tiles.rename(columns={"Similarity Score": "Role Fit Score"}), title, score_col="Role Fit Score", badge_label="Similar")
-                finally:
-                    globals()["top_n"] = old_top_n
-
-                st.markdown("---")
-                render_matches_table(sim_out, top_n_override=int(settings["top_n_sim"]), score_col="Adjusted Similarity")
-
-    with t3:
-        render_template_players_used(title, tmpl_src)
+                    st.markdown('</div>', unsafe_allow_html=True)
 
 
-# ========================= MAIN TABS =========================
-tabs = st.tabs(["Strikers", "Attackers", "Central Midfield", "Fullbacks", "Center Backs"])
+# ========================= MAIN UI: TABS =========================
+st.markdown("---")
+st.header("📌 Shortlist")
 
+# Candidate pool quick info
+with st.expander("Show candidate pool diagnostics", expanded=False):
+    pool0 = build_base_pool()
+    pool0 = _apply_pool_extra_filters(pool0)
+    st.write(f"Pool rows after filters: **{len(pool0)}**")
+    show_cols = [c for c in ["Player","Team","League","Position","Age","Minutes played","Market value"] if c in pool0.columns]
+    if show_cols:
+        st.dataframe(pool0[show_cols].head(200), use_container_width=True)
+
+tabs = st.tabs(["Strikers", "Attackers", "Central Mid", "Fullbacks", "Center Backs"])
+
+# ---- Strikers ----
 with tabs[0]:
-    role_tab("Strikers", compute_strikers, sim_role_key="ST")
+    ranked, title, tmpl_src = compute_strikers()
+    render_tiles(ranked, title, tmpl_src, cols_per_row=5)
 
+# ---- Attackers ----
 with tabs[1]:
-    att_choice = st.selectbox(
-        "Attacker subgroup",
+    role_choice = st.selectbox(
+        "Attacker subtype",
         ["All", "Right Wingers", "Left Wingers", "Attacking Midfielders"],
         index=0,
         key="att_role_choice",
     )
-    role_tab(f"Attackers ({att_choice})", lambda: compute_attackers(att_choice), sim_role_key="ATT")
+    ranked, title, tmpl_src = compute_attackers(role_choice)
+    render_tiles(ranked, title, tmpl_src, cols_per_row=5)
 
+# ---- Central Mid ----
 with tabs[2]:
-    role_tab("Central Midfield", compute_central_mid, sim_role_key="CM")
+    ranked, title, tmpl_src = compute_central_mid()
+    render_tiles(ranked, title, tmpl_src, cols_per_row=5)
 
+# ---- Fullbacks ----
 with tabs[3]:
-    fb_choice = st.selectbox("Fullback side", ["All", "Right Backs", "Left Backs"], index=0, key="fb_role_choice")
-    role_tab(f"Fullbacks ({fb_choice})", lambda: compute_fullbacks(fb_choice), sim_role_key="FB")
+    role_choice = st.selectbox(
+        "Fullback subtype",
+        ["All", "Right Backs", "Left Backs"],
+        index=0,
+        key="fb_role_choice",
+    )
+    ranked, title, tmpl_src = compute_fullbacks(role_choice)
+    render_tiles(ranked, title, tmpl_src, cols_per_row=5)
 
+# ---- Center Backs ----
 with tabs[4]:
-    role_tab("Center Backs", compute_center_backs, sim_role_key="CB")
-# ============================ CLUB TOOL — ONE-PAGER (FULL) + STYLES / STRENGTHS / WEAKNESSES ============================
+    ranked, title, tmpl_src = compute_center_backs()
+    render_tiles(ranked, title, tmpl_src, cols_per_row=5)
+
+# ========================= FOOTER =========================
+st.markdown("---")
+st.caption(
+    "Notes: Photos/crests come from FotMob where possible via team squad lookup + teamlogo. "
+    "If a team is missing in team_fotmob_urls.py, you'll see placeholders until you add the URL or override."
+
+
+
+)# ============================ CLUB TOOL — ONE-PAGER (FULL) + STYLES / STRENGTHS / WEAKNESSES ============================
 # Paste this WHOLE block into your Club Tool page where you want the one-pager section.
 #
 # ✅ Percentiles are computed vs: SAME LEAGUE + SAME POSITION-GROUP pool (unless "{metric} Percentile" exists)
