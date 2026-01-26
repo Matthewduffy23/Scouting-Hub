@@ -4306,10 +4306,11 @@ with tab_att: _sectionB_for_role("attack")
 with tab_st:  _sectionB_for_role("cf")
 
 
-# ======================== SECTION B (v4.5 — ONE CHART, EVEN SPLIT, MANUAL TEAM RANKS + AUTO ROLE) ========================
-# ✅ Fix: league change now auto-selects ALL teams in that league (no "filter first" problem)
-# ✅ Shows league sample size (N teams) right above the Team Style rank inputs
-# ✅ Everything else identical to your v4.4 behaviour + chart styling
+# ======================== SECTION B (v4.6 — ONE CHART, EVEN SPLIT, MANUAL TEAM RANKS + AUTO ROLE) ========================
+# ✅ Flow: Select League -> (minutes/age/search) -> Target Team (NO league team filtering required)
+# ✅ Pool = ALL teams in league (post minutes/age/search + position filter)
+# ✅ Team Style ranks use N teams from that same pool and N is displayed
+# ✅ Single polar chart split TEAM(5) vs ROLE(5) unchanged
 
 st.markdown("---")
 st.header("Section B — League Comparison (Single Split Radar)")
@@ -4349,17 +4350,6 @@ TEAM_STYLE_LABELS = {
 
 # ---------- upgraded single split polar chart ----------
 def _single_split_polar(team_labels, team_pcts, role_labels, role_pcts):
-    """
-    FINAL single-chart split radar:
-      - LEFT half = TEAM (5)
-      - RIGHT half = ROLE (5)
-      - Distinct track colours
-      - Full split diameter through centre (no clipping)
-      - Rings at 25/50/75
-      - Narrower wedges + more spacing
-      - Corner labels TEAM/ROLE in subtle grey
-      - Ordering respects the label order passed in
-    """
     value_colors = ["#be2a3e", "#e25f48", "#f88f4d", "#f4d166", "#90b960", "#4b9b5f", "#22763f"]
     cmap = LinearSegmentedColormap.from_list("pct_scale", value_colors)
 
@@ -4378,49 +4368,42 @@ def _single_split_polar(team_labels, team_pcts, role_labels, role_pcts):
     ax.grid(False)
     ax.spines["polar"].set_visible(False)
 
-    # angles
     n_team, n_role = 5, 5
     step_team = _np.pi / n_team
     step_role = _np.pi / n_role
 
-    angles_team = (_np.pi/2) + (step_team/2) + _np.arange(n_team) * step_team  # left half
-    angles_role = (-_np.pi/2) + (step_role/2) + _np.arange(n_role) * step_role  # right half
+    angles_team = (_np.pi/2) + (step_team/2) + _np.arange(n_team) * step_team
+    angles_role = (-_np.pi/2) + (step_role/2) + _np.arange(n_role) * step_role
 
     angles = _np.concatenate([angles_team, angles_role])
     labels = list(team_labels) + list(role_labels)
     values = list(team_pcts) + list(role_pcts)
 
-    # wedge widths (narrower)
     width_team = step_team * 0.76
     width_role = step_role * 0.76
     widths = [width_team]*n_team + [width_role]*n_role
 
-    # rings
     theta_ring = _np.linspace(0, 2*_np.pi, 361)
     for r, alpha, lw in [(25, 0.12, 1.0), (50, 0.22, 1.4), (75, 0.12, 1.0)]:
         ax.plot(theta_ring, _np.full_like(theta_ring, r),
                 color="white", alpha=alpha, linewidth=lw, zorder=0)
 
-    # FULL split diameter (both directions)
     for th in (_np.pi/2, 3*_np.pi/2):
         ax.plot([th, th], [0, RMAX],
                 color="white", linewidth=4.8, alpha=0.65, zorder=0)
 
-    # tracks (distinct per half)
     for i, (th, w) in enumerate(zip(angles, widths)):
         is_team = i < n_team
         ax.bar(th, 100, width=w, bottom=0,
                color=(TEAM_TRACK if is_team else ROLE_TRACK),
                alpha=0.78, edgecolor="none", zorder=1)
 
-    # data bars
     for th, w, v in zip(angles, widths, values):
         v = int(max(0, min(100, v)))
         ax.bar(th, v, width=w, bottom=0,
                color=cmap(v/100.0),
                edgecolor="white", linewidth=1.4, zorder=3)
 
-    # metric labels
     label_radius = 134
     for th, lab in zip(angles, labels):
         ax.text(th, label_radius, str(lab).upper(),
@@ -4428,7 +4411,6 @@ def _single_split_polar(team_labels, team_pcts, role_labels, role_pcts):
                 fontsize=9.6, fontweight="bold",
                 color="white", alpha=0.95, zorder=4)
 
-    # corner labels
     corner_col = "#9CA3AF"
     fig.text(0.06, 0.965, "TEAM", ha="left", va="top",
              fontsize=13.5, fontweight="900", color=corner_col)
@@ -4457,15 +4439,9 @@ def _cfg(role_key: str):
                 + _pd.to_numeric(out["Progressive runs per 90"], errors="coerce")
             )
             out["Aerial Volume"] = _pd.to_numeric(out["Aerial duels per 90"], errors="coerce")
-            out["Positional Demand"] = (
-                _pd.to_numeric(out["PAdj Interceptions"], errors="coerce")
-                + _pd.to_numeric(out["Shots blocked per 90"], errors="coerce")
-            )
             return out
         agg_cols = ["Defensive Volume","Aerial Volume","Passing Volume","Progression Volume","Pass Verticality"]
-        label_map = {c: c for c in agg_cols}
-        return dict(pos_filter=pos_ok, require_cols=require, compute_metrics=compute, agg_cols=agg_cols,
-                    label_map=label_map, title="Center Backs")
+        return dict(pos_filter=pos_ok, require_cols=require, compute_metrics=compute, agg_cols=agg_cols, title="Center Backs")
 
     if role_key == "fb":
         require = [
@@ -4496,9 +4472,7 @@ def _cfg(role_key: str):
             out["Retention"] = _pd.to_numeric(out["Accurate passes, %"], errors="coerce")
             return out
         agg_cols = ["Defensive Volume","Pass Volume","Attacking Contribution","Retention","Progression Volume"]
-        label_map = {c: c for c in agg_cols}
-        return dict(pos_filter=pos_ok, require_cols=require, compute_metrics=compute, agg_cols=agg_cols,
-                    label_map=label_map, title="Fullbacks")
+        return dict(pos_filter=pos_ok, require_cols=require, compute_metrics=compute, agg_cols=agg_cols, title="Fullbacks")
 
     if role_key == "cm":
         require = [
@@ -4518,9 +4492,7 @@ def _cfg(role_key: str):
             out["Retention"] = _pd.to_numeric(out["Accurate passes, %"], errors="coerce")
             return out
         agg_cols = ["Defensive Volume","Pass Volume","Progressive Volume","Retention","Pass Verticality"]
-        label_map = {c: c for c in agg_cols}
-        return dict(pos_filter=pos_ok, require_cols=require, compute_metrics=compute, agg_cols=agg_cols,
-                    label_map=label_map, title="Central Midfielders")
+        return dict(pos_filter=pos_ok, require_cols=require, compute_metrics=compute, agg_cols=agg_cols, title="Central Midfielders")
 
     if role_key == "attack":
         require = [
@@ -4533,7 +4505,6 @@ def _cfg(role_key: str):
             main = _re.split(r"[/,]", s)[0].strip().split()[0]
             if main in ("RW", "LW"): return True
             return main.startswith(("RWF","LWF","LAMF","RAMF","AMF"))
-
         def compute(df):
             out = df.copy()
             out["Goal Threat"] = (
@@ -4555,11 +4526,8 @@ def _cfg(role_key: str):
                 + 0.4 * _pd.to_numeric(out["Progressive runs per 90"], errors="coerce")
             )
             return out
-
         agg_cols = ["Pass Volume","Deep Playmaking","Ball Carrying","Goal Threat","Creative Threat"]
-        label_map = {c: c for c in agg_cols}
-        return dict(pos_filter=pos_ok, require_cols=require, compute_metrics=compute, agg_cols=agg_cols,
-                    label_map=label_map, title="Attackers")
+        return dict(pos_filter=pos_ok, require_cols=require, compute_metrics=compute, agg_cols=agg_cols, title="Attackers")
 
     if role_key == "cf":
         require = [
@@ -4585,37 +4553,21 @@ def _cfg(role_key: str):
             out["Retention"] = _pd.to_numeric(out["Accurate passes, %"], errors="coerce")
             return out
         agg_cols = ["Aerial Volume","Pass Volume","Opportunities","Retention","Carrying Outlet"]
-        label_map = {c: c for c in agg_cols}
-        return dict(pos_filter=pos_ok, require_cols=require, compute_metrics=compute, agg_cols=agg_cols,
-                    label_map=label_map, title="Strikers")
+        return dict(pos_filter=pos_ok, require_cols=require, compute_metrics=compute, agg_cols=agg_cols, title="Strikers")
 
     return None
 
 # ---------- per-role UI/logic ----------
-def _sectionB_singlechart_manualteam_for_role(role_key: str, kbase: str = "secB_SINGLE_v45"):
+def _sectionB_singlechart_manualteam_for_role(role_key: str, kbase: str = "secB_SINGLE_v46"):
     cfg = _cfg(role_key)
     if not cfg:
         st.info("Unknown role key.")
         return
 
     K = f"{kbase}_{_keyify(role_key)}"
-
     leagues = sorted([str(x) for x in df["League"].dropna().unique()])
 
-    # ✅ keys
-    league_key = f"{K}_league"
-    teams_key  = f"{K}_teams"
-
-    # ✅ league selectbox
-    included_league = st.selectbox(f"League ({cfg['title']})", leagues, key=league_key)
-
-    # ✅ reset team multiselect when league changes
-    prev_key = f"{league_key}_prev"
-    if prev_key not in st.session_state:
-        st.session_state[prev_key] = included_league
-    if st.session_state[prev_key] != included_league:
-        st.session_state[teams_key] = []  # force clear so default repopulates
-        st.session_state[prev_key] = included_league
+    included_league = st.selectbox(f"League ({cfg['title']})", leagues, key=f"{K}_league")
 
     league_df = df[df["League"].astype(str) == included_league].copy()
 
@@ -4632,57 +4584,48 @@ def _sectionB_singlechart_manualteam_for_role(role_key: str, kbase: str = "secB_
         st.info("Missing Position column.")
         return
 
+    # position subset + required cols
     league_df = league_df[league_df["Position"].apply(cfg["pos_filter"])].dropna(subset=cfg["require_cols"])
     if league_df.empty:
         st.info(f"No {cfg['title']} in this league with required stats.")
         return
 
-    fl1, fl2, fl3 = st.columns([1.6, 1.6, 1.6])
-    with fl1:
-        teams = sorted(league_df["Team"].dropna().astype(str).unique())
-
-        # ✅ default ALL teams when empty / reset
-        default_teams = teams if (teams_key not in st.session_state or not st.session_state.get(teams_key)) else None
-
-        teams_selected = st.multiselect(
-            "Filter teams",
-            teams,
-            default=default_teams,
-            key=teams_key
-        )
-
-    with fl2:
+    # Filters (ONLY minutes/age/search; no team filtering)
+    f1, f2 = st.columns([2.0, 1.4])
+    with f1:
+        q = st.text_input("Quick player search (optional)", "", key=f"{K}_q")
+    with f2:
         min_minutes, max_minutes = st.slider("Minutes played", 0, 6000, (750, 6000), key=f"{K}_mins")
         a_min = int(_np.nanmin(league_df["Age"])) if league_df["Age"].notna().any() else 16
         a_max = int(_np.nanmax(league_df["Age"])) if league_df["Age"].notna().any() else 50
         min_age, max_age = st.slider("Age", a_min, a_max, (16, 50), key=f"{K}_age")
-    with fl3:
-        q = st.text_input("Quick player search (optional)", "", key=f"{K}_q")
 
     pool = league_df[
-        league_df["Team"].astype(str).isin(teams_selected)
-        & league_df["Minutes played"].between(min_minutes, max_minutes)
+        league_df["Minutes played"].between(min_minutes, max_minutes)
         & league_df["Age"].between(min_age, max_age)
     ].copy()
+
     if q.strip():
         s = q.strip().lower()
         pool = pool[pool["Player"].astype(str).str.lower().str.contains(s, na=False)]
+
     if pool.empty:
         st.info("No players after filters.")
         return
 
     pool = cfg["compute_metrics"](pool).copy()
 
+    # ✅ Target team directly from league pool
     compare_mode = st.radio("Compare", ["Team average", "Specific player"], horizontal=True, key=f"{K}_mode")
     teams_pool = sorted(pool["Team"].dropna().astype(str).unique())
+    if not teams_pool:
+        st.info("No teams found in pool.")
+        return
     target_team = st.selectbox("Target team", teams_pool, key=f"{K}_team")
 
     agg_role = pool.groupby("Team")[cfg["agg_cols"]].mean().reset_index()
 
     if compare_mode == "Team average":
-        if target_team not in agg_role["Team"].values:
-            st.info("Target team has no eligible players in filtered set.")
-            return
         target_vals_role = agg_role.set_index("Team").loc[target_team, cfg["agg_cols"]].to_dict()
         label_subject = f"{target_team} AVG"
         exclude_label = target_team
@@ -4717,13 +4660,13 @@ def _sectionB_singlechart_manualteam_for_role(role_key: str, kbase: str = "secB_
 
     rank_role_df = _pd.DataFrame(rows_role, columns=["Metric", "Rank", "Total teams", "Percentile", "Target value"])
 
-    # ✅ N teams shown to user (league/team-average sample size used for TEAM rank inputs)
+    # ✅ N teams from role benchmark pool
     N_TEAMS = int(rank_role_df["Total teams"].max()) if not rank_role_df.empty else int(agg_role["Team"].nunique())
     N_TEAMS = max(1, N_TEAMS)
 
     # Manual TEAM ranks + show N
     st.markdown("### ✍️ Team Style — enter ranks (1 = best, N = worst)")
-    st.caption(f"League sample size used for ranks: **N = {N_TEAMS} teams** (post-filters)")
+    st.caption(f"League benchmark size used for ranks: **N = {N_TEAMS} teams** (post minutes/age/search filters)")
 
     team_labels = TEAM_STYLE_LABELS.get(str(role_key).lower().strip(), ["Metric1","Metric2","Metric3","Metric4","Metric5"])[:5]
     cols = st.columns(5)
@@ -4763,12 +4706,13 @@ def _sectionB_singlechart_manualteam_for_role(role_key: str, kbase: str = "secB_
 tab_cb, tab_fb, tab_cm, tab_att, tab_st = st.tabs(
     ["Center Backs", "Fullbacks", "Central Midfielders", "Attackers", "Strikers"]
 )
-with tab_cb:  _sectionB_singlechart_manualteam_for_role("cb", kbase="secB_SINGLE_v45")
-with tab_fb:  _sectionB_singlechart_manualteam_for_role("fb", kbase="secB_SINGLE_v45")
-with tab_cm:  _sectionB_singlechart_manualteam_for_role("cm", kbase="secB_SINGLE_v45")
-with tab_att: _sectionB_singlechart_manualteam_for_role("attack", kbase="secB_SINGLE_v45")
-with tab_st:  _sectionB_singlechart_manualteam_for_role("cf", kbase="secB_SINGLE_v45")
-# ======================== END SECTION B (v4.5) ========================
+with tab_cb:  _sectionB_singlechart_manualteam_for_role("cb", kbase="secB_SINGLE_v46")
+with tab_fb:  _sectionB_singlechart_manualteam_for_role("fb", kbase="secB_SINGLE_v46")
+with tab_cm:  _sectionB_singlechart_manualteam_for_role("cm", kbase="secB_SINGLE_v46")
+with tab_att: _sectionB_singlechart_manualteam_for_role("attack", kbase="secB_SINGLE_v46")
+with tab_st:  _sectionB_singlechart_manualteam_for_role("cf", kbase="secB_SINGLE_v46")
+# ======================== END SECTION B (v4.6) ========================
+
 
 
 
