@@ -556,6 +556,41 @@ def _percentile_of_value(series: pd.Series, value: float) -> float:
         return 0.5
     return float((s <= float(value)).mean())
 
+def _percentile_vector_for_league(ref_df: pd.DataFrame, metric_cols: List[str], values: dict) -> dict:
+    out = {}
+    for m in metric_cols:
+        s = pd.to_numeric(ref_df.get(m), errors="coerce").dropna()
+        v = float(values.get(m, np.nan))
+        if s.empty or not np.isfinite(v):
+            out[m] = 50.0
+        else:
+            out[m] = _percentile_of_value(s, v) * 100.0
+    return out
+
+def _add_candidate_percentiles_per_league(pool: pd.DataFrame, ref_all: pd.DataFrame, metric_cols: List[str]) -> pd.DataFrame:
+    out = pool.copy()
+
+    for m in metric_cols:
+        out[f"{m} %ile"] = 50.0
+
+    if out.empty:
+        return out
+
+    leagues = sorted(out["League"].dropna().astype(str).unique())
+    for lg in leagues:
+        idx = out["League"].astype(str) == lg
+        ref_lg = ref_all[ref_all["League"].astype(str) == lg]
+        if ref_lg.empty:
+            continue
+        for m in metric_cols:
+            s = pd.to_numeric(ref_lg.get(m), errors="coerce").dropna()
+            if s.empty:
+                continue
+            out.loc[idx, f"{m} %ile"] = pd.to_numeric(out.loc[idx, m], errors="coerce").map(
+                lambda v: _percentile_of_value(s, v) * 100.0
+            )
+    return out
+
 def compute_similarity_from_template(
     tmpl_src: pd.DataFrame,
     pool: pd.DataFrame,
@@ -695,9 +730,28 @@ def compute_strikers():
     pool["Retention"]          = pool['Accurate passes, %']
 
     cols = ["Opportunities","Ball Carrying","Aerial Requirement","Passing Volume","Goal Output","Retention"]
+
+    ref_all = build_base_pool().copy()
+    ref_all = ref_all[ref_all["Position"].str.upper().str.startswith("CF")].copy()
+    for c in feats:
+        ref_all[c] = pd.to_numeric(ref_all[c], errors="coerce")
+    ref_all = ref_all.dropna(subset=feats)
+
+    ref_all["Opportunities"]      = 0.7*ref_all['Touches in box per 90'] + 0.3*ref_all['xG per 90']
+    ref_all["Ball Carrying"]      = 0.65*ref_all['Dribbles per 90'] + 0.35*ref_all['Progressive runs per 90']
+    ref_all["Aerial Requirement"] = ref_all['Aerial duels per 90'] * ref_all['Aerial duels won, %'] / 100.0
+    ref_all["Passing Volume"]     = ref_all['Passes per 90']
+    ref_all["Goal Output"]        = ref_all['Non-penalty goals per 90']
+    ref_all["Retention"]          = ref_all['Accurate passes, %']
+
+    ref_tmpl = ref_all[ref_all["League"].astype(str) == str(template_league)].copy()
+    tmpl_pct = _percentile_vector_for_league(ref_tmpl, cols, tmpl_vec.to_dict())
+
+    pool = _add_candidate_percentiles_per_league(pool, ref_all, cols)
+
     for c in cols:
-        pool[f"__tmpl__{c}"] = tmpl_vec[c]
-    pool["BaseDist"] = pool.apply(lambda r: norm([r[c]-r[f"__tmpl__{c}"] for c in cols]), axis=1)
+        pool[f"__tmpl__{c}"] = tmpl_pct[c]
+    pool["BaseDist"] = pool.apply(lambda r: norm([r[f"{c} %ile"]-r[f"__tmpl__{c}"] for c in cols]), axis=1)
 
     ranked = _score_block(pool.copy())
     return ranked, "Strikers (CF)", tmpl_src
@@ -764,9 +818,27 @@ def compute_attackers(role_choice: str):
     pool["Deeper Playmaking"] = 0.5*pool['Progressive passes per 90'] + 0.5*pool['Passes to final third per 90']
     pool["Ball Carrying"]     = 0.6*pool['Dribbles per 90'] + 0.4*pool['Progressive runs per 90']
 
+    ref_all = build_base_pool().copy()
+    ref_all = ref_all[ref_all["Position"].apply(pos_ok)].copy()
+    for c in feats:
+        ref_all[c] = pd.to_numeric(ref_all[c], errors="coerce")
+    ref_all = ref_all.dropna(subset=feats)
+
+    ref_all["Retention Style"]   = ref_all['Accurate passes, %']
+    ref_all["Goal Threat"]       = 0.4*ref_all['xG per 90'] + 0.4*ref_all['Non-penalty goals per 90'] + 0.2*ref_all['Touches in box per 90']
+    ref_all["Creativity Threat"] = 0.65*ref_all['xA per 90'] + 0.35*ref_all['Passes to penalty area per 90']
+    ref_all["Passing Volume"]    = ref_all['Passes per 90']
+    ref_all["Deeper Playmaking"] = 0.5*ref_all['Progressive passes per 90'] + 0.5*ref_all['Passes to final third per 90']
+    ref_all["Ball Carrying"]     = 0.6*ref_all['Dribbles per 90'] + 0.4*ref_all['Progressive runs per 90']
+
+    ref_tmpl = ref_all[ref_all["League"].astype(str) == str(template_league)].copy()
+    tmpl_pct = _percentile_vector_for_league(ref_tmpl, cols, tmpl_vec.to_dict())
+
+    pool = _add_candidate_percentiles_per_league(pool, ref_all, cols)
+
     for c in cols:
-        pool[f"__tmpl__{c}"] = tmpl_vec[c]
-    pool["BaseDist"] = pool.apply(lambda r: norm([r[c]-r[f"__tmpl__{c}"] for c in cols]), axis=1)
+        pool[f"__tmpl__{c}"] = tmpl_pct[c]
+    pool["BaseDist"] = pool.apply(lambda r: norm([r[f"{c} %ile"]-r[f"__tmpl__{c}"] for c in cols]), axis=1)
 
     ranked = _score_block(pool.copy())
     return ranked, f"Attackers ({role_choice})", tmpl_src
@@ -809,8 +881,6 @@ def compute_central_mid():
     pool = base_pool[base_pool["Position"].apply(pos_ok)].copy()
     pool = pool[~((pool["Team"].astype(str) == template_team) & (pool["League"].astype(str) == template_league))]
 
-    # ✅ REMOVED hard-coded Age/MV/Minutes filters: pool already follows the top-bar sliders
-
     for c in feats:
         pool[c] = pd.to_numeric(pool[c], errors="coerce")
     pool = pool.dropna(subset=feats)
@@ -822,9 +892,28 @@ def compute_central_mid():
     pool["Interception Volume"] = pool['PAdj Interceptions']
     pool["Retention"]           = pool['Accurate passes, %']
 
+    # Percentile reference pool for this role
+    ref_all = build_base_pool().copy()
+    ref_all = ref_all[ref_all["Position"].apply(pos_ok)].copy()
+    for c in feats:
+        ref_all[c] = pd.to_numeric(ref_all[c], errors="coerce")
+    ref_all = ref_all.dropna(subset=feats)
+
+    ref_all["Pass Verticality"]    = _safe_verticality(ref_all['Forward passes per 90'], ref_all['Passes per 90'])
+    ref_all["Progression Volume"]  = ref_all['Progressive passes per 90'] + ref_all['Progressive runs per 90']
+    ref_all["Attacking Contribution"] = ref_all['Touches in box per 90'] + ref_all['Shots per 90']
+    ref_all["Defensive Volume"]    = ref_all['Defensive duels per 90']
+    ref_all["Interception Volume"] = ref_all['PAdj Interceptions']
+    ref_all["Retention"]           = ref_all['Accurate passes, %']
+
+    ref_tmpl = ref_all[ref_all["League"].astype(str) == str(template_league)].copy()
+    tmpl_pct = _percentile_vector_for_league(ref_tmpl, cols, tmpl_vec.to_dict())
+
+    pool = _add_candidate_percentiles_per_league(pool, ref_all, cols)
+
     for c in cols:
-        pool[f"__tmpl__{c}"] = tmpl_vec[c]
-    pool["BaseDist"] = pool.apply(lambda r: norm([r[c]-r[f"__tmpl__{c}"] for c in cols]), axis=1)
+        pool[f"__tmpl__{c}"] = tmpl_pct[c]
+    pool["BaseDist"] = pool.apply(lambda r: norm([r[f"{c} %ile"] - r[f"__tmpl__{c}"] for c in cols]), axis=1)
 
     ranked = _score_block(pool.copy())
     return ranked, "Central Midfield", tmpl_src
@@ -874,8 +963,6 @@ def compute_fullbacks(role_choice: str):
     pool = base_pool[base_pool["Position"].apply(pos_ok)].copy()
     pool = pool[~((pool["Team"].astype(str) == template_team) & (pool["League"].astype(str) == template_league))]
 
-    # ✅ REMOVED hard-coded Age/MV/Minutes filters: pool already follows the top-bar sliders
-
     for c in feats:
         pool[c] = pd.to_numeric(pool[c], errors="coerce")
     pool = pool.dropna(subset=feats)
@@ -886,9 +973,27 @@ def compute_fullbacks(role_choice: str):
     pool["Defensive Volume"]     = 0.5*pool['Defensive duels per 90'] + 0.3*pool['PAdj Interceptions'] + 0.2*pool['Aerial duels per 90']
     pool["Retention"]            = pool['Accurate passes, %']
 
+    # Percentile reference pool for this role
+    ref_all = build_base_pool().copy()
+    ref_all = ref_all[ref_all["Position"].apply(pos_ok)].copy()
+    for c in feats:
+        ref_all[c] = pd.to_numeric(ref_all[c], errors="coerce")
+    ref_all = ref_all.dropna(subset=feats)
+
+    ref_all["Pass Verticality"]     = _safe_verticality(ref_all['Forward passes per 90'], ref_all['Passes per 90'])
+    ref_all["Progression Volume"]   = ref_all['Progressive passes per 90'] + ref_all['Progressive runs per 90']
+    ref_all["Attacking Contribution"]= 0.4*ref_all['xA per 90'] + 0.2*ref_all['Crosses per 90'] + 0.2*ref_all['Touches in box per 90'] + 0.1*ref_all['Shots per 90'] + 0.1*ref_all['Passes to penalty area per 90']
+    ref_all["Defensive Volume"]     = 0.5*ref_all['Defensive duels per 90'] + 0.3*ref_all['PAdj Interceptions'] + 0.2*ref_all['Aerial duels per 90']
+    ref_all["Retention"]            = ref_all['Accurate passes, %']
+
+    ref_tmpl = ref_all[ref_all["League"].astype(str) == str(template_league)].copy()
+    tmpl_pct = _percentile_vector_for_league(ref_tmpl, cols, tmpl_vec.to_dict())
+
+    pool = _add_candidate_percentiles_per_league(pool, ref_all, cols)
+
     for c in cols:
-        pool[f"__tmpl__{c}"] = tmpl_vec[c]
-    pool["BaseDist"] = pool.apply(lambda r: norm([r[c]-r[f"__tmpl__{c}"] for c in cols]), axis=1)
+        pool[f"__tmpl__{c}"] = tmpl_pct[c]
+    pool["BaseDist"] = pool.apply(lambda r: norm([r[f"{c} %ile"] - r[f"__tmpl__{c}"] for c in cols]), axis=1)
 
     ranked = _score_block(pool.copy())
     return ranked, f"Fullbacks ({role_choice})", tmpl_src
@@ -929,8 +1034,6 @@ def compute_center_backs():
     pool = base_pool[base_pool["Position"].apply(pos_ok)].copy()
     pool = pool[~((pool["Team"].astype(str) == template_team) & (pool["League"].astype(str) == template_league))]
 
-    # ✅ REMOVED hard-coded Age/MV/Minutes filters: pool already follows the top-bar sliders
-
     for c in feats:
         pool[c] = pd.to_numeric(pool[c], errors="coerce")
     pool = pool.dropna(subset=feats)
@@ -940,10 +1043,27 @@ def compute_center_backs():
     pool["Positional Demand"]   = pool['PAdj Interceptions'] + pool['Shots blocked per 90']
     pool["Progression Volume"]  = pool['Progressive passes per 90'] + pool['Progressive runs per 90']
 
+    # Percentile reference pool for this role
+    ref_all = build_base_pool().copy()
+    ref_all = ref_all[ref_all["Position"].apply(pos_ok)].copy()
+    for c in feats:
+        ref_all[c] = pd.to_numeric(ref_all[c], errors="coerce")
+    ref_all = ref_all.dropna(subset=feats)
+
+    ref_all["Passing Verticality"] = _safe_verticality(ref_all['Forward passes per 90'], ref_all['Passes per 90'])
+    ref_all["Passing Volume"]      = ref_all['Passes per 90']
+    ref_all["Positional Demand"]   = ref_all['PAdj Interceptions'] + ref_all['Shots blocked per 90']
+    ref_all["Progression Volume"]  = ref_all['Progressive passes per 90'] + ref_all['Progressive runs per 90']
+
+    ref_tmpl = ref_all[ref_all["League"].astype(str) == str(template_league)].copy()
+    tmpl_pct = _percentile_vector_for_league(ref_tmpl, cols, tmpl_vec.to_dict())
+
+    pool = _add_candidate_percentiles_per_league(pool, ref_all, cols)
+
     for c in cols:
-        pool[f"__tmpl__{c}"] = tmpl_vec[c]
+        pool[f"__tmpl__{c}"] = tmpl_pct[c]
     pool["BaseDist"] = pool.apply(
-        lambda r: norm([r[c] - r[f"__tmpl__{c}"] for c in cols]),
+        lambda r: norm([r[f"{c} %ile"] - r[f"__tmpl__{c}"] for c in cols]),
         axis=1
     )
 
@@ -1452,8 +1572,7 @@ with tabs[3]:
     role_tab(f"Fullbacks ({fb_choice})", lambda: compute_fullbacks(fb_choice), sim_role_key="FB")
 
 with tabs[4]:
-    role_tab("Center Backs", compute_center_backs, sim_role_key="CB")
-# ============================ CLUB TOOL — ONE-PAGER (FULL) + STYLES / STRENGTHS / WEAKNESSES ============================
+    role_tab("Center Backs", compute_center_backs, sim_role_key="CB")# ============================ CLUB TOOL — ONE-PAGER (FULL) + STYLES / STRENGTHS / WEAKNESSES ============================
 # Paste this WHOLE block into your Club Tool page where you want the one-pager section.
 #
 # ✅ Percentiles are computed vs: SAME LEAGUE + SAME POSITION-GROUP pool (unless "{metric} Percentile" exists)
