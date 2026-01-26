@@ -3892,11 +3892,6 @@ with st.expander("🕵️ Why is my player missing?", expanded=False):
 
 
 
-
-
-
-
-
 # ======================== SECTION B (v2 — FULL, TITLES OFF, FULL LABELS) ========================
 st.markdown("---")
 st.header("Section B — League Comparison Radar & Tables")
@@ -4169,8 +4164,13 @@ def _sectionB_for_role(role_key: str):
     fl1, fl2, fl3 = st.columns([1.6,1.6,1.6])
     with fl1:
         teams = sorted(league_df["Team"].dropna().astype(str).unique())
-        teams_selected = st.multiselect("Filter teams", teams, default=teams, key=f"secB_teams_{role_key}")
-    with fl2:
+        teams_selected = st.multiselect(
+                 "Filter teams",
+                   teams,
+                   default=teams,
+                   key=f"secB_teams_{role_key}_{included_league}"
+)
+
         min_minutes, max_minutes = st.slider("Minutes played", 0, 6000, (750, 6000), key=f"secB_min_{role_key}")
         a_min = int(_np.nanmin(league_df["Age"])) if league_df["Age"].notna().any() else 16
         a_max = int(_np.nanmax(league_df["Age"])) if league_df["Age"].notna().any() else 50
