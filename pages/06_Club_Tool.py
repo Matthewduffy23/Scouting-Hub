@@ -4384,7 +4384,7 @@ def _single_split_polar(team_labels, team_pcts, role_labels, role_pcts):
     widths = [width_team]*n_team + [width_role]*n_role
 
     theta_ring = _np.linspace(0, 2*_np.pi, 361)
-    for r, alpha, lw in [(25, 0.12, 1.0), (50, 0.22, 1.4), (75, 0.12, 1.0)]:
+    for r, alpha, lw in [(25, 0.08, 0.8), (50, 0.22, 1.8), (75, 0.08, 0.8)]:
         ax.plot(theta_ring, _np.full_like(theta_ring, r),
                 color="white", alpha=alpha, linewidth=lw, zorder=0)
 
@@ -4404,14 +4404,14 @@ def _single_split_polar(team_labels, team_pcts, role_labels, role_pcts):
                color=cmap(v/100.0),
                edgecolor="white", linewidth=1.4, zorder=3)
 
-    label_radius = 134
+    label_radius = 128
     for th, lab in zip(angles, labels):
         ax.text(th, label_radius, str(lab).upper(),
                 ha="center", va="center",
                 fontsize=9.6, fontweight="bold",
                 color="white", alpha=0.95, zorder=4)
 
-    corner_col = "#ff66c4"
+    corner_col = "#f472b6"
     fig.text(0.04, 0.965, "TEAM", ha="left", va="top",
              fontsize=18, fontweight="900", color=corner_col)
     fig.text(0.96, 0.965, "ROLE", ha="right", va="top",
