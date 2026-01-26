@@ -4306,16 +4306,10 @@ with tab_att: _sectionB_for_role("attack")
 with tab_st:  _sectionB_for_role("cf")
 
 
-# ======================== SECTION B (v4.4 — ONE CHART, EVEN SPLIT, MANUAL TEAM RANKS + AUTO ROLE) ========================
-# - Single polar chart (ONE axis)
-# - Exactly 5 TEAM metrics on LEFT half, 5 ROLE metrics on RIGHT half
-# - TEAM side = you input RANKS (1..N) → converted to percentiles using SAME N teams in sample
-# - ROLE side = auto percentiles exactly like your original Section B method
-# - Fixes per your notes:
-#   1) Distinct track colours (TEAM blue-grey, ROLE purple-grey)
-#   2) Split axis runs FULLY through (diameter; not clipped)
-#   3) TEAM / ROLE labels in TRUE corners (subtle grey)
-# - Also includes rings (25/50/75) + slightly narrower wedges
+# ======================== SECTION B (v4.5 — ONE CHART, EVEN SPLIT, MANUAL TEAM RANKS + AUTO ROLE) ========================
+# ✅ Fix: league change now auto-selects ALL teams in that league (no "filter first" problem)
+# ✅ Shows league sample size (N teams) right above the Team Style rank inputs
+# ✅ Everything else identical to your v4.4 behaviour + chart styling
 
 st.markdown("---")
 st.header("Section B — League Comparison (Single Split Radar)")
@@ -4443,7 +4437,7 @@ def _single_split_polar(team_labels, team_pcts, role_labels, role_pcts):
 
     return fig
 
-# ---------- ROLE STYLE configs (same calculation approach as your original Section B; 5 metrics each) ----------
+# ---------- ROLE STYLE configs ----------
 def _cfg(role_key: str):
     role_key = str(role_key).lower().strip()
 
@@ -4598,7 +4592,7 @@ def _cfg(role_key: str):
     return None
 
 # ---------- per-role UI/logic ----------
-def _sectionB_singlechart_manualteam_for_role(role_key: str, kbase: str = "secB_SINGLE_v44"):
+def _sectionB_singlechart_manualteam_for_role(role_key: str, kbase: str = "secB_SINGLE_v45"):
     cfg = _cfg(role_key)
     if not cfg:
         st.info("Unknown role key.")
@@ -4607,7 +4601,21 @@ def _sectionB_singlechart_manualteam_for_role(role_key: str, kbase: str = "secB_
     K = f"{kbase}_{_keyify(role_key)}"
 
     leagues = sorted([str(x) for x in df["League"].dropna().unique()])
-    included_league = st.selectbox(f"League ({cfg['title']})", leagues, key=f"{K}_league")
+
+    # ✅ keys
+    league_key = f"{K}_league"
+    teams_key  = f"{K}_teams"
+
+    # ✅ league selectbox
+    included_league = st.selectbox(f"League ({cfg['title']})", leagues, key=league_key)
+
+    # ✅ reset team multiselect when league changes
+    prev_key = f"{league_key}_prev"
+    if prev_key not in st.session_state:
+        st.session_state[prev_key] = included_league
+    if st.session_state[prev_key] != included_league:
+        st.session_state[teams_key] = []  # force clear so default repopulates
+        st.session_state[prev_key] = included_league
 
     league_df = df[df["League"].astype(str) == included_league].copy()
 
@@ -4632,7 +4640,17 @@ def _sectionB_singlechart_manualteam_for_role(role_key: str, kbase: str = "secB_
     fl1, fl2, fl3 = st.columns([1.6, 1.6, 1.6])
     with fl1:
         teams = sorted(league_df["Team"].dropna().astype(str).unique())
-        teams_selected = st.multiselect("Filter teams", teams, default=teams, key=f"{K}_teams")
+
+        # ✅ default ALL teams when empty / reset
+        default_teams = teams if (teams_key not in st.session_state or not st.session_state.get(teams_key)) else None
+
+        teams_selected = st.multiselect(
+            "Filter teams",
+            teams,
+            default=default_teams,
+            key=teams_key
+        )
+
     with fl2:
         min_minutes, max_minutes = st.slider("Minutes played", 0, 6000, (750, 6000), key=f"{K}_mins")
         a_min = int(_np.nanmin(league_df["Age"])) if league_df["Age"].notna().any() else 16
@@ -4682,7 +4700,7 @@ def _sectionB_singlechart_manualteam_for_role(role_key: str, kbase: str = "secB_
         label_subject = sel_player
         exclude_label = str(prow["Team"].iloc[0])
 
-    # ROLE percentiles (same method as original)
+    # ROLE percentiles
     rows_role = []
     for met in cfg["agg_cols"]:
         temp = agg_role[["Team", met]].copy()
@@ -4699,20 +4717,23 @@ def _sectionB_singlechart_manualteam_for_role(role_key: str, kbase: str = "secB_
 
     rank_role_df = _pd.DataFrame(rows_role, columns=["Metric", "Rank", "Total teams", "Percentile", "Target value"])
 
+    # ✅ N teams shown to user (league/team-average sample size used for TEAM rank inputs)
     N_TEAMS = int(rank_role_df["Total teams"].max()) if not rank_role_df.empty else int(agg_role["Team"].nunique())
     N_TEAMS = max(1, N_TEAMS)
 
-    # Manual TEAM ranks
+    # Manual TEAM ranks + show N
     st.markdown("### ✍️ Team Style — enter ranks (1 = best, N = worst)")
+    st.caption(f"League sample size used for ranks: **N = {N_TEAMS} teams** (post-filters)")
+
     team_labels = TEAM_STYLE_LABELS.get(str(role_key).lower().strip(), ["Metric1","Metric2","Metric3","Metric4","Metric5"])[:5]
     cols = st.columns(5)
     team_ranks = []
     for col, lab in zip(cols, team_labels):
         with col:
             r = st.number_input(
-                lab,
+                f"{lab} (rank 1–{N_TEAMS})",
                 min_value=1, max_value=int(N_TEAMS),
-                value=min(1, int(N_TEAMS)),
+                value=1,
                 step=1,
                 key=f"{K}_teamrank_{_keyify(lab)}"
             )
@@ -4742,12 +4763,12 @@ def _sectionB_singlechart_manualteam_for_role(role_key: str, kbase: str = "secB_
 tab_cb, tab_fb, tab_cm, tab_att, tab_st = st.tabs(
     ["Center Backs", "Fullbacks", "Central Midfielders", "Attackers", "Strikers"]
 )
-with tab_cb:  _sectionB_singlechart_manualteam_for_role("cb", kbase="secB_SINGLE_v44")
-with tab_fb:  _sectionB_singlechart_manualteam_for_role("fb", kbase="secB_SINGLE_v44")
-with tab_cm:  _sectionB_singlechart_manualteam_for_role("cm", kbase="secB_SINGLE_v44")
-with tab_att: _sectionB_singlechart_manualteam_for_role("attack", kbase="secB_SINGLE_v44")
-with tab_st:  _sectionB_singlechart_manualteam_for_role("cf", kbase="secB_SINGLE_v44")
-# ======================== END SECTION B (v4.4) ========================
+with tab_cb:  _sectionB_singlechart_manualteam_for_role("cb", kbase="secB_SINGLE_v45")
+with tab_fb:  _sectionB_singlechart_manualteam_for_role("fb", kbase="secB_SINGLE_v45")
+with tab_cm:  _sectionB_singlechart_manualteam_for_role("cm", kbase="secB_SINGLE_v45")
+with tab_att: _sectionB_singlechart_manualteam_for_role("attack", kbase="secB_SINGLE_v45")
+with tab_st:  _sectionB_singlechart_manualteam_for_role("cf", kbase="secB_SINGLE_v45")
+# ======================== END SECTION B (v4.5) ========================
 
 
 
