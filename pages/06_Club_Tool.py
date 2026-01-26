@@ -4390,7 +4390,7 @@ def _single_split_polar(team_labels, team_pcts, role_labels, role_pcts):
 
     for th in (_np.pi/2, 3*_np.pi/2):
         ax.plot([th, th], [0, RMAX],
-                color="white", linewidth=4.8, alpha=0.65, zorder=0)
+                color="white", linewidth=4.0, alpha=0.55, zorder=0)
 
     for i, (th, w) in enumerate(zip(angles, widths)):
         is_team = i < n_team
@@ -4416,6 +4416,8 @@ def _single_split_polar(team_labels, team_pcts, role_labels, role_pcts):
              fontsize=18, fontweight="900", color=corner_col)
     fig.text(0.96, 0.965, "ROLE", ha="right", va="top",
              fontsize=18, fontweight="900", color=corner_col)
+
+   ax.scatter([0], [0], s=36, color="white", alpha=0.9, zorder=6)
 
     return fig
 
