@@ -4411,11 +4411,11 @@ def _single_split_polar(team_labels, team_pcts, role_labels, role_pcts):
                 fontsize=9.6, fontweight="bold",
                 color="white", alpha=0.95, zorder=4)
 
-    corner_col = "#9CA3AF"
+    corner_col = "#ff66c4"
     fig.text(0.04, 0.965, "TEAM", ha="left", va="top",
-             fontsize=16, fontweight="900", color=corner_col)
+             fontsize=18, fontweight="900", color=corner_col)
     fig.text(0.96, 0.965, "ROLE", ha="right", va="top",
-             fontsize=16, fontweight="900", color=corner_col)
+             fontsize=18, fontweight="900", color=corner_col)
 
     return fig
 
