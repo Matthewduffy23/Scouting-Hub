@@ -3902,7 +3902,6 @@ st.markdown("---")
 st.header("Section B — League Comparison Radar & Tables")
 
 import numpy as _np
-import numpy as _np
 import pandas as _pd
 import io as _io
 import matplotlib.pyplot as plt
@@ -4053,11 +4052,20 @@ def _cfg(role_key: str):
         import re
 
         def pos_ok(s: str) -> bool:
+            # normalise
             s = str(s).upper().strip()
+
+            # take the first chunk if "RW/LW", "RW, LW", "RW ST", etc.
             main = re.split(r'[/,]', s)[0].strip()
-            main = main.split()[0]
+            main = main.split()[0]  # also cut anything after a space
+
+            # pure wingers, but NOT wing-backs
+            # RW ✅, LW ✅, RW/LW ✅, RW ST ✅
+            # RWB ❌, LWB ❌, RB ❌, LB ❌
             if main in ("RW", "LW"):
                 return True
+
+            # wide forwards + AM roles
             prefixes = ("RWF", "LWF", "LAMF", "RAMF", "AMF")
             return main.startswith(prefixes)
 
@@ -4104,6 +4112,8 @@ def _cfg(role_key: str):
             label_map=label_map,
             title="Attackers"
         )
+
+
 
     if role_key == "cf":
         require=['Touches in box per 90','xG per 90','Dribbles per 90','Progressive runs per 90',
@@ -4155,24 +4165,11 @@ def _sectionB_for_role(role_key: str):
         st.info(f"No {cfg['title']} in this league with required stats.")
         return
 
-    # ✅ FIX: choose target team immediately from league (no pre-filter needed)
-    # We still keep filters as optional refinements AFTER choosing target team.
-    teams_league_all = sorted(league_df["Team"].dropna().astype(str).unique())
-
-    left, right = st.columns([1.8, 2.2])
-    with left:
-        compare_mode = st.radio("Compare", ["Team average","Specific player"], horizontal=True, key=f"secB_mode_{role_key}")
-        target_team = st.selectbox("Target team", teams_league_all, key=f"secB_team_{role_key}")
-
-    # filters (optional, applied AFTER target team is chosen)
+    # filters (no market value)
     fl1, fl2, fl3 = st.columns([1.6,1.6,1.6])
     with fl1:
-        teams_selected = st.multiselect(
-            "Filter teams (optional)",
-            teams_league_all,
-            default=teams_league_all,
-            key=f"secB_teams_{role_key}"
-        )
+        teams = sorted(league_df["Team"].dropna().astype(str).unique())
+        teams_selected = st.multiselect("Filter teams", teams, default=teams, key=f"secB_teams_{role_key}")
     with fl2:
         min_minutes, max_minutes = st.slider("Minutes played", 0, 6000, (750, 6000), key=f"secB_min_{role_key}")
         a_min = int(_np.nanmin(league_df["Age"])) if league_df["Age"].notna().any() else 16
@@ -4197,21 +4194,28 @@ def _sectionB_for_role(role_key: str):
     # compute metrics
     pool = cfg["compute_metrics"](pool).copy()
 
+    # choose mode/team/player
+    left, right = st.columns([1.8, 2.2])
+    with left:
+        compare_mode = st.radio("Compare", ["Team average","Specific player"], horizontal=True, key=f"secB_mode_{role_key}")
+        teams_pool = sorted(pool["Team"].dropna().astype(str).unique())
+        target_team = st.selectbox("Target team", teams_pool, key=f"secB_team_{role_key}")
+
     # team averages for league (after filters)
     agg = pool.groupby("Team")[cfg["agg_cols"]].mean().reset_index()
 
     if compare_mode == "Team average":
         if target_team not in agg["Team"].values:
-            st.info("Target team has no eligible players in filtered set. Widen filters or include the team.")
+            st.info("Target team has no eligible players in filtered set.")
             return
         target_vals = agg.set_index("Team").loc[target_team, cfg["agg_cols"]].to_dict()
         label_subject = f"{target_team} AVG"
-        exclude_label = target_team
+        exclude_label = target_team  # drop real team before adding pseudo
         team_players_used = pool[pool["Team"].astype(str) == target_team].copy()
     else:
         players_pool = sorted(pool[pool["Team"].astype(str) == target_team]["Player"].dropna().astype(str).unique())
         if not players_pool:
-            st.info("No eligible players on selected team under current filters. Widen filters.")
+            st.info("No eligible players on selected team under current filters.")
             return
         sel_player = st.selectbox("Player", players_pool, key=f"secB_player_{role_key}")
         prow = pool[pool["Player"].astype(str)==sel_player].head(1)
@@ -4220,7 +4224,7 @@ def _sectionB_for_role(role_key: str):
             return
         target_vals = prow[cfg["agg_cols"]].iloc[0].to_dict()
         label_subject = sel_player
-        exclude_label = str(prow["Team"].iloc[0])
+        exclude_label = str(prow["Team"].iloc[0])  # exclude player's team from benchmark table
         team_players_used = None
 
     # ---------- right side: team averages table ----------
@@ -4235,7 +4239,7 @@ def _sectionB_for_role(role_key: str):
     rows=[]
     for met in cfg["agg_cols"]:
         temp = agg[["Team",met]].copy()
-        temp = temp[temp["Team"] != exclude_label].copy()
+        temp = temp[temp["Team"] != exclude_label].copy()  # remove the team we're substituting/excluding
         val = float(target_vals[met])
         pseudo = _pd.DataFrame({"Team":[label_subject], met:[val]})
         temp = _pd.concat([temp, pseudo], ignore_index=True)
