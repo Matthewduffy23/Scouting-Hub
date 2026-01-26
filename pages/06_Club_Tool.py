@@ -4306,12 +4306,18 @@ with tab_att: _sectionB_for_role("attack")
 with tab_st:  _sectionB_for_role("cf")
 
 
-# ======================== SECTION B (v4.1 — ONE CHART: LEFT=TEAM STYLE (manual ranks), RIGHT=ROLE STYLE (auto)) ========================
-# Drop-in replacement for the v4 block you’re using.
-# Key change: radar is NOW A SINGLE POLAR CHART with a bold diameter line splitting left/right.
+# ======================== SECTION B (v4.2 — ONE CHART, EVEN SPLIT, MANUAL TEAM RANKS + AUTO ROLE) ========================
+# - Single polar chart
+# - Exactly 5 TEAM metrics on LEFT half, 5 ROLE metrics on RIGHT half
+# - Bold vertical diameter split line
+# - No "AVG vs league..." subtitle
+# - Corner labels: TEAM STYLE (top-left) and ROLE STYLE (top-right)
+# - TEAM side = you input RANKS (1..N) and it converts to percentile using SAME N teams in sample
+# - ROLE side = auto percentiles exactly like your original Section B method
+# - Namespaced keys so it will not clash with your original Section B above
 
 st.markdown("---")
-st.header("Section B — Single Radar (Team Style manual ranks + Role Style auto)")
+st.header("Section B — League Comparison (Single Split Radar)")
 
 import numpy as _np
 import pandas as _pd
@@ -4342,7 +4348,7 @@ def _download_df_button(df_to_dl: _pd.DataFrame, fname: str, label: str, key: st
     df_to_dl.to_csv(buf, index=False)
     st.download_button(label, buf.getvalue(), file_name=fname, mime="text/csv", key=key)
 
-# ---------- TEAM STYLE METRICS (labels only; user enters ranks) ----------
+# ---------- TEAM STYLE metric LABELS ONLY (manual ranks) ----------
 TEAM_STYLE_LABELS = {
     "cb":     ["Possession", "Passes", "Direct Speed", "xGA", "Goals vs"],
     "fb":     ["Possession", "Passes", "Pressing", "Direct Speed", "xGA"],
@@ -4351,15 +4357,8 @@ TEAM_STYLE_LABELS = {
     "cf":     ["Possession", "Passes", "Pressing", "Long Balls", "xG"],
 }
 
-# ---------- ONE CHART (single polar) ----------
-def _single_split_polar(team_labels, team_pcts, role_labels, role_pcts, who: str):
-    """
-    Single polar axis:
-      - LEFT half (pi/2 .. 3pi/2): TEAM STYLE (5)
-      - RIGHT half (-pi/2 .. pi/2): ROLE STYLE (5)
-    Bold split line = vertical diameter.
-    """
-    # colors
+# ---------- single split polar chart (EVEN SPLIT) ----------
+def _single_split_polar(team_labels, team_pcts, role_labels, role_pcts):
     color_scale = ["#be2a3e", "#e25f48", "#f88f4d", "#f4d166", "#90b960", "#4b9b5f", "#22763f"]
     cmap = LinearSegmentedColormap.from_list("custom_scale", color_scale)
 
@@ -4368,59 +4367,54 @@ def _single_split_polar(team_labels, team_pcts, role_labels, role_pcts, who: str
     ax = fig.add_axes([0.06, 0.06, 0.88, 0.88], polar=True)
     ax.set_facecolor("#0a0f1c")
     ax.set_rlim(0, 100)
-    ax.set_xticks([])
-    ax.set_yticks([])
+    ax.set_xticks([]); ax.set_yticks([])
     ax.spines["polar"].set_visible(False)
     ax.grid(False)
 
-    # angles: TEAM on left semicircle, ROLE on right semicircle
+    # 5 + 5 evenly split
     nL, nR = 5, 5
-    # left half: from +90° down to +270° (exclude endpoint)
-    angles_L = _np.linspace(_np.pi/2, 3*_np.pi/2, nL, endpoint=False)
-    # right half: from -90° up to +90° (exclude endpoint)
-    angles_R = _np.linspace(-_np.pi/2, _np.pi/2, nR, endpoint=False)
+    stepL = _np.pi / nL
+    stepR = _np.pi / nR
+
+    # Center bars within each half (so the split line bisects cleanly)
+    # LEFT half spans [pi/2, 3pi/2], RIGHT half spans [-pi/2, pi/2]
+    angles_L = (_np.pi/2) + (stepL/2) + _np.arange(nL) * stepL
+    angles_R = (-_np.pi/2) + (stepR/2) + _np.arange(nR) * stepR
 
     angles = _np.concatenate([angles_L, angles_R])
     labels = list(team_labels) + list(role_labels)
-    pcts = list(team_pcts) + list(role_pcts)
+    pcts   = list(team_pcts)   + list(role_pcts)
 
-    # bar widths: half-circle / 5 with small padding
-    wL = (_np.pi / nL) * 0.82
-    wR = (_np.pi / nR) * 0.82
-    widths = [wL]*nL + [wR]*nR
+    widthL = stepL * 0.82
+    widthR = stepR * 0.82
+    widths = [widthL]*nL + [widthR]*nR
 
-    # background "tracks"
+    # background tracks
     for th, w in zip(angles, widths):
         ax.bar(th, 105, width=w, color="#ffffff22", edgecolor=None, bottom=0, linewidth=0, zorder=0)
 
-    # data bars
+    # bars
     for th, w, v in zip(angles, widths, pcts):
         v = max(0, min(100, int(v)))
-        ax.bar(
-            th, v, width=w,
-            color=cmap(v/100.0),
-            edgecolor="white", linewidth=1.4,
-            zorder=2
-        )
+        ax.bar(th, v, width=w, color=cmap(v/100.0), edgecolor="white", linewidth=1.4, zorder=2)
 
-    # labels around
+    # labels
     label_radius = 132
     for th, lab in zip(angles, labels):
-        ax.text(th, label_radius, str(lab).upper(),
-                ha="center", va="center",
+        ax.text(th, label_radius, str(lab).upper(), ha="center", va="center",
                 fontsize=10, weight="bold", color="white")
 
-    # bold split line (vertical diameter): theta = +90° and theta = -90° are the same line top/bottom
-    ax.plot([_np.pi/2, _np.pi/2], [0, 110], color="white", linewidth=4.0, alpha=0.85, zorder=5)
+    # bold split diameter (vertical axis) — draw both directions for thickness
+    ax.plot([_np.pi/2, _np.pi/2], [0, 110], color="white", linewidth=4.5, alpha=0.9, zorder=5)
+    ax.plot([3*_np.pi/2, 3*_np.pi/2], [0, 110], color="white", linewidth=4.5, alpha=0.9, zorder=5)
 
-    # headers
-    fig.text(0.25, 0.97, "TEAM STYLE", ha="center", va="top", color="white", fontsize=14, fontweight="900")
-    fig.text(0.75, 0.97, "ROLE STYLE", ha="center", va="top", color="white", fontsize=14, fontweight="900")
-    fig.text(0.5, 0.995, who, ha="center", va="top", color="#CBD5E1", fontsize=10, fontweight="700")
+    # corner titles (no subtitle)
+    fig.text(0.08, 0.965, "TEAM STYLE", ha="left",  va="top", color="white", fontsize=14, fontweight="900")
+    fig.text(0.92, 0.965, "ROLE STYLE", ha="right", va="top", color="white", fontsize=14, fontweight="900")
 
     return fig
 
-# ---------- ROLE STYLE configs (same as before; 5 metrics each) ----------
+# ---------- ROLE STYLE configs (same calculation approach as your original Section B; 5 metrics each) ----------
 def _cfg(role_key: str):
     role_key = str(role_key).lower().strip()
 
@@ -4577,7 +4571,7 @@ def _cfg(role_key: str):
     return None
 
 # ---------- per-role UI/logic ----------
-def _sectionB_singlechart_manualteam_for_role(role_key: str, kbase: str = "secB_SINGLE_v41"):
+def _sectionB_singlechart_manualteam_for_role(role_key: str, kbase: str = "secB_SINGLE_v42"):
     cfg = _cfg(role_key)
     if not cfg:
         st.info("Unknown role key.")
@@ -4608,7 +4602,6 @@ def _sectionB_singlechart_manualteam_for_role(role_key: str, kbase: str = "secB_
         st.info(f"No {cfg['title']} in this league with required stats.")
         return
 
-    # filters
     fl1, fl2, fl3 = st.columns([1.6, 1.6, 1.6])
     with fl1:
         teams = sorted(league_df["Team"].dropna().astype(str).unique())
@@ -4633,7 +4626,6 @@ def _sectionB_singlechart_manualteam_for_role(role_key: str, kbase: str = "secB_
         st.info("No players after filters.")
         return
 
-    # compute role metrics (same as before)
     pool = cfg["compute_metrics"](pool).copy()
 
     compare_mode = st.radio("Compare", ["Team average", "Specific player"], horizontal=True, key=f"{K}_mode")
@@ -4663,18 +4655,16 @@ def _sectionB_singlechart_manualteam_for_role(role_key: str, kbase: str = "secB_
         label_subject = sel_player
         exclude_label = str(prow["Team"].iloc[0])
 
-    # ROLE percentiles (same method as your original Section B)
+    # ROLE percentiles (same method as original)
     rows_role = []
     for met in cfg["agg_cols"]:
         temp = agg_role[["Team", met]].copy()
         temp = temp[temp["Team"] != exclude_label].copy()
-
         val = float(target_vals_role.get(met, _np.nan))
         pseudo = _pd.DataFrame({"Team": [label_subject], met: [val]})
         temp = _pd.concat([temp, pseudo], ignore_index=True)
         temp = temp.drop_duplicates(subset="Team", keep="last")
         temp = temp.sort_values(by=met, ascending=False, kind="mergesort").reset_index(drop=True)
-
         rk = int(temp.index[temp["Team"] == label_subject][0]) + 1
         tot = int(temp.shape[0])
         pct = _pct_from_rank(rk, tot)
@@ -4703,15 +4693,14 @@ def _sectionB_singlechart_manualteam_for_role(role_key: str, kbase: str = "secB_
             team_ranks.append(int(r))
     team_pcts = [_pct_from_rank(r, N_TEAMS) for r in team_ranks]
 
-    # Build chart
-    who = f"{label_subject} ({cfg['title']}) vs league team averages"
+    # chart
     role_labels = [cfg["label_map"].get(m, m) for m in cfg["agg_cols"]]
     role_pcts = [int(x) for x in rank_role_df["Percentile"].tolist()]
 
-    st.markdown("### 🧭 Single chart: Team Style (left) vs Role Style (right)")
-    fig = _single_split_polar(team_labels, team_pcts, role_labels, role_pcts, who=who)
+    fig = _single_split_polar(team_labels, team_pcts, role_labels, role_pcts)
     st.pyplot(fig, use_container_width=True)
 
+    # download
     buf = _io.BytesIO()
     fig.savefig(buf, format="png", dpi=300, bbox_inches="tight", facecolor=fig.get_facecolor())
     buf.seek(0)
@@ -4728,12 +4717,13 @@ def _sectionB_singlechart_manualteam_for_role(role_key: str, kbase: str = "secB_
 tab_cb, tab_fb, tab_cm, tab_att, tab_st = st.tabs(
     ["Center Backs", "Fullbacks", "Central Midfielders", "Attackers", "Strikers"]
 )
-with tab_cb:  _sectionB_singlechart_manualteam_for_role("cb", kbase="secB_SINGLE_v41")
-with tab_fb:  _sectionB_singlechart_manualteam_for_role("fb", kbase="secB_SINGLE_v41")
-with tab_cm:  _sectionB_singlechart_manualteam_for_role("cm", kbase="secB_SINGLE_v41")
-with tab_att: _sectionB_singlechart_manualteam_for_role("attack", kbase="secB_SINGLE_v41")
-with tab_st:  _sectionB_singlechart_manualteam_for_role("cf", kbase="secB_SINGLE_v41")
-# ======================== END SECTION B (v4.1) ========================
+with tab_cb:  _sectionB_singlechart_manualteam_for_role("cb", kbase="secB_SINGLE_v42")
+with tab_fb:  _sectionB_singlechart_manualteam_for_role("fb", kbase="secB_SINGLE_v42")
+with tab_cm:  _sectionB_singlechart_manualteam_for_role("cm", kbase="secB_SINGLE_v42")
+with tab_att: _sectionB_singlechart_manualteam_for_role("attack", kbase="secB_SINGLE_v42")
+with tab_st:  _sectionB_singlechart_manualteam_for_role("cf", kbase="secB_SINGLE_v42")
+# ======================== END SECTION B (v4.2) ========================
+
 
 
 
