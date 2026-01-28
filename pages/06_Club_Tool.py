@@ -94,6 +94,9 @@ def pick_or_upload_world_csv() -> Tuple[pd.DataFrame, str]:
 
 df, DATASET_NAME = pick_or_upload_world_csv()
 
+from market_value_resolver import apply_smart_market_value
+df = apply_smart_market_value(df)
+
 # Reset session maps when dataset changes
 if st.session_state.get("_active_dataset_name") != DATASET_NAME:
     for k in ["photo_map", "crest_map", "st_tmpl_pick", "att_tmpl_pick", "cm_tmpl_pick", "fb_tmpl_pick", "cb_tmpl_pick"]:
