@@ -1895,777 +1895,37 @@ for role, role_def in ROLES.items():
 
 
 
-# ----------------- PRO LAYOUT TAB (tiles) -----------------
-# Drop-in replacement: SAME UI/behavior, BUT:
-# ✅ You can manually add Team -> FotMob squad URLs INSIDE THIS FILE (like your working example)
-# ✅ Player photos load from FotMob (full-name + surname fallback)
-# ✅ Team badge/crest auto-loads from FotMob teamId (but your crest override still wins)
-# ✅ Keeps per-player override UI (photo + crest)
-# ✅ Keeps your Twemoji mapping + metrics layout
-# ✅ Removed imghdr; uses uploaded_file.type + extension fallback for mime
-
-import os
-import re
-import json
-import base64
-import io
-import unicodedata
-from typing import Dict, Optional
-
-import pandas as pd
-import numpy as np
-import requests
-import streamlit as st
-
-# =========================================================
-# ✅ ADD YOUR FOTMOB URLS HERE (like your working example)
-# Keys should match df Team names (case-insensitive; normalization handles it)
-# =========================================================
-FOTMOB_TEAM_URLS: Dict[str, str] = {
-    "Swansea City": "https://www.fotmob.com/teams/10003/squad/swansea-city",
-    "Arsenal": "https://www.fotmob.com/teams/9825/squad/arsenal",
-    # Add more:
-    # "Chelsea": "https://www.fotmob.com/teams/8455/squad/chelsea",
-}
-
-# -----------------
-# OPTIONAL: external team->FotMob dictionary (kept OUT of this page)
-# If present, we’ll use it, but LOCAL dict above also works.
-# -----------------
-try:
-    from team_fotmob_urls import get_fotmob_url as _external_get_fotmob_url  # returns "" if not found
-except Exception:
-    _external_get_fotmob_url = None
-
-
-# ----------------- Colors / formatting -----------------
-def _pro_rating_color(v: float) -> str:
-    try:
-        v = float(v)
-    except Exception:
-        v = 0.0
-
-    COLORS = [
-        (85, "#2E6114"),  # Deep green
-        (75, "#5C9E2E"),  # Green+
-        (66, "#7FBC41"),  # Green
-        (55, "#A7D763"),  # Green-
-        (41, "#F6D645"),  # Bright yellow
-        (25, "#D77A2E"),  # Orange
-        (0,  "#C63733"),  # Red
-    ]
-    for threshold, color in COLORS:
-        if v >= threshold:
-            return color
-    return COLORS[-1][1]
-
-def _pro_show99(x) -> int:
-    try:
-        # floor instead of round to avoid “mystery 99s”
-        return max(0, min(99, int(float(x))))
-    except Exception:
-        return 0
-
-def _fmt2(n: int) -> str:
-    try: return f"{int(n):02d}"
-    except Exception: return "00"
-
-_POS_COLORS = {
-    "CF":"#6EA8FF","LWF":"#6EA8FF","LW":"#6EA8FF","LAMF":"#6EA8FF","RW":"#6EA8FF","RWF":"#6EA8FF","RAMF":"#6EA8FF",
-    "AMF":"#7FE28A","LCMF":"#5FD37A","RCMF":"#5FD37A","RDMF":"#31B56B","LDMF":"#31B56B","DMF":"#31B56B","CMF":"#5FD37A",
-    "LWB":"#FFD34D","RWB":"#FFD34D","LB":"#FF9A3C","RB":"#FF9A3C","RCB":"#D1763A","CB":"#D1763A","LCB":"#D1763A",
-    "GK":"#B8A1FF",
-}
-def _pro_chip_color(p:str)->str:
-    return _POS_COLORS.get(str(p).strip().upper(),"#2d3550")
-
-
-# ----------------- Normalization -----------------
-def _norm(s: str) -> str:
-    if not s: return ""
-    return unicodedata.normalize("NFKD", str(s)).encode("ascii","ignore").decode("ascii").strip().lower()
-
-def get_fotmob_url(team: str) -> str:
-    """
-    Priority:
-    1) per-file manual dict (FOTMOB_TEAM_URLS)
-    2) external module team_fotmob_map.py if present
-    """
-    t = _norm(team)
-    # local dict lookup (normalize keys once)
-    for k, v in FOTMOB_TEAM_URLS.items():
-        if _norm(k) == t and str(v).strip():
-            return str(v).strip()
-
-    if _external_get_fotmob_url is not None:
-        try:
-            u = _external_get_fotmob_url(team) or ""
-            return str(u).strip()
-        except Exception:
-            pass
-
-    return ""
-
-def _fotmob_team_id_from_url(team_url: str) -> str:
-    """
-    https://www.fotmob.com/teams/9825/squad/arsenal -> "9825"
-    """
-    try:
-        m = re.search(r"/teams/(\d+)/", team_url or "")
-        return m.group(1) if m else ""
-    except Exception:
-        return ""
-
-def _fotmob_crest_url(team_url: str) -> str:
-    tid = _fotmob_team_id_from_url(team_url)
-    if not tid:
-        return ""
-    return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png"
-
-
-# ----------------- Flags (Twemoji) — keep your expanded mapping -----------------
-TWEMOJI_SPECIAL = {
-    "eng":"1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
-    "sct":"1f3f4-e0067-e0062-e0073-e0063-e0074-e007f",
-    "wls":"1f3f4-e0067-e0062-e0077-e006c-e0073-e007f",
-}
-
-COUNTRY_TO_CC = {
-    # UK home nations
-    "united kingdom":"gb","great britain":"gb","northern ireland":"gb","england":"eng","scotland":"sct","wales":"wls",
-
-    # Europe
-    "ireland":"ie","republic of ireland":"ie","spain":"es","france":"fr","germany":"de","italy":"it","portugal":"pt",
-    "netherlands":"nl","belgium":"be","austria":"at","switzerland":"ch","denmark":"dk","sweden":"se","norway":"no",
-    "finland":"fi","iceland":"is","poland":"pl","czech republic":"cz","czechia":"cz","slovakia":"sk","slovenia":"si",
-    "croatia":"hr","serbia":"rs","bosnia and herzegovina":"ba","bosnia":"ba","montenegro":"me","kosovo":"xk","albania":"al",
-    "greece":"gr","hungary":"hu","romania":"ro","bulgaria":"bg","russia":"ru","ukraine":"ua","georgia":"ge",
-    "kazakhstan":"kz","azerbaijan":"az","armenia":"am","turkey":"tr","cyprus":"cy","luxembourg":"lu","andorra":"ad",
-    "monaco":"mc","san marino":"sm","malta":"mt","moldova":"md","north macedonia":"mk","macedonia":"mk","estonia":"ee",
-    "latvia":"lv","lithuania":"lt",
-
-    # Middle East & Asia
-    "qatar":"qa","saudi arabia":"sa","uae":"ae","united arab emirates":"ae","israel":"il","japan":"jp","korea":"kr",
-    "south korea":"kr","korea republic":"kr","china":"cn","china pr":"cn",
-
-    # Africa (expanded)
-    "algeria":"dz","angola":"ao","benin":"bj","botswana":"bw","burkina faso":"bf","burundi":"bi","cabo verde":"cv",
-    "cape verde":"cv","cameroon":"cm","central african republic":"cf","car":"cf","chad":"td","comoros":"km",
-    "congo":"cg","republic of the congo":"cg","congo brazzaville":"cg","congo-brazzaville":"cg",
-    "dr congo":"cd","drc":"cd","democratic republic of the congo":"cd","congo kinshasa":"cd","congo-kinshasa":"cd",
-    "djibouti":"dj","egypt":"eg","equatorial guinea":"gq","eritrea":"er","eswatini":"sz","swaziland":"sz",
-    "ethiopia":"et","gabon":"ga","gambia":"gm","ghana":"gh","guinea":"gn","guinea-bissau":"gw","guinea bissau":"gw",
-    "ivory coast":"ci","cote d'ivoire":"ci","cote divoire":"ci","cote d ivoire":"ci","côte d’ivoire":"ci","côte d'ivoire":"ci",
-    "kenya":"ke","lesotho":"ls","liberia":"lr","libya":"ly","madagascar":"mg","malawi":"mw","mali":"ml","mauritania":"mr",
-    "mauritius":"mu","morocco":"ma","mozambique":"mz","namibia":"na","niger":"ne","nigeria":"ng","rwanda":"rw",
-    "sao tome and principe":"st","sao tome":"st","são tomé and príncipe":"st","são tomé":"st","sao tome & principe":"st",
-    "senegal":"sn","seychelles":"sc","sierra leone":"sl","somalia":"so","south africa":"za","south sudan":"ss","sudan":"sd",
-    "tanzania":"tz","united republic of tanzania":"tz","togo":"tg","tunisia":"tn","uganda":"ug","zambia":"zm","zimbabwe":"zw",
-    "western sahara":"eh","réunion":"re","reunion":"re","mayotte":"yt",
-
-    # Aliases (normalized by _norm)
-    "maroc":"ma","algerie":"dz","tunis":"tn","egypte":"eg","cameroun":"cm","cote d’ivoire":"ci","cote-d-ivoire":"ci",
-    "somaliland":"so","ethiopie":"et","congo-brazzaville":"cg","congo-kinshasa":"cd","gbissau":"gw",
-
-    # Americas
-    "brazil":"br","argentina":"ar","uruguay":"uy","chile":"cl","colombia":"co","peru":"pe","ecuador":"ec","paraguay":"py",
-    "bolivia":"bo","mexico":"mx","canada":"ca","united states":"us","usa":"us",
-
-    # Oceania
-    "australia":"au","new zealand":"nz",
-
-    # Extras
-    "palestine":"ps","state of palestine":"ps",
-    "hong kong":"hk","macau":"mo","macao":"mo",
-    "curacao":"cw","curaçao":"cw","cape verde islands":"cv",
-}
-
-def _cc_to_twemoji(cc: str) -> Optional[str]:
-    if not cc or len(cc) != 2: return None
-    a,b=cc.upper()
-    cp1=0x1F1E6+(ord(a)-ord('A')); cp2=0x1F1E6+(ord(b)-ord('A'))
-    return f"{cp1:04x}-{cp2:04x}"
-
-def _flag_html(country_name: str) -> str:
-    if not country_name: return "<span class='chip'>—</span>"
-    n=_norm(country_name); cc=COUNTRY_TO_CC.get(n,"")
-    if not cc: return "<span class='chip'>—</span>"
-    if cc in TWEMOJI_SPECIAL:
-        code=TWEMOJI_SPECIAL[cc]
-        src=f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
-        return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
-    code=_cc_to_twemoji(cc) if len(cc)==2 else None
-    if code:
-        src=f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
-        return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
-    return f"<span class='chip'>{cc.upper()}</span>"
-
-
-# ----------------- SAFE foot extractor -----------------
-def _get_foot(row) -> str:
-    for col in ("Foot","Preferred foot","Preferred Foot"):
-        if col in row.index:
-            val=row[col]
-            try:
-                if pd.isna(val): continue
-            except Exception:
-                pass
-            s=str(val).strip()
-            if s and s.lower() not in {"nan","none","null"}:
-                return s
-    return ""
-
-
-# -----------------
-# FotMob photo scraping + resolver
-# - Priority: session override -> team curated dict -> global json -> fotmob full name -> fotmob surname -> default
-# -----------------
-DEFAULT_AVATAR = "https://i.redd.it/43axcjdu59nd1.jpeg"
-PLAYER_PHOTO_OVERRIDES_JSON = "player_photos.json"
-
-# optional: curated per-team tricky-name map
-# key = "<norm(team)>|<norm(league)>"
-TEAM_PLAYER_PHOTOS: Dict[str, Dict[str, str]] = {
-    # "swansea city|championship": {
-    #     "oli cooper": "https://…",
-    # },
-}
-
-def _team_key(team: str, league: str) -> str:
-    return f"{_norm(team)}|{_norm(league)}"
-
-@st.cache_data(show_spinner=False, ttl=60*60*12)
-def fotmob_photo_map(team_url: str) -> Dict[str, str]:
-    """
-    Returns mapping: normalized full name -> image url
-    """
-    try:
-        if not team_url:
-            return {}
-
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-            "Accept-Language": "en-GB,en;q=0.9",
-            "Referer": "https://www.fotmob.com/",
-        }
-        resp = requests.get(team_url, headers=headers, timeout=20)
-        if resp.status_code != 200:
-            return {}
-        html = resp.text
-
-        ids = re.findall(r'"id"\s*:\s*(\d+)\s*,\s*"name"\s*:\s*"([^"]+)"', html)
-        if not ids:
-            ids = re.findall(r'"playerId"\s*:\s*(\d+).*?"name"\s*:\s*"([^"]+)"', html, flags=re.S)
-
-        out = {}
-        for pid, name in ids:
-            nm = _norm(name)
-            if nm:
-                out[nm] = f"https://images.fotmob.com/image_resources/playerimages/{pid}.png"
-        return out
-    except Exception:
-        return {}
-
-def load_local_photo_overrides(path: str) -> Dict[str, str]:
-    if not path or not os.path.exists(path):
-        return {}
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            obj = json.load(f)
-        if isinstance(obj, dict):
-            return {_norm(k): str(v).strip() for k, v in obj.items() if str(v).strip()}
-        return {}
-    except Exception:
-        return {}
-
-def resolve_player_photo(
-    player: str,
-    team: str,
-    league: str,
-    key_id: str,
-    session_photo_map: Dict[str, str],
-    global_overrides: Dict[str, str],
-) -> str:
-    # 1) per-player UI override
-    if key_id in session_photo_map:
-        return session_photo_map[key_id]
-
-    n_full = _norm(player)
-
-    # 2) curated per-team dict
-    tkey = _team_key(team, league)
-    tdict = TEAM_PLAYER_PHOTOS.get(tkey, {})
-    if n_full in tdict:
-        return tdict[n_full]
-
-    # 3) hidden global overrides json
-    if n_full in global_overrides:
-        return global_overrides[n_full]
-
-    # 4/5) FotMob (manual mapping inside this file)
-    team_url = get_fotmob_url(team)
-    fm = fotmob_photo_map(team_url) if team_url else {}
-    if n_full in fm:
-        return fm[n_full]
-
-    parts = [p for p in n_full.split() if p]
-    surname = parts[-1] if parts else ""
-    if surname:
-        for k, url in fm.items():
-            kp = [p for p in k.split() if p]
-            if kp and kp[-1] == surname:
-                return url
-
-    return DEFAULT_AVATAR
-
-
-# -----------------
-# Metric helpers (layout like your other example)
-# -----------------
-def _metric_pct(row: pd.Series, metric: str) -> float:
-    try:
-        v = row.get(f"{metric} Percentile", np.nan)
-        return float(v) if not pd.isna(v) else np.nan
-    except Exception:
-        return np.nan
-
-def _metric_val(row: pd.Series, metric: str) -> float:
-    try:
-        v = row.get(metric, np.nan)
-        v = pd.to_numeric(v, errors="coerce")
-        return float(v) if not pd.isna(v) else np.nan
-    except Exception:
-        return np.nan
-
-def _available_metric_pairs(df: pd.DataFrame, pairs):
-    out = []
-    for lab, met in pairs:
-        if met in df.columns and f"{met} Percentile" in df.columns:
-            out.append((lab, met))
-    return out
-
-
-# ----------------- PRO LAYOUT TAB (tiles) -----------------
-# FULL FEATURE BLOCK + ALIGNMENT FIX (Foot ↔ Positions, Contract ↔ Team/League)
-# IMPORTANT:
-# - This is a DROP-IN replacement for your current file section.
-# - No markdown fences/backticks inside st.markdown strings.
-# - No HTML comments inside st.markdown strings (prevents “printed HTML” issues).
-# - Keeps: FotMob team URLs, player photo resolver, crest auto-load + override, Twemoji flags, metrics layout,
-#         per-player avatar override UI, per-club crest override UI, filters/sort/role minima.
-
-import os
-import re
-import json
-import base64
-import io
-import unicodedata
-from typing import Dict, Optional
-
-import pandas as pd
-import numpy as np
-import requests
-import streamlit as st
-
-
-# =========================================================
-# ✅ ADD YOUR FOTMOB URLS HERE
-# =========================================================
-FOTMOB_TEAM_URLS: Dict[str, str] = {
-    "Swansea City": "https://www.fotmob.com/teams/10003/squad/swansea-city",
-    "Arsenal": "https://www.fotmob.com/teams/9825/squad/arsenal",
-}
-
-try:
-    from team_fotmob_urls import get_fotmob_url as _external_get_fotmob_url
-except Exception:
-    _external_get_fotmob_url = None
-
-
-# ----------------- Colors / formatting -----------------
-def _pro_rating_color(v: float) -> str:
-    try:
-        v = float(v)
-    except Exception:
-        v = 0.0
-
-    COLORS = [
-        (85, "#2E6114"),
-        (75, "#5C9E2E"),
-        (66, "#7FBC41"),
-        (55, "#A7D763"),
-        (41, "#F6D645"),
-        (25, "#D77A2E"),
-        (0,  "#C63733"),
-    ]
-    for threshold, color in COLORS:
-        if v >= threshold:
-            return color
-    return COLORS[-1][1]
-
-
-def _pro_show99(x) -> int:
-    try:
-        return max(0, min(99, int(float(x))))
-    except Exception:
-        return 0
-
-
-def _fmt2(n: int) -> str:
-    try:
-        return f"{int(n):02d}"
-    except Exception:
-        return "00"
-
-
-_POS_COLORS = {
-    "CF":"#6EA8FF","LWF":"#6EA8FF","LW":"#6EA8FF","LAMF":"#6EA8FF","RW":"#6EA8FF","RWF":"#6EA8FF","RAMF":"#6EA8FF",
-    "AMF":"#7FE28A","LCMF":"#5FD37A","RCMF":"#5FD37A","RDMF":"#31B56B","LDMF":"#31B56B","DMF":"#31B56B","CMF":"#5FD37A",
-    "LWB":"#FFD34D","RWB":"#FFD34D","LB":"#FF9A3C","RB":"#FF9A3C","RCB":"#D1763A","CB":"#D1763A","LCB":"#D1763A",
-    "GK":"#B8A1FF",
-}
-def _pro_chip_color(p: str) -> str:
-    return _POS_COLORS.get(str(p).strip().upper(), "#2d3550")
-
-
-# ----------------- Normalization -----------------
-def _norm(s: str) -> str:
-    if not s:
-        return ""
-    return unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode("ascii").strip().lower()
-
-
-def get_fotmob_url(team: str) -> str:
-    t = _norm(team)
-
-    for k, v in FOTMOB_TEAM_URLS.items():
-        if _norm(k) == t and str(v).strip():
-            return str(v).strip()
-
-    if _external_get_fotmob_url is not None:
-        try:
-            u = _external_get_fotmob_url(team) or ""
-            return str(u).strip()
-        except Exception:
-            pass
-
-    return ""
-
-
-def _fotmob_team_id_from_url(team_url: str) -> str:
-    try:
-        m = re.search(r"/teams/(\d+)/", team_url or "")
-        return m.group(1) if m else ""
-    except Exception:
-        return ""
-
-
-def _fotmob_crest_url(team_url: str) -> str:
-    tid = _fotmob_team_id_from_url(team_url)
-    if not tid:
-        return ""
-    return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png"
-
-
-# ----------------- Flags (Twemoji) -----------------
-TWEMOJI_SPECIAL = {
-    "eng":"1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
-    "sct":"1f3f4-e0067-e0062-e0073-e0063-e0074-e007f",
-    "wls":"1f3f4-e0067-e0062-e0077-e006c-e0073-e007f",
-}
-
-COUNTRY_TO_CC = {
-    "united kingdom":"gb","great britain":"gb","northern ireland":"gb","england":"eng","scotland":"sct","wales":"wls",
-    "ireland":"ie","republic of ireland":"ie","spain":"es","france":"fr","germany":"de","italy":"it","portugal":"pt",
-    "netherlands":"nl","belgium":"be","austria":"at","switzerland":"ch","denmark":"dk","sweden":"se","norway":"no",
-    "finland":"fi","iceland":"is","poland":"pl","czech republic":"cz","czechia":"cz","slovakia":"sk","slovenia":"si",
-    "croatia":"hr","serbia":"rs","bosnia and herzegovina":"ba","bosnia":"ba","montenegro":"me","kosovo":"xk","albania":"al",
-    "greece":"gr","hungary":"hu","romania":"ro","bulgaria":"bg","russia":"ru","ukraine":"ua","georgia":"ge",
-    "kazakhstan":"kz","azerbaijan":"az","armenia":"am","turkey":"tr","cyprus":"cy","luxembourg":"lu","andorra":"ad",
-    "monaco":"mc","san marino":"sm","malta":"mt","moldova":"md","north macedonia":"mk","macedonia":"mk","estonia":"ee",
-    "latvia":"lv","lithuania":"lt",
-
-    "qatar":"qa","saudi arabia":"sa","uae":"ae","united arab emirates":"ae","israel":"il","japan":"jp","korea":"kr",
-    "south korea":"kr","korea republic":"kr","china":"cn","china pr":"cn",
-
-    "algeria":"dz","angola":"ao","benin":"bj","botswana":"bw","burkina faso":"bf","burundi":"bi","cabo verde":"cv",
-    "cape verde":"cv","cameroon":"cm","central african republic":"cf","car":"cf","chad":"td","comoros":"km",
-    "congo":"cg","republic of the congo":"cg","congo brazzaville":"cg","congo-brazzaville":"cg",
-    "dr congo":"cd","drc":"cd","democratic republic of the congo":"cd","congo kinshasa":"cd","congo-kinshasa":"cd",
-    "djibouti":"dj","egypt":"eg","equatorial guinea":"gq","eritrea":"er","eswatini":"sz","swaziland":"sz",
-    "ethiopia":"et","gabon":"ga","gambia":"gm","ghana":"gh","guinea":"gn","guinea-bissau":"gw","guinea bissau":"gw",
-    "ivory coast":"ci","cote d'ivoire":"ci","cote divoire":"ci","cote d ivoire":"ci","côte d’ivoire":"ci","côte d'ivoire":"ci",
-    "kenya":"ke","lesotho":"ls","liberia":"lr","libya":"ly","madagascar":"mg","malawi":"mw","mali":"ml","mauritania":"mr",
-    "mauritius":"mu","morocco":"ma","mozambique":"mz","namibia":"na","niger":"ne","nigeria":"ng","rwanda":"rw",
-    "sao tome and principe":"st","sao tome":"st","são tomé and príncipe":"st","são tomé":"st","sao tome & principe":"st",
-    "senegal":"sn","seychelles":"sc","sierra leone":"sl","somalia":"so","south africa":"za","south sudan":"ss","sudan":"sd",
-    "tanzania":"tz","united republic of tanzania":"tz","togo":"tg","tunisia":"tn","uganda":"ug","zambia":"zm","zimbabwe":"zw",
-    "western sahara":"eh","réunion":"re","reunion":"re","mayotte":"yt",
-
-    "maroc":"ma","algerie":"dz","tunis":"tn","egypte":"eg","cameroun":"cm","cote d’ivoire":"ci","cote-d-ivoire":"ci",
-    "somaliland":"so","ethiopie":"et","congo-kinshasa":"cd","gbissau":"gw",
-
-    "brazil":"br","argentina":"ar","uruguay":"uy","chile":"cl","colombia":"co","peru":"pe","ecuador":"ec","paraguay":"py",
-    "bolivia":"bo","mexico":"mx","canada":"ca","united states":"us","usa":"us",
-    "australia":"au","new zealand":"nz",
-    "palestine":"ps","state of palestine":"ps",
-    "hong kong":"hk","macau":"mo","macao":"mo",
-    "curacao":"cw","curaçao":"cw","cape verde islands":"cv",
-}
-
-
-def _cc_to_twemoji(cc: str) -> Optional[str]:
-    if not cc or len(cc) != 2:
-        return None
-    a, b = cc.upper()
-    cp1 = 0x1F1E6 + (ord(a) - ord('A'))
-    cp2 = 0x1F1E6 + (ord(b) - ord('A'))
-    return f"{cp1:04x}-{cp2:04x}"
-
-
-def _flag_html(country_name: str) -> str:
-    if not country_name:
-        return "<span class='chip'>—</span>"
-    n = _norm(country_name)
-    cc = COUNTRY_TO_CC.get(n, "")
-    if not cc:
-        return "<span class='chip'>—</span>"
-    if cc in TWEMOJI_SPECIAL:
-        code = TWEMOJI_SPECIAL[cc]
-        src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
-        return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
-    code = _cc_to_twemoji(cc) if len(cc) == 2 else None
-    if code:
-        src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
-        return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
-    return f"<span class='chip'>{cc.upper()}</span>"
-
-
-# ----------------- SAFE foot extractor -----------------
-def _get_foot(row) -> str:
-    for col in ("Foot", "Preferred foot", "Preferred Foot"):
-        if col in row.index:
-            val = row[col]
-            try:
-                if pd.isna(val):
-                    continue
-            except Exception:
-                pass
-            s = str(val).strip()
-            if s and s.lower() not in {"nan", "none", "null"}:
-                return s
-    return ""
-
-
-# ==========================================================
-# ✅ URL photo system (same as FB/CM fixed version)
-# ==========================================================
-PLAYER_PHOTO_OVERRIDES_JSON = "player_photo_overrides.json"
-
-def load_local_photo_overrides(path: str) -> dict:
-    try:
-        import json
-        if not path or not os.path.exists(path):
-            return {}
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f) or {}
-    except Exception:
-        return {}
-
-try:
-    from team_fotmob_urls import FOTMOB_TEAM_URLS
-except Exception:
-    FOTMOB_TEAM_URLS = {}
-
-def get_fotmob_url(team: str) -> str:
-    return (FOTMOB_TEAM_URLS.get(team) or "").strip()
-
-def _fotmob_team_id_from_url(team_url: str) -> str:
-    m = re.search(r"/teams/(\d+)/", str(team_url or ""))
-    return m.group(1) if m else ""
-
-def _fotmob_crest_url(team_url: str) -> str:
-    tid = _fotmob_team_id_from_url(team_url)
-    return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png" if tid else ""
-
-def _player_surname(player: str) -> str:
-    p = (player or "").strip()
-    if not p:
-        return ""
-    if "," in p:
-        return p.split(",", 1)[0].strip()
-    parts = p.split()
-    return parts[-1].strip() if parts else ""
-
-# ✅ Accent tolerant slug
-def _slug_name(s: str) -> str:
-    if not s:
-        return ""
-    s = str(s).strip().lower()
-
-    repl = {
-        "ø":"o","œ":"oe","æ":"ae","å":"a","ä":"a","ö":"o","ü":"u",
-        "ß":"ss","ł":"l","đ":"d","ð":"d","þ":"th","ç":"c",
-        "ş":"s","ğ":"g","ı":"i",
-    }
-    for k, v in repl.items():
-        s = s.replace(k, v)
-
-    s = unicodedata.normalize("NFKD", s)
-    s = "".join(ch for ch in s if not unicodedata.combining(ch))
-    s = re.sub(r"[^a-z0-9]+", "", s)
-    return s
-
-# ✅ fuzzy helper
-from difflib import SequenceMatcher
-def _similar(a: str, b: str) -> float:
-    return SequenceMatcher(None, a, b).ratio()
-
-def _fotmob_team_squad(team_id: str) -> list[dict]:
-    cache = st.session_state.setdefault("_fotmob_team_squad_cache", {})
-    if team_id in cache:
-        return cache[team_id] or []
-
-    squad: list[dict] = []
-    try:
-        url = f"https://www.fotmob.com/api/teams?id={team_id}"
-        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-        if r.status_code == 200:
-            data = r.json() or {}
-            raw_squad = data.get("squad", None)
-
-            if isinstance(raw_squad, list):
-                for section in raw_squad:
-                    members = section.get("members") or section.get("players") or []
-                    if isinstance(members, list):
-                        squad.extend([m for m in members if isinstance(m, dict)])
-
-            elif isinstance(raw_squad, dict):
-                for k in ("members", "players"):
-                    members = raw_squad.get(k)
-                    if isinstance(members, list):
-                        squad.extend([m for m in members if isinstance(m, dict)])
-
-                nested = raw_squad.get("squad")
-                if isinstance(nested, list):
-                    for section in nested:
-                        members = section.get("members") or section.get("players") or []
-                        if isinstance(members, list):
-                            squad.extend([m for m in members if isinstance(m, dict)])
-    except Exception:
-        squad = []
-
-    cache[team_id] = squad
-    return squad
-
-def resolve_player_photo(player: str,
-                         team: str,
-                         league: str,
-                         key_id: str,
-                         session_photo_map: dict,
-                         global_overrides: dict) -> str:
-    if session_photo_map.get(key_id):
-        return session_photo_map[key_id]
-
-    if global_overrides.get(key_id):
-        return global_overrides[key_id]
-
-    team_url = get_fotmob_url(team)
-    tid = _fotmob_team_id_from_url(team_url)
-    if tid:
-        squad = _fotmob_team_squad(tid)
-
-        target_surname = _slug_name(_player_surname(player))
-        target_full    = _slug_name(player)
-
-        best_id = ""
-
-        # ---- exact surname match first ----
-        if target_surname:
-            for m in squad:
-                name = m.get("name") or m.get("playerName") or ""
-                pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
-                if not pid:
-                    continue
-
-                if _slug_name(_player_surname(name)) == target_surname:
-                    best_id = str(pid)
-                    if target_full and target_full in _slug_name(name):
-                        break
-
-        # ---- exact full-name contains ----
-        if not best_id and target_full:
-            for m in squad:
-                name = m.get("name") or m.get("playerName") or ""
-                pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
-                if not pid:
-                    continue
-
-                if target_full in _slug_name(name):
-                    best_id = str(pid)
-                    break
-
-        # ---- FUZZY fallback (only if still not found) ----
-        if not best_id and target_surname:
-            best_score = 0.0
-            best_pid = ""
-
-            for m in squad:
-                name = m.get("name") or m.get("playerName") or ""
-                pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
-                if not pid:
-                    continue
-
-                sn = _slug_name(_player_surname(name))
-                sc = _similar(sn, target_surname)
-
-                if sc > best_score:
-                    best_score = sc
-                    best_pid = str(pid)
-
-            if best_score >= 0.86:   # safe threshold
-                best_id = best_pid
-
-        if best_id and str(best_id).isdigit():
-            url = f"https://images.fotmob.com/image_resources/playerimages/{best_id}.png"
-            session_photo_map[key_id] = url
-            return url
-
-    return "https://i.redd.it/43axcjdu59nd1.jpeg"
-
-
-# -----------------
-# Metric helpers
-# -----------------
-def _metric_pct(row: pd.Series, metric: str) -> float:
-    try:
-        v = row.get(f"{metric} Percentile", np.nan)
-        return float(v) if not pd.isna(v) else np.nan
-    except Exception:
-        return np.nan
-
-
-def _metric_val(row: pd.Series, metric: str) -> float:
-    try:
-        v = row.get(metric, np.nan)
-        v = pd.to_numeric(v, errors="coerce")
-        return float(v) if not pd.isna(v) else np.nan
-    except Exception:
-        return np.nan
-
-
-def _available_metric_pairs(df: pd.DataFrame, pairs):
-    out = []
-    for lab, met in pairs:
-        if met in df.columns and f"{met} Percentile" in df.columns:
-            out.append((lab, met))
-    return out
-
-
 # =========================================================
 # ✅ PRO LAYOUT FUNCTION (tiles)
 # =========================================================
+def _fmt_mv_gbp(v) -> str:
+    """Formats market value to £k/£m/£bn. Handles values stored as full £ or as 'millions'."""
+    try:
+        x = float(v)
+    except Exception:
+        return "—"
+
+    # handle NaN / <=0
+    try:
+        if np.isnan(x) or x <= 0:
+            return "—"
+    except Exception:
+        if x <= 0:
+            return "—"
+
+    # If your dataset stores values in "millions" (e.g. 12.5 means £12.5m), convert.
+    # If it already stores full pounds, x will usually be big already and this won’t trigger.
+    if x < 1_000:
+        x *= 1_000_000
+
+    if x >= 1_000_000_000:
+        return f"£{x/1_000_000_000:.1f}bn".replace(".0", "")
+    if x >= 1_000_000:
+        return f"£{x/1_000_000:.1f}m".replace(".0", "")
+    if x >= 1_000:
+        return f"£{x/1_000:.0f}k"
+    return f"£{x:.0f}"
+
 def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
     st.markdown("""
     <style>
@@ -2741,6 +2001,57 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
     """, unsafe_allow_html=True)
 
     df_filtered = df_view.copy()
+
+    # -----------------
+    # Market Value (display-only) + print toggle
+    # -----------------
+    show_mv_next_to_contract = st.checkbox(
+        "Show Market Value next to contract",
+        value=False,
+        key="pro_show_mv_next_contract"
+    )
+
+    mv_mode = st.selectbox(
+        "Market Value filter (display-only)",
+        ["Off", "Max only", "Range"],
+        index=0,
+        key="pro_mv_mode"
+    )
+
+    # numeric MV column for filtering (supports raw £ or 'millions')
+    df_filtered["__mv"] = pd.to_numeric(df_filtered.get("Market value"), errors="coerce")
+
+    # if values look like "millions", convert to pounds for filtering
+    # (same logic as formatter: if <1000 treat as millions)
+    df_filtered.loc[df_filtered["__mv"] < 1_000, "__mv"] = df_filtered.loc[df_filtered["__mv"] < 1_000, "__mv"] * 1_000_000
+
+    mv_cap = int(df_filtered["__mv"].max(skipna=True) or 50_000_000)
+
+    mv_min = None
+    mv_max = None
+
+    if mv_mode == "Max only":
+        mv_max = st.slider(
+            "Max Market Value (£)",
+            0, mv_cap,
+            min(10_000_000, mv_cap),
+            step=250_000,
+            key="pro_mv_max"
+        )
+    elif mv_mode == "Range":
+        mv_min, mv_max = st.slider(
+            "Market Value Range (£)",
+            0, mv_cap,
+            (0, min(10_000_000, mv_cap)),
+            step=250_000,
+            key="pro_mv_range"
+        )
+
+    if mv_max is not None:
+        df_filtered = df_filtered[df_filtered["__mv"] <= float(mv_max)]
+    if mv_min is not None:
+        df_filtered = df_filtered[df_filtered["__mv"] >= float(mv_min)]
+
 
     search_q = st.text_input("🔎 Search player / team / league", "", key="cb_search_bar")
     if search_q:
@@ -2870,6 +2181,11 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
         cy = pd.to_datetime(row.get("Contract expires"), errors="coerce")
         cyr = int(cy.year) if pd.notna(cy) else 0
         contract_txt = f"{cyr}" if cyr > 0 else "—"
+
+        mv_txt = _fmt_mv_gbp(row.get("Market value")) if "Market value" in ranked.columns else "—"
+        if show_mv_next_to_contract and mv_txt != "—":
+            contract_txt = f"{contract_txt} · {mv_txt}" if contract_txt != "—" else mv_txt
+
 
         birth = row.get("Birth country","") if "Birth country" in row else ""
         flag = _flag_html(birth)
@@ -3105,7 +2421,6 @@ with tabs[4]:
     st.subheader("Pro Layout — Top Tiles")
     render_pro_layout(df_f, top_n=top_n)
 # ----------------- END PRO LAYOUT TAB -----------------
-
 
 
 
