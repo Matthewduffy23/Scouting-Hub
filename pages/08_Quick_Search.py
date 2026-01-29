@@ -103,6 +103,176 @@ if st.session_state.get("_active_dataset_name") != DATASET_NAME:
 st.session_state.setdefault("photo_map", {})  # per-player overrides
 st.session_state.setdefault("crest_map", {})  # per-team overrides
 
+# --- session state (required for photos/crests + caching) ---
+st.session_state.setdefault("photo_map", {})  # per-player photo override
+st.session_state.setdefault("crest_map", {})  # per-team crest override
+st.session_state.setdefault("_fotmob_team_squad_cache", {})  # fotmob API cache
+
+
+import re, unicodedata, requests
+from difflib import SequenceMatcher
+
+PLACEHOLDER_IMG = "https://i.redd.it/43axcjdu59nd1.jpeg"
+
+def _fotmob_team_id_from_url(team_url: str) -> str:
+    m = re.search(r"/teams/(\d+)/", str(team_url or ""))
+    return m.group(1) if m else ""
+
+def _fotmob_crest_url(team_url: str) -> str:
+    tid = _fotmob_team_id_from_url(team_url)
+    return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png" if tid else ""
+
+def _fotmob_team_squad(team_id: str):
+    cache = st.session_state.setdefault("_fotmob_team_squad_cache", {})
+    if team_id in cache:
+        return cache[team_id] or []
+
+    squad = []
+    try:
+        url = f"https://www.fotmob.com/api/teams?id={team_id}"
+        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code == 200:
+            data = r.json() or {}
+            raw = data.get("squad", None)
+
+            if isinstance(raw, list):
+                for sec in raw:
+                    members = sec.get("members") or sec.get("players") or []
+                    if isinstance(members, list):
+                        squad.extend([m for m in members if isinstance(m, dict)])
+
+            elif isinstance(raw, dict):
+                for k in ("members", "players"):
+                    members = raw.get(k)
+                    if isinstance(members, list):
+                        squad.extend([m for m in members if isinstance(m, dict)])
+                nested = raw.get("squad")
+                if isinstance(nested, list):
+                    for sec in nested:
+                        members = sec.get("members") or sec.get("players") or []
+                        if isinstance(members, list):
+                            squad.extend([m for m in members if isinstance(m, dict)])
+    except Exception:
+        squad = []
+
+    cache[team_id] = squad
+    return squad
+
+def _slug_name(s: str) -> str:
+    if not s:
+        return ""
+    s = str(s).strip().lower()
+    repl = {
+        "ø":"o","œ":"oe","æ":"ae","å":"a","ä":"a","ö":"o","ü":"u",
+        "ß":"ss","ł":"l","đ":"d","ð":"d","þ":"th","ç":"c","ş":"s",
+        "ğ":"g","ı":"i",
+    }
+    for k, v in repl.items():
+        s = s.replace(k, v)
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    s = re.sub(r"[^a-z0-9]+", "", s)
+    return s
+
+def _similar(a: str, b: str) -> float:
+    return SequenceMatcher(None, a, b).ratio()
+
+def _player_surname(player: str) -> str:
+    p = (player or "").strip()
+    if not p:
+        return ""
+    if "," in p:
+        return p.split(",", 1)[0].strip()
+    parts = p.split()
+    return parts[-1].strip() if parts else ""
+
+def resolve_player_photo(player: str, team: str, league: str) -> str:
+    # 1) override
+    key_id = f"{player}|||{team}|||{league}"
+    override = st.session_state.get("photo_map", {}).get(key_id, "")
+    if override:
+        return override
+
+    # 2) needs team_fotmob_urls.py mapping
+    team_url = ""
+    try:
+        from team_fotmob_urls import FOTMOB_TEAM_URLS
+        team_url = (FOTMOB_TEAM_URLS.get(team) or "").strip()
+    except Exception:
+        team_url = ""
+
+    tid = _fotmob_team_id_from_url(team_url)
+    if not tid:
+        return PLACEHOLDER_IMG
+
+    squad = _fotmob_team_squad(tid)
+    target_surname = _slug_name(_player_surname(player))
+    target_full = _slug_name(player)
+
+    best_id = ""
+
+    # surname match
+    if target_surname:
+        for m in squad:
+            name = m.get("name") or m.get("playerName") or ""
+            pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
+            if not pid:
+                continue
+            if _slug_name(_player_surname(name)) == target_surname:
+                best_id = str(pid)
+                if target_full and target_full in _slug_name(name):
+                    break
+
+    # full match fallback
+    if not best_id and target_full:
+        for m in squad:
+            name = m.get("name") or m.get("playerName") or ""
+            pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
+            if not pid:
+                continue
+            if target_full in _slug_name(name):
+                best_id = str(pid)
+                break
+
+    # fuzzy surname fallback
+    if not best_id and target_surname:
+        best_score, best_pid = 0.0, ""
+        for m in squad:
+            name = m.get("name") or m.get("playerName") or ""
+            pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
+            if not pid:
+                continue
+            sn = _slug_name(_player_surname(name))
+            sc = _similar(sn, target_surname)
+            if sc > best_score:
+                best_score, best_pid = sc, str(pid)
+        if best_score >= 0.86:
+            best_id = best_pid
+
+    if best_id and str(best_id).isdigit():
+        return f"https://images.fotmob.com/image_resources/playerimages/{best_id}.png"
+
+    return PLACEHOLDER_IMG
+
+def resolve_team_crest(team: str, league: str) -> str:
+    # 1) override
+    crest_key = f"{team}|||{league}"
+    override = st.session_state.get("crest_map", {}).get(crest_key, "")
+    if override:
+        return override
+
+    # 2) needs team_fotmob_urls.py mapping
+    team_url = ""
+    try:
+        from team_fotmob_urls import FOTMOB_TEAM_URLS
+        team_url = (FOTMOB_TEAM_URLS.get(team) or "").strip()
+    except Exception:
+        team_url = ""
+
+    return _fotmob_crest_url(team_url) if team_url else ""
+
+
+
 # ========================= LEAGUES & STRENGTHS =========================
 INCLUDED_LEAGUES = [
     'England 1.','England 2.','England 3.','England 4.','England 5.','England 6.','England 7.','England 8.','England 9.','England 10.',
