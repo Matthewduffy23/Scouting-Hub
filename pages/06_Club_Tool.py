@@ -413,6 +413,25 @@ use_single_template_player = st.checkbox("Use single template player (otherwise 
 template_strength = float(LEAGUE_STRENGTHS.get(template_league, 0.0))
 
 # ========================= HELPERS =========================
+def format_market_value_gbp(v) -> str:
+    """Format numeric market value to £30m / £750k / £3.25m etc."""
+    if v is None:
+        return "—"
+    v = pd.to_numeric(v, errors="coerce")
+    if not np.isfinite(v):
+        return "—"
+
+    sign = "-" if v < 0 else ""
+    v = abs(float(v))
+
+    if v >= 1_000_000:
+        s = f"{v/1_000_000:.2f}".rstrip("0").rstrip(".")
+        return f"{sign}£{s}m"
+    if v >= 1_000:
+        s = f"{v/1_000:.0f}"
+        return f"{sign}£{s}k"
+    return f"{sign}£{int(v):,}"
+
 def build_base_pool():
     p = df.copy()
     p = p[p["League"].isin(leagues_sel)]
@@ -1296,6 +1315,8 @@ def render_tiles(
         age = row.get("Age", "")
         minutes = row.get("Minutes played", "")
         foot = str(row.get("Foot", "")).strip()
+        mv = row.get("Market value", np.nan)
+        mv_txt = format_market_value_gbp(mv)
         score = float(pd.to_numeric(row.get(score_col, 0.0), errors="coerce") or 0.0)
         match_pct = max(0, min(100, int(round(score))))
 
@@ -1320,6 +1341,7 @@ def render_tiles(
         <span class="chip">Age {age}</span>
         <span class="chip">{int(minutes) if str(minutes).isdigit() else minutes} min</span>
         <span class="chip">{foot}</span>
+        <span class="chip">{mv_txt}</span>
       </div>
     </div>
   </div>
