@@ -3043,22 +3043,6 @@ def _parse_market_value_to_m(x):
     except:
         return np.nan
 
-def _format_value_gbp_from_m(mv_m) -> str:
-    """mv_m is 'millions' (e.g., 30.0). Return £30m / £3.25m / £750k."""
-    v = pd.to_numeric(mv_m, errors="coerce")
-    if not np.isfinite(v):
-        return "—"
-
-    pounds = float(v) * 1_000_000.0
-
-    if pounds >= 1_000_000:
-        s = f"{pounds/1_000_000:.2f}".rstrip("0").rstrip(".")
-        return f"£{s}m"
-    if pounds >= 1_000:
-        return f"£{pounds/1_000:.0f}k"
-    return f"£{int(pounds):,}"
-
-
 # ---------- percentiles OR outlier z-score mode (raw metrics) ----------
 @st.cache_data(show_spinner=False)
 def _scores_for_ref(df_ref: pd.DataFrame, metrics: list, outlier_mode: bool) -> pd.DataFrame:
@@ -3269,7 +3253,7 @@ with p3:
     ]
     birth_sel = st.multiselect("Birth country", sorted(set(BIRTH_COUNTRIES_ALLOWED)), default=[], key="t20_birth_v33")
 with p4:
-    mv_range = st.slider("Market value (£m)", 0.0, 400.0, (0.0, 400.0), 0.5, key="t20_mv_v33")
+    mv_range = st.slider("Market value (€m)", 0.0, 150.0, (0.0, 150.0), 0.5, key="t20_mv_v33")
 
 # ---------- League filters (display only) ----------
 st.markdown("#### 🌍 League filters (display only)")
@@ -3886,8 +3870,6 @@ for _, r in df_scored.iterrows():
     band   = _esc(r.get("_band", ""))
     pos    = _esc(_strip_tags(r.get("Position", "")))
     age    = _esc(r.get("Age", "—"))
-         value_txt = _esc(_format_value_gbp_from_m(r.get("_mv_m", np.nan)))
-
 
     birth_country = _strip_tags(r.get("_birth_country", ""))
     flag_url = _country_to_flag_url(birth_country)
@@ -3922,10 +3904,8 @@ for _, r in df_scored.iterrows():
   <td><span class="t20-muted">{league}</span></td>
   <td><span class="t20-muted">{band}</span></td>
   <td><span class="t20-muted">{pos}</span></td>
-    <td>{age}</td>
-    <td><span class="t20-muted">{value_txt}</span></td>
-    <td class="t20-role">{best_role_disp}</td>
-
+  <td>{age}</td>
+  <td class="t20-role">{best_role_disp}</td>
   <td><span class="t20-pill" style="background:{pill_col};">{int(round(score))}</span></td>
 </tr>
 """
@@ -3943,7 +3923,6 @@ table_html = f"""
         <th>Band</th>
         <th>Position</th>
         <th>Age</th>
-        <th>Value</th>
         <th>Best role</th>
         <th>Score</th>
       </tr>
