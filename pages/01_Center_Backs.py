@@ -2742,6 +2742,78 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
 
     df_filtered = df_view.copy()
 
+    # -----------------
+    # Market Value (display-only) + print toggle (Pro Layout)
+    # -----------------
+    def _fmt_mv_gbp(v) -> str:
+        try:
+            x = float(v)
+        except Exception:
+            return "—"
+        try:
+            if np.isnan(x) or x <= 0:
+                return "—"
+        except Exception:
+            if x <= 0:
+                return "—"
+
+        # If your values are already in full £, this does nothing.
+        # If your values are in "millions" (e.g. 12.5 == £12.5m), this converts.
+        if x < 1_000:
+            x = x * 1_000_000
+
+        if x >= 1_000_000_000:
+            return f"£{x/1_000_000_000:.1f}bn".replace(".0", "")
+        if x >= 1_000_000:
+            return f"£{x/1_000_000:.1f}m".replace(".0", "")
+        if x >= 1_000:
+            return f"£{x/1_000:.0f}k"
+        return f"£{x:.0f}"
+
+    show_mv_next_to_contract = st.checkbox(
+        "Show Market Value next to contract",
+        value=False,
+        key="pro_show_mv_next_contract"
+    )
+
+    mv_mode = st.selectbox(
+        "Market Value filter (display-only)",
+        ["Off", "Max only", "Range"],
+        index=0,
+        key="pro_mv_mode"
+    )
+
+    # numeric MV column for filtering
+    df_filtered["__mv"] = pd.to_numeric(df_filtered.get("Market value"), errors="coerce")
+    mv_cap = int(df_filtered["__mv"].max(skipna=True) or 50_000_000)
+
+    mv_min = None
+    mv_max = None
+
+    if mv_mode == "Max only":
+        mv_max = st.slider(
+            "Max Market Value (£)",
+            0, mv_cap,
+            min(10_000_000, mv_cap),
+            step=250_000,
+            key="pro_mv_max"
+        )
+    elif mv_mode == "Range":
+        mv_min, mv_max = st.slider(
+            "Market Value Range (£)",
+            0, mv_cap,
+            (0, min(10_000_000, mv_cap)),
+            step=250_000,
+            key="pro_mv_range"
+        )
+
+    # apply display-only filtering
+    if mv_max is not None:
+        df_filtered = df_filtered[df_filtered["__mv"] <= float(mv_max)]
+    if mv_min is not None:
+        df_filtered = df_filtered[df_filtered["__mv"] >= float(mv_min)]
+
+
     search_q = st.text_input("🔎 Search player / team / league", "", key="cb_search_bar")
     if search_q:
         s = str(search_q).strip().lower()
@@ -2870,6 +2942,11 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
         cy = pd.to_datetime(row.get("Contract expires"), errors="coerce")
         cyr = int(cy.year) if pd.notna(cy) else 0
         contract_txt = f"{cyr}" if cyr > 0 else "—"
+
+                   mv_txt = _fmt_mv_gbp(row.get("Market value"))
+                   if show_mv_next_to_contract and mv_txt != "—":
+                             contract_txt = f"{contract_txt} · {mv_txt}"
+
 
         birth = row.get("Birth country","") if "Birth country" in row else ""
         flag = _flag_html(birth)
