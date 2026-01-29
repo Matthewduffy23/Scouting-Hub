@@ -2742,6 +2742,57 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
 
     df_filtered = df_view.copy()
 
+    # -----------------
+    # Market Value (display-only) + print toggle
+    # -----------------
+    show_mv_next_to_contract = st.checkbox(
+        "Show Market Value next to contract",
+        value=False,
+        key="pro_show_mv_next_contract"
+    )
+
+    mv_mode = st.selectbox(
+        "Market Value filter (display-only)",
+        ["Off", "Max only", "Range"],
+        index=0,
+        key="pro_mv_mode"
+    )
+
+    # numeric MV column for filtering (supports raw £ or 'millions')
+    df_filtered["__mv"] = pd.to_numeric(df_filtered.get("Market value"), errors="coerce")
+
+    # if values look like "millions", convert to pounds for filtering
+    # (same logic as formatter: if <1000 treat as millions)
+    df_filtered.loc[df_filtered["__mv"] < 1_000, "__mv"] = df_filtered.loc[df_filtered["__mv"] < 1_000, "__mv"] * 1_000_000
+
+    mv_cap = int(df_filtered["__mv"].max(skipna=True) or 50_000_000)
+
+    mv_min = None
+    mv_max = None
+
+    if mv_mode == "Max only":
+        mv_max = st.slider(
+            "Max Market Value (£)",
+            0, mv_cap,
+            min(10_000_000, mv_cap),
+            step=250_000,
+            key="pro_mv_max"
+        )
+    elif mv_mode == "Range":
+        mv_min, mv_max = st.slider(
+            "Market Value Range (£)",
+            0, mv_cap,
+            (0, min(10_000_000, mv_cap)),
+            step=250_000,
+            key="pro_mv_range"
+        )
+
+    if mv_max is not None:
+        df_filtered = df_filtered[df_filtered["__mv"] <= float(mv_max)]
+    if mv_min is not None:
+        df_filtered = df_filtered[df_filtered["__mv"] >= float(mv_min)]
+
+
     search_q = st.text_input("🔎 Search player / team / league", "", key="cb_search_bar")
     if search_q:
         s = str(search_q).strip().lower()
@@ -2870,6 +2921,11 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
         cy = pd.to_datetime(row.get("Contract expires"), errors="coerce")
         cyr = int(cy.year) if pd.notna(cy) else 0
         contract_txt = f"{cyr}" if cyr > 0 else "—"
+
+        mv_txt = _fmt_mv_gbp(row.get("Market value")) if "Market value" in ranked.columns else "—"
+        if show_mv_next_to_contract and mv_txt != "—":
+            contract_txt = f"{contract_txt} · {mv_txt}" if contract_txt != "—" else mv_txt
+
 
         birth = row.get("Birth country","") if "Birth country" in row else ""
         flag = _flag_html(birth)
@@ -3105,7 +3161,6 @@ with tabs[4]:
     st.subheader("Pro Layout — Top Tiles")
     render_pro_layout(df_f, top_n=top_n)
 # ----------------- END PRO LAYOUT TAB -----------------
-
 
 
 
