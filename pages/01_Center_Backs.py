@@ -1064,67 +1064,6 @@ if rank_mode == "Raw metric (any numeric column)":
 else:
     value_label_col = "_MetricForBars"
 
-def format_market_value(v) -> str:
-    """Format MV: 1750000 -> £1.75m, 30000000 -> £30m, etc."""
-    if v is None:
-        return "—"
-    v = pd.to_numeric(v, errors="coerce")
-    if not np.isfinite(v):
-        return "—"
-
-    v = float(v)
-    if v >= 1_000_000:
-        s = f"{v/1_000_000:.2f}".rstrip("0").rstrip(".")
-        return f"£{s}m"
-    if v >= 1_000:
-        return f"£{int(round(v/1_000))}k"
-    return f"£{int(v):,}"
-
-
-
-# ----------------- DISPLAY-ONLY MARKET VALUE FILTER (BETTER UI) -----------------
-display_mv_mode = st.selectbox(
-    "Display Market Value filter (does not change pool)",
-    ["Off", "Max only", "Range"],
-    index=1,  # <- default to Max only (change to 0 if you want Off)
-    key=f"cb_display_mv_mode_{selected_file}",
-)
-
-mv_all = pd.to_numeric(df_f["Market value"], errors="coerce")
-mv_hi = float(np.nanmax(mv_all)) if mv_all.notna().any() else 50_000_000.0
-
-# slider range in MILLIONS
-mv_cap_m = int(math.ceil(mv_hi / 1_000_000.0))
-mv_cap_m = max(1, mv_cap_m)
-
-display_mv_min = None
-display_mv_max = None
-
-if display_mv_mode == "Max only":
-    mv_max_m = st.slider(
-        "Max market value to display (M£)",
-        0, mv_cap_m,
-        min(10, mv_cap_m),
-        step=1,
-        key=f"cb_display_mv_max_m_{selected_file}",
-    )
-    display_mv_max = mv_max_m * 1_000_000
-    st.caption(f"Max MV: **{format_market_value(display_mv_max)}**")
-
-elif display_mv_mode == "Range":
-    mv_min_m, mv_max_m = st.slider(
-        "Market value range to display (M£)",
-        0, mv_cap_m,
-        (0, min(10, mv_cap_m)),
-        step=1,
-        key=f"cb_display_mv_range_m_{selected_file}",
-    )
-    display_mv_min = mv_min_m * 1_000_000
-    display_mv_max = mv_max_m * 1_000_000
-    st.caption(f"MV range: **{format_market_value(display_mv_min)} → {format_market_value(display_mv_max)}**")
-
-
-
 
 # ---------------------------------------------------------
 # 4) DISPLAY FILTERS (do not change pool scaling)
@@ -1134,18 +1073,6 @@ df_display = df_pool.copy()
 df_display = df_display[df_display["Age"] <= max_rank_age]
 df_display = df_display[df_display["League Strength"].between(display_ls_min, display_ls_max)]
 
-# ✅ display-only market value filter
-if display_mv_max is not None:
-    df_display = df_display[
-        pd.to_numeric(df_display["Market value"], errors="coerce") <= float(display_mv_max)
-    ]
-
-if display_mv_min is not None:
-    df_display = df_display[
-        pd.to_numeric(df_display["Market value"], errors="coerce") >= float(display_mv_min)
-    ]
-
-
 if selected_display_league != "All leagues":
     df_display = df_display[df_display["League"] == selected_display_league]
     if selected_display_team != "All teams":
@@ -1154,10 +1081,7 @@ if selected_display_league != "All leagues":
 df_display = df_display.dropna(subset=[display_metric_col]).sort_values(display_metric_col, ascending=False).copy()
 
 top_n = 10
-df_table = df_display.copy()
-df_table["Market value"] = pd.to_numeric(df_table["Market value"], errors="coerce").apply(format_market_value)
-st.dataframe(df_table.head(top_n), use_container_width=True)
-
+st.dataframe(df_display.head(top_n), use_container_width=True)
 
 
 # ---------------------------------------------------------
@@ -1774,6 +1698,124 @@ if img_bytes:
     st.download_button("Download PNG", data=img_bytes, file_name="cb_ranking.png", mime="image/png")
 else:
     st.info("No data to generate image.")
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ----------------- ROLE SCORING (tables) -----------------
+def compute_weighted_role_score(df_in: pd.DataFrame, metrics: dict, beta: float, league_weighting: bool) -> pd.Series:
+    total_w = sum(metrics.values()) if metrics else 1.0
+    wsum = np.zeros(len(df_in))
+    for m, w in metrics.items():
+        col = f"{m} Percentile"
+        if col in df_in.columns:
+            wsum += df_in[col].values * w
+    player_score = wsum / total_w  # 0..100
+    if league_weighting:
+        league_scaled = df_in["League Strength"].fillna(50.0)  # already 0..100
+        return (1 - beta) * player_score + beta * league_scaled.values
+    return player_score
+
+use_league_weighting = st.session_state[f"cb_use_lw_{selected_file}"]
+beta = st.session_state[f"cb_beta_{selected_file}"]
+
+for role_name, role_def in ROLES.items():
+    df_f[f"{role_name} Score"] = compute_weighted_role_score(
+        df_f, role_def["metrics"], beta=beta, league_weighting=use_league_weighting
+    )
+
+# ----------------- THRESHOLDS -----------------
+enable_min_perf = st.session_state[f"cb_enable_min_perf_{selected_file}"]
+sel_metrics = st.session_state[f"cb_sel_metrics_{selected_file}"]
+min_pct = st.session_state[f"cb_min_pct_{selected_file}"]
+
+if enable_min_perf and sel_metrics:
+    keep_mask = np.ones(len(df_f), dtype=bool)
+    for m in sel_metrics:
+        pct_col = f"{m} Percentile"
+        if pct_col in df_f.columns:
+            keep_mask &= (df_f[pct_col] >= min_pct)
+    df_f = df_f[keep_mask]
+    if df_f.empty:
+        st.warning("No players meet the minimum performance thresholds. Loosen thresholds.")
+        st.stop()
+
+# ----------------- HELPERS -----------------
+round_to = st.session_state[f"cb_round_to_{selected_file}"]
+
+def fmt_cols(df_in: pd.DataFrame, score_col: str) -> pd.DataFrame:
+    out = df_in.copy()
+    out[score_col] = out[score_col].round(round_to).astype(int if round_to == 0 else float)
+    cols = ["Player","Team","League","Position","Age","Contract expires","League Strength", score_col]
+    return out[cols]
+
+def top_table(df_in: pd.DataFrame, role: str, head_n: int) -> pd.DataFrame:
+    col = f"{role} Score"
+    ranked = df_in.dropna(subset=[col]).sort_values(col, ascending=False)
+    ranked = fmt_cols(ranked, col).head(head_n).reset_index(drop=True)
+    ranked.index = np.arange(1, len(ranked)+1)
+    return ranked
+
+def filtered_view(df_in: pd.DataFrame, *, age_max=None, contract_year=None, value_max=None):
+    t = df_in.copy()
+    if age_max is not None:
+        t = t[t["Age"] <= age_max]
+    if contract_year is not None:
+        years = pd.to_datetime(t["Contract expires"], errors="coerce").dt.year
+        t = t[years <= contract_year]
+    if value_max is not None:
+        t = t[t["Market value"] <= value_max]
+    return t
+
+# ----------------- TABS (tables) -----------------
+top_n = int(st.session_state[f"cb_topn_{selected_file}"])
+value_band_max = st.session_state[f"cb_value_band_{selected_file}"]
+
+tabs = st.tabs([
+    "Overall Top N", "U23 Top N", "Expiring Contracts",
+    "Value Band (≤ max €)", "Pro Layout" ])  # 👈 new tab
+for role, role_def in ROLES.items():
+    with tabs[0]:
+        st.subheader(f"{role} — Overall Top {top_n}")
+        st.caption(role_def.get("desc", ""))
+        st.dataframe(top_table(df_f, role, top_n), use_container_width=True)
+        st.divider()
+    with tabs[1]:
+        u23_cutoff = st.number_input(
+            f"{role} — U23 cutoff", min_value=16, max_value=30, value=23, step=1, key=f"cb_u23_{role}_{selected_file}"
+        )
+        st.subheader(f"{role} — U{u23_cutoff} Top {top_n}")
+        st.caption(role_def.get("desc", ""))
+        st.dataframe(top_table(filtered_view(df_f, age_max=u23_cutoff), role, top_n), use_container_width=True)
+        st.divider()
+    with tabs[2]:
+        exp_year = st.number_input(
+            f"{role} — Expiring by year", min_value=2024, max_value=2030,
+            value=st.session_state[f"cb_cutoff_{selected_file}"], step=1,
+            key=f"cb_exp_{role}_{selected_file}"
+        )
+        st.subheader(f"{role} — Contracts expiring ≤ {exp_year}")
+        st.caption(role_def.get("desc", ""))
+        st.dataframe(top_table(filtered_view(df_f, contract_year=exp_year), role, top_n), use_container_width=True)
+        st.divider()
+    with tabs[3]:
+        v_max = st.number_input(
+            f"{role} — Max value (€)", min_value=0, value=value_band_max, step=100_000,
+            key=f"cb_val_{role}_{selected_file}"
+        )
+        st.subheader(f"{role} — Value band ≤ €{v_max:,.0f}")
+        st.caption(role_def.get("desc", ""))
+        st.dataframe(top_table(filtered_view(df_f, value_max=v_max), role, top_n), use_container_width=True)
+        st.divider()
 
 
 
