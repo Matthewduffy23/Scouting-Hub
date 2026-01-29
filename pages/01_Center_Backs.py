@@ -1065,43 +1065,6 @@ else:
     value_label_col = "_MetricForBars"
 
 
-# ----------------- DISPLAY-ONLY MARKET VALUE FILTER -----------------
-display_mv_mode = st.selectbox(
-    "Display Market Value filter (does not change pool)",
-    ["Off", "Max only", "Range"],
-    index=0,
-    key=f"cb_display_mv_mode_{selected_file}",
-)
-
-mv_all = pd.to_numeric(df_f["Market value"], errors="coerce")
-mv_hi = int(np.nanmax(mv_all)) if mv_all.notna().any() else 50_000_000
-mv_cap = int(math.ceil(mv_hi / 5_000_000) * 5_000_000)
-
-display_mv_min = None
-display_mv_max = None
-
-if display_mv_mode == "Max only":
-    display_mv_max = st.slider(
-        "Max market value to display",
-        0,
-        mv_cap,
-        min(10_000_000, mv_cap),
-        step=250_000,
-        key=f"cb_display_mv_max_{selected_file}",
-    )
-
-elif display_mv_mode == "Range":
-    display_mv_min, display_mv_max = st.slider(
-        "Market value range to display",
-        0,
-        mv_cap,
-        (0, min(10_000_000, mv_cap)),
-        step=250_000,
-        key=f"cb_display_mv_range_{selected_file}",
-    )
-
-
-
 # ---------------------------------------------------------
 # 4) DISPLAY FILTERS (do not change pool scaling)
 # ---------------------------------------------------------
@@ -1109,18 +1072,6 @@ elif display_mv_mode == "Range":
 df_display = df_pool.copy()
 df_display = df_display[df_display["Age"] <= max_rank_age]
 df_display = df_display[df_display["League Strength"].between(display_ls_min, display_ls_max)]
-
-# ✅ display-only market value filter
-if display_mv_max is not None:
-    df_display = df_display[
-        pd.to_numeric(df_display["Market value"], errors="coerce") <= float(display_mv_max)
-    ]
-
-if display_mv_min is not None:
-    df_display = df_display[
-        pd.to_numeric(df_display["Market value"], errors="coerce") >= float(display_mv_min)
-    ]
-
 
 if selected_display_league != "All leagues":
     df_display = df_display[df_display["League"] == selected_display_league]
@@ -1798,51 +1749,14 @@ if enable_min_perf and sel_metrics:
         st.warning("No players meet the minimum performance thresholds. Loosen thresholds.")
         st.stop()
 
-def format_market_value_gbp(v) -> str:
-    """Format numeric market value to £30m / £750k / £3.25m etc."""
-    if v is None:
-        return "—"
-    v = pd.to_numeric(v, errors="coerce")
-    if not np.isfinite(v):
-        return "—"
-
-    sign = "-" if v < 0 else ""
-    v = abs(float(v))
-
-    if v >= 1_000_000:
-        s = f"{v/1_000_000:.2f}".rstrip("0").rstrip(".")
-        return f"{sign}£{s}m"
-    if v >= 1_000:
-        s = f"{v/1_000:.0f}"
-        return f"{sign}£{s}k"
-    return f"{sign}£{int(v):,}"
-
-
 # ----------------- HELPERS -----------------
 round_to = st.session_state[f"cb_round_to_{selected_file}"]
 
 def fmt_cols(df_in: pd.DataFrame, score_col: str) -> pd.DataFrame:
     out = df_in.copy()
-
-    # round score
     out[score_col] = out[score_col].round(round_to).astype(int if round_to == 0 else float)
-
-    # ✅ pretty market value
-    out["MV"] = out["Market value"].apply(format_market_value_gbp)
-
-    cols = [
-        "Player",
-        "Team",
-        "League",
-        "Position",
-        "Age",
-        "Contract expires",
-        "League Strength",
-        "MV",
-        score_col,
-    ]
+    cols = ["Player","Team","League","Position","Age","Contract expires","League Strength", score_col]
     return out[cols]
-
 
 def top_table(df_in: pd.DataFrame, role: str, head_n: int) -> pd.DataFrame:
     col = f"{role} Score"
