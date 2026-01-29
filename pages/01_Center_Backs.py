@@ -2799,21 +2799,25 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
     mv_max = None
 
     if mv_mode == "Max only":
-        mv_max = st.slider(
-            "Max Market Value (£)",
-            0, mv_cap,
-            min(10_000_000, mv_cap),
-            step=250_000,
-            key="pro_mv_max"
+mv_max = st.slider(
+    "Max Market Value (£)",
+    0, mv_cap,
+    min(10_000_000, mv_cap),
+    step=250_000,
+    format_func=_fmt_mv_gbp,
+    key="pro_mv_max"
         )
     elif mv_mode == "Range":
-        mv_min, mv_max = st.slider(
-            "Market Value Range (£)",
-            0, mv_cap,
-            (0, min(10_000_000, mv_cap)),
-            step=250_000,
-            key="pro_mv_range"
-        )
+mv_min, mv_max = st.slider(
+    "Market Value Range (£)",
+    0, mv_cap,
+    (0, min(10_000_000, mv_cap)),
+    step=250_000,
+    format_func=_fmt_mv_gbp,
+    key="pro_mv_range"
+)
+
+
 
     if mv_max is not None:
         df_filtered = df_filtered[df_filtered["__mv"] <= float(mv_max)]
@@ -3189,7 +3193,6 @@ with tabs[4]:
     st.subheader("Pro Layout — Top Tiles")
     render_pro_layout(df_f, top_n=top_n)
 # ----------------- END PRO LAYOUT TAB -----------------
-
 
 
 # ----------------- END CENTER BACK BLOCK -----------------
