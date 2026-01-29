@@ -3270,6 +3270,7 @@ with p3:
     birth_sel = st.multiselect("Birth country", sorted(set(BIRTH_COUNTRIES_ALLOWED)), default=[], key="t20_birth_v33")
 with p4:
     use_mv_filter = st.toggle("Filter by market value", value=False, key="t20_use_mv_filter_v33")
+
     if use_mv_filter:
         mv_range = st.slider(
             "Market value (£m)",
@@ -3278,7 +3279,10 @@ with p4:
             key="t20_mv_v33",
         )
     else:
+        # CRITICAL: remove stale slider value so it cannot “silently” apply
+        st.session_state.pop("t20_mv_v33", None)
         mv_range = None
+
 
 
 # ---------- League filters (display only) ----------
