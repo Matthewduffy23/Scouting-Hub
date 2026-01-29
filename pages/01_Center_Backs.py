@@ -2742,7 +2742,62 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
 
     df_filtered = df_view.copy()
 
+    # -----------------
+    # DISPLAY-ONLY Market Value filter + print toggle (Pro Layout)
+    # -----------------
+    show_mv_next_to_contract = st.checkbox(
+        "Show Market Value next to contract",
+        value=False,
+        key="pro_show_mv_next_contract"
+    )
+
+    mv_mode = st.selectbox(
+        "Display Market Value filter (does not change pool)",
+        ["Off", "Max only", "Range"],
+        index=0,
+        key="pro_mv_mode"
+    )
+
+    # numeric MV column for filtering
+    df_filtered["__mv"] = pd.to_numeric(
+        df_filtered.get("Market value"),
+        errors="coerce"
+    )
+
+    mv_cap = int(df_filtered["__mv"].max(skipna=True) or 50_000_000)
+
+    mv_min = None
+    mv_max = None
+
+    if mv_mode == "Max only":
+        mv_max = st.slider(
+            "Max Market Value (£)",
+            0, mv_cap,
+            min(10_000_000, mv_cap),
+            step=250_000,
+            key="pro_mv_max"
+        )
+
+    elif mv_mode == "Range":
+        mv_min, mv_max = st.slider(
+            "Market Value Range (£)",
+            0, mv_cap,
+            (0, min(10_000_000, mv_cap)),
+            step=250_000,
+            key="pro_mv_range"
+        )
+
+    # apply display-only filtering
+    if mv_max is not None:
+        df_filtered = df_filtered[df_filtered["__mv"] <= float(mv_max)]
+    if mv_min is not None:
+        df_filtered = df_filtered[df_filtered["__mv"] >= float(mv_min)]
+
+
+
+
     search_q = st.text_input("🔎 Search player / team / league", "", key="cb_search_bar")
+
     if search_q:
         s = str(search_q).strip().lower()
         cols = [c for c in ("Player","Team","League") if c in df_filtered.columns]
@@ -2867,9 +2922,13 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
             age_val = 0
         age_txt = f"{age_val}y.o." if age_val > 0 else "—"
 
-        cy = pd.to_datetime(row.get("Contract expires"), errors="coerce")
-        cyr = int(cy.year) if pd.notna(cy) else 0
         contract_txt = f"{cyr}" if cyr > 0 else "—"
+
+        if show_mv_next_to_contract:
+                     mv_txt = _fmt_mv_gbp(row.get("__mv", row.get("Market value", np.nan)))
+                   if mv_txt != "—":
+                     contract_txt = f"{contract_txt} · {mv_txt}"
+
 
         birth = row.get("Birth country","") if "Birth country" in row else ""
         flag = _flag_html(birth)
