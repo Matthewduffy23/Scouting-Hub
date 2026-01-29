@@ -3279,9 +3279,12 @@ with p4:
             key="t20_mv_v33",
         )
     else:
-        # CRITICAL: remove stale slider value so it cannot “silently” apply
-        st.session_state.pop("t20_mv_v33", None)
+        # If the slider existed before, delete it and hard-rerun so NOTHING can read it this run.
+        if "t20_mv_v33" in st.session_state:
+            st.session_state.pop("t20_mv_v33", None)
+            st.rerun()
         mv_range = None
+
 
 
 
