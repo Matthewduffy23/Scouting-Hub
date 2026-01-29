@@ -2790,8 +2790,8 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
     df_filtered["__mv"] = pd.to_numeric(df_filtered.get("Market value"), errors="coerce")
 
     # if values look like "millions", convert to pounds for filtering
-    # (same logic as formatter: if <1000 treat as millions)
-    df_filtered.loc[df_filtered["__mv"] < 1_000, "__mv"] = df_filtered.loc[df_filtered["__mv"] < 1_000, "__mv"] * 1_000_000
+    mv_mask = df_filtered["__mv"] < 1_000
+    df_filtered.loc[mv_mask, "__mv"] = df_filtered.loc[mv_mask, "__mv"] * 1_000_000
 
     mv_cap = int(df_filtered["__mv"].max(skipna=True) or 50_000_000)
 
@@ -2799,29 +2799,37 @@ def render_pro_layout(df_view: pd.DataFrame, top_n: int = 20):
     mv_max = None
 
     if mv_mode == "Max only":
-        mv_max = st.slider(
-            "Max Market Value (£)",
-            0, mv_cap,
-            min(10_000_000, mv_cap),
-            step=250_000,
-            key="pro_mv_max"
+        mv_max_m = st.slider(
+            "Max Market Value (millions)",
+            0.0, 400.0,
+            30.0,
+            step=0.5,
+            key="pro_mv_max_m"
         )
-    elif mv_mode == "Range":
-        mv_min, mv_max = st.slider(
-            "Market Value Range (£)",
-            0, mv_cap,
-            (0, min(10_000_000, mv_cap)),
-            step=250_000,
-            key="pro_mv_range"
-        )
+        mv_max = mv_max_m * 1_000_000
+        mv_min = None
 
+    elif mv_mode == "Range":
+        mv_min_m, mv_max_m = st.slider(
+            "Market Value Range (millions)",
+            0.0, 400.0,
+            (0.0, 30.0),
+            step=0.5,
+            key="pro_mv_range_m"
+        )
+        mv_min = mv_min_m * 1_000_000
+        mv_max = mv_max_m * 1_000_000
+
+
+
+    # apply display-only filtering
     if mv_max is not None:
         df_filtered = df_filtered[df_filtered["__mv"] <= float(mv_max)]
     if mv_min is not None:
         df_filtered = df_filtered[df_filtered["__mv"] >= float(mv_min)]
 
-
     search_q = st.text_input("🔎 Search player / team / league", "", key="cb_search_bar")
+
     if search_q:
         s = str(search_q).strip().lower()
         cols = [c for c in ("Player","Team","League") if c in df_filtered.columns]
