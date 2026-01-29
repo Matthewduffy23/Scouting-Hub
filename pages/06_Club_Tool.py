@@ -3269,7 +3269,17 @@ with p3:
     ]
     birth_sel = st.multiselect("Birth country", sorted(set(BIRTH_COUNTRIES_ALLOWED)), default=[], key="t20_birth_v33")
 with p4:
-    mv_range = st.slider("Market value (£m)", 0.0, 400.0, (0.0, 400.0), 0.5, key="t20_mv_v33")
+    use_mv_filter = st.toggle("Filter by market value", value=False, key="t20_use_mv_filter_v33")
+    if use_mv_filter:
+        mv_range = st.slider(
+            "Market value (£m)",
+            0.0, 100.0, (0.0, 100.0),
+            0.5,
+            key="t20_mv_v33",
+        )
+    else:
+        mv_range = None
+
 
 # ---------- League filters (display only) ----------
 st.markdown("#### 🌍 League filters (display only)")
@@ -3498,10 +3508,11 @@ if foot_sel:
 if birth_sel:
     df_disp = df_disp[df_disp["_birth_country"].isin(set(birth_sel))].copy()
 
-# Market value (€m) (keeps NaNs visible)
-if "_mv_m" in df_disp.columns:
+# Market value (£m) display filter (optional; keeps NaNs visible)
+if ("_mv_m" in df_disp.columns) and use_mv_filter and (mv_range is not None):
     lo_mv, hi_mv = float(mv_range[0]), float(mv_range[1])
     df_disp = df_disp[df_disp["_mv_m"].between(lo_mv, hi_mv) | df_disp["_mv_m"].isna()].copy()
+
 
 # league display filters
 if "League" in df_disp.columns:
