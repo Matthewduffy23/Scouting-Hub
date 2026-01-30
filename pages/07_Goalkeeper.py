@@ -1837,6 +1837,32 @@ def _fmt2(n: int) -> str:
     except Exception:
         return "00"
 
+def _fmt_mv_gbp(v) -> str:
+    """Format MV as £k/£m. Accepts raw numeric or string."""
+    if v is None:
+        return "—"
+    try:
+        vv = pd.to_numeric(v, errors="coerce")
+    except Exception:
+        return "—"
+    if not np.isfinite(vv):
+        return "—"
+
+    vv = float(vv)
+
+    # If your dataset stores "30" meaning 30m, convert to full euros/pounds style like you did before:
+    # (keeps your earlier logic)
+    if vv < 1_000:  # treat as "millions"
+        vv *= 1_000_000
+
+    if vv >= 1_000_000:
+        s = f"{vv/1_000_000:.2f}".rstrip("0").rstrip(".")
+        return f"£{s}m"
+    if vv >= 1_000:
+        return f"£{int(round(vv/1_000))}k"
+    return f"£{int(vv):,}"
+
+
 _POS_COLORS = {
     "GK":"#D1763A",
     "CB":"#D1763A","RCB":"#D1763A","LCB":"#D1763A",
@@ -2219,6 +2245,62 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
 
     df_filtered = df_view.copy()
 
+    # -----------------
+    # Market Value (display-only)
+    # -----------------
+    show_mv_next_to_contract = st.checkbox(
+        "Show Market Value next to contract",
+        value=False,
+        key="pro_show_mv_next_contract_gk"
+    )
+
+    mv_mode = st.selectbox(
+        "Market Value filter (display-only)",
+        ["Off", "Max only", "Range"],
+        index=0,
+        key="pro_mv_mode_gk"
+    )
+
+    df_filtered["__mv"] = pd.to_numeric(
+        df_filtered.get("Market value"),
+        errors="coerce"
+    )
+
+    # If dataset stores values as "millions" (e.g. 30 = 30m), scale up
+    mv_mask = df_filtered["__mv"] < 1_000
+    df_filtered.loc[mv_mask, "__mv"] = df_filtered.loc[mv_mask, "__mv"] * 1_000_000
+
+    mv_min = None
+    mv_max = None
+
+    if mv_mode == "Max only":
+        mv_max_m = st.slider(
+            "Max Market Value (millions)",
+            0.0, 400.0,
+            30.0,
+            step=0.5,
+            key="pro_mv_max_m_gk"
+        )
+        mv_max = mv_max_m * 1_000_000
+
+    elif mv_mode == "Range":
+        mv_min_m, mv_max_m = st.slider(
+            "Market Value Range (millions)",
+            0.0, 400.0,
+            (0.0, 30.0),
+            step=0.5,
+            key="pro_mv_range_m_gk"
+        )
+        mv_min = mv_min_m * 1_000_000
+        mv_max = mv_max_m * 1_000_000
+
+    if mv_max is not None:
+        df_filtered = df_filtered[df_filtered["__mv"] <= mv_max]
+    if mv_min is not None:
+        df_filtered = df_filtered[df_filtered["__mv"] >= mv_min]
+
+
+
     if search_text and "Player" in df_filtered.columns:
         terms = [t.strip().lower() for t in search_text.split(",") if t.strip()]
         ser = df_filtered["Player"].astype(str).str.lower()
@@ -2286,6 +2368,10 @@ def render_pro_layout_gk(df_view: pd.DataFrame, top_n: int = 20):
         cy = pd.to_datetime(row.get("Contract expires"), errors="coerce")
         cyr = int(cy.year) if pd.notna(cy) else 0
         contract_txt = f"{cyr}" if cyr > 0 else "—"
+
+        mv_txt = _fmt_mv_gbp(row.get("Market value")) if "Market value" in ranked.columns else "—"
+        if show_mv_next_to_contract and mv_txt != "—":
+            contract_txt = f"{contract_txt} · {mv_txt}" if contract_txt != "—" else mv_txt
 
         birth = row.get("Birth country","") if "Birth country" in row else ""
         foot = _get_foot(row) or "—"
