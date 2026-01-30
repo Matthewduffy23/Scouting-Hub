@@ -2913,3 +2913,1070 @@ with st.expander("🕵️ Why is my player missing?", expanded=False):
 
 
 # ============================ END SHORTLIST (T20) — ELITE TABLE (v3.3++) ============================
+
+
+
+# ==========================================================
+# MULTI-POSITION IMPACT + DISPLAY-ONLY FILTERS + CIES IMAGE
+# FULL VERSION (LIKE YOUR CB PAGE):
+# - Pool = df_f (your sidebar-filtered pool)  ✅ scaling locked to pool
+# - Display-only filters DO NOT change scaling ✅
+# - Table + Image use the SAME df_display ✅
+# - Crests: local badges/crests + FotMob fallback ✅
+# - Export: Standard + 1920×1080 ✅
+# ==========================================================
+
+import io
+import re
+import math
+from pathlib import Path
+from typing import Optional, List
+
+import numpy as np
+import pandas as pd
+import streamlit as st
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+import requests
+
+# -----------------------------
+# 0) REQUIRED INPUTS
+# -----------------------------
+try:
+    df_f
+except NameError:
+    df_f = df.copy()
+
+try:
+    selected_file
+except NameError:
+    selected_file = "dataset"
+
+if "LEAGUE_STRENGTHS" not in globals():
+    LEAGUE_STRENGTHS = {}
+
+# -----------------------------
+# 1) HELPERS
+# -----------------------------
+def scale_0_100(s: pd.Series, default: float = 50.0) -> pd.Series:
+    s = pd.to_numeric(s, errors="coerce")
+    lo, hi = s.min(), s.max()
+    if pd.notna(lo) and pd.notna(hi) and hi > lo:
+        return 100.0 * (s - lo) / (hi - lo)
+    return pd.Series(default, index=s.index, dtype=float)
+
+def pct_name(m: str) -> str:
+    return f"{m} Percentile"
+
+def _primary_pos_token(pos: str) -> str:
+    p = str(pos).upper().strip()
+    tokens = [t for t in re.split(r"[,/;]\s*|\s+", p) if t]
+    return tokens[0] if tokens else ""
+
+CB_PREFIXES = ("LCB", "RCB", "CB")
+FB_PREFIXES = ("RB", "RWB", "LB", "LWB")
+CM_PREFIXES = ("LCMF", "RCMF", "LDMF", "RDMF", "DMF", "CMF")
+CF_PREFIXES = ("CF",)
+
+def pos_group(pos: str) -> str:
+    t0 = _primary_pos_token(pos)
+    if t0.startswith(CB_PREFIXES):
+        return "CB"
+    if t0.startswith(FB_PREFIXES):
+        return "FB"
+    if t0.startswith(CM_PREFIXES):
+        return "CM"
+    if t0 in {"RW", "RWF", "RAMF", "LW", "LWF", "LAMF", "AMF"}:
+        return "ATT"
+    if t0.startswith(CF_PREFIXES):
+        return "CF"
+    return "OTHER"
+
+POSITION_LABELS = {
+    "All": None,
+    "Center Backs": "CB",
+    "Fullbacks": "FB",
+    "Central Midfielders": "CM",
+    "Attackers": "ATT",
+    "Strikers": "CF",
+}
+
+# -----------------------------
+# 2) METRICS
+# -----------------------------
+POS_METRICS = {
+    "CB": [
+        "Aerial duels per 90","Aerial duels won, %",
+        "Defensive duels per 90","Defensive duels won, %",
+        "Accurate passes, %","Accurate forward passes, %",
+        "Accurate progressive passes, %","Accurate long passes, %",
+        "Dribbles per 90","Successful dribbles, %","Progressive runs per 90",
+        "Progressive passes per 90","Forward passes per 90","Passes to final third per 90",
+        "PAdj Interceptions","Shots blocked per 90",
+    ],
+    "FB": [
+        "Aerial duels per 90","Aerial duels won, %",
+        "Defensive duels per 90","Defensive duels won, %",
+        "Accurate passes, %","Accurate forward passes, %",
+        "Accurate progressive passes, %","Accurate long passes, %",
+        "Dribbles per 90","Successful dribbles, %","Progressive runs per 90",
+        "Progressive passes per 90","Forward passes per 90","Passes to final third per 90",
+        "xA per 90","Passes to penalty area per 90","Smart passes per 90","Crosses per 90",
+        "PAdj Interceptions",
+    ],
+    "CM": [
+        "Aerial duels per 90","Aerial duels won, %",
+        "Defensive duels per 90","Defensive duels won, %",
+        "Accurate passes, %","Accurate forward passes, %",
+        "Accurate progressive passes, %","Accurate long passes, %",
+        "Dribbles per 90","Successful dribbles, %","Progressive runs per 90",
+        "Progressive passes per 90","Forward passes per 90","Passes to final third per 90",
+        "xA per 90","Passes to penalty area per 90","Smart passes per 90",
+        "xG per 90","Non-penalty goals per 90","Touches in box per 90",
+        "PAdj Interceptions",
+    ],
+    "ATT": [
+        "Dribbles per 90","Successful dribbles, %","Progressive runs per 90",
+        "Progressive passes per 90","Smart passes per 90","Passes to final third per 90",
+        "xA per 90","Passes to penalty area per 90",
+        "xG per 90","Non-penalty goals per 90","Shots per 90","Touches in box per 90",
+        "Accurate passes, %",
+    ],
+    "CF": [
+        "Dribbles per 90","Successful dribbles, %","Progressive runs per 90",
+        "Passes per 90","Smart passes per 90","Passes to penalty area per 90","Accurate passes, %",
+        "Aerial duels per 90","Aerial duels won, %",
+        "xA per 90",
+        "xG per 90","Non-penalty goals per 90","Shots per 90","Touches in box per 90",
+    ],
+}
+
+def ensure_columns(df: pd.DataFrame, cols: list[str], fill: float = 0.0) -> pd.DataFrame:
+    df = df.copy()
+    for c in cols:
+        if c not in df.columns:
+            df[c] = fill
+    return df
+
+def add_position_percentiles(df: pd.DataFrame, metrics: list[str]) -> pd.DataFrame:
+    df = df.copy()
+    for m in metrics:
+        df[m] = pd.to_numeric(df[m], errors="coerce")
+        df[pct_name(m)] = df.groupby("PosGroup")[m].transform(lambda x: x.rank(pct=True) * 100.0)
+    return df
+
+# -----------------------------
+# 3) IMPACT BUILDER
+# -----------------------------
+def ensure_impact_metrics_for_pos(df: pd.DataFrame, pos_code: str, selected_file: str) -> pd.DataFrame:
+    df = df.copy()
+    mask = df["PosGroup"] == pos_code
+    if not mask.any():
+        return df
+
+    if "League Strength" not in df.columns:
+        df["League Strength"] = df["League"].map(LEAGUE_STRENGTHS).fillna(50.0).astype(float)
+
+    df["Minutes played"] = pd.to_numeric(df.get("Minutes played", np.nan), errors="coerce").fillna(0)
+
+    def P(m: str) -> pd.Series:
+        return df.loc[mask, pct_name(m)]
+
+    if pos_code == "CB":
+        df.loc[mask, "Aerial Score"] = 0.30 * P("Aerial duels per 90") + 0.70 * P("Aerial duels won, %")
+        df.loc[mask, "Ground Score"] = 0.30 * P("Defensive duels per 90") + 0.70 * P("Defensive duels won, %")
+        df.loc[mask, "Retention Score"] = (
+            0.25 * P("Accurate passes, %") +
+            0.25 * P("Accurate forward passes, %") +
+            0.25 * P("Accurate progressive passes, %") +
+            0.25 * P("Accurate long passes, %")
+        )
+        df.loc[mask, "Carrying Score"] = (
+            0.40 * P("Dribbles per 90") +
+            0.20 * P("Successful dribbles, %") +
+            0.40 * P("Progressive runs per 90")
+        )
+        df.loc[mask, "Playmaking Score"] = (
+            0.50 * P("Progressive passes per 90") +
+            0.25 * P("Forward passes per 90") +
+            0.25 * P("Passes to final third per 90")
+        )
+        df.loc[mask, "Positioning Score"] = 0.70 * P("PAdj Interceptions") + 0.30 * P("Shots blocked per 90")
+        sub_scores = ["Aerial Score","Ground Score","Retention Score","Carrying Score","Playmaking Score","Positioning Score"]
+        base_name = "Base CB Score"
+        beta_key = f"cb_beta_{selected_file}"
+        complete = (
+            0.15 * P("Aerial duels won, %") +
+            0.15 * P("Defensive duels won, %") +
+            0.10 * P("Accurate passes, %") +
+            0.10 * P("Accurate forward passes, %") +
+            0.05 * P("Dribbles per 90") +
+            0.15 * P("Progressive runs per 90") +
+            0.15 * P("Progressive passes per 90") +
+            0.15 * P("PAdj Interceptions")
+        )
+
+    elif pos_code == "FB":
+        df.loc[mask, "Aerial Score"] = 0.30 * P("Aerial duels per 90") + 0.70 * P("Aerial duels won, %")
+        df.loc[mask, "Ground Score"] = 0.30 * P("Defensive duels per 90") + 0.70 * P("Defensive duels won, %")
+        df.loc[mask, "Retention Score"] = (
+            0.25 * P("Accurate passes, %") +
+            0.25 * P("Accurate forward passes, %") +
+            0.25 * P("Accurate progressive passes, %") +
+            0.25 * P("Accurate long passes, %")
+        )
+        df.loc[mask, "Carrying Score"] = (
+            0.40 * P("Dribbles per 90") +
+            0.20 * P("Successful dribbles, %") +
+            0.40 * P("Progressive runs per 90")
+        )
+        df.loc[mask, "Playmaking Score"] = (
+            0.50 * P("Progressive passes per 90") +
+            0.25 * P("Forward passes per 90") +
+            0.25 * P("Passes to final third per 90")
+        )
+        df.loc[mask, "Chance Creation Score"] = (
+            0.60 * P("xA per 90") +
+            0.20 * P("Passes to penalty area per 90") +
+            0.10 * P("Smart passes per 90") +
+            0.10 * P("Crosses per 90")
+        )
+        sub_scores = ["Aerial Score","Ground Score","Retention Score","Carrying Score","Playmaking Score","Chance Creation Score"]
+        base_name = "Base FB Score"
+        beta_key = f"fb_beta_{selected_file}"
+        complete = (
+            0.10 * P("PAdj Interceptions") +
+            0.10 * P("Defensive duels won, %") +
+            0.10 * P("Accurate passes, %") +
+            0.05 * P("Defensive duels per 90") +
+            0.10 * P("Dribbles per 90") +
+            0.10 * P("Progressive runs per 90") +
+            0.10 * P("Progressive passes per 90") +
+            0.10 * P("Passes to final third per 90") +
+            0.10 * P("xA per 90") +
+            0.10 * P("Passes to penalty area per 90") +
+            0.05 * P("Smart passes per 90")
+        )
+
+    elif pos_code == "CM":
+        df.loc[mask, "Aerial Score"] = 0.30 * P("Aerial duels per 90") + 0.70 * P("Aerial duels won, %")
+        df.loc[mask, "Ground Score"] = 0.30 * P("Defensive duels per 90") + 0.70 * P("Defensive duels won, %")
+        df.loc[mask, "Retention Score"] = (
+            0.25 * P("Accurate passes, %") +
+            0.25 * P("Accurate forward passes, %") +
+            0.25 * P("Accurate progressive passes, %") +
+            0.25 * P("Accurate long passes, %")
+        )
+        df.loc[mask, "Carrying Score"] = (
+            0.40 * P("Dribbles per 90") +
+            0.20 * P("Successful dribbles, %") +
+            0.40 * P("Progressive runs per 90")
+        )
+        df.loc[mask, "Playmaking Score"] = (
+            0.50 * P("Progressive passes per 90") +
+            0.25 * P("Forward passes per 90") +
+            0.25 * P("Passes to final third per 90")
+        )
+        df.loc[mask, "Chance Creation Score"] = (
+            0.60 * P("xA per 90") +
+            0.25 * P("Passes to penalty area per 90") +
+            0.15 * P("Smart passes per 90")
+        )
+        df.loc[mask, "Goal Threat"] = (
+            0.50 * P("xG per 90") +
+            0.30 * P("Non-penalty goals per 90") +
+            0.20 * P("Touches in box per 90")
+        )
+        sub_scores = ["Aerial Score","Ground Score","Retention Score","Carrying Score","Playmaking Score","Chance Creation Score","Goal Threat"]
+        base_name = "Base CM Score"
+        beta_key = f"cm_beta_{selected_file}"
+        complete = (
+            0.10 * P("PAdj Interceptions") +
+            0.10 * P("Defensive duels won, %") +
+            0.10 * P("Accurate passes, %") +
+            0.05 * P("Defensive duels per 90") +
+            0.10 * P("Dribbles per 90") +
+            0.10 * P("Progressive runs per 90") +
+            0.10 * P("Progressive passes per 90") +
+            0.05 * P("Passes to final third per 90") +
+            0.10 * P("xA per 90") +
+            0.10 * P("Passes to penalty area per 90") +
+            0.05 * P("Non-penalty goals per 90") +
+            0.05 * P("xG per 90")
+        )
+
+    elif pos_code == "ATT":
+        df.loc[mask, "Carrying Score"] = (
+            0.40 * P("Dribbles per 90") +
+            0.20 * P("Successful dribbles, %") +
+            0.40 * P("Progressive runs per 90")
+        )
+        df.loc[mask, "Playmaking Score"] = (
+            0.50 * P("Progressive passes per 90") +
+            0.25 * P("Smart passes per 90") +
+            0.25 * P("Passes to final third per 90")
+        )
+        df.loc[mask, "Chance Creation Score"] = 0.75 * P("xA per 90") + 0.25 * P("Passes to penalty area per 90")
+        df.loc[mask, "Goal Threat"] = (
+            0.40 * P("xG per 90") +
+            0.30 * P("Non-penalty goals per 90") +
+            0.15 * P("Shots per 90") +
+            0.15 * P("Touches in box per 90")
+        )
+        sub_scores = ["Carrying Score","Playmaking Score","Chance Creation Score","Goal Threat"]
+        base_name = "Base ATT Score"
+        beta_key = f"att_beta_{selected_file}"
+        complete = (
+            0.10 * P("Accurate passes, %") +
+            0.15 * P("Dribbles per 90") +
+            0.10 * P("Progressive runs per 90") +
+            0.05 * P("Passes to final third per 90") +
+            0.20 * P("xA per 90") +
+            0.10 * P("Passes to penalty area per 90") +
+            0.10 * P("Non-penalty goals per 90") +
+            0.20 * P("xG per 90")
+        )
+
+    elif pos_code == "CF":
+        df.loc[mask, "Carrying Score"] = (
+            0.40 * P("Dribbles per 90") +
+            0.20 * P("Successful dribbles, %") +
+            0.40 * P("Progressive runs per 90")
+        )
+        df.loc[mask, "Playmaking Score"] = (
+            0.25 * P("Passes per 90") +
+            0.25 * P("Smart passes per 90") +
+            0.25 * P("Passes to penalty area per 90") +
+            0.25 * P("Accurate passes, %")
+        )
+        df.loc[mask, "Target Man Score"] = 0.30 * P("Aerial duels per 90") + 0.70 * P("Aerial duels won, %")
+        df.loc[mask, "Chance Creation Score"] = 0.10 * P("xA per 90")
+        df.loc[mask, "Goal Threat"] = (
+            0.40 * P("xG per 90") +
+            0.30 * P("Non-penalty goals per 90") +
+            0.15 * P("Shots per 90") +
+            0.15 * P("Touches in box per 90")
+        )
+        sub_scores = ["Carrying Score","Playmaking Score","Target Man Score","Chance Creation Score","Goal Threat"]
+        base_name = "Base CF Score"
+        beta_key = f"cf_beta_{selected_file}"
+        complete = (
+            0.10 * P("Accurate passes, %") +
+            0.15 * P("Dribbles per 90") +
+            0.10 * P("Progressive runs per 90") +
+            0.15 * P("xA per 90") +
+            0.05 * P("Passes to penalty area per 90") +
+            0.20 * P("Non-penalty goals per 90") +
+            0.25 * P("xG per 90")
+        )
+    else:
+        return df
+
+    df.loc[mask, base_name] = df.loc[mask, sub_scores].mean(axis=1)
+
+    minutes_pct = df.loc[mask].groupby("League")["Minutes played"].rank(pct=True)
+    df.loc[mask, "Minutes Factor"] = 0.90 + 0.20 * minutes_pct
+
+    league_avg = df.loc[mask].groupby("League")[base_name].transform("mean")
+    team_avg   = df.loc[mask].groupby(["League", "Team"])[base_name].transform("mean")
+    with np.errstate(divide="ignore", invalid="ignore"):
+        strength_ratio = team_avg / league_avg.replace(0, np.nan)
+    raw_team_factor = np.where(strength_ratio > 0, 1.0 / strength_ratio, 1.0)
+    df.loc[mask, "Team Context Factor"] = np.clip(raw_team_factor, 0.90, 1.10)
+    df.loc[mask, "Team Context Factor"] = df.loc[mask, "Team Context Factor"].fillna(1.0)
+
+    df.loc[mask, "Raw Impact No League"] = (
+        df.loc[mask, base_name] * df.loc[mask, "Minutes Factor"] * df.loc[mask, "Team Context Factor"]
+    )
+
+    ls_norm = df.loc[mask, "League Strength"].fillna(50.0).astype(float) / 100.0
+    ls_norm = np.clip(ls_norm, 0.30, 1.00)
+    beta_league = float(st.session_state.get(beta_key, 0.40))
+    gamma = 1.0 + 1.5 * beta_league
+    df.loc[mask, "League Factor"] = ls_norm ** gamma
+
+    df.loc[mask, "Raw Impact Score"] = df.loc[mask, "Raw Impact No League"] * df.loc[mask, "League Factor"]
+
+    df.loc[mask, "Impact Score"] = scale_0_100(df.loc[mask, "Raw Impact Score"]).astype(float)
+    df.loc[mask, "Impact Score (no league)"] = scale_0_100(df.loc[mask, "Raw Impact No League"]).astype(float)
+
+    df.loc[mask, "Complete Score"] = complete
+    return df
+
+# -----------------------------
+# 4) PREP DF_F (pool)
+# -----------------------------
+df_f = df_f.copy()
+df_f["PosGroup"] = df_f["Position"].apply(pos_group)
+
+df_f = df_f[df_f["PosGroup"].isin(["CB","FB","CM","ATT","CF"])].copy()
+if df_f.empty:
+    st.warning("No players in the selected position groups after filters.")
+    st.stop()
+
+needed = sorted({m for k in POS_METRICS for m in POS_METRICS[k]})
+df_f = ensure_columns(df_f, needed, fill=0.0)
+df_f = add_position_percentiles(df_f, needed)
+
+# Ensure these base fields exist (soft)
+for col in ["Age", "Minutes played", "Market value", "League", "Team", "Player", "Position"]:
+    if col not in df_f.columns:
+        df_f[col] = np.nan
+
+df_f["Age"] = pd.to_numeric(df_f["Age"], errors="coerce")
+df_f["Market value"] = pd.to_numeric(df_f["Market value"], errors="coerce")
+df_f["League Strength"] = pd.to_numeric(df_f.get("League Strength", np.nan), errors="coerce")
+if df_f["League Strength"].isna().all():
+    df_f["League Strength"] = df_f["League"].map(LEAGUE_STRENGTHS).fillna(50.0)
+
+for pg in ["CB","FB","CM","ATT","CF"]:
+    df_f = ensure_impact_metrics_for_pos(df_f, pg, selected_file)
+
+# -----------------------------
+# 5) UI: POOL METRIC CHOICE
+# -----------------------------
+st.subheader("Impact & Complete Rankings (multi-position)")
+
+pos_choice = st.selectbox(
+    "Position group (affects pool + scaling)",
+    options=list(POSITION_LABELS.keys()),
+    index=0,
+    key=f"mp_pos_choice_{selected_file}",
+)
+
+rank_mode = st.radio(
+    "Ranking mode",
+    ["Composite (Impact/Complete + sub-scores)", "Raw metric (any numeric column)"],
+    index=0,
+    horizontal=True,
+    key=f"mp_rank_mode_{selected_file}",
+)
+
+COMPOSITE_OPTIONS = [
+    "Impact Score",
+    "Impact Score (no league)",
+    "Complete Score",
+    "Aerial Score","Ground Score","Retention Score",
+    "Carrying Score","Playmaking Score","Positioning Score",
+    "Chance Creation Score","Goal Threat","Target Man Score",
+]
+COMPOSITE_OPTIONS = [c for c in COMPOSITE_OPTIONS if c in df_f.columns]
+
+def raw_metric_candidates(df: pd.DataFrame) -> list[str]:
+    bad = {
+        "PosGroup","_MetricForBars",
+        "Raw Impact Score","Raw Impact No League",
+        "Minutes Factor","Team Context Factor","League Factor",
+    }
+    numeric_cols = []
+    for c in df.columns:
+        if c in bad:
+            continue
+        if df[c].dtype.kind in ("i","u","f"):
+            numeric_cols.append(c)
+    return sorted(numeric_cols)
+
+if rank_mode == "Composite (Impact/Complete + sub-scores)":
+    rank_col = st.selectbox(
+        "Ranking metric",
+        options=COMPOSITE_OPTIONS,
+        index=0,
+        key=f"mp_comp_rank_col_{selected_file}",
+    )
+else:
+    raw_cols = raw_metric_candidates(df_f)
+    default_raw = "Progressive passes per 90" if "Progressive passes per 90" in raw_cols else (raw_cols[0] if raw_cols else None)
+    rank_col = st.selectbox(
+        "Raw metric column",
+        options=raw_cols,
+        index=(raw_cols.index(default_raw) if default_raw in raw_cols else 0),
+        key=f"mp_raw_rank_col_{selected_file}",
+    )
+
+display_with_league_strength = st.checkbox(
+    "Apply league strength adjustment (multiplies by League Factor before scaling)",
+    value=False,
+    key=f"mp_display_ls_{selected_file}",
+)
+
+# -----------------------------
+# 6) BUILD df_pool (SCALED ONCE, NEVER CHANGES)
+# -----------------------------
+df_pool = df_f.copy()
+pos_code = POSITION_LABELS[pos_choice]
+if pos_code is not None:
+    df_pool = df_pool[df_pool["PosGroup"] == pos_code].copy()
+
+if df_pool.empty:
+    st.warning("No players after position selection.")
+    st.stop()
+
+base_raw = pd.to_numeric(df_pool[rank_col], errors="coerce")
+if display_with_league_strength and "League Factor" in df_pool.columns:
+    base_raw = base_raw * pd.to_numeric(df_pool["League Factor"], errors="coerce").fillna(1.0)
+
+if pos_code is None:
+    df_pool["_MetricForBars"] = (
+        df_pool.assign(_base=base_raw)
+              .groupby("PosGroup")["_base"]
+              .transform(lambda s: scale_0_100(s))
+    )
+else:
+    df_pool["_MetricForBars"] = scale_0_100(base_raw)
+
+df_pool = df_pool.dropna(subset=["_MetricForBars"]).copy()
+
+# Persist pool (dataset-safe)
+pool_key = f"mp_df_pool_{selected_file}"
+st.session_state[pool_key] = df_pool.copy()
+st.session_state[f"mp_rank_col_{selected_file}"] = rank_col
+st.session_state[f"mp_raw_mode_{selected_file}"] = (rank_mode == "Raw metric (any numeric column)")
+st.session_state[f"mp_ls_toggle_{selected_file}"] = bool(display_with_league_strength)
+st.session_state[f"mp_pos_choice_label_{selected_file}"] = pos_choice
+
+# -----------------------------
+# 7) DISPLAY-ONLY FILTERS (LIKE CB)
+#    ✅ DO NOT change pool scaling
+# -----------------------------
+st.markdown("### Display filters (do **not** change pool / scaling)")
+
+# League / team dropdowns
+all_leagues_in_pool = sorted(df_pool["League"].dropna().astype(str).unique().tolist())
+selected_display_league = st.selectbox(
+    "Display league",
+    ["All leagues"] + all_leagues_in_pool,
+    index=0,
+    key=f"mp_display_league_{selected_file}",
+)
+
+selected_display_team = "All teams"
+if selected_display_league != "All leagues":
+    teams_in_league = sorted(
+        df_pool.loc[df_pool["League"].astype(str) == str(selected_display_league), "Team"]
+              .dropna().astype(str).unique().tolist()
+    )
+    selected_display_team = st.selectbox(
+        "Display team",
+        ["All teams"] + teams_in_league,
+        index=0,
+        key=f"mp_display_team_{selected_file}",
+    )
+
+# League strength range
+ls_min, ls_max = st.slider(
+    "Display league strength range",
+    min_value=0,
+    max_value=100,
+    value=(0, 100),
+    step=1,
+    key=f"mp_display_ls_range_{selected_file}",
+)
+
+# Max age
+max_rank_age = st.number_input(
+    "Max age to display",
+    min_value=16, max_value=45,
+    value=23,
+    step=1,
+    key=f"mp_display_age_{selected_file}",
+)
+
+show_age_in_image = st.checkbox(
+    "Show age in image rows",
+    value=False,
+    key=f"mp_show_age_img_{selected_file}",
+)
+
+# Market value display filter (same UX as CB)
+def format_market_value(v) -> str:
+    v = pd.to_numeric(v, errors="coerce")
+    if not np.isfinite(v):
+        return "—"
+    v = float(v)
+    if v >= 1_000_000:
+        s = f"{v/1_000_000:.2f}".rstrip("0").rstrip(".")
+        return f"£{s}m"
+    if v >= 1_000:
+        return f"£{int(round(v/1_000))}k"
+    return f"£{int(v):,}"
+
+display_mv_mode = st.selectbox(
+    "Display Market Value filter",
+    ["Off", "Max only", "Range"],
+    index=1,
+    key=f"mp_display_mv_mode_{selected_file}",
+)
+
+mv_all = pd.to_numeric(df_pool["Market value"], errors="coerce")
+mv_hi = float(np.nanmax(mv_all)) if mv_all.notna().any() else 50_000_000.0
+mv_cap_m = max(1, int(math.ceil(mv_hi / 1_000_000.0)))
+
+display_mv_min = None
+display_mv_max = None
+
+if display_mv_mode == "Max only":
+    mv_max_m = st.slider(
+        "Max market value to display (M£)",
+        0, mv_cap_m,
+        min(10, mv_cap_m),
+        step=1,
+        key=f"mp_display_mv_max_m_{selected_file}",
+    )
+    display_mv_max = mv_max_m * 1_000_000
+    st.caption(f"Max MV: **{format_market_value(display_mv_max)}**")
+
+elif display_mv_mode == "Range":
+    mv_min_m, mv_max_m = st.slider(
+        "Market value range to display (M£)",
+        0, mv_cap_m,
+        (0, min(10, mv_cap_m)),
+        step=1,
+        key=f"mp_display_mv_range_m_{selected_file}",
+    )
+    display_mv_min = mv_min_m * 1_000_000
+    display_mv_max = mv_max_m * 1_000_000
+    st.caption(f"MV range: **{format_market_value(display_mv_min)} → {format_market_value(display_mv_max)}**")
+
+# Highlight players
+enable_highlight = st.checkbox(
+    "Highlight players in image",
+    value=False,
+    key=f"mp_enable_hi_{selected_file}",
+)
+highlight_names: List[str] = []
+if enable_highlight:
+    opts = sorted(df_pool["Player"].dropna().astype(str).unique().tolist())
+    highlight_names = st.multiselect(
+        "Players to highlight",
+        options=opts,
+        default=[],
+        key=f"mp_hi_names_{selected_file}",
+    )
+
+# -----------------------------
+# 8) BUILD df_display (display-only filters)
+# -----------------------------
+df_display = df_pool.copy()
+
+# age
+df_display["Age"] = pd.to_numeric(df_display["Age"], errors="coerce")
+df_display = df_display[df_display["Age"].fillna(999).astype(float) <= float(max_rank_age)]
+
+# league strength
+df_display["League Strength"] = pd.to_numeric(df_display["League Strength"], errors="coerce").fillna(50.0)
+df_display = df_display[df_display["League Strength"].between(ls_min, ls_max)]
+
+# market value
+if display_mv_max is not None:
+    df_display = df_display[pd.to_numeric(df_display["Market value"], errors="coerce") <= float(display_mv_max)]
+if display_mv_min is not None:
+    df_display = df_display[pd.to_numeric(df_display["Market value"], errors="coerce") >= float(display_mv_min)]
+
+# league/team
+if selected_display_league != "All leagues":
+    df_display = df_display[df_display["League"].astype(str) == str(selected_display_league)]
+    if selected_display_team != "All teams":
+        df_display = df_display[df_display["Team"].astype(str) == str(selected_display_team)]
+
+# final sort
+df_display = df_display.dropna(subset=["_MetricForBars"]).sort_values("_MetricForBars", ascending=False).copy()
+if df_display.empty:
+    st.warning("No players left after display-only filters (pool still exists).")
+    st.stop()
+
+# -----------------------------
+# 9) TABLE (FROM df_display)
+# -----------------------------
+top_n = st.slider("Top N (table)", 5, 100, 25, 5, key=f"mp_topn_{selected_file}")
+df_table = df_display.copy()
+if "Market value" in df_table.columns:
+    df_table["Market value"] = pd.to_numeric(df_table["Market value"], errors="coerce").apply(format_market_value)
+
+cols_show = ["Player","Team","League","Age","Position","PosGroup", rank_col, "_MetricForBars", "Market value", "League Strength"]
+cols_show = [c for c in cols_show if c in df_table.columns]
+
+st.caption("Sorting uses **_MetricForBars (0–100)** normalised vs pool (position-relative if All). Display filters don’t change scaling.")
+st.dataframe(df_table[cols_show].head(int(top_n)), use_container_width=True)
+
+# ==========================================================
+# 10) CRESTS / BADGES (local + FotMob fallback)
+# ==========================================================
+BADGE_DIRS = [
+    Path.cwd() / "badges",
+    Path.cwd() / "crests",
+]
+for d in BADGE_DIRS:
+    try:
+        d.mkdir(exist_ok=True, parents=True)
+    except Exception:
+        pass
+
+def _clean_filename(name: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9]+", "_", (name or "").lower()).strip("_")
+
+@st.cache_data(show_spinner=False)
+def load_remote_png(url: str):
+    try:
+        r = requests.get(url, timeout=6, headers={"User-Agent": "Mozilla/5.0"})
+        r.raise_for_status()
+        return plt.imread(io.BytesIO(r.content))
+    except Exception:
+        return None
+
+@st.cache_data(show_spinner=False)
+def load_local_badge(team: str):
+    key = _clean_filename(team)
+    if not key:
+        return None
+    for folder in BADGE_DIRS:
+        for ext in (".png", ".jpg", ".jpeg", ".webp"):
+            p = folder / f"{key}{ext}"
+            if p.exists():
+                try:
+                    return plt.imread(str(p))
+                except Exception:
+                    continue
+    return None
+
+try:
+    from team_fotmob_urls import FOTMOB_TEAM_URLS as _FOTMOB_TEAM_URLS
+except Exception:
+    _FOTMOB_TEAM_URLS = {}
+
+def _fotmob_team_id_from_url(team_url: str) -> str:
+    m = re.search(r"/teams/(\d+)/", str(team_url or ""))
+    return m.group(1) if m else ""
+
+def _fotmob_crest_url(team: str) -> str:
+    team_url = (_FOTMOB_TEAM_URLS.get(team) or "").strip()
+    tid = _fotmob_team_id_from_url(team_url)
+    return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png" if tid else ""
+
+@st.cache_data(show_spinner=False)
+def load_fotmob_crest(team: str):
+    url = _fotmob_crest_url(team)
+    if not url:
+        return None
+    return load_remote_png(url)
+
+def zoom_to_fit(img, target_px: int = 40) -> float:
+    try:
+        h, w = img.shape[0], img.shape[1]
+        m = max(h, w)
+        return float(target_px) / float(m) if m else 1.0
+    except Exception:
+        return 1.0
+
+def get_team_badge(row: pd.Series):
+    team = str(row.get("Team", "")).strip()
+    img = load_local_badge(team)
+    if img is not None:
+        return img
+    crest = load_fotmob_crest(team)
+    if crest is not None:
+        return crest
+    return None
+
+# ==========================================================
+# 11) CIES IMAGE GENERATOR
+# ==========================================================
+def _format_value(v, raw_mode: bool) -> str:
+    if v is None:
+        return "—"
+    try:
+        v = float(v)
+    except Exception:
+        return str(v)
+    if np.isnan(v):
+        return "—"
+    if raw_mode:
+        return f"{v:.2f}"
+    av = abs(v)
+    if av >= 100:
+        return f"{v:.0f}"
+    if av >= 10:
+        return f"{v:.1f}"
+    return f"{v:.2f}"
+
+def footer_lines_for_metric(metric_label: str, show_ls: bool) -> List[str]:
+    base = f"Displayed vs the selected pool (0–100) {'(league strength applied).' if show_ls else '(no league-strength adjustment).'}"
+    if "Impact Score" in metric_label:
+        return ["Impact Score: sub-scores + minutes + team context (within league).", base]
+    if "Complete Score" in metric_label:
+        return ["Complete Score: weighted blend of key percentiles for the position group.", base]
+    return [f"{metric_label}: ranks this metric only.", base]
+
+def make_ranking_image(
+    df_show: pd.DataFrame,
+    metric_col: str,
+    value_label_col: str,
+    metric_label: str,
+    title_lines: List[str],
+    show_ls: bool,
+    raw_mode: bool,
+    theme: str,
+    export_mode: str,
+    show_age: bool,
+    highlight_players: Optional[List[str]] = None,
+) -> bytes:
+    df_top = df_show.head(10).copy()
+    if df_top.empty:
+        return b""
+
+    hi_set = set()
+    if highlight_players:
+        hi_set = {str(x).strip().lower() for x in highlight_players if str(x).strip()}
+
+    def is_hi(row: pd.Series) -> bool:
+        return str(row.get("Player", "")).strip().lower() in hi_set
+
+    if theme == "Dark":
+        BG = "#0a0f1c"
+        ROW_A, ROW_B = "#0f1628", "#0b1222"
+        TXT, SUB, FOOT = "#ffffff", "#b8c0cf", "#9aa6bd"
+        DIV = "#23304a"
+        BAR_BG, BAR_FG = "#1a2540", "#6b7cff"
+        RANK_BG, RANK_EDGE = "#111a2e", "#2b3a5a"
+        HILITE, HILITE_EDGE = "#f6d46b", "#d2a100"
+    else:
+        BG = "#ffffff"
+        ROW_A, ROW_B = "#f7f7f7", "#ffffff"
+        TXT, SUB, FOOT = "#111111", "#777777", "#9b9b9b"
+        DIV = "#e2e2e2"
+        BAR_BG, BAR_FG = "#e1e1e1", "#bfbfbf"
+        RANK_BG, RANK_EDGE = "#f3f3f3", "#c0c0c0"
+        HILITE, HILITE_EDGE = "#f6d46b", "#d2a100"
+
+    scores = pd.to_numeric(df_top[metric_col], errors="coerce")
+    max_score = float(scores.max()) if scores.notna().any() else 1.0
+    footer_lines = footer_lines_for_metric(metric_label, show_ls)
+
+    # Value shown at right:
+    # - raw mode -> raw value
+    # - composite -> 0–100 bar value
+    def right_label(row):
+        return row.get(value_label_col)
+
+    # Row "meta" line:
+    # add age if toggled
+    def meta_line(row):
+        team = str(row.get("Team", ""))
+        league = str(row.get("League", ""))
+        if show_age and pd.notna(row.get("Age")):
+            return f"{team} ({league})  |  Age {int(float(row.get('Age')))}"
+        return f"{team} ({league})"
+
+    # 1920×1080 banner
+    if export_mode == "1920×1080 (banner)":
+        DPI = 100
+        fig = plt.figure(figsize=(1920.0 / DPI, 1080.0 / DPI), dpi=DPI)
+        ax = fig.add_axes([0, 0, 1, 1])
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.axis("off")
+        ax.add_patch(Rectangle((0, 0), 1, 1, color=BG, zorder=0))
+
+        LEFT, RIGHT = 0.045, 0.955
+
+        t1 = title_lines[0].upper() if len(title_lines) > 0 else ""
+        t2 = title_lines[1].upper() if len(title_lines) > 1 else ""
+        t3 = title_lines[2].upper() if len(title_lines) > 2 else ""
+
+        ax.text(LEFT, 0.972, t1, fontsize=48, fontweight="bold", color=TXT, ha="left", va="top")
+        ax.text(LEFT, 0.912, t2, fontsize=34, fontweight="bold", color=TXT, ha="left", va="top")
+        ax.text(LEFT, 0.870, t3, fontsize=20, color=SUB, ha="left", va="top")
+
+        header_div_y = 0.835
+        ax.plot([LEFT, RIGHT], [header_div_y, header_div_y], color=DIV, lw=2.2)
+
+        footer_div_y = 0.040
+        ax.plot([LEFT, RIGHT], [footer_div_y, footer_div_y], color=DIV, lw=2.2)
+
+        for i, line in enumerate(footer_lines):
+            ax.text(LEFT, footer_div_y - 0.018 - i * 0.024, line, fontsize=13, color=FOOT, ha="left", va="top", zorder=10)
+
+        ROW_TOP = header_div_y - 0.022
+        ROW_BOT = footer_div_y + 0.010
+        row_gap = (ROW_TOP - ROW_BOT) / 10.0
+        row_h = row_gap * 0.99
+
+        RANK_X = LEFT + 0.024
+        CREST_X = LEFT + 0.112
+        NAME_X = LEFT + 0.190
+
+        BAR_L = LEFT + 0.63
+        BAR_R = RIGHT - 0.155
+        BAR_W = BAR_R - BAR_L
+        BAR_H = row_h * 0.26
+
+        VAL_X = RIGHT - 0.030
+
+        NAME_FS = 28
+        TEAM_FS = 19
+        NAME_DY = row_h * 0.20
+        TEAM_DY = row_h * 0.26
+
+        for i, (_, row) in enumerate(df_top.iterrows()):
+            y = ROW_TOP - (i + 0.5) * row_gap
+
+            ax.add_patch(Rectangle((LEFT, y - row_h / 2), RIGHT - LEFT, row_h, color=(ROW_A if i % 2 == 0 else ROW_B), zorder=1))
+
+            if is_hi(row):
+                ax.add_patch(Rectangle((LEFT, y - row_h / 2), RIGHT - LEFT, row_h, color=HILITE, alpha=0.22, zorder=2))
+                ax.add_patch(Rectangle((LEFT, y - row_h / 2), RIGHT - LEFT, row_h, fill=False, edgecolor=HILITE_EDGE, lw=2.2, zorder=3))
+
+            ax.scatter([RANK_X], [y], s=1320, facecolor=RANK_BG, edgecolor=(HILITE_EDGE if is_hi(row) else RANK_EDGE), linewidths=2.2, zorder=4)
+            ax.text(RANK_X, y, str(i + 1), fontsize=16, fontweight="bold", color=TXT, ha="center", va="center", zorder=5)
+
+            badge = get_team_badge(row)
+            if badge is not None:
+                z = zoom_to_fit(badge, target_px=52)
+                ax.add_artist(AnnotationBbox(OffsetImage(badge, zoom=z), (CREST_X, y), frameon=False, zorder=5))
+
+            ax.text(NAME_X, y + NAME_DY, str(row.get("Player", "")).upper(),
+                    fontsize=NAME_FS, fontweight="bold", color=TXT, ha="left", va="center", zorder=6)
+            ax.text(NAME_X, y - TEAM_DY, meta_line(row),
+                    fontsize=TEAM_FS, color=SUB, ha="left", va="center", zorder=6)
+
+            v_bar = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
+            frac = (v_bar / max_score) if max_score else 0.0
+            frac = max(0.0, min(1.0, frac))
+
+            ax.add_patch(Rectangle((BAR_L, y - BAR_H / 2), BAR_W, BAR_H, color=BAR_BG, zorder=2))
+            ax.add_patch(Rectangle((BAR_L, y - BAR_H / 2), BAR_W * frac, BAR_H, color=BAR_FG, zorder=3))
+
+            ax.text(VAL_X, y, _format_value(right_label(row), raw_mode),
+                    fontsize=29, fontweight="bold", color=TXT, ha="right", va="center", zorder=6)
+
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=DPI, facecolor=BG)
+        plt.close(fig)
+        buf.seek(0)
+        return buf.getvalue()
+
+    # Standard
+    N = len(df_top)
+    ROW_H = 0.82
+    HEADER_H = 1.70
+    FOOT_H = 0.70
+    TOTAL_H = HEADER_H + N * ROW_H + FOOT_H
+
+    fig = plt.figure(figsize=(8.3, TOTAL_H), dpi=220)
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_xlim(0, 1.0)
+    ax.set_ylim(0, TOTAL_H)
+    ax.axis("off")
+    ax.add_patch(Rectangle((0, 0), 1.0, TOTAL_H, color=BG, zorder=0))
+
+    t1 = title_lines[0].upper() if len(title_lines) > 0 else ""
+    t2 = title_lines[1].upper() if len(title_lines) > 1 else ""
+    t3 = title_lines[2].upper() if len(title_lines) > 2 else ""
+    title_y = TOTAL_H - 0.25
+    ax.text(0.04, title_y, t1, fontsize=19, fontweight="bold", color=TXT, ha="left", va="top")
+    ax.text(0.04, title_y - 0.34, t2, fontsize=14, fontweight="bold", color=TXT, ha="left", va="top")
+    ax.text(0.04, title_y - 0.62, t3, fontsize=11, color=SUB, ha="left", va="top")
+
+    base_y = TOTAL_H - HEADER_H
+    ax.plot([0.04, 0.96], [base_y + ROW_H / 2 + 0.02] * 2, color=DIV, lw=1.1, zorder=2)
+
+    LEFT, RIGHT = 0.04, 0.96
+    BAR_L, BAR_R = 0.66, 0.82
+    BAR_W = BAR_R - BAR_L
+    BAR_H = 0.14
+    VAL_X = 0.94
+    crest_x = 0.14
+
+    for i, (_, row) in enumerate(df_top.iterrows()):
+        y = base_y - i * ROW_H
+
+        ax.add_patch(Rectangle((LEFT, y - ROW_H / 2), RIGHT - LEFT, ROW_H, color=(ROW_A if i % 2 == 0 else ROW_B), zorder=1))
+
+        if is_hi(row):
+            ax.add_patch(Rectangle((LEFT, y - ROW_H / 2), RIGHT - LEFT, ROW_H, color=HILITE, alpha=0.25, zorder=2))
+            ax.add_patch(Rectangle((LEFT, y - ROW_H / 2), RIGHT - LEFT, ROW_H, fill=False, edgecolor=HILITE_EDGE, lw=1.3, zorder=3))
+
+        ax.scatter([0.07], [y], s=520, facecolor=RANK_BG, edgecolor=(HILITE_EDGE if is_hi(row) else RANK_EDGE), linewidths=1.2, zorder=4)
+        ax.text(0.07, y, str(i + 1), fontsize=10, fontweight="bold", color=TXT, ha="center", va="center", zorder=5)
+
+        badge = get_team_badge(row)
+        if badge is not None:
+            z = zoom_to_fit(badge, target_px=40)
+            ax.add_artist(AnnotationBbox(OffsetImage(badge, zoom=z), (crest_x, y), frameon=False, zorder=5))
+
+        ax.text(0.21, y + 0.12, str(row.get("Player", "")).upper(),
+                fontsize=16, fontweight="bold", color=TXT, ha="left", va="center", zorder=5)
+
+        ax.text(0.21, y - 0.10, meta_line(row),
+                fontsize=12, color=SUB, ha="left", va="center", zorder=5)
+
+        v_bar = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
+        frac = (v_bar / max_score) if max_score else 0.0
+        frac = max(0.0, min(1.0, frac))
+
+        ax.add_patch(Rectangle((BAR_L, y - BAR_H / 2), BAR_W, BAR_H, color=BAR_BG, zorder=2))
+        ax.add_patch(Rectangle((BAR_L, y - BAR_H / 2), BAR_W * frac, BAR_H, color=BAR_FG, zorder=3))
+
+        ax.text(VAL_X, y, _format_value(right_label(row), raw_mode),
+                fontsize=16, fontweight="bold", color=TXT, ha="right", va="center", zorder=6)
+
+    ax.plot([LEFT, RIGHT], [0.82] * 2, color=DIV, lw=0.9, zorder=2)
+    for j, line in enumerate(footer_lines):
+        ax.text(LEFT, 0.62 - j * 0.18, line, fontsize=9.5, color=FOOT, ha="left", va="top", zorder=4)
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=220, facecolor=BG)
+    plt.close(fig)
+    buf.seek(0)
+    return buf.getvalue()
+
+# ==========================================================
+# 12) IMAGE EXPORT UI (USES df_display)
+# ==========================================================
+st.subheader("🖼 Exportable CIES-style ranking image (multi-position)")
+
+raw_mode_here = bool(st.session_state.get(f"mp_raw_mode_{selected_file}", False))
+rank_col_img = st.session_state.get(f"mp_rank_col_{selected_file}", "Impact Score")
+show_ls_img = bool(st.session_state.get(f"mp_ls_toggle_{selected_file}", False))
+
+# Right-side value:
+# - raw metric mode: show raw metric value
+# - composite mode: show 0–100 (same as bar)
+value_label_col = rank_col_img if raw_mode_here else "_MetricForBars"
+
+default_t1 = "TOP PLAYERS"
+default_t2 = str(rank_col_img).upper()
+default_t3 = f"PERFORMANCE INDEX  |  {pos_choice}"
+
+t1 = st.text_input("Title line 1", default_t1, key=f"mp_title1_{selected_file}")
+t2 = st.text_input("Title line 2", default_t2, key=f"mp_title2_{selected_file}")
+t3 = st.text_input("Title line 3", default_t3, key=f"mp_title3_{selected_file}")
+
+image_theme = st.selectbox("Image theme", ["Light", "Dark"], index=0, key=f"mp_img_theme_{selected_file}")
+export_mode = st.selectbox("Export format", ["Standard (auto)", "1920×1080 (banner)"], index=0, key=f"mp_export_mode_{selected_file}")
+
+img_bytes = make_ranking_image(
+    df_show=df_display,
+    metric_col="_MetricForBars",
+    value_label_col=value_label_col,
+    metric_label=str(rank_col_img),
+    title_lines=[t1, t2, t3],
+    show_ls=show_ls_img,
+    raw_mode=raw_mode_here,
+    theme=image_theme,
+    export_mode=export_mode,
+    show_age=bool(show_age_in_image),
+    highlight_players=(highlight_names if enable_highlight else None),
+)
+
+if img_bytes:
+    st.image(img_bytes, use_column_width=True)
+    st.download_button(
+        "Download PNG",
+        data=img_bytes,
+        file_name=f"multi_position_ranking_{selected_file}.png",
+        mime="image/png",
+    )
+else:
+    st.error("No data available to generate the image (df_display empty).")
+
