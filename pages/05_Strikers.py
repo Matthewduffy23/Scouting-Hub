@@ -1981,6 +1981,32 @@ def _fmt2(n: int) -> str:
     try: return f"{int(n):02d}"
     except Exception: return "00"
 
+def _fmt_mv_gbp(v) -> str:
+    try:
+        x = float(v)
+    except Exception:
+        return "—"
+
+    try:
+        if np.isnan(x) or x <= 0:
+            return "—"
+    except Exception:
+        if x <= 0:
+            return "—"
+
+    # some datasets store "m" as plain number (e.g. 35) — treat <1000 as millions
+    if x < 1_000:
+        x *= 1_000_000
+
+    if x >= 1_000_000_000:
+        return f"£{x/1_000_000_000:.1f}bn".replace(".0", "")
+    if x >= 1_000_000:
+        return f"£{x/1_000_000:.1f}m".replace(".0", "")
+    if x >= 1_000:
+        return f"£{x/1_000:.0f}k"
+    return f"£{x:.0f}"
+
+
 _POS_COLORS = {
     "CF":"#6EA8FF","LWF":"#6EA8FF","LW":"#6EA8FF","LAMF":"#6EA8FF","RW":"#6EA8FF","RWF":"#6EA8FF","RAMF":"#6EA8FF",
     "AMF":"#7FE28A","LCMF":"#5FD37A","RCMF":"#5FD37A","RDMF":"#31B56B","LDMF":"#31B56B","DMF":"#31B56B",
@@ -2364,6 +2390,60 @@ def render_pro_layout_strikers(df_view: pd.DataFrame, top_n:int=20):
 
     df_filtered = df_view.copy()
 
+    # -----------------
+    # Market Value (display-only) + print toggle
+    # -----------------
+    show_mv_next_to_contract = st.checkbox(
+        "Show Market Value next to contract",
+        value=False,
+        key="pro_show_mv_next_contract_str"
+    )
+
+    mv_mode = st.selectbox(
+        "Market Value filter (display-only)",
+        ["Off", "Max only", "Range"],
+        index=0,
+        key="pro_mv_mode_str"
+    )
+
+    df_filtered["__mv"] = pd.to_numeric(
+        df_filtered.get("Market value"),
+        errors="coerce"
+    )
+
+    mv_mask = df_filtered["__mv"] < 1_000
+    df_filtered.loc[mv_mask, "__mv"] = df_filtered.loc[mv_mask, "__mv"] * 1_000_000
+
+    mv_min = None
+    mv_max = None
+
+    if mv_mode == "Max only":
+        mv_max_m = st.slider(
+            "Max Market Value (millions)",
+            0.0, 400.0,
+            30.0,
+            step=0.5,
+            key="pro_mv_max_m_str"
+        )
+        mv_max = mv_max_m * 1_000_000
+
+    elif mv_mode == "Range":
+        mv_min_m, mv_max_m = st.slider(
+            "Market Value Range (millions)",
+            0.0, 400.0,
+            (0.0, 30.0),
+            step=0.5,
+            key="pro_mv_range_m_str"
+        )
+        mv_min = mv_min_m * 1_000_000
+        mv_max = mv_max_m * 1_000_000
+
+    if mv_max is not None:
+        df_filtered = df_filtered[df_filtered["__mv"] <= mv_max]
+    if mv_min is not None:
+        df_filtered = df_filtered[df_filtered["__mv"] >= mv_min]
+
+
     if search_text:
         terms = [t.strip().lower() for t in search_text.split(",") if t.strip()]
         if terms and "Player" in df_filtered.columns:
@@ -2544,6 +2624,11 @@ def render_pro_layout_strikers(df_view: pd.DataFrame, top_n:int=20):
 
         flag = _flag_html(birth)
         contract_txt = f"{cyr}" if cyr>0 else "—"
+
+        mv_txt = _fmt_mv_gbp(row.get("Market value")) if "Market value" in ranked.columns else "—"
+        if show_mv_next_to_contract and mv_txt != "—":
+            contract_txt = f"{contract_txt} · {mv_txt}" if contract_txt != "—" else mv_txt
+
 
         # ✅ URL avatar resolver
         key_id = f"{_norm(player)}|{_norm(team)}"
@@ -2773,7 +2858,6 @@ render_pro_layout_strikers(df_f, top_n=top_n)
 
 
 # ----------------- END PRO LAYOUT TAB — STRIKERS -----------------
-
 
 
 
