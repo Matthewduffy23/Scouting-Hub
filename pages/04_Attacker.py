@@ -2361,6 +2361,60 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
     df_filtered = df_view.copy()
 
+    # -----------------
+    # Market Value (display-only)
+    # -----------------
+    show_mv_next_to_contract = st.checkbox(
+        "Show Market Value next to contract",
+        value=False,
+        key="pro_show_mv_next_contract_att"
+    )
+
+    mv_mode = st.selectbox(
+        "Market Value filter (display-only)",
+        ["Off", "Max only", "Range"],
+        index=0,
+        key="pro_mv_mode_att"
+    )
+
+    df_filtered["__mv"] = pd.to_numeric(
+        df_filtered.get("Market value"),
+        errors="coerce"
+    )
+
+    mv_mask = df_filtered["__mv"] < 1_000
+    df_filtered.loc[mv_mask, "__mv"] = df_filtered.loc[mv_mask, "__mv"] * 1_000_000
+
+    mv_min = None
+    mv_max = None
+
+    if mv_mode == "Max only":
+        mv_max_m = st.slider(
+            "Max Market Value (millions)",
+            0.0, 400.0,
+            30.0,
+            step=0.5,
+            key="pro_mv_max_m_att"
+        )
+        mv_max = mv_max_m * 1_000_000
+
+    elif mv_mode == "Range":
+        mv_min_m, mv_max_m = st.slider(
+            "Market Value Range (millions)",
+            0.0, 400.0,
+            (0.0, 30.0),
+            step=0.5,
+            key="pro_mv_range_m_att"
+        )
+        mv_min = mv_min_m * 1_000_000
+        mv_max = mv_max_m * 1_000_000
+
+    if mv_max is not None:
+        df_filtered = df_filtered[df_filtered["__mv"] <= mv_max]
+    if mv_min is not None:
+        df_filtered = df_filtered[df_filtered["__mv"] >= mv_min]
+
+
     if search_text:
         terms = [t.strip().lower() for t in search_text.split(",") if t.strip()]
         if terms and "Player" in df_filtered.columns:
@@ -2546,8 +2600,13 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
             for c in ordered
         )
 
-        flag=_flag_html(birth)
-        contract_txt=f"{cyr}" if cyr>0 else "—"
+        flag = _flag_html(birth)
+        contract_txt = f"{cyr}" if cyr > 0 else "—"
+
+        mv_txt = _fmt_mv_gbp(row.get("Market value")) if "Market value" in ranked.columns else "—"
+        if show_mv_next_to_contract and mv_txt != "—":
+            contract_txt = f"{contract_txt} · {mv_txt}" if contract_txt != "—" else mv_txt
+
 
         # ✅ URL photo system (resolver + caching)
         key_id = f"{_norm(player)}|{_norm(team)}"
@@ -2784,7 +2843,6 @@ with tabs[4]:
     st.subheader("Pro Layout — Top Tiles")
     render_pro_layout(df_f, top_n=top_n)
 # ----------------- END PRO LAYOUT TAB — ATTACKERS -----------------
-
 
 
 
