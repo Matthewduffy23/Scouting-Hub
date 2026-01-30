@@ -966,65 +966,6 @@ if rank_mode_gk == "Raw metric (any numeric column)":
 else:
     value_label_col_gk = "_MetricForBars"
 
-def fb_format_market_value(v) -> str:
-    """Format MV: 1750000 -> £1.75m, 30000000 -> £30m, etc."""
-    if v is None:
-        return "—"
-    v = pd.to_numeric(v, errors="coerce")
-    if not np.isfinite(v):
-        return "—"
-
-    v = float(v)
-    if v >= 1_000_000:
-        s = f"{v/1_000_000:.2f}".rstrip("0").rstrip(".")
-        return f"£{s}m"
-    if v >= 1_000:
-        return f"£{int(round(v/1_000))}k"
-    return f"£{int(v):,}"
-
-# ----------------- DISPLAY-ONLY MARKET VALUE FILTER (FB) -----------------
-display_mv_mode = st.selectbox(
-    "Display Market Value filter (does not change pool) – FB",
-    ["Off", "Max only", "Range"],
-    index=1,  # default Max only (set 0 if you want Off)
-    key=f"fb_display_mv_mode_{selected_file}",
-)
-
-mv_all = pd.to_numeric(df_f["Market value"], errors="coerce")
-mv_hi = float(np.nanmax(mv_all)) if mv_all.notna().any() else 50_000_000.0
-
-# slider range in MILLIONS
-mv_cap_m = int(math.ceil(mv_hi / 1_000_000.0))
-mv_cap_m = max(1, mv_cap_m)
-
-display_mv_min = None
-display_mv_max = None
-
-if display_mv_mode == "Max only":
-    mv_max_m = st.slider(
-        "Max market value to display (M£)",
-        0, mv_cap_m,
-        min(10, mv_cap_m),
-        step=1,
-        key=f"fb_display_mv_max_m_{selected_file}",
-    )
-    display_mv_max = mv_max_m * 1_000_000
-    st.caption(f"Max MV: **{fb_format_market_value(display_mv_max)}**")
-
-elif display_mv_mode == "Range":
-    mv_min_m, mv_max_m = st.slider(
-        "Market value range to display (M£)",
-        0, mv_cap_m,
-        (0, min(10, mv_cap_m)),
-        step=1,
-        key=f"fb_display_mv_range_m_{selected_file}",
-    )
-    display_mv_min = mv_min_m * 1_000_000
-    display_mv_max = mv_max_m * 1_000_000
-    st.caption(
-        f"MV range: **{fb_format_market_value(display_mv_min)} → {fb_format_market_value(display_mv_max)}**"
-    )
-
 
 # ---------------------------------------------------------
 # 4) DISPLAY FILTERS (do not change pool scaling)
@@ -1033,18 +974,6 @@ elif display_mv_mode == "Range":
 df_display_gk = df_pool_gk.copy()
 df_display_gk = df_display_gk[df_display_gk["Age"] <= max_rank_age_gk]
 df_display_gk = df_display_gk[df_display_gk["League Strength"].between(display_ls_min_gk, display_ls_max_gk)]
-
-# ✅ FB display-only market value filter
-if display_mv_max is not None:
-    df_display = df_display[
-        pd.to_numeric(df_display["Market value"], errors="coerce") <= float(display_mv_max)
-    ]
-
-if display_mv_min is not None:
-    df_display = df_display[
-        pd.to_numeric(df_display["Market value"], errors="coerce") >= float(display_mv_min)
-    ]
-
 
 if selected_display_league_gk != "All leagues":
     df_display_gk = df_display_gk[df_display_gk["League"] == selected_display_league_gk]
