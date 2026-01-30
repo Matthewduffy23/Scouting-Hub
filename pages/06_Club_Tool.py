@@ -352,7 +352,7 @@ with cD:
         mv_min_m, mv_max_m = st.slider("MV range (M€)", 0, max_m, (0, min(max_m, 10)))
         pool_min_value, pool_max_value = mv_min_m * 1_000_000, mv_max_m * 1_000_000
     else:
-        pool_min_value, pool_max_value = st.slider("MV range (€)", 0, mv_cap, (0, min(mv_cap, 10_000_000)), step=100_000)
+        pool_min_value, pool_max_value = st.slider("MV range (€)", 0, mv_cap, (0, min(mv_cap, 400_000_000)), step=500_000)
 
 cE, cF, cG, cH = st.columns([1.2, 1.2, 1.2, 1.2])
 with cE:
