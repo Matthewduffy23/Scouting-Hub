@@ -18,7 +18,7 @@ LEAGUE_LOGO_URLS = {
     "England 1.": "https://images.fotmob.com/image_resources/logo/leaguelogo/47.png",
     "England 2.": "https://images.fotmob.com/image_resources/logo/leaguelogo/48.png",
     "England 3.": "https://images.fotmob.com/image_resources/logo/leaguelogo/108.png",
-    "England 4.": "https://www.fotmob.com/leagues/109/overview/league-two",
+    "England 4.": "https://images.fotmob.com/image_resources/logo/leaguelogo/109.png",
     "England 5.": "https://images.fotmob.com/image_resources/logo/leaguelogo/117.png",
     "England 6.": "https://images.fotmob.com/image_resources/logo/leaguelogo/8944.png",
     "England 7.": "https://images.fotmob.com/image_resources/logo/leaguelogo/9084.png",
