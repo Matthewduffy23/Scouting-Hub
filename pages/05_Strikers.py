@@ -7376,6 +7376,644 @@ else:
     )
 
 
+# ============================ SCOUTING CARD — feeds off Feature Z pipeline ============================
+# Reuses: player_row, pct_of, val_of, role_scores, strengths, weaknesses, styles,
+#         _try_load_img, _auto_player_photo, _auto_team_badge, _auto_league_logo,
+#         _safe_get, LEAGUE_STRENGTHS, ROLES, div_color_tuple (from one-pager block)
+
+from io import BytesIO
+import math
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+from matplotlib.patches import FancyBboxPatch
+import streamlit as st
+
+st.markdown("---")
+st.header("🃏 Scouting Card")
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+def _sc_pct_color(v: float):
+    """Red→Gold→Green gradient, returns (R,G,B) 0-1 tuple."""
+    v = float(np.clip(v, 0, 100))
+    red  = np.array([199, 54, 60],  dtype=float)
+    gold = np.array([240, 197, 106], dtype=float)
+    grn  = np.array([61,  166, 91],  dtype=float)
+    if v <= 50:
+        c = red  + (gold - red)  * (v / 50.0)
+    else:
+        c = gold + (grn  - gold) * ((v - 50.0) / 50.0)
+    return tuple((c / 255.0).tolist())
+
+
+def _sc_fmt_mv(v) -> str:
+    try:
+        x = float(v)
+        if math.isnan(x) or x <= 0:
+            return "—"
+        if x < 1_000:
+            x *= 1_000_000
+        if x >= 1_000_000:
+            s = f"{x/1_000_000:.1f}".rstrip("0").rstrip(".")
+            return f"£{s}m"
+        return f"£{int(x/1_000)}k"
+    except Exception:
+        return "—"
+
+
+def _sc_add_image(fig, img_arr, x, y, w, h):
+    """Place a numpy image array on the figure at figure-fraction coords."""
+    if img_arr is None:
+        return
+    ax = fig.add_axes([x, y, w, h])
+    ax.imshow(img_arr, aspect="auto")
+    ax.axis("off")
+
+
+def _sc_star_row(fig, x, y, filled: int, total: int = 5, size: float = 0.018,
+                 gap: float = 0.022, fill_col="#f0c56a", empty_col="#2a3350"):
+    """Draw star rating using Unicode ★ glyphs."""
+    for i in range(total):
+        col = fill_col if i < filled else empty_col
+        fig.text(x + i * gap, y, "★", fontsize=12, color=col,
+                 va="center", ha="left", fontweight="bold")
+
+
+def _sc_draw_bar(ax, y_center, pct, bar_l=0.0, bar_w=1.0, bar_h=0.55):
+    """Draw a single horizontal percentile bar on an axes object."""
+    track_col = "#1b2636"
+    ax.add_patch(mpatches.Rectangle((bar_l, y_center - bar_h/2),
+                                    bar_w, bar_h, color=track_col, ec="none", zorder=1))
+    filled_w = bar_w * float(np.clip(pct, 0, 100)) / 100.0
+    ax.add_patch(mpatches.Rectangle((bar_l, y_center - bar_h/2),
+                                    filled_w, bar_h,
+                                    color=_sc_pct_color(pct), ec="none", zorder=2))
+    # 50% reference
+    ax.axvline(bar_l + bar_w * 0.5, ymin=(y_center - bar_h/2 + 0.5) / ax.get_ylim()[1],
+               color="#94A3B8", ls=":", lw=0.8, zorder=3)
+
+
+# ── options ───────────────────────────────────────────────────────────────────
+
+with st.expander("Scouting card options", expanded=False):
+    sc_theme = st.selectbox("Theme", ["Dark", "Light"], index=0, key="sc_card_theme")
+
+    # Star ratings
+    sc_col1, sc_col2 = st.columns(2)
+    current_stars  = sc_col1.slider("Current level (★)", 1, 5, 3, key="sc_stars_current")
+    potential_stars = sc_col2.slider("Potential level (★)", 1, 5, 4, key="sc_stars_potential")
+
+    CURRENT_LABELS  = ["Fringe / Squad", "Rotation Player", "Regular Starter",
+                       "Key Player", "World Class"]
+    POTENTIAL_LABELS = ["Limited Ceiling", "Solid Pro",  "Club Mainstay",
+                        "Top-level Talent", "Elite Potential"]
+
+    current_label   = st.selectbox("Current label",  CURRENT_LABELS,
+                                   index=current_stars-1,  key="sc_cur_lbl")
+    potential_label = st.selectbox("Potential label", POTENTIAL_LABELS,
+                                   index=potential_stars-1, key="sc_pot_lbl")
+
+    # Scouting notes
+    sc_view = st.text_area("Scout's view / notes",
+                           value="", height=80, key="sc_view_text",
+                           help="Free-text notes that appear in the Analysis panel.")
+
+    # Role pills to show (pick 3)
+    _sc_role_opts = list(ROLES.keys())
+    sc_pill_default = _sc_role_opts[:3]
+    sc_pills = st.multiselect("Role pills (pick 3)", _sc_role_opts,
+                              default=sc_pill_default, key="sc_role_pills")
+    if len(sc_pills) != 3:
+        sc_pills = (sc_pills + [r for r in _sc_role_opts if r not in sc_pills])[:3]
+
+    sc_comparison_label = st.text_input(
+        "Percentile pool label (footer)",
+        value="vs same-position pool",
+        key="sc_pool_label"
+    )
+
+    sc_show_height = st.checkbox("Show height", value=True, key="sc_show_ht")
+    sc_name_override_on = st.checkbox("Override display name", value=False, key="sc_name_ov_on")
+    sc_name_override = st.text_input("Display name", "", key="sc_name_ov",
+                                     disabled=not sc_name_override_on)
+
+# ── bail early if no player ───────────────────────────────────────────────────
+
+if player_row.empty:
+    st.info("Pick a player in the Single Player Role Profile above.")
+else:
+    # ── pull player data (reuse Feature Z variables) ──────────────────────────
+    _pr = player_row.iloc[0]
+
+    sc_name   = (sc_name_override.strip() if sc_name_override_on and sc_name_override.strip()
+                 else _safe_get(player_row, "Player", "Player"))
+    sc_team   = _safe_get(player_row, "Team",   "—")
+    sc_league = _safe_get(player_row, "League", "—")
+    sc_pos    = _safe_get(player_row, "Position", "—")
+    sc_age    = _safe_get(player_row, "Age", "—")
+    sc_goals  = _safe_get(player_row, "Goals",   "—")
+    sc_assist = _safe_get(player_row, "Assists", "—")
+    sc_mins   = _safe_get(player_row, "Minutes played", "—")
+    sc_apps   = _safe_get(player_row, "Matches played",
+                          _safe_get(player_row, "Apps", "—"))
+    sc_mv     = _sc_fmt_mv(_pr.get("Market value"))
+    sc_contract = "—"
+    try:
+        cy = pd.to_datetime(_pr.get("Contract expires"), errors="coerce")
+        sc_contract = str(int(cy.year)) if pd.notna(cy) else "—"
+    except Exception:
+        pass
+
+    sc_height = ""
+    if sc_show_height:
+        for _hc in ["Height", "Height (cm)", "Height (ft)", "Height ft"]:
+            if _hc in player_row.columns and str(_pr.get(_hc, "")).strip():
+                sc_height = str(_pr.get(_hc, "")).strip()
+                break
+
+    sc_ls = float(LEAGUE_STRENGTHS.get(sc_league, 50.0))
+
+    # xG total
+    try:
+        if "xG" in _pr.index and pd.notna(_pr["xG"]):
+            sc_xg = f"{float(_pr['xG']):.2f}"
+        else:
+            xg90 = float(_pr.get("xG per 90", np.nan))
+            m90  = float(sc_mins) / 90.0 if sc_mins != "—" else 0
+            sc_xg = f"{xg90 * m90:.2f}" if pd.notna(xg90) and m90 else "—"
+    except Exception:
+        sc_xg = "—"
+
+    # ── auto images (reuse Feature Z pipeline) ────────────────────────────────
+    sc_player_img = _npimg_to_pil_rgba(_auto_player_photo(player_row))
+    sc_badge_img  = _npimg_to_pil_rgba(_auto_team_badge(player_row))
+    sc_league_img = _npimg_to_pil_rgba(_auto_league_logo(player_row))
+
+    # ── theme palette ─────────────────────────────────────────────────────────
+    if sc_theme == "Dark":
+        BG        = "#0a0f1c"
+        PANEL     = "#11161C"
+        TRACK     = "#1b2636"
+        TXT       = "#E5E7EB"
+        SUB       = "#94A3B8"
+        DIVIDER   = "#1e2d45"
+        HEADER_BG = "#0d1220"
+        STAR_FILL = "#f0c56a"
+        STAR_EMPTY= "#2a3350"
+        CHIP_G    = "#166534"; CHIP_R = "#7f1d1d"; CHIP_B = "#1e3a5f"
+        CHIP_GT   = "#bbf7d0"; CHIP_RT = "#fecaca"; CHIP_BT = "#bfdbfe"
+        BAR_VAL   = "#0b0d12"
+    else:
+        BG        = "#f3f4f6"
+        PANEL     = "#ffffff"
+        TRACK     = "#d1d5db"
+        TXT       = "#111827"
+        SUB       = "#6b7280"
+        DIVIDER   = "#e5e7eb"
+        HEADER_BG = "#e5e7eb"
+        STAR_FILL = "#d97706"
+        STAR_EMPTY= "#d1d5db"
+        CHIP_G    = "#d1fae5"; CHIP_R = "#fee2e2"; CHIP_B = "#dbeafe"
+        CHIP_GT   = "#065f46"; CHIP_RT = "#991b1b"; CHIP_BT = "#1e40af"
+        BAR_VAL   = "#0b0d12"
+
+    # ── metric data ───────────────────────────────────────────────────────────
+    ATTACKING_SC = [
+        ("Crosses",                "Crosses per 90"),
+        ("Crossing Acc %",         "Accurate crosses, %"),
+        ("Goals (Non-Pen)",        "Non-penalty goals per 90"),
+        ("xG",                     "xG per 90"),
+        ("Conversion %",           "Goal conversion, %"),
+        ("Header Goals",           "Head goals per 90"),
+        ("Expected Assists",       "xA per 90"),
+        ("Progressive Runs",       "Progressive runs per 90"),
+        ("Shots",                  "Shots per 90"),
+        ("Shooting Acc %",         "Shots on target, %"),
+        ("Touches in Box",         "Touches in box per 90"),
+    ]
+    DEFENSIVE_SC = [
+        ("Aerial Duels",           "Aerial duels per 90"),
+        ("Aerial Win %",           "Aerial duels won, %"),
+        ("Defensive Duels",        "Defensive duels per 90"),
+        ("Def Duel Win %",         "Defensive duels won, %"),
+        ("PAdj Interceptions",     "PAdj Interceptions"),
+    ]
+    POSSESSION_SC = [
+        ("Deep Completions",       "Deep completions per 90"),
+        ("Dribbles",               "Dribbles per 90"),
+        ("Dribbling %",            "Successful dribbles, %"),
+        ("Key Passes",             "Key passes per 90"),
+        ("Passes",                 "Passes per 90"),
+        ("Passing %",              "Accurate passes, %"),
+        ("Passes to Pen Area",     "Passes to penalty area per 90"),
+        ("Pass Pen Area %",        "Accurate passes to penalty area, %"),
+        ("Smart Passes",           "Smart passes per 90"),
+    ]
+
+    def _sc_section_data(pairs):
+        out = []
+        for lab, met in pairs:
+            p = float(np.nan_to_num(pct_of(met), nan=0.0))
+            _, vstr = val_of(met)
+            out.append((lab, p, vstr))
+        return out
+
+    att_data  = _sc_section_data(ATTACKING_SC)
+    def_data  = _sc_section_data(DEFENSIVE_SC)
+    poss_data = _sc_section_data(POSSESSION_SC)
+
+    # role pill scores
+    sc_role_vals = {}
+    if isinstance(role_scores, dict):
+        for r in sc_pills:
+            sc_role_vals[r] = float(np.nan_to_num(role_scores.get(r, 0), nan=0.0))
+
+    # ── figure layout ─────────────────────────────────────────────────────────
+    # Canvas: 1500 × 980 at 100 DPI = 15 × 9.8 inches
+    W_IN, H_IN = 15.0, 9.8
+    fig = plt.figure(figsize=(W_IN, H_IN), dpi=100)
+    fig.patch.set_facecolor(BG)
+
+    # ── helper to draw text with fig.text ─────────────────────────────────────
+    def ft(x, y, s, **kw):
+        kw.setdefault("color", TXT)
+        kw.setdefault("va", "center")
+        kw.setdefault("ha", "left")
+        fig.text(x, y, str(s), **kw)
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # HEADER BAND  (top ~18% of card)
+    # ──────────────────────────────────────────────────────────────────────────
+    HDR_TOP  = 0.84
+    HDR_BOT  = 1.00
+    hdr_ax = fig.add_axes([0, HDR_TOP, 1, 1 - HDR_TOP])
+    hdr_ax.set_facecolor(HEADER_BG)
+    hdr_ax.axis("off")
+
+    # player photo  (left anchor)
+    PHOTO_W = 0.095; PHOTO_H = 0.155; PHOTO_X = 0.012; PHOTO_Y = HDR_TOP - 0.010
+    _sc_add_image(fig, sc_player_img, PHOTO_X, PHOTO_Y, PHOTO_W, PHOTO_H)
+
+    # name + meta  (just right of photo)
+    NX = PHOTO_X + PHOTO_W + 0.018
+    NY_NAME = HDR_TOP + 0.104
+    ft(NX, NY_NAME, sc_name, fontsize=22, fontweight="900", color=TXT)
+    ft(NX, HDR_TOP + 0.068,
+       f"{sc_pos}  ·  {sc_team}  ·  {sc_league}",
+       fontsize=11, color=SUB)
+
+    # info chips row
+    info_items = [
+        ("Age",      sc_age),
+        ("Apps",     sc_apps),
+        ("Mins",     sc_mins),
+        ("Goals",    sc_goals),
+        ("Assists",  sc_assist),
+        ("xG",       sc_xg),
+        ("MV",       sc_mv),
+        ("Contract", sc_contract),
+    ]
+    if sc_height:
+        info_items.insert(2, ("Height", sc_height))
+
+    ix = NX; iy = HDR_TOP + 0.028
+    for lbl, val in info_items:
+        fig.canvas.draw()
+        r = fig.canvas.get_renderer()
+        t1 = fig.text(ix, iy, f"{lbl}: ", fontsize=9.5, color=SUB, va="center", ha="left", fontweight="bold")
+        t1w = t1.get_window_extent(r).width / fig.bbox.width
+        t2 = fig.text(ix + t1w, iy, str(val), fontsize=9.5, color=TXT, va="center", ha="left")
+        t2w = t2.get_window_extent(r).width / fig.bbox.width
+        sep = fig.text(ix + t1w + t2w, iy, "  |  ", fontsize=9.5, color=SUB, va="center", ha="left")
+        sepw = sep.get_window_extent(r).width / fig.bbox.width
+        ix += t1w + t2w + sepw
+
+    # team badge + league logo  (right side)
+    BADGE_W = 0.065; BADGE_H = 0.115
+    _sc_add_image(fig, sc_league_img, 0.920, HDR_TOP + 0.025, BADGE_W, BADGE_H)
+    _sc_add_image(fig, sc_badge_img,  0.845, HDR_TOP + 0.025, BADGE_W, BADGE_H)
+
+    # header divider
+    fig.lines.append(plt.Line2D([0.012, 0.988], [HDR_TOP, HDR_TOP],
+                                transform=fig.transFigure, color=DIVIDER, lw=1.0, alpha=0.8))
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # BODY: three columns
+    #  LEFT  (0.012 → 0.40) : three-panel percentile chart
+    #  MID   (0.41  → 0.64) : analysis / ratings / role pills
+    #  RIGHT (0.65  → 0.988): mini stats bar + polar chart
+    # ──────────────────────────────────────────────────────────────────────────
+
+    BODY_TOP = HDR_TOP - 0.012   # just below header divider
+    BODY_BOT = 0.045             # room for footer
+
+    # ── LEFT PANEL : percentile bars ──────────────────────────────────────────
+    L_LEFT  = 0.012
+    L_RIGHT = 0.400
+    GUTTER  = 0.130              # label column width (fraction of panel)
+    BAR_PAD = 0.006
+
+    # colours for bar value text (always dark so readable on coloured bars)
+    all_sections = [
+        ("Attacking",  att_data),
+        ("Defensive",  def_data),
+        ("Possession", poss_data),
+    ]
+    total_rows = sum(len(d) for _, d in all_sections)
+    SEC_TITLE_H = 0.025
+    n_secs = len(all_sections)
+    rows_space = (BODY_TOP - BODY_BOT) - n_secs * SEC_TITLE_H - (n_secs - 1) * 0.010
+    row_h = rows_space / max(total_rows, 1)
+    BAR_FRAC = 0.78
+
+    y_cursor = BODY_TOP
+
+    for sec_idx, (sec_title, sec_data) in enumerate(all_sections):
+        # section title
+        ft(L_LEFT, y_cursor - SEC_TITLE_H * 0.45, sec_title,
+           fontsize=13, fontweight="900", color=TXT)
+        y_cursor -= SEC_TITLE_H
+
+        # bars axis
+        panel_h = len(sec_data) * row_h
+        ax_bars = fig.add_axes([
+            L_LEFT + GUTTER,
+            y_cursor - panel_h,
+            L_RIGHT - L_LEFT - GUTTER - BAR_PAD,
+            panel_h
+        ])
+        ax_bars.set_facecolor(PANEL if sc_theme == "Light" else "#0f151f")
+        ax_bars.set_xlim(0, 100)
+        ax_bars.set_ylim(-0.5, len(sec_data) - 0.5)
+        for sp in ax_bars.spines.values():
+            sp.set_visible(False)
+        ax_bars.tick_params(length=0, labelsize=0)
+
+        # gridlines at 10% intervals
+        for gx in range(0, 101, 10):
+            ax_bars.axvline(gx, color=(1,1,1,0.1) if sc_theme=="Dark" else (0,0,0,0.08),
+                            lw=0.6, zorder=0.5)
+        ax_bars.axvline(50, color="#94A3B8", ls=(0,(4,4)), lw=1.2, zorder=0.7)
+
+        for ri, (lab, pct, vstr) in enumerate(sec_data[::-1]):
+            yi = ri
+            # track
+            ax_bars.add_patch(mpatches.Rectangle(
+                (0, yi - BAR_FRAC/2), 100, BAR_FRAC,
+                color=TRACK, ec="none", zorder=1))
+            # fill
+            ax_bars.add_patch(mpatches.Rectangle(
+                (0, yi - BAR_FRAC/2), float(np.clip(pct, 0, 100)), BAR_FRAC,
+                color=_sc_pct_color(pct), ec="none", zorder=2))
+            # value label
+            ax_bars.text(1.5, yi, vstr, ha="left", va="center",
+                         fontsize=7.5, fontweight="400", color=BAR_VAL, zorder=3)
+            # metric label (in gutter)
+            y_fig = (y_cursor - panel_h) + (ri + 0.5) * row_h
+            ft(L_LEFT, y_fig, lab, fontsize=8.8, fontweight="bold", color=TXT)
+
+        if sec_idx < n_secs - 1:
+            y_cursor -= panel_h + 0.010
+            fig.lines.append(plt.Line2D(
+                [L_LEFT, L_RIGHT],
+                [y_cursor + 0.005, y_cursor + 0.005],
+                transform=fig.transFigure, color=DIVIDER, lw=0.7, alpha=0.6))
+        else:
+            y_cursor -= panel_h
+
+    # ── MIDDLE PANEL : analysis + ratings + roles ──────────────────────────────
+    M_LEFT  = 0.415
+    M_RIGHT = 0.640
+    M_Y     = BODY_TOP
+
+    # vertical dividers
+    fig.lines.append(plt.Line2D([M_LEFT - 0.008, M_LEFT - 0.008],
+                                [BODY_BOT, BODY_TOP],
+                                transform=fig.transFigure,
+                                color=DIVIDER, lw=0.8, alpha=0.7))
+    fig.lines.append(plt.Line2D([M_RIGHT + 0.008, M_RIGHT + 0.008],
+                                [BODY_BOT, BODY_TOP],
+                                transform=fig.transFigure,
+                                color=DIVIDER, lw=0.8, alpha=0.7))
+
+    def _mid_section(title, items, chip_bg, chip_fg, y_start):
+        if not items:
+            return y_start
+        ft(M_LEFT, y_start, title, fontsize=10, fontweight="900", color=TXT)
+        y = y_start - 0.028
+        x = M_LEFT
+        chip_h = 0.022
+        chip_fs = 8.8
+        chip_pad_x = 0.006
+        fig.canvas.draw()
+        r = fig.canvas.get_renderer()
+        for item in items[:8]:
+            tw = fig.text(0, 0, item, fontsize=chip_fs, fontweight="bold",
+                          color=chip_fg, alpha=0).get_window_extent(r).width / fig.bbox.width
+            fig.texts.pop()
+            cw = tw + chip_pad_x * 2
+            if x + cw > M_RIGHT:
+                x = M_LEFT; y -= chip_h + 0.006
+            fig.patches.append(FancyBboxPatch(
+                (x, y - chip_h * 0.55), cw, chip_h,
+                boxstyle="round,pad=0.001,rounding_size=0.008",
+                transform=fig.transFigure,
+                facecolor=chip_bg, edgecolor="none"))
+            fig.text(x + chip_pad_x, y - chip_h * 0.05, item,
+                     fontsize=chip_fs, fontweight="bold", color=chip_fg,
+                     va="center", ha="left")
+            x += cw + 0.007
+        return y - chip_h - 0.012
+
+    my = M_Y - 0.012
+    my = _mid_section("KEY ATTRIBUTES",   strengths  or [],
+                      CHIP_G, CHIP_GT, my)
+    my = _mid_section("DEVELOPMENT AREAS", weaknesses or [],
+                      CHIP_R, CHIP_RT, my)
+    my = _mid_section("PLAYING STYLE",    styles     or [],
+                      CHIP_B, CHIP_BT, my)
+
+    # Scout's view
+    if sc_view.strip():
+        ft(M_LEFT, my, "VIEW", fontsize=10, fontweight="900", color=TXT)
+        my -= 0.024
+        # wrap text manually into ~35-char lines
+        words = sc_view.strip().split()
+        lines, line = [], []
+        for w in words:
+            if sum(len(x)+1 for x in line) + len(w) > 34:
+                lines.append(" ".join(line)); line = [w]
+            else:
+                line.append(w)
+        if line:
+            lines.append(" ".join(line))
+        for ln in lines[:5]:
+            ft(M_LEFT, my, ln, fontsize=8.8, color=SUB)
+            my -= 0.020
+        my -= 0.008
+
+    # Current / Potential
+    ft(M_LEFT, my, "CURRENT LEVEL", fontsize=9.5, fontweight="900", color=TXT)
+    my -= 0.022
+    _sc_star_row(fig, M_LEFT, my, current_stars, fill_col=STAR_FILL, empty_col=STAR_EMPTY)
+    my -= 0.020
+    ft(M_LEFT, my, current_label, fontsize=8.5, color=SUB)
+    my -= 0.030
+
+    ft(M_LEFT, my, "POTENTIAL LEVEL", fontsize=9.5, fontweight="900", color=TXT)
+    my -= 0.022
+    _sc_star_row(fig, M_LEFT, my, potential_stars, fill_col="#60a5fa", empty_col=STAR_EMPTY)
+    my -= 0.020
+    ft(M_LEFT, my, potential_label, fontsize=8.5, color=SUB)
+    my -= 0.036
+
+    # Role pills
+    ft(M_LEFT, my, "BEST ROLES", fontsize=9.5, fontweight="900", color=TXT)
+    my -= 0.030
+
+    for rname in sc_pills:
+        rval = sc_role_vals.get(rname, 0.0)
+        rv_int = int(round(rval))
+        rgb = _sc_pct_color(rval)
+        hex_col = "#{:02x}{:02x}{:02x}".format(
+            int(rgb[0]*255), int(rgb[1]*255), int(rgb[2]*255))
+
+        fig.canvas.draw()
+        r2 = fig.canvas.get_renderer()
+        tw = fig.text(0, 0, rname, fontsize=9, fontweight="800",
+                      color="#fff", alpha=0).get_window_extent(r2).width / fig.bbox.width
+        fig.texts.pop()
+
+        label_w = M_RIGHT - M_LEFT - 0.060
+        badge_w = 0.046; badge_h = 0.026; pill_h = 0.026
+
+        # role label background
+        fig.patches.append(FancyBboxPatch(
+            (M_LEFT, my - pill_h * 0.65), label_w, pill_h,
+            boxstyle="round,pad=0.001,rounding_size=0.007",
+            transform=fig.transFigure,
+            facecolor="#374151" if sc_theme=="Dark" else "#e5e7eb",
+            edgecolor="none"))
+        fig.text(M_LEFT + 0.006, my - pill_h * 0.18, rname,
+                 fontsize=9, fontweight="800",
+                 color=TXT, va="center", ha="left")
+
+        # score badge
+        bx = M_LEFT + label_w + 0.006
+        fig.patches.append(FancyBboxPatch(
+            (bx, my - badge_h * 0.65), badge_w, badge_h,
+            boxstyle="round,pad=0.001,rounding_size=0.007",
+            transform=fig.transFigure,
+            facecolor=hex_col, edgecolor="none"))
+        fig.text(bx + badge_w / 2, my - badge_h * 0.18,
+                 f"{rv_int:02d}",
+                 fontsize=9.5, fontweight="900",
+                 color="#ffffff", va="center", ha="center")
+
+        my -= pill_h + 0.010
+
+    # ── RIGHT PANEL : polar / spider chart ────────────────────────────────────
+    R_LEFT  = 0.658
+    R_RIGHT = 0.988
+    R_TOP   = BODY_TOP
+    R_BOT   = BODY_BOT
+
+    # embed the existing polar chart (reuse pct_map / POLAR_METRICS from Feature Z context)
+    try:
+        _polar_labels_sc = [clean_attacker_label(m) for m in POLAR_METRICS if m in pct_map]
+        _polar_vals_sc   = [pct_map[m] for m in POLAR_METRICS if m in pct_map]
+    except Exception:
+        _polar_labels_sc = []
+        _polar_vals_sc   = []
+
+    if _polar_vals_sc:
+        N = len(_polar_vals_sc)
+        angles = np.linspace(0, 2*np.pi, N, endpoint=False)[::-1]
+        rot_shift = np.deg2rad(75) - angles[0]
+        ang = (angles + rot_shift) % (2*np.pi)
+        width = 2*np.pi / N
+
+        ax_polar = fig.add_axes(
+            [R_LEFT, R_BOT + 0.01,
+             R_RIGHT - R_LEFT, R_TOP - R_BOT - 0.01],
+            polar=True)
+        ax_polar.set_facecolor(PANEL if sc_theme == "Light" else "#0f151f")
+        ax_polar.set_rlim(0, 100)
+        ax_polar.set_xticks([]); ax_polar.set_yticks([])
+        ax_polar.spines["polar"].set_visible(False)
+        ax_polar.grid(False)
+
+        from matplotlib.colors import LinearSegmentedColormap
+        color_scale = ["#be2a3e","#e25f48","#f88f4d","#f4d166","#90b960","#4b9b5f","#22763f"]
+        _cmap_sc = LinearSegmentedColormap.from_list("sc_cmap", color_scale)
+
+        for i in range(N):
+            v = _polar_vals_sc[i]
+            ax_polar.bar(ang[i], v, width=width,
+                         color=_cmap_sc(v/100.0),
+                         edgecolor="black", linewidth=0.8, zorder=3)
+            lp = max(12, v * 0.75)
+            ax_polar.text(ang[i], lp, f"{int(round(v))}",
+                          ha="center", va="center",
+                          fontsize=7, weight="bold", color="white", zorder=4)
+
+        # outer ring
+        from matplotlib.patches import Circle
+        outer = Circle((0,0), 100,
+                       transform=ax_polar.transData._b,
+                       color="black", fill=False, linewidth=1.8, zorder=5)
+        ax_polar.add_artist(outer)
+
+        # spoke separators
+        for i in range(N):
+            sep = (ang[i] - width/2) % (2*np.pi)
+            ax_polar.plot([sep, sep], [0, 100],
+                         color="black", linewidth=0.9, zorder=2)
+
+        # outer metric labels
+        label_r = 116
+        for i, lab in enumerate(_polar_labels_sc):
+            ax_polar.text(ang[i], label_r, lab,
+                          ha="center", va="center",
+                          fontsize=7.5, weight="bold",
+                          color=TXT, zorder=6)
+    else:
+        # no polar data — blank placeholder
+        ax_polar = fig.add_axes([R_LEFT, R_BOT+0.01, R_RIGHT-R_LEFT, R_TOP-R_BOT-0.01])
+        ax_polar.set_facecolor(PANEL if sc_theme=="Light" else "#0f151f")
+        ax_polar.axis("off")
+        ax_polar.text(0.5, 0.5, "No polar data available",
+                      ha="center", va="center", fontsize=10, color=SUB,
+                      transform=ax_polar.transAxes)
+
+    # ── FOOTER ────────────────────────────────────────────────────────────────
+    ft(0.012, BODY_BOT * 0.45, sc_comparison_label,
+       fontsize=9, color=SUB, fontweight="bold")
+    ft(0.988, BODY_BOT * 0.45,
+       f"League Strength: {sc_ls:.1f}",
+       fontsize=9, color=SUB, fontweight="bold", ha="right")
+
+    # ── render ────────────────────────────────────────────────────────────────
+    st.pyplot(fig, use_container_width=True)
+
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=150,
+                bbox_inches="tight", facecolor=fig.get_facecolor())
+    buf.seek(0)
+    st.download_button(
+        "⬇️ Download Scouting Card (PNG)",
+        data=buf.getvalue(),
+        file_name=f"{sc_name.replace(' ', '_')}_scouting_card.png",
+        mime="image/png",
+        key="sc_download_btn"
+    )
+    plt.close(fig)
+
+# ============================ END — Scouting Card ============================
+
+
 
 
 
