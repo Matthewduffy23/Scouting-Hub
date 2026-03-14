@@ -1828,16 +1828,16 @@ if enable_min_perf and sel_metrics:
 # ----------------- ARCHETYPE FILTERS -----------------
 ARCHETYPES = {
     "Vertical Build-Up CB": {
-        "desc": "Direct, vertical passer — low pass volume (either threshold), high progressive passing, aerially and defensively dominant.",
+        "desc": "Direct, vertical passer — low pass volume, high progressive passing, aerially and defensively dominant.",
         "conditions": [
             {
-                "Passes per 90 Percentile": ("max", 40),
+                "Passes per 90 Percentile": ("max", 50),
                 "Progressive passes per 90 Percentile": ("min", 75),
                 "Aerial duels won, % Percentile": ("min", 60),
                 "Defensive duels won, % Percentile": ("min", 60),
             },
             {
-                "Passes per 90 Percentile": ("max", 30),
+                "Passes per 90 Percentile": ("max", 40),
                 "Progressive passes per 90 Percentile": ("min", 60),
                 "Aerial duels won, % Percentile": ("min", 60),
                 "Defensive duels won, % Percentile": ("min", 60),
@@ -1845,13 +1845,12 @@ ARCHETYPES = {
         ],
     },
     "CCB (Central CB)": {
-        "desc": "Dominant aerial and ground defender with reliable long passing. All conditions must be met.",
+        "desc": "Dominant aerial and ground defender with volume of aerial duels. All conditions must be met.",
         "conditions": [
             {
                 "Aerial duels won, % Percentile": ("min", 75),
                 "Defensive duels won, % Percentile": ("min", 70),
-                "Aerial duels per 90 Percentile": ("min", 40),
-                "Accurate long passes, % Percentile": ("min", 60),
+                "Aerial duels per 90 Percentile": ("min", 30),
             },
         ],
     },
@@ -1859,10 +1858,25 @@ ARCHETYPES = {
         "desc": "Low pass volume, carries forward — progressive runner, dribbler, physically competitive.",
         "conditions": [
             {
-                "Passes per 90 Percentile": ("max", 40),
-                "Progressive runs per 90 Percentile": ("min", 75),
+                "Passes per 90 Percentile": ("max", 50),
+                "Progressive runs per 90 Percentile": ("min", 70),
                 "Dribbles per 90 Percentile": ("min", 70),
-                "Successful dribbles, % Percentile": ("min", 50),
+                "Successful dribbles, % Percentile": ("min", 45),
+                "Aerial duels won, % Percentile": ("min", 50),
+                "Defensive duels won, % Percentile": ("min", 50),
+            },
+        ],
+    },
+    "Complete Ball Player": {
+        "desc": "Progressive passer and carrier, technically sound, competitive in duels.",
+        "conditions": [
+            {
+                "Progressive passes per 90 Percentile": ("min", 70),
+                "Progressive runs per 90 Percentile": ("min", 60),
+                "Dribbles per 90 Percentile": ("min", 55),
+                "Successful dribbles, % Percentile": ("min", 45),
+                "Accurate passes, % Percentile": ("min", 60),
+                "Accurate forward passes, % Percentile": ("min", 60),
                 "Aerial duels won, % Percentile": ("min", 50),
                 "Defensive duels won, % Percentile": ("min", 50),
             },
