@@ -1828,6 +1828,19 @@ if enable_min_perf and sel_metrics:
 # ----------------- ARCHETYPE FILTERS -----------------
 ARCHETYPES = {
     "Vertical Build-Up CB": {
+        "desc": "Direct, vertical passer — low pass volume, high progressive passing. No defensive threshold required.",
+        "conditions": [
+            {
+                "Passes per 90 Percentile": ("max", 50),
+                "Progressive passes per 90 Percentile": ("min", 75),
+            },
+            {
+                "Passes per 90 Percentile": ("max", 40),
+                "Progressive passes per 90 Percentile": ("min", 60),
+            },
+        ],
+    },
+    "Vertical Build-Up CB (Def)": {
         "desc": "Direct, vertical passer — low pass volume, high progressive passing, aerially and defensively dominant.",
         "conditions": [
             {
