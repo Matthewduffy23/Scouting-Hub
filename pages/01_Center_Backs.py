@@ -1868,6 +1868,17 @@ ARCHETYPES = {
         ],
     },
     "Vertical Carrier CB": {
+        "desc": "Low pass volume, carries forward — progressive runner and dribbler. No defensive threshold required.",
+        "conditions": [
+            {
+                "Passes per 90 Percentile": ("max", 50),
+                "Progressive runs per 90 Percentile": ("min", 70),
+                "Dribbles per 90 Percentile": ("min", 70),
+                "Successful dribbles, % Percentile": ("min", 45),
+            },
+        ],
+    },
+    "Vertical Carrier CB (Def)": {
         "desc": "Low pass volume, carries forward — progressive runner, dribbler, physically competitive.",
         "conditions": [
             {
