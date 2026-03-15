@@ -1869,6 +1869,112 @@ if enable_min_perf and sel_metrics:
         st.warning("No players meet the minimum performance thresholds. Loosen thresholds.")
         st.stop()
 
+# ----------------- ARCHETYPE FILTERS -----------------
+ARCHETYPES = {
+    "Destroyer": {
+        "desc": "Dominant in defensive duels and aerial battles, high interception volume.",
+        "conditions": [
+            {
+                "Aerial duels won, % Percentile": ("min", 70),
+                "Defensive duels won, % Percentile": ("min", 70),
+                "Defensive duels per 90 Percentile": ("min", 70),
+                "PAdj Interceptions Percentile": ("min", 70),
+            },
+        ],
+    },
+    "Vertical Playmaker": {
+        "desc": "Low pass volume but highly progressive — drives play forward via passes to final third and forward passes.",
+        "conditions": [
+            {
+                "Passes per 90 Percentile": ("max", 55),
+                "Progressive passes per 90 Percentile": ("min", 70),
+                "Passes to final third per 90 Percentile": ("min", 65),
+                "Forward passes per 90 Percentile": ("min", 65),
+            },
+        ],
+    },
+    "Vertical Carrier": {
+        "desc": "Low pass volume, carries forward — progressive runner and dribbler, defensively active.",
+        "conditions": [
+            {
+                "Passes per 90 Percentile": ("max", 50),
+                "Dribbles per 90 Percentile": ("min", 70),
+                "Progressive runs per 90 Percentile": ("min", 70),
+                "Defensive duels per 90 Percentile": ("min", 70),
+            },
+        ],
+    },
+}
+
+def player_matches_archetype(row: pd.Series, archetype_def: dict) -> bool:
+    for condition_set in archetype_def["conditions"]:
+        set_met = True
+        for col, (direction, threshold) in condition_set.items():
+            val = pd.to_numeric(row.get(col, np.nan), errors="coerce")
+            if pd.isna(val):
+                set_met = False
+                break
+            if direction == "min" and val < threshold:
+                set_met = False
+                break
+            if direction == "max" and val > threshold:
+                set_met = False
+                break
+        if set_met:
+            return True
+    return False
+
+with st.sidebar:
+    st.markdown("---")
+    st.subheader("Archetype Filters")
+    st.caption("Players must match at least one selected archetype.")
+
+    enable_archetypes = st.checkbox(
+        "Enable archetype filtering",
+        value=False,
+        key=f"cm_enable_archetypes_{selected_file}"
+    )
+
+    if st.session_state.get(f"cm_enable_archetypes_{selected_file}", False):
+        for arch_name, arch_def in ARCHETYPES.items():
+            st.checkbox(
+                arch_name,
+                value=False,
+                key=f"cm_arch_{arch_name}_{selected_file}",
+                help=arch_def["desc"],
+            )
+
+# Apply the filter to df_f — read everything from session state
+enable_archetypes = st.session_state.get(f"cm_enable_archetypes_{selected_file}", False)
+selected_archetypes = [
+    arch_name for arch_name in ARCHETYPES
+    if st.session_state.get(f"cm_arch_{arch_name}_{selected_file}", False)
+]
+
+if enable_archetypes and selected_archetypes:
+    arch_masks = []
+    for arch_name in selected_archetypes:
+        mask = df_f.apply(
+            lambda row: player_matches_archetype(row, ARCHETYPES[arch_name]), axis=1
+        )
+        arch_masks.append(mask)
+
+    combined_mask = arch_masks[0]
+    for m in arch_masks[1:]:
+        combined_mask = combined_mask | m
+
+    before = len(df_f)
+    df_f = df_f[combined_mask]
+    after = len(df_f)
+
+    if df_f.empty:
+        st.warning("No players match the selected archetypes. Loosen filters.")
+        st.stop()
+    else:
+        st.caption(f"Archetype filter: {before} → {after} players remaining.")
+
+# ----------------- HELPERS -----------------
+
 # ----------------- HELPERS -----------------
 round_to = st.session_state[f"cm_round_to_{selected_file}"]
 
