@@ -1848,6 +1848,7 @@ ARCHETYPES = {
         "conditions": [
             {
                 "Aerial duels won, % Percentile": ("min", 70),
+                "Aerial duels per 90 Percentile": ("min", 30),
                 "Dribbles per 90 Percentile": ("min", 60),
                 "xG per 90 Percentile": ("min", 60),
             },
