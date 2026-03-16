@@ -1860,8 +1860,8 @@ ARCHETYPES = {
             {
                 "Passes per 90 Percentile": ("max", 50),
                 "xA per 90 Percentile": ("min", 75),
-                "Smart passes per 90 Percentile": ("min", 70),
-                "xG per 90 Percentile": ("min", 65),
+                "Smart passes per 90 Percentile": ("min", 65),
+                "xG per 90 Percentile": ("min", 70),
             },
         ],
     },
