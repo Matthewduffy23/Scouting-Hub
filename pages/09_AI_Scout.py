@@ -870,36 +870,270 @@ def filter_candidates(df, params):
 
     return pool
 
-def _similarity_score(pool, ref_row, all_metrics, full_pool):
-    """Player profile similarity — distance from reference player's stat vector."""
-    if ref_row is None:
+def _percentile_of_value(series, value):
+    s = pd.to_numeric(series, errors="coerce").dropna()
+    if s.empty or pd.isna(value):
+        return 0.5
+    return float((s <= float(value)).mean())
+
+def _proper_similarity_score(pool, ref_row, sim_metrics, full_df, league_weight=0.2, percentile_weight=0.7):
+    """
+    Proper similarity — mirrors compute_similarity_from_template from streamlit_app.py.
+    StandardScaler + per-league percentile distance + league difficulty adjustment.
+    """
+    if ref_row is None or pool.empty:
         return pd.Series(50.0, index=pool.index)
 
-    scores = []
-    for _, row in pool.iterrows():
-        diffs = []
-        for m in all_metrics:
-            if m not in full_pool.columns: continue
-            pool_vals = pd.to_numeric(full_pool[m], errors="coerce").dropna()
-            ref_val   = pd.to_numeric(ref_row.get(m, np.nan), errors="coerce")
-            cand_val  = pd.to_numeric(row.get(m, np.nan), errors="coerce")
-            if pd.isna(ref_val) or pd.isna(cand_val) or pool_vals.empty: continue
-            spread = pool_vals.std()
-            if spread < 1e-9: continue
-            diffs.append(abs(float(cand_val) - float(ref_val)) / spread)
-        if diffs:
-            dist = float(np.mean(diffs))
-            scores.append(max(0.0, 100.0 - dist * 40.0))
-        else:
-            scores.append(50.0)
-    return pd.Series(scores, index=pool.index)
-
-def _team_style_score(pool, team_profile, all_metrics, weights):
-    """Team style fit — upweight metrics that match the club's tactical profile."""
-    if not team_profile:
+    feats = [m for m in sim_metrics if m in full_df.columns]
+    if not feats:
         return pd.Series(50.0, index=pool.index)
-    # Already handled by weights boosting in main scorer — return pure weighted percentile
-    return pd.Series(50.0, index=pool.index)  # placeholder, blended via weights
+
+    # Target values (reference player)
+    target_vals = np.array([
+        pd.to_numeric(ref_row.get(f, np.nan), errors="coerce") for f in feats
+    ], dtype=float)
+    if np.all(np.isnan(target_vals)):
+        return pd.Series(50.0, index=pool.index)
+
+    # Candidate pool — numeric only, drop rows missing all feats
+    cand = pool.copy()
+    for f in feats:
+        cand[f] = pd.to_numeric(cand[f], errors="coerce")
+    cand = cand.dropna(subset=feats, how="all")
+    if cand.empty:
+        return pd.Series(50.0, index=pool.index)
+
+    # Per-league percentile ranks for candidates
+    percl = cand.groupby("League")[feats].rank(pct=True).reindex(cand.index).fillna(0.5).values
+
+    # Target percentile vector (vs target player's own league)
+    target_league = str(ref_row.get("League", ""))
+    league_block = full_df[full_df["League"].astype(str) == target_league][feats].copy()
+    for f in feats:
+        league_block[f] = pd.to_numeric(league_block[f], errors="coerce")
+
+    target_pct = np.array([
+        _percentile_of_value(league_block[f], target_vals[i])
+        for i, f in enumerate(feats)
+    ], dtype=float)
+
+    # Standardised actual-value distance
+    try:
+        from sklearn.preprocessing import StandardScaler as _SS
+        scaler = _SS()
+        # Fit on full_df subset for this position
+        all_vals = full_df[feats].copy()
+        for f in feats:
+            all_vals[f] = pd.to_numeric(all_vals[f], errors="coerce")
+        all_vals = all_vals.dropna(how="all")
+        scaler.fit(all_vals.fillna(all_vals.mean()))
+        cand_std = scaler.transform(cand[feats].fillna(cand[feats].mean()))
+        # Replace NaN targets with pool mean
+        target_std = scaler.transform(
+            [np.where(np.isnan(target_vals), all_vals.mean().values, target_vals)]
+        )
+    except Exception:
+        cand_std   = cand[feats].fillna(0).values
+        target_std = np.array([[np.nanmean(target_vals)] * len(feats)])
+
+    pct_dist = np.linalg.norm(percl - target_pct, axis=1)
+    act_dist = np.linalg.norm(cand_std - target_std, axis=1)
+    combined = pct_dist * float(percentile_weight) + act_dist * (1.0 - float(percentile_weight))
+
+    arr = combined.ravel()
+    rng = np.ptp(arr)
+    normed = (arr - arr.min()) / (rng if rng > 1e-9 else 1.0)
+    sims = (1.0 - normed) * 100.0
+
+    # League difficulty adjustment (symmetric ratio)
+    tgt_ls = float(LEAGUE_STRENGTHS.get(target_league.strip(), 50.0))
+    cand_ls = cand["League"].map(LEAGUE_STRENGTHS).fillna(50.0).values
+    eps = 1e-6
+    ratio = np.minimum(cand_ls, tgt_ls) / (np.maximum(cand_ls, tgt_ls) + eps)
+    adj_sims = sims * ((1.0 - league_weight) + league_weight * ratio)
+
+    result = pd.Series(50.0, index=pool.index)
+    result.loc[cand.index] = np.clip(adj_sims, 0.0, 100.0)
+    return result
+
+
+def _proper_role_fit_score(pool, role_metrics_dict, full_df, beta=0.0):
+    """
+    Proper role fit — mirrors compute_weighted_role_score from app.py.
+    Per-league percentile × role metric weights, optional league-strength beta blend.
+    """
+    if not role_metrics_dict or pool.empty:
+        return pd.Series(50.0, index=pool.index)
+
+    scored = pool.copy()
+    total_w = sum(role_metrics_dict.values()) or 1.0
+    wsum = np.zeros(len(scored))
+
+    for met, w in role_metrics_dict.items():
+        pct_col = f"{met} Percentile"
+        if pct_col in scored.columns:
+            wsum += pd.to_numeric(scored[pct_col], errors="coerce").fillna(50.0).values * w
+        elif met in scored.columns and met in full_df.columns:
+            # Compute per-league percentile on the fly
+            league_pcts = scored.groupby("League")[met].transform(
+                lambda x: x.rank(pct=True) * 100.0
+            )
+            wsum += pd.to_numeric(league_pcts, errors="coerce").fillna(50.0).values * w
+
+    player_score = wsum / total_w
+
+    if beta > 0:
+        ls = scored["League"].map(LEAGUE_STRENGTHS).fillna(50.0).values
+        player_score = (1.0 - beta) * player_score + beta * ls
+
+    return pd.Series(np.clip(player_score, 0.0, 100.0), index=pool.index)
+
+
+def _proper_team_style_score(pool, team_profile, role_key, full_df):
+    """
+    Proper team style similarity — mirrors _score_block / compute_fullbacks style from streamlit_app.py.
+    Builds composite role dimensions, computes per-league percentile vectors,
+    measures distance from the template club's average profile.
+    """
+    if not team_profile or pool.empty:
+        return pd.Series(50.0, index=pool.index)
+
+    # Build composite dimensions per role (mirrors the composite features in streamlit_app.py)
+    ROLE_COMPOSITES = {
+        "ATT": {
+            "Goal Threat":        lambda df: 0.4*_safe_num(df,"xG per 90") + 0.4*_safe_num(df,"Non-penalty goals per 90") + 0.2*_safe_num(df,"Touches in box per 90"),
+            "Creativity Threat":  lambda df: 0.65*_safe_num(df,"xA per 90") + 0.35*_safe_num(df,"Passes to penalty area per 90"),
+            "Pass Volume":        lambda df: _safe_num(df,"Passes per 90"),
+            "Ball Carrying":      lambda df: 0.6*_safe_num(df,"Dribbles per 90") + 0.4*_safe_num(df,"Progressive runs per 90"),
+            "Deep Playmaking":    lambda df: 0.5*_safe_num(df,"Progressive passes per 90") + 0.5*_safe_num(df,"Passes to final third per 90"),
+        },
+        "CF": {
+            "Opportunities":      lambda df: 0.7*_safe_num(df,"Touches in box per 90") + 0.3*_safe_num(df,"xG per 90"),
+            "Ball Carrying":      lambda df: 0.65*_safe_num(df,"Dribbles per 90") + 0.35*_safe_num(df,"Progressive runs per 90"),
+            "Aerial Requirement": lambda df: _safe_num(df,"Aerial duels per 90") * _safe_num(df,"Aerial duels won, %") / 100.0,
+            "Pass Volume":        lambda df: _safe_num(df,"Passes per 90"),
+            "Goal Output":        lambda df: _safe_num(df,"Non-penalty goals per 90"),
+        },
+        "CM": {
+            "Pass Verticality":   lambda df: _safe_div_s(df,"Forward passes per 90","Passes per 90"),
+            "Progression Volume": lambda df: _safe_num(df,"Progressive passes per 90") + _safe_num(df,"Progressive runs per 90"),
+            "Defensive Volume":   lambda df: _safe_num(df,"Defensive duels per 90"),
+            "Interception Vol":   lambda df: _safe_num(df,"PAdj Interceptions"),
+            "Pass Volume":        lambda df: _safe_num(df,"Passes per 90"),
+        },
+        "FB": {
+            "Progression Volume":      lambda df: _safe_num(df,"Progressive passes per 90") + _safe_num(df,"Progressive runs per 90"),
+            "Attacking Contribution":  lambda df: 0.4*_safe_num(df,"xA per 90") + 0.2*_safe_num(df,"Crosses per 90") + 0.2*_safe_num(df,"Touches in box per 90") + 0.1*_safe_num(df,"Shots per 90") + 0.1*_safe_num(df,"Passes to penalty area per 90"),
+            "Defensive Volume":        lambda df: 0.5*_safe_num(df,"Defensive duels per 90") + 0.3*_safe_num(df,"PAdj Interceptions") + 0.2*_safe_num(df,"Aerial duels per 90"),
+            "Pass Volume":             lambda df: _safe_num(df,"Passes per 90"),
+        },
+        "CB": {
+            "Aerial Volume":      lambda df: _safe_num(df,"Aerial duels per 90"),
+            "Defensive Volume":   lambda df: _safe_num(df,"Defensive duels per 90"),
+            "Passing Volume":     lambda df: _safe_num(df,"Passes per 90"),
+            "Progression Volume": lambda df: _safe_num(df,"Progressive passes per 90") + _safe_num(df,"Progressive runs per 90"),
+        },
+    }
+
+    composites = ROLE_COMPOSITES.get(role_key, ROLE_COMPOSITES["ATT"])
+    cols = list(composites.keys())
+
+    def _safe_num(df, col):
+        if col not in df.columns:
+            return pd.Series(0.0, index=df.index)
+        return pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+
+    def _safe_div_s(df, num_col, den_col):
+        n = _safe_num(df, num_col)
+        d = _safe_num(df, den_col).replace(0, np.nan)
+        return (n / d).fillna(0.0)
+
+    # Build composite columns on full pool for percentile reference
+    ref_all = full_df.copy()
+    for col, fn in composites.items():
+        ref_all[col] = fn(ref_all)
+
+    # Build on candidate pool
+    scored = pool.copy()
+    for col, fn in composites.items():
+        scored[col] = fn(scored)
+
+    # Template club's average across its players (use full_df filtered by club)
+    template_team = team_profile.get("team", "")
+    template_league = team_profile.get("league", "")
+    tmpl_df = full_df[
+        (full_df["Team"].astype(str) == template_team) &
+        (full_df["League"].astype(str) == template_league)
+    ].copy()
+
+    if tmpl_df.empty:
+        # Fall back to league average
+        tmpl_df = full_df[full_df["League"].astype(str) == template_league].copy()
+    if tmpl_df.empty:
+        return pd.Series(50.0, index=pool.index)
+
+    for col, fn in composites.items():
+        tmpl_df[col] = fn(tmpl_df)
+
+    tmpl_vec = tmpl_df[cols].mean().to_dict()
+
+    # Template percentile vs its own league
+    ref_tmpl = ref_all[ref_all["League"].astype(str) == template_league].copy()
+    tmpl_pct = {}
+    for col in cols:
+        s = pd.to_numeric(ref_tmpl.get(col, pd.Series(dtype=float)), errors="coerce").dropna()
+        v = float(tmpl_vec.get(col, 0.0))
+        tmpl_pct[col] = _percentile_of_value(s, v) * 100.0 if not s.empty else 50.0
+
+    # Candidate percentile vectors per-league
+    cand_pct = scored.copy()
+    for col in cols:
+        cand_pct[f"_pct_{col}"] = 50.0
+
+    for lg in scored["League"].dropna().unique():
+        idx = scored["League"].astype(str) == str(lg)
+        ref_lg = ref_all[ref_all["League"].astype(str) == str(lg)]
+        if ref_lg.empty:
+            continue
+        for col in cols:
+            s = pd.to_numeric(ref_lg[col], errors="coerce").dropna()
+            if s.empty:
+                continue
+            cand_pct.loc[idx, f"_pct_{col}"] = (
+                pd.to_numeric(scored.loc[idx, col], errors="coerce")
+                .map(lambda v: _percentile_of_value(s, v) * 100.0)
+            )
+
+    # Distance from template percentile vector
+    distances = np.array([
+        np.linalg.norm([
+            cand_pct.loc[i, f"_pct_{col}"] - tmpl_pct[col]
+            for col in cols
+        ])
+        for i in scored.index
+    ])
+
+    # Exp-decay to score (mirrors _score_block)
+    d_min, d_max = distances.min(), distances.max()
+    rng = d_max - d_min
+    if rng < 1e-9:
+        base_score = np.full(len(distances), 100.0)
+    else:
+        base_score = 100.0 * np.exp(-5.0 * (distances - d_min) / rng)
+
+    return pd.Series(np.clip(base_score, 0.0, 100.0), index=pool.index)
+
+
+def _safe_num(df, col):
+    if col not in df.columns:
+        return pd.Series(0.0, index=df.index)
+    return pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+
+def _safe_div_s(df, num_col, den_col):
+    n = _safe_num(df, num_col)
+    d = _safe_num(df, den_col).replace(0, np.nan)
+    return (n / d).fillna(0.0)
+
 
 def apply_realism_filter(scored, requesting_league, realism_level):
     """
@@ -1100,16 +1334,23 @@ def score_candidates(pool, params, team_profile, full_pool,
         active_modes.append("top")
 
     if scoring_modes.get("role_fit"):
-        mode_scores["role"] = _percentile_score(scored, role_weights)
+        # Use proper per-league percentile × role weights (mirrors compute_weighted_role_score)
+        if matched_role_metrics:
+            mode_scores["role"] = _proper_role_fit_score(scored, matched_role_metrics, full_pool)
+        else:
+            mode_scores["role"] = _percentile_score(scored, role_weights)
         active_modes.append("role")
 
     if scoring_modes.get("team_style") and team_profile:
-        mode_scores["team"] = _percentile_score(scored, team_weights)
+        # Use proper composite dimension distance (mirrors _score_block from streamlit_app.py)
+        mode_scores["team"] = _proper_team_style_score(scored, team_profile, role_key, full_pool)
         active_modes.append("team")
 
     if scoring_modes.get("similar_player") and reference_player_row is not None:
-        mode_scores["player"] = _similarity_score(scored, reference_player_row,
-                                                   all_metrics, full_pool).values
+        # Use proper StandardScaler + per-league percentile similarity
+        mode_scores["player"] = _proper_similarity_score(
+            scored, reference_player_row, all_metrics, full_pool
+        ).values
         active_modes.append("player")
 
     # ── Blend active modes equally ────────────────────────────────────────────
