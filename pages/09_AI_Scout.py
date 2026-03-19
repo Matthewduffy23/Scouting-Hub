@@ -1355,6 +1355,16 @@ if run and query.strip() and not player_df.empty and api_key_input:
         params = extract_parameters(client, query, reference_player_block)
         params["_raw_query"] = query
 
+    if not params or not params.get("position_prefixes"):
+        # Fallback: try once more without reference block
+        with st.spinner("🧠 Re-parsing request..."):
+            params = extract_parameters(client, query, "")
+            params["_raw_query"] = query
+
+    if not params:
+        st.error("Couldn't parse the request. Try being more specific about position and league.")
+        st.stop()
+
     # Show reference player card if found
     if reference_player_row is not None:
         ref_name = str(reference_player_row.get("Player","?"))
@@ -1435,6 +1445,14 @@ if run and query.strip() and not player_df.empty and api_key_input:
             unsafe_allow_html=True)
 
     # Step 4: Filter + score
+    # Ensure params has minimum required structure
+    if not isinstance(params, dict):
+        params = {}
+    params.setdefault("position_prefixes", [])
+    params.setdefault("min_minutes", 500)
+    params.setdefault("leagues", None)
+    params.setdefault("regions", None)
+
     with st.spinner("🔎 Filtering database..."):
         filtered = filter_candidates(player_df, params)
         scored = score_candidates(filtered, params, team_profile, player_df)
