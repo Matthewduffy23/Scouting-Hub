@@ -2004,116 +2004,6 @@ with st.expander("🔧 Filter overrides (optional)", expanded=False):
         else:
             fo_styles = []
 
-# ── Filter overrides (optional — layer on top of or instead of query) ─────────
-# Position → style options
-STYLE_OPTIONS_BY_ROLE = {
-    "GK":  ["Shot Stopper", "Ball Playing GK", "Sweeper GK"],
-    "CB":  ["Ball Playing CB", "Wide CB", "Box Defender"],
-    "FB":  ["Attacking FB", "Build Up FB", "Defensive FB"],
-    "CM":  ["Deep Playmaker", "Advanced Playmaker", "Defensive CM", "Ball Carrying CM"],
-    "ATT": ["Goal Threat", "Wide Creator", "Playmaker ATT", "Ball Carrier"],
-    "CF":  ["Target Man", "Goal Threat CF", "Link Up CF"],
-}
-# Map position codes to style group keys
-POS_TO_STYLE_GROUP = {
-    "GK":"GK","CB":"CB","LCB":"CB","RCB":"CB",
-    "LB":"FB","RB":"FB","LWB":"FB","RWB":"FB",
-    "DMF":"CM","LDMF":"CM","RDMF":"CM","LCMF":"CM","RCMF":"CM",
-    "AMF":"ATT","LAMF":"ATT","RAMF":"ATT","LW":"ATT","LWF":"ATT","RW":"ATT","RWF":"ATT",
-    "CF":"CF",
-}
-# Map style name → role bucket name
-STYLE_TO_ROLE_BUCKET = {
-    "Shot Stopper": "Shot Stopper GK",
-    "Ball Playing GK": "Ball Playing GK",
-    "Sweeper GK": "Sweeper GK",
-    "Ball Playing CB": "Ball Playing CB",
-    "Wide CB": "Wide CB",
-    "Box Defender": "Box Defender",
-    "Attacking FB": "Attacking FB",
-    "Build Up FB": "Build Up FB",
-    "Defensive FB": "Defensive FB",
-    "Deep Playmaker": "Deep Playmaker CM",
-    "Advanced Playmaker": "Advanced Playmaker CM",
-    "Defensive CM": "Defensive CM",
-    "Ball Carrying CM": "Ball Carrying CM",
-    "Goal Threat": "Goal Threat ATT",
-    "Wide Creator": "Ball Carrier",
-    "Playmaker ATT": "Playmaker ATT",
-    "Ball Carrier": "Ball Carrier",
-    "Target Man": "Target Man CF",
-    "Goal Threat CF": "Goal Threat CF",
-    "Link Up CF": "Link Up CF",
-}
-
-with st.expander("🔧 Filter overrides (optional — layer on top of query)", expanded=False):
-    st.caption("Tick any you want to enforce. Leave unticked to use what Claude extracts from your query.")
-
-    fo_col1, fo_col2, fo_col3 = st.columns(3)
-
-    with fo_col1:
-        use_pos_override = st.checkbox("📍 Position", value=False, key="fo_use_pos")
-        if use_pos_override:
-            all_pos_options = ["GK","CB","LCB","RCB","LB","RB","LWB","RWB",
-                               "DMF","LDMF","RDMF","LCMF","RCMF",
-                               "AMF","LAMF","RAMF","LW","LWF","RW","RWF","CF"]
-            fo_positions = st.multiselect("Position(s)", all_pos_options,
-                                           default=[], key="fo_positions")
-        else:
-            fo_positions = []
-
-        use_age_override = st.checkbox("🎂 Age", value=False, key="fo_use_age")
-        if use_age_override:
-            fo_age_min, fo_age_max = st.slider("Age range", 14, 45, (16, 30),
-                                                key="fo_age_range")
-        else:
-            fo_age_min, fo_age_max = None, None
-
-    with fo_col2:
-        use_region_override = st.checkbox("🌍 Region", value=False, key="fo_use_region")
-        if use_region_override:
-            fo_regions = st.multiselect("Region(s)",
-                ["europe","south america","north america","asia","africa","top 5","efl","championship","league one","league two"],
-                default=[], key="fo_regions")
-        else:
-            fo_regions = []
-
-        use_band_override = st.checkbox("🏷️ League Band", value=False, key="fo_use_band")
-        if use_band_override:
-            fo_bands = st.multiselect("Band(s)",
-                [1,2,3,4,5,6],
-                default=[],
-                key="fo_bands",
-                help="1=Top 5 EU · 2=Championship/Strong EU · 3=L1/Mid EU · 4=L2/Lower EU · 5=NL · 6=Amateur"
-            )
-        else:
-            fo_bands = []
-
-    with fo_col3:
-        use_value_override = st.checkbox("💰 Market Value", value=False, key="fo_use_value")
-        if use_value_override:
-            fo_value_max = st.number_input("Max value (£m)", min_value=0.0,
-                                            max_value=200.0, value=5.0, step=0.5,
-                                            key="fo_value_max")
-        else:
-            fo_value_max = None
-
-        use_style_override = st.checkbox("🎯 Style / Role", value=False, key="fo_use_style")
-        if use_style_override:
-            # Determine which style group to show based on position override or all
-            if fo_positions:
-                style_groups = list({POS_TO_STYLE_GROUP.get(p, "ATT") for p in fo_positions})
-            else:
-                style_groups = list(STYLE_OPTIONS_BY_ROLE.keys())
-            all_style_opts = []
-            for g in style_groups:
-                all_style_opts.extend(STYLE_OPTIONS_BY_ROLE.get(g, []))
-            all_style_opts = list(dict.fromkeys(all_style_opts))
-            fo_styles = st.multiselect("Style / Role", all_style_opts,
-                                        default=[], key="fo_styles")
-        else:
-            fo_styles = []
-
 if "scout_query_prefill" in st.session_state and not query:
     query = st.session_state.pop("scout_query_prefill")
 
@@ -2196,48 +2086,11 @@ if run and query.strip() and not player_df.empty and api_key_input:
     # Style override → forced role bucket name for scorer
     fo_override_role = None
     if fo_use_style and fo_styles:
-        fo_override_role = fo_styles[0]   # role bucket name matches _STYLE_BY_POS_GROUP values
+        fo_override_role = fo_styles[0]
         params.setdefault("key_style_traits", [])
         params["key_style_traits"] = list(set(
             params["key_style_traits"] + [s.lower() for s in fo_styles]
         ))
-
-    # ── Apply filter overrides on top of extracted params ────────────────────
-    if use_pos_override and fo_positions:
-        params["position_prefixes"] = fo_positions
-
-    if use_age_override and fo_age_min is not None:
-        params["min_age"] = fo_age_min
-        params["max_age"] = fo_age_max
-
-    if use_value_override and fo_value_max is not None:
-        params["max_market_value_m"] = fo_value_max
-
-    if use_region_override and fo_regions:
-        params["regions"] = fo_regions
-        params["leagues"] = None  # clear specific leagues if region override
-
-    if use_band_override and fo_bands:
-        # Translate band numbers to specific leagues
-        band_leagues = [
-            lg for lg, s in LEAGUE_STRENGTHS.items()
-            if get_league_band(lg) in fo_bands
-        ]
-        available_in_df = player_df["League"].dropna().unique().tolist() if not player_df.empty else []
-        params["leagues"] = [lg for lg in band_leagues if lg in available_in_df] or None
-
-    # Store style override for use in scoring
-    fo_override_role = None
-    if use_style_override and fo_styles:
-        # Map first selected style to role bucket name
-        fo_override_role = STYLE_TO_ROLE_BUCKET.get(fo_styles[0])
-        # Also add style as key_style_traits
-        params.setdefault("key_style_traits", [])
-        params["key_style_traits"] = list(set(
-            params["key_style_traits"] + [s.lower() for s in fo_styles]
-        ))
-    else:
-        fo_override_role = None
 
     # Show reference player card if found
     if reference_player_row is not None:
