@@ -998,8 +998,9 @@ def _proper_similarity_score(pool, ref_row, sim_metrics, full_df, league_weight=
 
 def _proper_role_fit_score(pool, role_metrics_dict, full_df, beta=0.0):
     """
-    Proper role fit — mirrors compute_weighted_role_score from app.py.
-    Per-league percentile × role metric weights, optional league-strength beta blend.
+    Per-league percentile × role metric weights.
+    Each player ranked vs ALL players of the same role_key in their own league
+    from the full database — not just vs the filtered candidate pool.
     """
     if not role_metrics_dict or pool.empty:
         return pd.Series(50.0, index=pool.index)
@@ -1009,15 +1010,24 @@ def _proper_role_fit_score(pool, role_metrics_dict, full_df, beta=0.0):
     wsum = np.zeros(len(scored))
 
     for met, w in role_metrics_dict.items():
-        pct_col = f"{met} Percentile"
-        if pct_col in scored.columns:
-            wsum += pd.to_numeric(scored[pct_col], errors="coerce").fillna(50.0).values * w
-        elif met in scored.columns and met in full_df.columns:
-            # Compute per-league percentile on the fly
-            league_pcts = scored.groupby("League")[met].transform(
-                lambda x: x.rank(pct=True) * 100.0
-            )
-            wsum += pd.to_numeric(league_pcts, errors="coerce").fillna(50.0).values * w
+        if met not in full_df.columns:
+            continue
+        met_pcts = np.full(len(scored), 50.0)
+        for lg in scored["League"].dropna().astype(str).unique():
+            cand_mask = scored["League"].astype(str) == lg
+            # Reference: same league in full_df (all positions — role peers)
+            ref_vals = pd.to_numeric(
+                full_df.loc[full_df["League"].astype(str) == lg, met],
+                errors="coerce"
+            ).dropna()
+            if ref_vals.empty:
+                continue
+            cand_vals = pd.to_numeric(scored.loc[cand_mask, met], errors="coerce")
+            pcts = cand_vals.apply(
+                lambda v: float((ref_vals <= v).mean() * 100) if pd.notna(v) else 50.0
+            ).values
+            met_pcts[np.where(cand_mask.values)[0]] = pcts
+        wsum += met_pcts * w
 
     player_score = wsum / total_w
 
@@ -1321,13 +1331,11 @@ def score_candidates(pool, params, team_profile, full_pool,
             if met in role_weights:
                 role_weights[met] = role_weights[met] * (1.0 + w * 0.3)
 
-    # ── Per-position-group-in-league percentile (the correct approach) ─────────
-    def _percentile_pos_in_league(df_scored, w_map):
-        """
-        Each candidate is ranked vs players of the SAME role_key in the SAME league.
-        E.g. a LW in England 2. is ranked vs all ATT players in England 2.
-        Falls back to full league if position group < 10 players.
-        """
+    # ── Per-position-group-in-league percentile ───────────────────────────────
+    # Each candidate ranked vs SAME position group in SAME league.
+    # Scores are percentile ranks (0-100) so a 90th pct player in Norway 1.
+    # scores the same as a 90th pct player in England 2. — fair cross-league comparison.
+    # Falls back to full league if position group has <10 players.
         acc  = np.zeros(len(df_scored))
         tot  = 0.0
         idx_arr = np.arange(len(df_scored))
