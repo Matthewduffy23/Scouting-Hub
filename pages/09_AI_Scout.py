@@ -933,9 +933,12 @@ def apply_realism_filter(scored, requesting_league, realism_level):
 
         return 1.0
 
+    if "_scout_score" not in scored.columns:
+        return scored
+
     multipliers = scored.apply(_pen, axis=1)
     scored = scored.copy()
-    scored["_scout_score"] = scored["_scout_score"] * multipliers
+    scored["_scout_score"] = scored["_scout_score"] * multipliers.values
     return scored.sort_values("_scout_score", ascending=False)
 
 def score_candidates(pool, params, team_profile, full_pool,
@@ -1186,6 +1189,45 @@ def generate_mini_report(client, player, params, team_profile, full_pool, fm_dat
 
     matched_role = str(player.get("_matched_role", ""))
 
+    # Build team style comparison block
+    team_style_block = ""
+    player_team_style = ""
+    if team_profile:
+        # Try to get the player's team stats from full_pool for comparison
+        player_team = str(player.get("Team", ""))
+        player_league_name = str(player.get("League", ""))
+        team_style_block = (
+            f"REQUESTING CLUB STYLE ({team_profile['team']}, {team_profile['league']}):\n"
+            f"  Press: PPDA {team_profile['ppda']} ({team_profile['press_style']})\n"
+            f"  Possession: {team_profile['possession']}% ({team_profile['poss_style']})\n"
+            f"  Directness: {team_profile['long_passes_p90']} long p90 ({team_profile['directness']})\n"
+            f"  Aerial: {team_profile['aerial_p90']} duels p90 ({team_profile['aerial_pct']}th pct)\n"
+            f"  xG p90: {team_profile['xg_p90']} (attack {team_profile['xg_pct']}th pct in league)"
+        )
+
+    # Build role requirements block — show the matched role's key metrics vs player's actual values
+    role_req_block = ""
+    if team_profile and role_key in ROLE_BUCKETS and matched_role:
+        role_metrics_dict = ROLE_BUCKETS[role_key].get(matched_role, {})
+        if role_metrics_dict:
+            req_lines = [f"ROLE REQUIREMENTS for '{matched_role}' (top metrics by weight):"]
+            for met, w in sorted(role_metrics_dict.items(), key=lambda x: -x[1])[:5]:
+                val = pd.to_numeric(player.get(met, np.nan), errors="coerce")
+                if pd.isna(val):
+                    req_lines.append(f"  {met} (weight {w:.0f}x): no data")
+                    continue
+                peer_vals = pd.to_numeric(full_pool[met], errors="coerce").dropna()
+                pct = int((peer_vals <= val).mean() * 100) if not peer_vals.empty else 50
+                req_lines.append(f"  {met} (weight {w:.0f}x): {val:.2f} [{pct}th pct]")
+            role_req_block = "\n".join(req_lines)
+    elif role_key in ROLE_BUCKETS:
+        # No matched role — show all roles for this position
+        role_lines = ["Available roles for this position:"]
+        for role_name, role_metrics in ROLE_BUCKETS[role_key].items():
+            top_mets = sorted(role_metrics.items(), key=lambda x: -x[1])[:3]
+            role_lines.append(f"  {role_name}: {', '.join(m for m,_ in top_mets)}")
+        role_req_block = "\n".join(role_lines)
+
     club_ctx = "No club context."
     if team_profile:
         player_band = get_league_band(str(player.get("League", "")))
@@ -1199,29 +1241,23 @@ def generate_mini_report(client, player, params, team_profile, full_pool, fm_dat
                     f"{team_profile['press_style']}, {team_profile['poss_style']}, "
                     f"{team_profile['directness']}.{realism_note}")
         if matched_role:
-            club_ctx += f" Best role fit for this club's style: {matched_role}."
+            club_ctx += f" Required role: {matched_role}."
 
     bio_section = f"\nCareer context: {bio_context}" if bio_context else ""
 
     prompt = f"""Write a professional scouting report. STRICT RULES:
 - EXACTLY 5 sentences. No more, no less.
 - Each sentence on its own line.
-- Sentence 1: Best statistical standout with exact value and percentile ({season} data).
-- Sentence 2: Second key strength or tactical fit to the club's style.
-- Sentence 3: Career context if available, otherwise physical/technical profile.
-- Sentence 4: ONE genuine risk or weakness — must be backed by a low stat value.
+- Sentence 1: How well this player fits the CLUB'S TACTICAL STYLE — compare their playing style to the club's press/possession/directness profile using specific stats.
+- Sentence 2: How well they match the ROLE REQUIREMENTS — reference the matched role and their specific role metric scores.
+- Sentence 3: Best standalone statistical standout with exact value and percentile ({season} data), or career context if bio available.
+- Sentence 4: ONE genuine risk or weakness backed by a low stat value (<40th pct). If no weakness exists, name the biggest tactical adjustment they'd need.
 - Sentence 5: SIGN / MONITOR / PASS with one reason. Flag level gap if significant.
 No headers, no bullet points, no markdown.
 
-PERCENTILE CONTEXT — USE THIS SCALE:
-90th+ = Elite for this level. Exceptional strength.
-80-89th = Strong. Clear asset.
-70-79th = Above average. Good for level.
-50-69th = Average to solid. Functional.
-30-49th = Below average. Area of concern.
-<30th = Weakness. Flag as risk.
-DO NOT describe 79th percentile or above as low or a concern. 79th = above average.
-Only flag stats below 40th percentile as genuine weaknesses.
+PERCENTILE CONTEXT:
+90th+ = Elite. 80-89th = Strong. 70-79th = Above average. 50-69th = Functional. <40th = Weakness.
+Never call 70th+ percentile a weakness or concern.
 
 Player: {player.get('Player','—')}
 Club: {player.get('Team','—')} ({player.get('League','—')}) — {season}
@@ -1229,19 +1265,23 @@ Age: {player.get('Age','—')} | Position: {player.get('Position','—')} | Foot
 Minutes: {player.get('Minutes played','—')} | Contract: {player.get('Contract expires','—')} | Value: {fmt_mv(player.get('Market value'))}
 {bio_section}
 
-Stats (percentile vs full database):
+All stats (percentile vs full database):
 {chr(10).join(stats_lines) if stats_lines else 'Unavailable.'}
 
 FM Physical: {fm_block}
 Transfermarkt: {tm_block}
-Club context: {club_ctx}
+
+{team_style_block}
+
 {role_req_block}
+
+Requesting club context: {club_ctx}
 Query: {params.get('_raw_query','—')}
 
 Write 5 sentences now, one per line:"""
 
     return claude_call(client, "claude-sonnet-4-6",
-                       [{"role": "user", "content": prompt}], max_tokens=320)
+                       [{"role": "user", "content": prompt}], max_tokens=380)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # STAT PILLS + FM PILLS
