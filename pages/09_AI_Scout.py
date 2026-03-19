@@ -223,8 +223,6 @@ ROLE_BUCKETS = {
             "Touches in box per 90":2},
         "Playmaker ATT": {"xA per 90":3,"Key passes per 90":1,"Passes to penalty area per 90":2},
         "Ball Carrier":  {"Dribbles per 90":4,"Successful dribbles, %":2,"Progressive runs per 90":3},
-        "Wide Creator":  {"Crosses per 90":2,"xA per 90":2,"Dribbles per 90":2,
-            "Progressive runs per 90":2},
     },
     "CF": {
         "Target Man CF":    {"Aerial duels per 90":3,"Aerial duels won, %":5},
@@ -1947,7 +1945,7 @@ _STYLE_BY_POS_GROUP = {
     "CB":  ["Ball Playing CB", "Wide CB", "Box Defender"],
     "FB":  ["Attacking FB", "Build Up FB", "Defensive FB"],
     "CM":  ["Deep Playmaker CM", "Advanced Playmaker CM", "Defensive CM", "Ball Carrying CM"],
-    "ATT": ["Goal Threat ATT", "Playmaker ATT", "Ball Carrier", "Wide Creator"],
+    "ATT": ["Goal Threat ATT", "Playmaker ATT", "Ball Carrier"],
     "CF":  ["Target Man CF", "Goal Threat CF", "Link Up CF"],
 }
 _POS_TO_STYLE_GROUP = {
@@ -2549,32 +2547,29 @@ Write the recommendation:"""}],
         def generate_scout_pdf(pdf_data, query, team_profile, summary_text=""):
             from reportlab.lib.pagesizes import A4
             from reportlab.lib import colors
-            from reportlab.lib.units import mm
+            from reportlab.lib.units import mm, cm
             from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
-                                            Table, TableStyle, HRFlowable, KeepTogether,
-                                            FrameBreak, PageTemplate, Frame, BaseDocTemplate)
+                                            Table, TableStyle, HRFlowable, KeepTogether)
             from reportlab.lib.styles import ParagraphStyle
             from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
-            from reportlab.pdfgen import canvas as rl_canvas
             import io, datetime
 
             W_PAGE, H_PAGE = A4
-            MARGIN = 16*mm
-            W = W_PAGE - 2*MARGIN
+            LM = RM = 18*mm
+            TM = 20*mm
+            BM = 14*mm
+            W = W_PAGE - LM - RM      # ~174mm usable
 
-            # ── Premium colour palette
-            BG       = colors.HexColor("#0a0e1a")   # near-black page
-            CARD     = colors.HexColor("#111827")   # card fill
-            BORDER   = colors.HexColor("#1f2937")   # subtle border
-            ACCENT   = colors.HexColor("#6d28d9")   # purple accent
-            ACCENT2  = colors.HexColor("#7c3aed")
-            GOLD     = colors.HexColor("#f59e0b")
-            WHITE    = colors.white
-            OFFWHITE = colors.HexColor("#f1f5f9")
-            MUTED    = colors.HexColor("#94a3b8")
-            DARK     = colors.HexColor("#0a0e1a")
+            # ── Colours
+            BG      = colors.HexColor("#0a0e1a")
+            CARD    = colors.HexColor("#111827")
+            BORDER  = colors.HexColor("#1f2937")
+            ACCENT  = colors.HexColor("#6d28d9")
+            MUTED   = colors.HexColor("#94a3b8")
+            OFF     = colors.HexColor("#f1f5f9")
+            WHITE   = colors.white
 
-            def _pct_color(p):
+            def pcol(p):
                 p = int(p or 0)
                 if p >= 88: return colors.HexColor("#4ade80")
                 if p >= 75: return colors.HexColor("#86efac")
@@ -2583,7 +2578,7 @@ Write the recommendation:"""}],
                 if p >= 30: return colors.HexColor("#f97316")
                 return colors.HexColor("#ef4444")
 
-            def _pct_label(p):
+            def plbl(p):
                 p = int(p or 0)
                 if p >= 88: return "Elite"
                 if p >= 75: return "Strong"
@@ -2592,137 +2587,117 @@ Write the recommendation:"""}],
                 if p >= 30: return "Below Avg"
                 return "Weak"
 
-            def S(name, fn="Helvetica", fs=9, tc=None, align=TA_LEFT,
-                  li=0, sb=0, sa=0, lead=None):
+            def phex(c):
+                try:    return c.hexval()
+                except: return "#86efac"
+
+            def P(name, txt, fn="Helvetica", fs=9, tc=None, align=TA_LEFT,
+                  li=0, sb=0, sa=0):
                 s = ParagraphStyle(name)
-                s.fontName  = fn
-                s.fontSize  = fs
-                s.leading   = lead or max(fs + 3, 11)
-                s.textColor = tc or OFFWHITE
-                s.alignment = align
-                s.leftIndent = li
+                s.fontName    = fn
+                s.fontSize    = fs
+                s.leading     = max(fs+3, 11)
+                s.textColor   = tc or OFF
+                s.alignment   = align
+                s.leftIndent  = li
                 s.spaceBefore = sb
                 s.spaceAfter  = sa
-                return s
+                return Paragraph(txt, s)
+
+            def HR(color=BORDER, thick=0.5, sb=3, sa=3):
+                return HRFlowable(width="100%", thickness=thick,
+                                  color=color, spaceBefore=sb, spaceAfter=sa)
 
             buf = io.BytesIO()
+            now = datetime.datetime.now().strftime("%d %b %Y  %H:%M")
 
-            # Custom page background
             def on_page(canv, doc):
                 canv.saveState()
                 canv.setFillColor(BG)
                 canv.rect(0, 0, W_PAGE, H_PAGE, fill=1, stroke=0)
-                # Top accent bar
                 canv.setFillColor(ACCENT)
-                canv.rect(0, H_PAGE - 8*mm, W_PAGE, 8*mm, fill=1, stroke=0)
-                # Bottom bar
+                canv.rect(0, H_PAGE-7*mm, W_PAGE, 7*mm, fill=1, stroke=0)
                 canv.setFillColor(BORDER)
-                canv.rect(0, 0, W_PAGE, 6*mm, fill=1, stroke=0)
-                # Page number
+                canv.rect(0, 0, W_PAGE, 5*mm, fill=1, stroke=0)
                 canv.setFillColor(MUTED)
                 canv.setFont("Helvetica", 7)
-                canv.drawCentredString(W_PAGE/2, 2*mm, f"Page {doc.page}")
+                canv.drawCentredString(W_PAGE/2, 1.5*mm, f"Page {doc.page}")
                 canv.restoreState()
 
             doc = SimpleDocTemplate(buf, pagesize=A4,
-                leftMargin=MARGIN, rightMargin=MARGIN,
-                topMargin=MARGIN + 10*mm, bottomMargin=12*mm,
+                leftMargin=LM, rightMargin=RM,
+                topMargin=TM, bottomMargin=BM,
                 onFirstPage=on_page, onLaterPages=on_page)
 
             story = []
-            now = datetime.datetime.now().strftime("%d %b %Y  %H:%M")
 
-            # ── COVER HEADER ──────────────────────────────────────────────────
-            # Title row
-            title_data = [[
-                Paragraph("SCOUTING REPORT", S("t1", fn="Helvetica-Bold", fs=22,
-                    tc=WHITE, lead=26)),
-                Paragraph(now, S("t2", fs=8, tc=MUTED, align=TA_RIGHT)),
-            ]]
-            title_tbl = Table(title_data, colWidths=[W*0.7, W*0.3])
-            title_tbl.setStyle(TableStyle([("VALIGN",(0,0),(-1,-1),"BOTTOM")]))
-            story.append(title_tbl)
-            story.append(HRFlowable(width="100%", thickness=1, color=ACCENT2,
-                                    spaceAfter=4, spaceBefore=4))
-
-            # Query + club context
-            story.append(Paragraph(f'<font color="#94a3b8">Query:</font>  {query}',
-                                   S("qry", fs=9, tc=OFFWHITE, lead=13)))
+            # ── Header
+            story.append(P("h1","SCOUTING REPORT",fn="Helvetica-Bold",fs=22,tc=WHITE,sb=0,sa=2))
+            story.append(P("h2", f'<font color="#94a3b8">{now}</font>', fs=8, tc=MUTED))
+            story.append(P("q", f'Query: <i>{query}</i>', fs=9, tc=OFF, sa=2))
             if team_profile:
                 tp = team_profile
-                story.append(Paragraph(
-                    f'<font color="#94a3b8">Club:</font>  '
-                    f'<b>{tp["team"]}</b>  ·  {tp["league"]}  ·  '
-                    f'{tp["press_style"]}  ·  {tp["poss_style"]}  ·  {tp["directness"]}  ·  '
-                    f'PPDA {tp["ppda"]} ({tp["ppda_pct"]}th pct)  ·  '
-                    f'Poss {tp["possession"]}% ({tp["possession_pct"]}th pct)  ·  '
+                story.append(P("club",
+                    f'<font color="#94a3b8">Club:</font> <b>{tp["team"]}</b> · {tp["league"]} · '
+                    f'{tp["press_style"]} · {tp["poss_style"]} · {tp["directness"]} · '
+                    f'PPDA {tp["ppda"]} ({tp["ppda_pct"]}th) · Poss {tp["possession"]}% · '
                     f'xG {tp["xg_p90"]} ({tp["xg_pct"]}th pct)',
-                    S("club", fs=8, tc=MUTED, lead=12)))
-            story.append(Spacer(1, 6))
+                    fs=8, tc=MUTED, sa=4))
+            story.append(HR(ACCENT, thick=1.5, sb=2, sa=6))
 
-            # ── PER-CANDIDATE ─────────────────────────────────────────────────
+            MNAMES = {
+                "xG per 90":"xG p90","Non-penalty goals per 90":"Goals p90",
+                "xA per 90":"xA p90","Dribbles per 90":"Dribbles p90",
+                "Passes per 90":"Passes p90","Shots per 90":"Shots p90",
+                "Touches in box per 90":"Box Touches","Progressive runs per 90":"Prog Runs",
+                "Accurate passes, %":"Pass Acc%","Progressive passes per 90":"Prog Passes",
+                "Aerial duels per 90":"Aerial Duels","Aerial duels won, %":"Aerial Win%",
+                "Defensive duels per 90":"Def Duels","Defensive duels won, %":"Def Win%",
+                "PAdj Interceptions":"PAdj Int","Crosses per 90":"Crosses p90",
+                "Key passes per 90":"Key Passes","Save rate, %":"Save Rate%",
+                "Prevented goals per 90":"Prev Goals","Exits per 90":"Exits p90",
+                "Forward passes per 90":"Fwd Passes","Accurate long passes, %":"Long Pass%",
+            }
+
             for d in pdf_data:
-                score_col = _pct_color(d["score"])
-                role_str  = d["matched_role"] or "—"
+                sc   = d["score"]
+                scol = pcol(sc)
 
-                # ── Candidate header bar
-                rank_name = Table([[
-                    Paragraph(f'<b>#{d["rank"]}</b>', S("rn", fn="Helvetica-Bold",
-                        fs=11, tc=ACCENT2, align=TA_LEFT)),
-                    Paragraph(f'<b>{d["name"]}</b>',  S("nm", fn="Helvetica-Bold",
-                        fs=15, tc=WHITE, lead=18)),
-                    Paragraph(f'<b>{d["score"]:.0f}</b><font size="9" color="#94a3b8">/100</font>',
-                              S("sc", fn="Helvetica-Bold", fs=15, tc=score_col,
-                                align=TA_RIGHT, lead=18)),
-                ]], colWidths=[W*0.07, W*0.73, W*0.20])
-                rank_name.setStyle(TableStyle([
-                    ("VALIGN",  (0,0), (-1,-1), "MIDDLE"),
-                    ("LINEABOVE", (0,0), (-1,0), 0.8, ACCENT),
-                    ("TOPPADDING",  (0,0), (-1,-1), 5),
-                    ("BOTTOMPADDING", (0,0), (-1,-1), 5),
-                ]))
-                story.append(KeepTogether([rank_name]))
+                # Candidate header — simple text, no table
+                story.append(HR(ACCENT, thick=0.8, sb=4, sa=3))
+                story.append(P("cname",
+                    f'<font color="#6d28d9"><b>#{d["rank"]}</b></font>  '
+                    f'<b><font size="14">{d["name"]}</font></b>'
+                    f'<font color="#94a3b8">  ·  Scout Score </font>'
+                    f'<b><font color="{phex(scol)}">{sc:.0f}</font></b>'
+                    f'<font color="#94a3b8">/100</font>',
+                    fs=12, tc=WHITE, fn="Helvetica-Bold", sb=0, sa=2))
 
-                # Meta line
-                meta_parts = [d["team"], d["league"], d["pos"],
-                               f'Age {d["age"]}', f'{d["foot"]} foot',
-                               f'{d["mins"]} mins', f'MV {d["mv"]}', d["season"]]
-                if d["tm"].get("value_str"): meta_parts.append(f'TM: {d["tm"]["value_str"]}')
-                if d["tm"].get("contract"):  meta_parts.append(f'Contract: {d["tm"]["contract"]}')
-                story.append(Paragraph(
-                    "  ·  ".join(str(x) for x in meta_parts if x and str(x) not in ("—","nan")),
-                    S("meta", fs=8, tc=MUTED, lead=12, sb=2)))
-                story.append(Paragraph(
-                    f'Role: <b>{role_str}</b>    {d["breakdown"]}',
-                    S("role", fs=8, tc=MUTED, lead=11, sa=4)))
+                meta = "  ·  ".join(str(x) for x in [
+                    d["team"], d["league"], d["pos"],
+                    f'Age {d["age"]}', f'{d["foot"]} foot',
+                    f'{d["mins"]} mins', f'MV {d["mv"]}', d["season"],
+                    (f'TM: {d["tm"]["value_str"]}' if d["tm"].get("value_str") else ""),
+                    (f'Contract: {d["tm"]["contract"]}' if d["tm"].get("contract") else ""),
+                ] if x and str(x) not in ("—","nan",""))
+                story.append(P("meta", meta, fs=8, tc=MUTED, sa=1))
+                story.append(P("role",
+                    f'<font color="#94a3b8">Role:</font> <b>{d["matched_role"] or "—"}</b>'
+                    + (f'    {d["breakdown"]}' if d["breakdown"] else ""),
+                    fs=8, tc=MUTED, sa=4))
 
-                # ── Stats grid (2 cols × 4 rows) ─────────────────────────────
+                # Stats — two-column via a single safe table
                 actual_pos = d["pos"].split(",")[0].strip().upper()
-                rk = POS_TO_ROLE_KEY.get(actual_pos, "ATT")
+                rk   = POS_TO_ROLE_KEY.get(actual_pos, "ATT")
                 ppos = actual_pos if actual_pos in POSITION_METRICS else next(
-                    (p for p in POSITION_METRICS if POS_TO_ROLE_KEY.get(p) == rk), "CF")
+                    (p for p in POSITION_METRICS if POS_TO_ROLE_KEY.get(p)==rk), "CF")
                 stat_cols = POSITION_METRICS.get(ppos, POSITION_METRICS["CF"])[:8]
 
-                MNAMES = {
-                    "xG per 90":"xG p90","Non-penalty goals per 90":"Goals p90",
-                    "xA per 90":"xA p90","Dribbles per 90":"Dribbles p90",
-                    "Passes per 90":"Passes p90","Shots per 90":"Shots p90",
-                    "Touches in box per 90":"Box Touches","Progressive runs per 90":"Prog Runs",
-                    "Accurate passes, %":"Pass Acc %","Progressive passes per 90":"Prog Passes",
-                    "Aerial duels per 90":"Aerial Duels","Aerial duels won, %":"Aerial Win %",
-                    "Defensive duels per 90":"Def Duels p90","Defensive duels won, %":"Def Win %",
-                    "PAdj Interceptions":"PAdj Int","Crosses per 90":"Crosses p90",
-                    "Key passes per 90":"Key Passes","Save rate, %":"Save Rate %",
-                    "Prevented goals per 90":"Prev Goals","Exits per 90":"Exits p90",
-                    "Forward passes per 90":"Fwd Passes","Accurate long passes, %":"Long Pass %",
-                }
-
-                stat_rows_left, stat_rows_right = [], []
+                rows = []
                 match = player_df[player_df["Player"].astype(str) == d["name"]]
                 if not match.empty:
                     prow = match.iloc[0]
                     pl   = str(prow.get("League",""))
-                    built = []
                     for m in stat_cols:
                         if m not in player_df.columns: continue
                         val = pd.to_numeric(prow.get(m), errors="coerce")
@@ -2731,143 +2706,128 @@ Write the recommendation:"""}],
                             player_df["Position"].astype(str).apply(
                                 lambda p: POS_TO_ROLE_KEY.get(
                                     p.split(",")[0].strip().upper(),"ATT")==rk))
-                        peers = pd.to_numeric(player_df.loc[rm, m], errors="coerce").dropna()
-                        if len(peers) < 10:
+                        peers = pd.to_numeric(player_df.loc[rm,m],errors="coerce").dropna()
+                        if len(peers)<10:
                             peers = pd.to_numeric(
-                                player_df.loc[player_df["League"].astype(str)==pl, m],
+                                player_df.loc[player_df["League"].astype(str)==pl,m],
                                 errors="coerce").dropna()
                         pct  = int((peers<=val).mean()*100) if not peers.empty else 50
-                        pc   = _pct_color(pct)
-                        plbl = _pct_label(pct)
-                        mname = MNAMES.get(m, m.replace(" per 90","").strip())
-                        built.append((mname, val, pct, pc, plbl))
+                        pc   = pcol(pct)
+                        rows.append((MNAMES.get(m,m.replace(" per 90","").strip()),
+                                     val, pct, pc))
 
-                    # Split into 2 columns
-                    half = (len(built)+1)//2
-                    for i, (mn, val, pct, pc, plbl) in enumerate(built):
-                        bar_w  = W*0.18
-                        filled = max(2, int(bar_w * pct / 100))
-                        row = [
-                            Paragraph(mn, S(f"sn{i}", fs=7.5, tc=MUTED)),
-                            Paragraph(f"<b>{val:.2f}</b>", S(f"sv{i}", fs=7.5,
-                                fn="Helvetica-Bold", tc=OFFWHITE)),
-                            Paragraph(f"<b>{pct}th</b>", S(f"sp{i}", fs=7.5,
-                                fn="Helvetica-Bold", tc=pc)),
-                            Paragraph(plbl, S(f"sl{i}", fs=7, tc=pc)),
-                        ]
-                        if i < half: stat_rows_left.append(row)
-                        else:        stat_rows_right.append(row)
+                if rows:
+                    half  = (len(rows)+1)//2
+                    left  = rows[:half]
+                    right = rows[half:]
+                    while len(right) < len(left):
+                        right.append(("","","",""))
 
-                if stat_rows_left or stat_rows_right:
-                    while len(stat_rows_right) < len(stat_rows_left):
-                        stat_rows_right.append([Paragraph("",S("e1",fs=7)),
-                                                Paragraph("",S("e2",fs=7)),
-                                                Paragraph("",S("e3",fs=7)),
-                                                Paragraph("",S("e4",fs=7))])
-                    combined = []
-                    # 9 cols: [name, val, pct, label, divider, name, val, pct, label]
-                    # Must sum to exactly W
-                    cw = [W*0.22, W*0.09, W*0.07, W*0.10,
-                          W*0.02,
-                          W*0.22, W*0.09, W*0.07, W*0.12]
-                    # verify sum ~= W (allow 1pt rounding)
-                    for l, r in zip(stat_rows_left, stat_rows_right):
-                        combined.append(l + [Paragraph("",S("div",fs=7))] + r)
-                    st_tbl = Table(combined, colWidths=cw)
-                    st_tbl.setStyle(TableStyle([
+                    def Ps(n,t,tc=None,fs=7.5,fn="Helvetica",align=TA_LEFT):
+                        s = ParagraphStyle(n)
+                        s.fontName=fn; s.fontSize=fs; s.leading=10
+                        s.textColor=tc or MUTED; s.alignment=align
+                        s.spaceBefore=0; s.spaceAfter=0
+                        s.leftIndent=0; s.rightIndent=0
+                        return Paragraph(str(t),s)
+
+                    tdata = []
+                    for (ln,lv,lp,lc),(rn,rv,rp,rc) in zip(left,right):
+                        lp_txt = f"{lp}th" if lp != "" else ""
+                        rp_txt = f"{rp}th" if rp != "" else ""
+                        lv_txt = f"{lv:.2f}" if lv != "" else ""
+                        rv_txt = f"{rv:.2f}" if rv != "" else ""
+                        tdata.append([
+                            Ps(f"ln{ln}", ln, tc=MUTED),
+                            Ps(f"lv{ln}", lv_txt, tc=OFF, fn="Helvetica-Bold"),
+                            Ps(f"lp{ln}", lp_txt, tc=lc if lc else MUTED,
+                               fn="Helvetica-Bold", align=TA_RIGHT),
+                            Ps(f"sp","", tc=MUTED),
+                            Ps(f"rn{rn}", rn, tc=MUTED),
+                            Ps(f"rv{rn}", rv_txt, tc=OFF, fn="Helvetica-Bold"),
+                            Ps(f"rp{rn}", rp_txt, tc=rc if rc else MUTED,
+                               fn="Helvetica-Bold", align=TA_RIGHT),
+                        ])
+
+                    # Fixed absolute widths — no fractions of W to avoid rounding issues
+                    COL = [48, 22, 20, 6, 48, 22, 20]  # pts, sum=186 < 494 (W~494pt)
+                    # Scale to fit W exactly
+                    scale = W / sum(COL)
+                    COL   = [c*scale for c in COL]
+
+                    st = Table(tdata, colWidths=COL)
+                    st.setStyle(TableStyle([
                         ("TOPPADDING",    (0,0),(-1,-1), 1),
                         ("BOTTOMPADDING", (0,0),(-1,-1), 1),
-                        ("LINEAFTER",     (3,0),(3,-1), 0.4, BORDER),
-                        ("BACKGROUND",    (0,0),(-1,-1), colors.HexColor("#111827")),
+                        ("LEFTPADDING",   (0,0),(-1,-1), 3),
+                        ("RIGHTPADDING",  (0,0),(-1,-1), 3),
+                        ("BACKGROUND",    (0,0),(-1,-1), CARD),
+                        ("LINEAFTER",     (2,0),(2,-1), 0.5, BORDER),
                     ]))
-                    story.append(st_tbl)
+                    story.append(st)
                     story.append(Spacer(1, 4))
 
-                # ── Role scores bar
+                # Role scores
                 if d["role_scores"]:
-                    rs_items = sorted(d["role_scores"].items(), key=lambda x:-x[1])[:4]
-                    if rs_items:
+                    rs = sorted(d["role_scores"].items(), key=lambda x:-x[1])[:4]
+                    if rs:
+                        n = len(rs)
                         rs_cells = []
-                        for rname, rscore in rs_items:
-                            rc = _pct_color(rscore)
-                            try:   rc_hex = rc.hexval()
-                            except: rc_hex = "#86efac"
-                            rs_cells.append(Paragraph(
-                                f'<font color="#94a3b8">{rname}</font>  '
-                                f'<b><font color="{rc_hex}">{rscore:.0f}</font></b>',
-                                S(f"rs_{id(rname)}", fs=8, lead=11)))
-                        n = len(rs_cells)
-                        cw_rs = [W/n]*n
-                        rs_tbl = Table([rs_cells], colWidths=cw_rs)
-                        rs_tbl.setStyle(TableStyle([
+                        for rname, rscore in rs:
+                            rc = pcol(rscore)
+                            rs_cells.append(
+                                Ps(f"rsc{rname}",
+                                   f'{rname}  <b><font color="{phex(rc)}">{rscore:.0f}</font></b>',
+                                   tc=MUTED, fs=8))
+                        COL_RS = [W/n]*n
+                        rtbl = Table([rs_cells], colWidths=COL_RS)
+                        rtbl.setStyle(TableStyle([
                             ("TOPPADDING",    (0,0),(-1,-1), 3),
                             ("BOTTOMPADDING", (0,0),(-1,-1), 3),
+                            ("LEFTPADDING",   (0,0),(-1,-1), 4),
+                            ("RIGHTPADDING",  (0,0),(-1,-1), 4),
                             ("BACKGROUND",    (0,0),(-1,-1), colors.HexColor("#0f1629")),
                             ("LINEABOVE",     (0,0),(-1,0), 0.3, BORDER),
-                            ("LINEBELOW",     (0,-1),(-1,-1), 0.3, BORDER),
                         ]))
-                        story.append(rs_tbl)
+                        story.append(rtbl)
                         story.append(Spacer(1, 4))
 
-                # ── FM physical ───────────────────────────────────────────────
+                # FM
                 if d["fm"]:
                     fm_parts = []
                     for attr in ["pace","acceleration","strength","jumping_reach","stamina"]:
                         if attr in d["fm"]:
                             v = int(d["fm"][attr])
-                            fc = _pct_color(v*5)  # /20 → /100
+                            fc = pcol(v*5)
                             fm_parts.append(
-                                f'<font color="#94a3b8">{attr.replace("_"," ").title()}</font> '
-                                f'<b><font color="{fc.hexval() if hasattr(fc,"hexval") else "#86efac"}">'
-                                f'{v}</font></b>/20')
+                                f'{attr.replace("_"," ").title()} '
+                                f'<b><font color="{phex(fc)}">{v}</font></b>/20')
                     if "height" in d["fm"]:
-                        fm_parts.append(f'<font color="#94a3b8">Height</font> {d["fm"]["height"]}cm')
+                        fm_parts.append(f'Height {d["fm"]["height"]}cm')
                     if fm_parts:
-                        fm_parts_safe = []
-                        for attr in ["pace","acceleration","strength","jumping_reach","stamina"]:
-                            if attr in d["fm"]:
-                                v = int(d["fm"][attr])
-                                fc = _pct_color(v*5)
-                                try:    fc_hex = fc.hexval()
-                                except: fc_hex = "#86efac"
-                                fm_parts_safe.append(
-                                    f'<font color="#94a3b8">{attr.replace("_"," ").title()}</font> '
-                                    f'<b><font color="{fc_hex}">{v}</font></b>/20')
-                        if "height" in d["fm"]:
-                            fm_parts_safe.append(f'<font color="#94a3b8">Height</font> {d["fm"]["height"]}cm')
-                        if fm_parts_safe:
-                            story.append(Paragraph("  ·  ".join(fm_parts_safe),
-                                                   S("fm", fs=8, tc=OFFWHITE, lead=11, sa=3)))
+                        story.append(P("fm","  ·  ".join(fm_parts),fs=8,tc=OFF,sa=2))
 
-                # ── Bio ───────────────────────────────────────────────────────
+                # Bio
                 if d["bio"]:
-                    story.append(Paragraph(d["bio"],
-                        S("bio", fn="Helvetica-Oblique", fs=8, tc=MUTED, lead=12, sb=2, sa=2)))
+                    story.append(P("bio",d["bio"],fn="Helvetica-Oblique",fs=8,tc=MUTED,sa=2))
 
-                # ── Scout report ──────────────────────────────────────────────
+                # Report sentences
                 if d["report"]:
-                    sentences = re.split(r"(?<=[.!?])\s+", d["report"].strip())
-                    sentences = [s.strip() for s in sentences if s.strip()][:5]
-                    for i, sent in enumerate(sentences):
-                        # First word label (S1/S2 etc from sentence structure)
-                        prefix_col = ACCENT2 if i == 0 else (
-                            GOLD if i == 3 else colors.HexColor("#60a5fa"))
-                        story.append(Paragraph(sent, S(f"rep{i}", fs=8.5, tc=OFFWHITE,
-                            lead=13, li=8, sb=1)))
-                    story.append(Spacer(1, 8))
+                    sents = re.split(r'(?<=[.!?])\s+', d["report"].strip())
+                    for sent in [s.strip() for s in sents if s.strip()][:5]:
+                        story.append(P("rep", sent, fs=8.5, tc=OFF, li=6, sa=1))
+                story.append(Spacer(1, 6))
 
-            # ── CHIEF SCOUT SUMMARY ───────────────────────────────────────────
+            # Chief Scout
             if summary_text:
-                story.append(HRFlowable(width="100%", thickness=1.5,
-                                        color=ACCENT, spaceBefore=4, spaceAfter=6))
-                story.append(Paragraph("CHIEF SCOUT RECOMMENDATION",
-                    S("csh", fn="Helvetica-Bold", fs=11, tc=ACCENT2, lead=15, sb=4)))
-                clean = re.sub(r"\*\*", "", summary_text)
-                for sent in re.split(r"(?<=[.!?])\s+", clean.strip()):
+                story.append(HR(ACCENT, thick=1.5, sb=4, sa=4))
+                story.append(P("csh","CHIEF SCOUT RECOMMENDATION",
+                    fn="Helvetica-Bold",fs=11,tc=colors.HexColor("#a78bfa"),sa=4))
+                clean = re.sub(r'\*\*','', summary_text)
+                for sent in re.split(r'(?<=[.!?])\s+', clean.strip()):
                     if sent.strip():
-                        story.append(Paragraph(sent.strip(),
-                            S("css", fn="Helvetica-Oblique", fs=9,
-                              tc=OFFWHITE, lead=13, sb=2)))
+                        story.append(P("css",sent.strip(),
+                            fn="Helvetica-Oblique",fs=9,tc=OFF,sa=2))
 
             doc.build(story)
             buf.seek(0)
