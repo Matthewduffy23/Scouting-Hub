@@ -627,31 +627,121 @@ def claude_call_with_search(client, prompt: str, system: str = "",
     return ""
 
 # ══════════════════════════════════════════════════════════════════════════════
+# REGION → LEAGUE MAPPING
+# ══════════════════════════════════════════════════════════════════════════════
+REGION_LEAGUES = {
+    "europe": [
+        "England 1.","England 2.","England 3.","England 4.","England 5.",
+        "Spain 1.","Spain 2.","Germany 1.","Germany 2.","Germany 3.",
+        "Italy 1.","Italy 2.","France 1.","France 2.","Portugal 1.","Portugal 2.",
+        "Netherlands 1.","Belgium 1.","Turkey 1.","Scotland 1.","Russia 1.",
+        "Greece 1.","Switzerland 1.","Austria 1.","Denmark 1.","Norway 1.",
+        "Sweden 1.","Czech 1.","Poland 1.","Croatia 1.","Serbia 1.",
+        "Ukraine 1.","Hungary 1.","Romania 1.","Slovakia 1.","Slovenia 1.",
+        "Bulgaria 1.","Finland 1.","Ireland 1.","Wales 1.","Northern Ireland 1.",
+        "Israel 1.","Cyprus 1.","Iceland 1.","Luxembourg 1.",
+    ],
+    "south america": [
+        "Brazil 1.","Brazil 2.","Argentina 1.","Colombia 1.","Chile 1.",
+        "Uruguay 1.","Ecuador 1.","Paraguay 1.","Peru 1.","Bolivia 1.","Venezuela 1.",
+    ],
+    "north america": [
+        "USA 1.","USA 2.","Mexico 1.","Canada 1.","Costa Rica 1.",
+    ],
+    "asia": [
+        "Japan 1.","Japan 2.","Korea 1.","Korea 2.","Saudi 1.","China 1.",
+        "UAE 1.","Qatar 1.","Uzbekistan 1.",
+    ],
+    "africa": [
+        "Morocco 1.","Egypt 1.","Algeria 1.","Tunisia 1.","Nigeria 1.",
+        "South Africa 1.",
+    ],
+    "top 5": [
+        "England 1.","Spain 1.","Germany 1.","Italy 1.","France 1.",
+    ],
+    "efl": ["England 2.","England 3.","England 4."],
+    "championship": ["England 2."],
+    "league one": ["England 3."],
+    "league two": ["England 4."],
+}
+
+def resolve_leagues(raw_leagues: list | None, regions: list | None,
+                    available_in_csv: list) -> list | None:
+    """
+    Convert region names and league names to actual Wyscout league strings.
+    Returns None (= no filter) if nothing specified.
+    """
+    if not raw_leagues and not regions:
+        return None
+
+    result = set()
+
+    for item in (raw_leagues or []):
+        item_lower = item.lower().strip()
+        # Check if it's a region keyword
+        if item_lower in REGION_LEAGUES:
+            result.update(REGION_LEAGUES[item_lower])
+        else:
+            # Treat as literal league name
+            result.add(item)
+
+    for region in (regions or []):
+        region_lower = region.lower().strip()
+        if region_lower in REGION_LEAGUES:
+            result.update(REGION_LEAGUES[region_lower])
+
+    if not result:
+        return None
+
+    # Only keep leagues that actually exist in the loaded CSVs
+    available_set = set(available_in_csv)
+    filtered = [lg for lg in result if lg in available_set]
+    return filtered if filtered else None
+
+# ══════════════════════════════════════════════════════════════════════════════
 # PARAMETER EXTRACTION
 # ══════════════════════════════════════════════════════════════════════════════
-def extract_parameters(client, query: str) -> dict:
+def extract_parameters(client, query: str, reference_player_block: str = "") -> dict:
+    ref_section = ""
+    if reference_player_block:
+        ref_section = f"""
+REFERENCE PLAYER DATA (found in CSV — use this to understand what style/metrics to search for):
+{reference_player_block}
+Use the reference player's strongest metrics (80th percentile+) to infer key_style_traits and priority_metrics.
+"""
     response = claude_call(
         client,
         model="claude-haiku-4-5-20251001",
-        max_tokens=600,
-        system="""Extract search parameters from a scout query and return ONLY valid JSON.
-Fields:
-{
-  "club": "Salford City",
-  "position_prefixes": ["CF"],
+        max_tokens=700,
+        system=f"""Extract search parameters from a scout query and return ONLY valid JSON.
+
+IMPORTANT LEAGUE RULES:
+- For specific leagues use Wyscout format with trailing dot: "England 2.", "Spain 1." etc.
+- For regions use these EXACT keywords in the "regions" field: "europe", "south america", "north america", "asia", "top 5", "efl", "championship", "league one", "league two"
+- "European leagues" → regions: ["europe"]
+- "South America" → regions: ["south america"]
+- "Europe or South America" → regions: ["europe", "south america"]
+- If no leagues/regions mentioned, set both to null
+{ref_section}
+Return this exact JSON structure:
+{{
+  "club": "Leicester City",
+  "club_league": "England 2.",
+  "position_prefixes": ["RW"],
   "max_age": 23,
   "min_age": null,
   "min_minutes": 500,
-  "leagues": ["England 4.", "England 3."],
-  "max_market_value_m": 1.0,
-  "foot": null,
-  "key_style_traits": ["target man","aerial"],
-  "physical_traits": ["tall","fast"],
-  "priority_metrics": ["xG per 90","Aerial duels won, %"],
-  "fetch_fminside": true,
-  "fetch_transfermarkt": true
-}
-Return ONLY the JSON, no markdown.""",
+  "leagues": null,
+  "regions": ["europe", "south america"],
+  "max_market_value_m": 5.0,
+  "foot": "left",
+  "key_style_traits": ["creative","playmaker","dribbler"],
+  "physical_traits": ["fast"],
+  "priority_metrics": ["xA per 90","Dribbles per 90","Key passes per 90"],
+  "fetch_fminside": false,
+  "fetch_transfermarkt": false
+}}
+Return ONLY the JSON, no markdown, no explanation.""",
         messages=[{"role": "user", "content": query}]
     )
     raw = re.sub(r"^```[a-z]*\n?", "", response.strip())
@@ -676,30 +766,97 @@ def _pos_matches(pos_str: str, wanted: list) -> bool:
     player_tokens = _pos_tokens(pos_str)
     return any(tok in wanted for tok in player_tokens)
 
-def filter_candidates(df: pd.DataFrame, params: dict) -> pd.DataFrame:
+def find_player_in_csv(name: str, df: pd.DataFrame) -> pd.Series | None:
+    """
+    Fuzzy-match a player name in the dataframe.
+    Returns the best-matching row or None.
+    """
+    if df.empty or "Player" not in df.columns:
+        return None
+    name_slug = _slug(name)
+    best_score, best_idx = 0.0, None
+    for idx, row in df.iterrows():
+        candidate = _slug(str(row.get("Player", "")))
+        score = _similar(name_slug, candidate)
+        # Also try surname-only match
+        surname_score = _similar(_slug(_surname(name)), _slug(_surname(str(row.get("Player","")))))
+        combined = max(score, surname_score * 0.9)
+        if combined > best_score:
+            best_score = combined
+            best_idx = idx
+    if best_score >= 0.55 and best_idx is not None:
+        return df.loc[best_idx]
+    return None
+
+def build_player_profile_block(player_row: pd.Series, full_df: pd.DataFrame,
+                                position_metrics: list) -> str:
+    """
+    Build a compact stat profile string for a named player,
+    showing their key metrics with percentile context.
+    Used to give Claude context when searching for 'similar to X'.
+    """
+    lines = [
+        f"Player: {player_row.get('Player','?')} | "
+        f"Team: {player_row.get('Team','?')} | "
+        f"League: {player_row.get('League','?')} | "
+        f"Position: {player_row.get('Position','?')} | "
+        f"Age: {player_row.get('Age','?')} | "
+        f"Foot: {player_row.get('Foot','?')}",
+        "Key stats (percentile vs full database):"
+    ]
+    for m in position_metrics:
+        if m not in full_df.columns:
+            continue
+        val = pd.to_numeric(player_row.get(m, np.nan), errors="coerce")
+        if pd.isna(val):
+            continue
+        pool = pd.to_numeric(full_df[m], errors="coerce").dropna()
+        pct = int((pool <= val).mean() * 100) if not pool.empty else 50
+        lines.append(f"  {m}: {val:.2f} ({pct}th pct)")
+    return "\n".join(lines)
+
+
     pool = df.copy()
     for col in ["Minutes played", "Age", "Market value"]:
         if col in pool.columns:
             pool[col] = pd.to_numeric(pool[col], errors="coerce")
+
+    # Position — exact token match with equivalence expansion
     wanted_raw = [p.upper().strip() for p in (params.get("position_prefixes") or [])]
     wanted = expand_positions(wanted_raw) if wanted_raw else []
     if wanted:
         pool = pool[pool["Position"].astype(str).apply(
             lambda p: _pos_matches(p, wanted))]
+
+    # Age
     if params.get("max_age"):
         pool = pool[pool["Age"] <= float(params["max_age"])]
     if params.get("min_age"):
         pool = pool[pool["Age"] >= float(params["min_age"])]
+
+    # Minutes
     min_mins = float(params.get("min_minutes") or 500)
     pool = pool[pool["Minutes played"] >= min_mins]
-    leagues = params.get("leagues")
-    if leagues:
-        pool = pool[pool["League"].isin(leagues)]
+
+    # Leagues — resolve regions + explicit leagues against what's in the CSV
+    available_leagues = pool["League"].dropna().unique().tolist() if "League" in pool.columns else []
+    resolved = resolve_leagues(
+        params.get("leagues"),
+        params.get("regions"),
+        available_leagues,
+    )
+    if resolved:
+        pool = pool[pool["League"].isin(resolved)]
+
+    # Foot
     if params.get("foot") and "Foot" in pool.columns:
         pool = pool[pool["Foot"].astype(str).str.lower().str.startswith(
             params["foot"][0].lower(), na=False)]
+
+    # Market value
     if params.get("max_market_value_m") and "Market value" in pool.columns:
         pool = pool[pool["Market value"] <= float(params["max_market_value_m"]) * 1_000_000]
+
     return pool
 
 def score_candidates(pool: pd.DataFrame, params: dict, team_profile: dict | None,
@@ -1160,14 +1317,57 @@ if run and query.strip() and not player_df.empty and api_key_input:
 
     client = anthropic.Anthropic(api_key=api_key_input)
 
-    # Step 1: Extract params
+    # Step 1: Detect reference player in query, look them up in CSV
+    reference_player_block = ""
+    reference_player_row = None
+
+    # Heuristic: look for patterns like "similar to X", "like X", "replace X", "X at Y"
+    ref_patterns = [
+        r"similar (?:to|player to)\s+([A-Z][a-zA-Záàâäéèêëíìîïóòôöúùûüñçşğ\-]+(?:\s+[A-Z][a-zA-Záàâäéèêëíìîïóòôöúùûüñçşğ\-]+)?)",
+        r"replace(?:ment for)?\s+([A-Z][a-zA-Záàâäéèêëíìîïóòôöúùûüñçşğ\-]+(?:\s+[A-Z][a-zA-Záàâäéèêëíìîïóòôöúùûüñçşğ\-]+)?)",
+        r"like\s+([A-Z][a-zA-Záàâäéèêëíìîïóòôöúùûüñçşğ\-]+(?:\s+[A-Z][a-zA-Záàâäéèêëíìîïóòôöúùûüñçşğ\-]+)?)",
+        r"([A-Z][a-zA-Záàâäéèêëíìîïóòôöúùûüñçşğ\-]+(?:\s+[A-Z][a-zA-Záàâäéèêëíìîïóòôöúùûüñçşğ\-]+)?)\s+at\s+[A-Z]",
+        r"current\s+\w+\s+([A-Z][a-zA-Záàâäéèêëíìîïóòôöúùûüñçşğ\-]+(?:\s+[A-Z][a-zA-Záàâäéèêëíìîïóòôöúùûüñçşğ\-]+)?)",
+    ]
+
+    if not player_df.empty:
+        for pattern in ref_patterns:
+            m = re.search(pattern, query)
+            if m:
+                candidate_name = m.group(1).strip()
+                # Skip common words that match pattern but aren't names
+                if candidate_name.lower() in ("the","a","an","their","this","that","my","our"):
+                    continue
+                found = find_player_in_csv(candidate_name, player_df)
+                if found is not None:
+                    pos = str(found.get("Position","CF"))
+                    rk = get_role_key(pos)
+                    ref_metrics = POSITION_METRICS.get(
+                        pos.split(",")[0].strip().upper(),
+                        POSITION_METRICS.get(rk, POSITION_METRICS["CF"])
+                    )
+                    reference_player_block = build_player_profile_block(found, player_df, ref_metrics)
+                    reference_player_row = found
+                    break
+
+    # Step 1b: Extract params — pass reference player stats if found
     with st.spinner("🧠 Reading your request..."):
-        params = extract_parameters(client, query)
+        params = extract_parameters(client, query, reference_player_block)
         params["_raw_query"] = query
 
-    if not params:
-        st.error("Couldn't parse the request. Try being more specific.")
-        st.stop()
+    # Show reference player card if found
+    if reference_player_row is not None:
+        ref_name = str(reference_player_row.get("Player","?"))
+        ref_team = str(reference_player_row.get("Team","?"))
+        ref_league = str(reference_player_row.get("League","?"))
+        ref_pos = str(reference_player_row.get("Position","?"))
+        ref_season = str(reference_player_row.get("_season","?"))
+        st.markdown(f"""
+<div class='info-box' style='border-color:#7c3aed;'>
+  🔍 <strong>Reference player found:</strong> {ref_name} · {ref_team} · {ref_league} · {ref_pos} · {ref_season}<br>
+  <span style='font-size:12px;color:#9fb0c8;'>Stats used to infer search profile — traits and priority metrics derived from their top percentile metrics.</span>
+</div>
+""", unsafe_allow_html=True)
 
     # Step 2: Club profile
     team_profile = None
@@ -1179,7 +1379,13 @@ if run and query.strip() and not player_df.empty and api_key_input:
     # Step 3: Club profile card
     if team_profile:
         with st.spinner(f"✍️ Generating {club_name} profile..."):
-            club_narrative = generate_club_narrative(client, team_profile, query)
+            club_narrative_raw = generate_club_narrative(client, team_profile, query)
+
+        # Split into sentences, render as short paragraphs, strip any markdown headers
+        club_narrative_raw = re.sub(r"^#+\s.*\n?", "", club_narrative_raw, flags=re.MULTILINE)
+        club_sentences = re.split(r'(?<=[.!?])\s+', club_narrative_raw.strip())
+        club_sentences = [s.strip() for s in club_sentences if s.strip()][:4]
+        club_narrative_html = "".join(f"<p style='margin:0 0 6px 0;'>{s}</p>" for s in club_sentences)
 
         st.markdown(f"""
 <div class='club-card'>
@@ -1219,7 +1425,7 @@ if run and query.strip() and not player_df.empty and api_key_input:
       <div class='rank' style='color:#9fb0c8'>years old</div>
     </div>
   </div>
-  <div class='report-text' style='margin-top:16px'>{club_narrative}</div>
+  <div class='report-text' style='margin-top:16px'>{club_narrative_html}</div>
 </div>
 """, unsafe_allow_html=True)
 
