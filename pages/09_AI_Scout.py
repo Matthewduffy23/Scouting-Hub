@@ -2039,43 +2039,47 @@ if run and query.strip() and not player_df.empty and api_key_input:
     # Heuristic: look for patterns like "similar to X", "like X", "replace X", "X at Y"
     ref_patterns = [
         r"similar (?:to|player to)\s+([A-Z][a-zA-Záàâäéèêëíìîïóòôöúùûüñçşğ\-]+(?:\s+[A-Z][a-zA-Záàâäéèêëíìîïóòôöúùûüñçşğ\-]+)?)",
-        r"replace(?:ment for)?\s+([A-Z][a-zA-Záàâäéèêëíìîïóòôöúùûüñçşğ\-]+(?:\s+[A-Z][a-zA-Záàâäéèêëíìîïóòôöúùûüñçşğ\-]+)?)",
+        r"replace(?:ment for)?\s+([A-Z][a-zA-Záàâäéèêëíìîïóòôöúùûüñçşğ\-]+(?:\s+[A-Z][a-zA-Záàâäéèêëíìîïóòôöúùûüñçşğ\-]+)?)(?:\s+at\s+[A-Z]|\s*,|\s*\.|\s+u\d|\s+under|\s*$)",
         r"like\s+([A-Z][a-zA-Záàâäéèêëíìîïóòôöúùûüñçşğ\-]+(?:\s+[A-Z][a-zA-Záàâäéèêëíìîïóòôöúùûüñçşğ\-]+)?)",
-        r"([A-Z][a-zA-Záàâäéèêëíìîïóòôöúùûüñçşğ\-]+(?:\s+[A-Z][a-zA-Záàâäéèêëíìîïóòôöúùûüñçşğ\-]+)?)\s+at\s+[A-Z]",
+        r"([A-Z][a-zA-Záàâäéèêëíìîïóòôöúùûüñçşğ\-]{3,}(?:\s+[A-Z][a-zA-Záàâäéèêëíìîïóòôöúùûüñçşğ\-]+)?)\s+at\s+([A-Z][a-zA-Z\s]+?)(?:\s+in\s|\s*,|\s*\.|\s*$)",
         r"current\s+\w+\s+([A-Z][a-zA-Záàâäéèêëíìîïóòôöúùûüñçşğ\-]+(?:\s+[A-Z][a-zA-Záàâäéèêëíìîïóòôöúùûüñçşğ\-]+)?)",
     ]
     _SKIP_NAMES = {"the","a","an","their","this","that","my","our","hearts","celtic",
                    "rangers","united","city","town","athletic","rovers","wanderers"}
 
-    # Extract team hint from query — used to scope player name matching
-    # Looks for "for/at/from TEAM" or "TEAM player/in" patterns
+    # Extract team hint — look for "at TEAM" or "for TEAM" patterns
     _team_hint = ""
-    _team_patterns = [
-        r"(?:for|at|from)\s+([A-Z][a-zA-Z\s]+?)(?:\s+in\s|\s+player|\s+[A-Z]{2,}|$)",
-        r"([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\s+(?:in\s+Scotland|in\s+England|in\s+Spain|in\s+Germany|in\s+France|in\s+Italy)",
-        r"replacement\s+for\s+\S+\.\s+([A-Z][a-zA-Z]+)",
-    ]
-    for _tp in _team_patterns:
-        _tm = re.search(_tp, query)
-        if _tm:
-            _team_hint = _tm.group(1).strip()
-            break
-    # Also use club from params if Haiku extracted it
-    # (will be set later, so this is just the pre-extraction hint)
+    # "NAME at Hearts", "replacement for Kyziridis at Hearts"
+    _at_match = re.search(
+        r"\bat\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\b", query)
+    if _at_match:
+        _team_hint = _at_match.group(1).strip()
+    # "for Hearts in Scotland" — only if no "at" found
+    if not _team_hint:
+        _for_match = re.search(
+            r"\bfor\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\s+in\s+[A-Z]", query)
+        if _for_match:
+            _team_hint = _for_match.group(1).strip()
 
     if not player_df.empty:
         for pattern in ref_patterns:
             m = re.search(pattern, query)
             if m:
                 candidate_name = m.group(1).strip()
-                # Must be at least 4 chars and not a common word
                 if len(candidate_name) < 4:
                     continue
                 if candidate_name.lower() in _SKIP_NAMES:
                     continue
-                # Skip if it's just an initial + dot (e.g. "C.")
                 if re.match(r'^[A-Z]\.$', candidate_name):
                     continue
+                # For "NAME at TEAM" pattern (group 2 is the team)
+                if m.lastindex and m.lastindex >= 2:
+                    try:
+                        team_from_pattern = m.group(2).strip()
+                        if team_from_pattern and len(team_from_pattern) > 2:
+                            _team_hint = _team_hint or team_from_pattern
+                    except IndexError:
+                        pass
                 found = find_player_in_csv(candidate_name, player_df, team_hint=_team_hint)
                 if found is not None:
                     pos = str(found.get("Position","CF"))
@@ -2761,9 +2765,12 @@ Write the recommendation:"""}],
                                                 Paragraph("",S("e3",fs=7)),
                                                 Paragraph("",S("e4",fs=7))])
                     combined = []
-                    cw = [W*0.19, W*0.09, W*0.07, W*0.09,
-                          W*0.01,
-                          W*0.19, W*0.09, W*0.07, W*0.09]
+                    # 9 cols: [name, val, pct, label, divider, name, val, pct, label]
+                    # Must sum to exactly W
+                    cw = [W*0.22, W*0.09, W*0.07, W*0.10,
+                          W*0.02,
+                          W*0.22, W*0.09, W*0.07, W*0.12]
+                    # verify sum ~= W (allow 1pt rounding)
                     for l, r in zip(stat_rows_left, stat_rows_right):
                         combined.append(l + [Paragraph("",S("div",fs=7))] + r)
                     st_tbl = Table(combined, colWidths=cw)
@@ -2772,7 +2779,6 @@ Write the recommendation:"""}],
                         ("BOTTOMPADDING", (0,0),(-1,-1), 1),
                         ("LINEAFTER",     (3,0),(3,-1), 0.4, BORDER),
                         ("BACKGROUND",    (0,0),(-1,-1), colors.HexColor("#111827")),
-                        ("ROUNDEDCORNERS", [4]),
                     ]))
                     story.append(st_tbl)
                     story.append(Spacer(1, 4))
