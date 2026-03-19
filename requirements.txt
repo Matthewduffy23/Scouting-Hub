@@ -8,7 +8,7 @@ unicodedata2
 requests
 adjustText
 anthropic
-
+reportlab
 
 
 
