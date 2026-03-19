@@ -246,22 +246,10 @@ POS_TO_ROLE_KEY = {
     "CF":"CF",
 }
 
-# Equivalence groups — searching for any member expands to the full group
-# LW, LAMF, LWF are functionally the same attacking role
-POSITION_EQUIVALENCE = {
-    "LW":   ["LW","LAMF","LWF"],
-    "LAMF": ["LW","LAMF","LWF"],
-    "LWF":  ["LW","LAMF","LWF"],
-    "RW":   ["RW","RAMF","RWF"],
-    "RAMF": ["RW","RAMF","RWF"],
-    "RWF":  ["RW","RAMF","RWF"],
-    "AMF":  ["AMF","LAMF","RAMF"],
-    "CMF":  ["LCMF","RCMF","CMF"],
-    "LCMF": ["LCMF","RCMF","CMF"],
-    "RCMF": ["LCMF","RCMF","CMF"],
-    "DMF":  ["DMF","LDMF","RDMF"],
-    "LDMF": ["DMF","LDMF","RDMF"],
-    "RDMF": ["DMF","LDMF","RDMF"],
+# Strict position groups — used for SCORING only (grouping peers), NOT for filtering expansion
+# Filtering is always strict: CF query = CF players only, RW query = RW players only
+POS_SCORE_GROUP = {
+    "GK":   ["GK"],
     "CB":   ["CB","LCB","RCB"],
     "LCB":  ["CB","LCB","RCB"],
     "RCB":  ["CB","LCB","RCB"],
@@ -269,14 +257,31 @@ POSITION_EQUIVALENCE = {
     "LWB":  ["LB","LWB"],
     "RB":   ["RB","RWB"],
     "RWB":  ["RB","RWB"],
+    "DMF":  ["DMF","LDMF","RDMF"],
+    "LDMF": ["DMF","LDMF","RDMF"],
+    "RDMF": ["DMF","LDMF","RDMF"],
+    "CMF":  ["CMF","LCMF","RCMF"],
+    "LCMF": ["CMF","LCMF","RCMF"],
+    "RCMF": ["CMF","LCMF","RCMF"],
+    "AMF":  ["AMF","LAMF","RAMF"],
+    "LAMF": ["AMF","LAMF","RAMF"],
+    "RAMF": ["AMF","LAMF","RAMF"],
+    "LW":   ["LW","LWF","LAMF"],
+    "LWF":  ["LW","LWF","LAMF"],
+    "RW":   ["RW","RWF","RAMF"],
+    "RWF":  ["RW","RWF","RAMF"],
+    "CF":   ["CF"],
 }
 
 def expand_positions(wanted: list) -> list:
-    """Expand each requested position to its equivalence group."""
+    """
+    Expand a position list for DISPLAY and peer-group scoring only.
+    For filtering, use the wanted list directly — no expansion.
+    """
     expanded = []
     for p in wanted:
-        expanded.extend(POSITION_EQUIVALENCE.get(p.upper(), [p.upper()]))
-    return list(dict.fromkeys(expanded))  # deduplicate, preserve order
+        expanded.extend(POS_SCORE_GROUP.get(p.upper(), [p.upper()]))
+    return list(dict.fromkeys(expanded))
 
 def get_role_key(position: str) -> str:
     tok = str(position).split(",")[0].strip().upper()
@@ -797,13 +802,17 @@ def _pos_tokens(pos_str: str) -> list:
     """Split 'LW, LAMF, AMF' into ['LW','LAMF','AMF'] — primary token first."""
     return [t.strip().upper() for t in re.split(r"[,/\s]+", str(pos_str)) if t.strip()]
 
-def _pos_matches(pos_str: str, wanted: list) -> bool:
+def _pos_matches_strict(pos_str: str, wanted: list) -> bool:
     """
-    Exact token match only — 'LW' will NOT match 'LWB'.
-    A player qualifies if ANY of their listed position tokens is in the wanted set.
+    Strict primary-position match.
+    Only the FIRST position token is checked — e.g. a player listed as 'CF, AMF'
+    is a CF and will only appear in CF searches.
+    No equivalence expansion — CF stays CF, RW stays RW.
     """
-    player_tokens = _pos_tokens(pos_str)
-    return any(tok in wanted for tok in player_tokens)
+    tokens = _pos_tokens(pos_str)
+    if not tokens:
+        return False
+    return tokens[0] in wanted
 
 def find_player_in_csv(name: str, df: pd.DataFrame):
     """
@@ -861,12 +870,11 @@ def filter_candidates(df, params):
         if col in pool.columns:
             pool[col] = pd.to_numeric(pool[col], errors="coerce")
 
-    # Position — exact token match with equivalence expansion
+    # Position — strict primary-position match, no expansion
     wanted_raw = [p.upper().strip() for p in (params.get("position_prefixes") or [])]
-    wanted = expand_positions(wanted_raw) if wanted_raw else []
-    if wanted:
+    if wanted_raw:
         pool = pool[pool["Position"].astype(str).apply(
-            lambda p: _pos_matches(p, wanted))]
+            lambda p: _pos_matches_strict(p, wanted_raw))]
 
     # Age
     if params.get("max_age"):
@@ -2260,8 +2268,7 @@ if run and query.strip() and not player_df.empty and api_key_input:
     top_candidates = scored.head(top_n).copy()
     leagues_str = ", ".join(params.get("leagues") or ["all loaded leagues"])
     wanted_raw = [p.upper() for p in (params.get("position_prefixes") or [])]
-    expanded = expand_positions(wanted_raw)
-    pos_str  = " + ".join(expanded) if expanded else "all positions"
+    pos_str  = " + ".join(wanted_raw) if wanted_raw else "all positions"
     modes_str   = " · ".join(active_mode_labels) if active_mode_labels else "Top performers"
 
     with st.expander(f"ℹ️ Search details — {len(scored):,} candidates · {pos_str} · {realism_level} realism", expanded=False):
