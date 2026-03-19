@@ -1,11 +1,19 @@
 # 06_AI_Scout.py — AI Scout Assistant
-# Drop this file into your /pages/ folder alongside your other position pages.
-# Requires: pip install anthropic
+# Original dark card layout for Top 3 · Simple table for candidates 4-10
+# New features vs original:
+#   - Season detection (WORLDJUNE25 = 2024/25, else 2025/26)
+#   - Role scores calculated and shown per candidate
+#   - League realism bands (no PL suggestions for League Two players)
+#   - Rate-limit safe: sequential calls with small delays
+#   - Bio search (Sonnet + web) for top 3 only
+#   - Transfermarkt + FMInside for top 3 only
 
 import os
 import re
 import io
 import json
+import time
+import glob
 import unicodedata
 import requests
 
@@ -13,7 +21,9 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-# ── Anthropic ──────────────────────────────────────────────────────────────────
+from pathlib import Path
+from difflib import SequenceMatcher
+
 try:
     import anthropic
     ANTHROPIC_AVAILABLE = True
@@ -26,7 +36,7 @@ except ImportError:
 st.set_page_config(page_title="AI Scout", layout="wide")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CSS  — matches your existing dark theme
+# CSS — original dark theme
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("""
 <style>
@@ -34,15 +44,12 @@ st.markdown("""
 .stApp{background:var(--bg);}
 .block-container{max-width:1100px;padding-top:40px;}
 
-/* page title */
 .scout-title{font-weight:900;font-size:clamp(30px,4vw,46px);color:var(--text);margin:0;}
 .scout-sub{color:var(--muted);margin:4px 0 28px 0;font-size:15px;}
-
-/* search box label */
 .search-label{color:var(--muted);font-size:13px;font-weight:600;
   letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px;}
 
-/* club profile card */
+/* club card */
 .club-card{background:var(--card);border:1px solid var(--stroke);border-radius:16px;
   padding:20px 24px;margin:0 0 28px 0;}
 .club-card h3{color:var(--text);font-size:18px;font-weight:800;margin:0 0 4px 0;}
@@ -69,11 +76,21 @@ st.markdown("""
 .report-text{color:#cbd5e1;font-size:14px;line-height:1.7;
   border-left:3px solid var(--accent);padding-left:14px;margin-top:10px;}
 
+/* role score pills */
+.role-row{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px 0;}
+.role-pill{border-radius:8px;padding:4px 10px;font-size:12px;font-weight:700;
+  color:#0b0d12;display:inline-block;}
+
 /* fm badge */
 .fm-row{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0;}
 .fm-pill{background:#0f3460;border:1px solid #1e4d8c;border-radius:6px;
   padding:4px 10px;font-size:12px;color:#93c5fd;}
 .fm-pill span{font-weight:700;}
+
+/* season tag */
+.season-tag{display:inline-block;background:#1a2236;border:1px solid #2d3f5e;
+  border-radius:6px;padding:2px 8px;font-size:11px;color:#60a5fa;
+  font-weight:700;margin-left:8px;vertical-align:middle;}
 
 /* warning / info */
 .warn-box{background:#1c1208;border:1px solid #92400e;border-radius:10px;
@@ -82,6 +99,15 @@ st.markdown("""
   padding:12px 16px;color:#93c5fd;font-size:13px;margin-bottom:16px;}
 </style>
 """, unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SEASON DETECTION
+# ══════════════════════════════════════════════════════════════════════════════
+def detect_season(filename: str) -> str:
+    fn = str(filename).upper()
+    if "JUNE25" in fn or "JUN25" in fn:
+        return "2024/25"
+    return "2025/26"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CONSTANTS
@@ -93,32 +119,44 @@ LEAGUE_STRENGTHS = {
     'Croatia 1.':68.43,'Germany 2.':68.04,'Japan 1.':67.84,'Switzerland 1.':67.45,'Spain 2.':67.06,
     'Norway 1.':66.67,'Mexico 1.':66.47,'Sweden 1.':66.27,'Colombia 1.':65.88,'Czech 1.':65.29,
     'Ecuador 1.':65.29,'Greece 1.':64.12,'Saudi 1.':64.12,'Italy 2.':63.53,'Hungary 1.':63.53,
-    'Austria 1.':63.33,'Morocco 1.':63.14,'Korea 1.':62.75,'Paraguay 1.':62.55,'France 2.':64.00,
-    'England 3.':61.96,'Romania 1.':61.76,'Scotland 1.':61.76,'Algeria 1.':61.57,'Uruguay 1.':60.39,
-    'Chile 1.':59.80,'Egypt 1.':59.22,'Israel 1.':58.43,'Brazil 2.':58.04,'Slovenia 1.':57.45,
-    'Bolivia 1.':57.25,'Slovakia 1.':56.47,'Azerbaijan 1.':56.47,'South Africa 1.':56.27,
-    'UAE 1.':55.49,'Costa Rica 1.':54.90,'Peru 1.':54.90,'Germany 3.':54.51,'Ukraine 1.':54.31,
-    'Spain 3.':54.31,'Portugal 2.':53.14,'Bulgaria 1.':53.14,'Australia 1.':52.75,
-    'Serbia 1.':52.16,'Albania 1.':51.96,'Bosnia 1.':51.76,'Kosovo 1.':51.37,
-    'Japan 2.':50.98,'England 4.':50.78,'Ireland 1.':50.59,'Russia 1.':62.41,
-    'Kazakhstan 1.':50.39,'Nigeria 1.':50.00,'France 3.':49.61,'Tunisia 1.':49.22,
-    'Venezuela 1.':48.63,'Belgium 2.':48.43,'Finland 1.':48.43,'Armenia 1.':47.84,
-    'Georgia 1.':47.65,'Switzerland 2.':46.47,'Qatar 1.':46.27,'Uzbekistan 1.':46.27,
-    'Poland 2.':46.27,'Iceland 1.':46.08,'Norway 2.':45.88,'Sweden 2.':45.69,
-    'North Macedonia 1.':44.71,'Turkey 2.':44.51,'Korea 2.':43.53,'Czech 2.':43.33,
-    'Brazil 3.':43.14,'Lithuania 1.':42.35,'Netherlands 2.':42.16,'Malta 1.':41.96,
-    'Italy 3.':45.00,'Denmark 2.':40.39,'Moldova 1.':40.39,'USA 2.':40.00,
-    'Latvia 1.':40.00,'Montenegro 1.':39.80,'Scotland 2.':38.63,'Canada 1.':38.24,
-    'Austria 2.':38.24,'Israel 2.':38.04,'England 7.':37.25,'Germany 4.':35.29,
-    'Portugal 3.':35.29,'England 5.':33.33,'Estonia 1.':40.00,'England 9.':31.37,
-    'Northern Ireland 1.':30.98,'Serbia 2.':30.39,'Denmark 3.':29.41,'Sweden 3.':29.41,
-    'Slovenia 2.':28.82,'Slovakia 2.':28.24,'Greece 2.':27.06,'Wales 1.':26.67,
-    'USA 3.':22.55,'Scotland 3.':20.00,'England 6.':16.08,'England 8.':15.69,
-    'England 10.':3.92,'Estonia 2.':3.00,'Ireland 2.':10.00,'Faroe Islands 1.':35.02,
-    'Cyprus 1.':60.00,
+    'Austria 1.':63.33,'Morocco 1.':63.14,'Korea 1.':62.75,'France 2.':64.00,
+    'England 3.':61.96,'Romania 1.':61.76,'Scotland 1.':61.76,'Uruguay 1.':60.39,
+    'Chile 1.':59.80,'Israel 1.':58.43,'Brazil 2.':58.04,'Slovenia 1.':57.45,
+    'Slovakia 1.':56.47,'Germany 3.':54.51,'Ukraine 1.':54.31,'Portugal 2.':53.14,
+    'Serbia 1.':52.16,'Japan 2.':50.98,'England 4.':50.78,'Ireland 1.':50.59,
+    'Russia 1.':62.41,'France 3.':49.61,'Belgium 2.':48.43,'Finland 1.':48.43,
+    'Switzerland 2.':46.47,'Norway 2.':45.88,'Sweden 2.':45.69,'Turkey 2.':44.51,
+    'Czech 2.':43.33,'Netherlands 2.':42.16,'Italy 3.':45.00,'Denmark 2.':40.39,
+    'Scotland 2.':38.63,'England 7.':37.25,'Germany 4.':35.29,'Portugal 3.':35.29,
+    'England 5.':33.33,'England 9.':31.37,'Northern Ireland 1.':30.98,'Denmark 3.':29.41,
+    'Wales 1.':26.67,'Scotland 3.':20.00,'England 6.':16.08,'England 8.':15.69,
+    'England 10.':3.92,'Cyprus 1.':60.00,
 }
 
-# Key metrics per position
+# League band: used for realism checks
+def get_league_band(league: str) -> int:
+    s = LEAGUE_STRENGTHS.get(str(league).strip(), 40.0)
+    if s >= 83:  return 1   # Big 5 (PL, La Liga, Bundesliga, Serie A, Ligue 1)
+    if s >= 70:  return 2   # Championship, strong European (Eredivisie, Pro League, Primeira Liga)
+    if s >= 60:  return 3   # League One, mid-European
+    if s >= 50:  return 4   # League Two, lower European
+    if s >= 33:  return 5   # National League, England 5-7
+    return 6                # Semi-pro / amateur
+
+BAND_LABELS = {
+    1: "Top 5 European",
+    2: "Championship / Strong European",
+    3: "League One / Mid-European",
+    4: "League Two / Lower European",
+    5: "National League / Non-League",
+    6: "Amateur / Youth",
+}
+
+# Realistic next-step: player can move up 1 band max
+def realistic_destination_bands(player_league: str) -> list:
+    b = get_league_band(player_league)
+    return [max(1, b - 1), b]  # one step up or same level
+
 POSITION_METRICS = {
     "CF": ["Non-penalty goals per 90","xG per 90","Shots per 90","Touches in box per 90",
            "Dribbles per 90","Progressive runs per 90","Aerial duels per 90",
@@ -147,24 +185,116 @@ POSITION_METRICS = {
     "LB":  ["Crosses per 90","xA per 90","Progressive runs per 90","Dribbles per 90",
             "Defensive duels per 90","Aerial duels won, %","Passes per 90",
             "Accurate passes, %","Touches in box per 90","PAdj Interceptions"],
+    "GK":  ["Save rate, %","Prevented goals per 90","Exits per 90",
+            "Accurate long passes, %","Passes per 90"],
 }
 
-# FM physical attributes we'll look for
-FM_PHYSICAL_ATTRS = ["pace","acceleration","strength","jumping_reach","stamina",
-                      "work_rate","natural_fitness","height"]
+# Role buckets for scoring
+ROLE_BUCKETS = {
+    "CB": {
+        "Ball Playing CB": {"Passes per 90":2,"Accurate passes, %":2,"Forward passes per 90":2,
+            "Accurate forward passes, %":2,"Progressive passes per 90":2,
+            "Progressive runs per 90":1.5,"Dribbles per 90":1.5,"Accurate long passes, %":1},
+        "Wide CB":         {"Defensive duels per 90":1.5,"Defensive duels won, %":2,
+            "Dribbles per 90":2,"Progressive passes per 90":1,"Progressive runs per 90":2},
+        "Box Defender":    {"Aerial duels per 90":1,"Aerial duels won, %":3,
+            "PAdj Interceptions":2,"Shots blocked per 90":1,"Defensive duels won, %":4},
+    },
+    "FB": {
+        "Build Up FB":   {"Passes per 90":2,"Accurate passes, %":1.5,"Progressive passes per 90":2.5,
+            "Progressive runs per 90":2,"Dribbles per 90":2,"xA per 90":1},
+        "Attacking FB":  {"Crosses per 90":2,"Dribbles per 90":3.5,"Touches in box per 90":2,
+            "Progressive runs per 90":3,"xA per 90":3},
+        "Defensive FB":  {"Aerial duels won, %":1.5,"Defensive duels per 90":2,
+            "PAdj Interceptions":3,"Defensive duels won, %":3.5},
+    },
+    "CM": {
+        "Deep Playmaker":     {"Passes per 90":1,"Accurate passes, %":1,"Progressive passes per 90":3,
+            "Passes to final third per 90":2.5,"Accurate long passes, %":1},
+        "Advanced Playmaker": {"xA per 90":4,"Key passes per 90":1,"Smart passes per 90":2,
+            "Passes to penalty area per 90":2},
+        "Defensive CM":       {"Defensive duels per 90":4,"Defensive duels won, %":4,
+            "PAdj Interceptions":3,"Aerial duels won, %":1},
+        "Ball Carrying CM":   {"Dribbles per 90":4,"Successful dribbles, %":2,
+            "Progressive runs per 90":3,"Accelerations per 90":3},
+    },
+    "ATT": {
+        "Goal Threat":   {"xG per 90":3,"Non-penalty goals per 90":3,"Shots per 90":2,
+            "Touches in box per 90":2},
+        "Playmaker ATT": {"xA per 90":3,"Key passes per 90":1,"Passes to penalty area per 90":2},
+        "Ball Carrier":  {"Dribbles per 90":4,"Successful dribbles, %":2,"Progressive runs per 90":3},
+    },
+    "CF": {
+        "Target Man":    {"Aerial duels per 90":3,"Aerial duels won, %":5},
+        "Goal Threat CF":{"Non-penalty goals per 90":3,"Shots per 90":1.5,"xG per 90":3,
+            "Touches in box per 90":1},
+        "Link Up CF":    {"Passes per 90":2,"xA per 90":3,"Dribbles per 90":2,
+            "Progressive runs per 90":2,"Accurate passes, %":1.5},
+    },
+    "GK": {
+        "Shot Stopper":   {"Prevented goals per 90":3,"Save rate, %":1},
+        "Ball Playing GK":{"Passes per 90":1,"Accurate passes, %":3,"Accurate long passes, %":2},
+        "Sweeper GK":     {"Exits per 90":1},
+    },
+}
+
+POS_TO_ROLE_KEY = {
+    "GK":"GK","CB":"CB","LCB":"CB","RCB":"CB",
+    "LB":"FB","RB":"FB","LWB":"FB","RWB":"FB",
+    "DMF":"CM","LDMF":"CM","RDMF":"CM","LCMF":"CM","RCMF":"CM",
+    "AMF":"ATT","LAMF":"ATT","RAMF":"ATT","LW":"ATT","LWF":"ATT","RW":"ATT","RWF":"ATT",
+    "CF":"CF",
+}
+
+def get_role_key(position: str) -> str:
+    tok = str(position).split(",")[0].strip().upper()
+    return POS_TO_ROLE_KEY.get(tok, "ATT")
+
+def role_score_color(v: float) -> str:
+    if v >= 85: return "#2E6114"
+    if v >= 75: return "#5C9E2E"
+    if v >= 66: return "#7FBC41"
+    if v >= 55: return "#A7D763"
+    if v >= 41: return "#F6D645"
+    if v >= 25: return "#D77A2E"
+    return "#C63733"
+
+def compute_role_scores(player_row: pd.Series, pool_df: pd.DataFrame, position: str) -> dict:
+    rk = get_role_key(position)
+    roles = ROLE_BUCKETS.get(rk, {})
+    scores = {}
+    for role_name, metrics in roles.items():
+        total_w, wsum = 0.0, 0.0
+        for met, w in metrics.items():
+            if met not in pool_df.columns:
+                continue
+            pool_vals = pd.to_numeric(pool_df[met], errors="coerce").dropna()
+            player_val = pd.to_numeric(player_row.get(met, np.nan), errors="coerce")
+            if pd.isna(player_val) or pool_vals.empty:
+                continue
+            pct = float((pool_vals < player_val).mean() * 100 + (pool_vals == player_val).mean() * 50)
+            wsum += pct * w
+            total_w += w
+        if total_w > 0:
+            scores[role_name] = round(wsum / total_w, 1)
+    return scores
+
+def render_role_pills(role_scores: dict) -> str:
+    if not role_scores:
+        return ""
+    pills = []
+    for role, score in sorted(role_scores.items(), key=lambda x: -x[1]):
+        color = role_score_color(score)
+        fg = "#000" if score >= 54 else "#fff"
+        pills.append(
+            f"<div class='role-pill' style='background:{color};color:{fg};'>"
+            f"{role}: {score:.0f}</div>"
+        )
+    return "<div class='role-row'>" + "".join(pills) + "</div>"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
-
-@st.cache_data(show_spinner=False)
-def load_csv(path: str) -> pd.DataFrame:
-    return pd.read_csv(path)
-
-@st.cache_data(show_spinner=False)
-def load_team_stats(path: str) -> pd.DataFrame:
-    return pd.read_csv(path)
-
 def fmt_mv(v) -> str:
     try:
         v = float(v)
@@ -194,240 +324,90 @@ def _surname(name: str) -> str:
     return parts[-1] if parts else p
 
 def _similar(a: str, b: str) -> float:
-    from difflib import SequenceMatcher
     return SequenceMatcher(None, a, b).ratio()
 
-def percentile_in_pool(series: pd.Series, value: float) -> int:
-    s = pd.to_numeric(series, errors="coerce").dropna()
-    if s.empty or pd.isna(value):
-        return 0
-    return int((s <= float(value)).mean() * 100)
-
 def describe_ppda(ppda: float) -> str:
-    if ppda < 7:
-        return "Very High Press"
-    if ppda < 9:
-        return "High Press"
-    if ppda < 11:
-        return "Moderate Press"
-    if ppda < 14:
-        return "Low Block"
+    if ppda < 7:   return "Very High Press"
+    if ppda < 9:   return "High Press"
+    if ppda < 11:  return "Moderate Press"
+    if ppda < 14:  return "Low Block"
     return "Deep Block"
 
 def describe_possession(poss: float) -> str:
-    if poss >= 58:
-        return "Dominant Possession"
-    if poss >= 53:
-        return "Possession-Based"
-    if poss >= 47:
-        return "Balanced"
-    if poss >= 42:
-        return "Transitional"
+    if poss >= 58: return "Dominant Possession"
+    if poss >= 53: return "Possession-Based"
+    if poss >= 47: return "Balanced"
+    if poss >= 42: return "Transitional"
     return "Direct / Counter"
 
 def describe_directness(long_p90: float) -> str:
-    if long_p90 >= 55:
-        return "Very Direct"
-    if long_p90 >= 45:
-        return "Direct"
-    if long_p90 >= 35:
-        return "Mixed"
+    if long_p90 >= 55: return "Very Direct"
+    if long_p90 >= 45: return "Direct"
+    if long_p90 >= 35: return "Mixed"
     return "Short / Build-Up"
 
 # ══════════════════════════════════════════════════════════════════════════════
-# FMINSIDE FETCH
+# DATA LOADERS
 # ══════════════════════════════════════════════════════════════════════════════
+@st.cache_data(show_spinner=False)
+def load_csv_path(path: str) -> pd.DataFrame:
+    df = pd.read_csv(path)
+    df["_season"] = detect_season(Path(path).name)
+    return df
 
-@st.cache_data(show_spinner=False, ttl=3600)
-def fetch_fminside_player(player_name: str, team_name: str) -> dict | None:
-    """
-    Searches FMInside for a player by name and returns FM attributes.
-    Returns None if not found or fetch fails.
-    """
+@st.cache_data(show_spinner=False)
+def load_csv_bytes(data: bytes, filename: str) -> pd.DataFrame:
+    df = pd.read_csv(io.BytesIO(data))
+    df["_season"] = detect_season(filename)
+    return df
+
+@st.cache_data(show_spinner=False)
+def load_team_stats(path: str) -> pd.DataFrame:
+    return pd.read_csv(path)
+
+@st.cache_data(show_spinner=False)
+def load_and_merge(csv_paths: tuple, upload_bytes: tuple) -> pd.DataFrame:
+    frames = []
+    for path in csv_paths:
+        try:
+            frames.append(load_csv_path(path))
+        except Exception:
+            pass
     try:
-        surname = _slug(_surname(player_name))
-        full_slug = _slug(player_name)
-
-        search_url = f"https://fminside.net/players?search={requests.utils.quote(player_name)}"
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        r = requests.get(search_url, headers=headers, timeout=8)
-
-        if r.status_code != 200:
-            return None
-
-        # Pull player links from the page
-        links = re.findall(r'href="(/players/\d+/[^"]+)"', r.text)
-        if not links:
-            return None
-
-        # Pick best matching link
-        best_link, best_score = None, 0.0
-        for lnk in links[:8]:
-            slug_part = lnk.split("/")[-1].replace("-", " ")
-            sc = _similar(_slug(slug_part), full_slug)
-            sn_sc = _similar(_slug(slug_part.split()[-1] if slug_part.split() else ""), surname)
-            combined = max(sc, sn_sc)
-            if combined > best_score:
-                best_score = combined
-                best_link = lnk
-
-        if best_score < 0.45 or not best_link:
-            return None
-
-        player_url = f"https://fminside.net{best_link}"
-        rp = requests.get(player_url, headers=headers, timeout=8)
-        if rp.status_code != 200:
-            return None
-
-        html = rp.text
-        attrs = {}
-
-        # Extract key FM attributes from page HTML
-        fm_fields = {
-            "pace": r'Pace[^<]*<[^>]+>\s*(\d+)',
-            "acceleration": r'Acceleration[^<]*<[^>]+>\s*(\d+)',
-            "strength": r'Strength[^<]*<[^>]+>\s*(\d+)',
-            "jumping_reach": r'Jumping Reach[^<]*<[^>]+>\s*(\d+)',
-            "stamina": r'Stamina[^<]*<[^>]+>\s*(\d+)',
-            "work_rate": r'Work Rate[^<]*<[^>]+>\s*([^<]+)',
-            "height": r'(\d{3})\s*cm',
-            "natural_fitness": r'Natural Fitness[^<]*<[^>]+>\s*(\d+)',
-        }
-
-        for attr, pattern in fm_fields.items():
-            m = re.search(pattern, html, re.IGNORECASE)
-            if m:
-                val = m.group(1).strip()
-                attrs[attr] = int(val) if val.isdigit() else val
-
-        attrs["_url"] = player_url
-        attrs["_match_score"] = round(best_score, 2)
-        return attrs if len(attrs) > 2 else None
-
+        names, data_list = upload_bytes
+        if names and data_list:
+            for name, data in zip(names, data_list):
+                try:
+                    frames.append(load_csv_bytes(data, name))
+                except Exception:
+                    pass
     except Exception:
-        return None
+        pass
+    if not frames:
+        return pd.DataFrame()
+    merged = pd.concat(frames, ignore_index=True)
+    if "Player" in merged.columns and "Team" in merged.columns:
+        merged["Minutes played"] = pd.to_numeric(merged.get("Minutes played", 0), errors="coerce").fillna(0)
+        merged = merged.sort_values("Minutes played", ascending=False)
+        merged = merged.drop_duplicates(subset=["Player","Team"], keep="first")
+    return merged.reset_index(drop=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TRANSFERMARKT FETCH
+# TEAM PROFILE
 # ══════════════════════════════════════════════════════════════════════════════
-
-@st.cache_data(show_spinner=False, ttl=3600)
-def fetch_transfermarkt_value(player_name: str, team_name: str) -> dict | None:
-    """
-    Searches Transfermarkt for a player's market value.
-    Returns dict with 'value_str', 'value_eur', 'contract', 'nationality' or None.
-    Note: Transfermarkt ToS prohibits automated scraping. Use at low volume for
-    internal/research purposes only.
-    """
-    try:
-        slug = player_name.lower().strip().replace(" ", "-")
-        slug = re.sub(r"[^a-z0-9\-]", "", slug)
-
-        search_url = f"https://www.transfermarkt.co.uk/schnellsuche/ergebnis/schnellsuche?query={requests.utils.quote(player_name)}"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept-Language": "en-GB,en;q=0.9",
-        }
-        r = requests.get(search_url, headers=headers, timeout=10)
-        if r.status_code != 200:
-            return None
-
-        html = r.text
-
-        # Extract player profile links
-        player_links = re.findall(
-            r'href="(/[^/]+/profil/spieler/\d+)"[^>]*>([^<]+)</a>', html
-        )
-
-        if not player_links:
-            return None
-
-        best_link, best_score = None, 0.0
-        full_slug = _slug(player_name)
-        for lnk, name_text in player_links[:6]:
-            sc = _similar(_slug(name_text), full_slug)
-            if sc > best_score:
-                best_score = sc
-                best_link = lnk
-
-        if best_score < 0.45 or not best_link:
-            return None
-
-        profile_url = f"https://www.transfermarkt.co.uk{best_link}"
-        rp = requests.get(profile_url, headers=headers, timeout=10)
-        if rp.status_code != 200:
-            return None
-
-        phtml = rp.text
-
-        # Market value
-        mv_match = re.search(
-            r'marketValueDevelopment.*?(\d+[\.,]?\d*)\s*(k|m|Th\.|Mill\.)',
-            phtml, re.IGNORECASE | re.DOTALL
-        )
-        value_eur = None
-        value_str = "—"
-
-        # Try alternate pattern
-        mv2 = re.search(r'class="[^"]*marketValue[^"]*"[^>]*>\s*€\s*([\d,\.]+)\s*(k|m|Th\.?|Mill\.?)',
-                        phtml, re.IGNORECASE)
-        if mv2:
-            raw = mv2.group(1).replace(",", ".").strip()
-            unit = mv2.group(2).lower()
-            try:
-                num = float(raw)
-                if "m" in unit or "mill" in unit:
-                    value_eur = num * 1_000_000
-                    value_str = f"€{num:.1f}m"
-                else:
-                    value_eur = num * 1_000
-                    value_str = f"€{int(num)}k"
-            except Exception:
-                pass
-
-        # Contract expiry
-        contract_match = re.search(r'Contract expires[^:]*:\s*([A-Za-z]+ \d{4}|\d{2}/\d{2}/\d{4})',
-                                   phtml, re.IGNORECASE)
-        contract = contract_match.group(1).strip() if contract_match else "—"
-
-        return {
-            "value_str": value_str,
-            "value_eur": value_eur,
-            "contract": contract,
-            "_url": profile_url,
-            "_match_score": round(best_score, 2),
-        }
-
-    except Exception:
-        return None
-
-# ══════════════════════════════════════════════════════════════════════════════
-# TEAM PROFILE BUILDER
-# ══════════════════════════════════════════════════════════════════════════════
-
 def build_team_profile(team_name: str, team_df: pd.DataFrame) -> dict | None:
-    """Find team in team stats CSV and build a tactical profile dict."""
     if team_df is None or team_df.empty:
         return None
-
-    # Flexible name match
     mask = team_df["Team"].astype(str).str.lower() == team_name.lower().strip()
     if not mask.any():
-        # Try partial
         mask = team_df["Team"].astype(str).str.lower().str.contains(
-            team_name.lower().strip(), na=False
-        )
+            team_name.lower().strip()[:8], na=False)
     if not mask.any():
         return None
-
     row = team_df[mask].iloc[0]
-
     def safe(col, default=0.0):
-        try:
-            return float(row[col])
-        except Exception:
-            return default
-
+        try: return float(row[col])
+        except: return default
     profile = {
         "team": str(row.get("Team", team_name)),
         "league": str(row.get("League", "—")),
@@ -445,253 +425,332 @@ def build_team_profile(team_name: str, team_df: pd.DataFrame) -> dict | None:
         "xg_p90": round(safe("xG p90"), 2),
         "xga_p90": round(safe("xG Against p90"), 2),
         "passes_p90": round(safe("Passes p90"), 1),
-        "pass_acc": round(safe("Pass Accuracy %"), 1),
         "long_passes_p90": round(safe("Long Passes p90"), 1),
-        "long_pass_acc": round(safe("Long Pass Accuracy %"), 1),
         "prog_passes_p90": round(safe("Progressive Passes p90"), 1),
         "prog_runs_p90": round(safe("Progressive Runs p90"), 1),
         "crosses_p90": round(safe("Crosses p90"), 1),
         "aerial_p90": round(safe("Aerial Duels p90"), 1),
         "aerial_won_pct": round(safe("Aerial Duels Won %"), 1),
-        "def_duels_p90": round(safe("Defensive Duels p90"), 1),
         "shots_p90": round(safe("Shots p90"), 1),
-        "touches_box_p90": round(safe("Touches in Box p90"), 1),
-        # Derived descriptors
         "press_style": describe_ppda(safe("PPDA")),
         "poss_style": describe_possession(safe("Possession %")),
         "directness": describe_directness(safe("Long Passes p90")),
     }
-
-    # Percentile ranks vs all teams in same league
     league_teams = team_df[team_df["League"] == row["League"]]
-
     def pct_rank(col):
         try:
             vals = pd.to_numeric(league_teams[col], errors="coerce").dropna()
             v = float(row[col])
-            # For PPDA, lower is better (more pressing)
-            if col == "PPDA":
-                return int((vals >= v).mean() * 100)
+            if col == "PPDA": return int((vals >= v).mean() * 100)
             return int((vals <= v).mean() * 100)
-        except Exception:
-            return 50
-
+        except: return 50
     profile["ppda_pct"] = pct_rank("PPDA")
     profile["xg_pct"] = pct_rank("xG p90")
     profile["aerial_pct"] = pct_rank("Aerial Duels p90")
     profile["possession_pct"] = pct_rank("Possession %")
     profile["crosses_pct"] = pct_rank("Crosses p90")
     profile["prog_runs_pct"] = pct_rank("Progressive Runs p90")
-
     return profile
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PARAMETER EXTRACTION (Claude)
+# FMINSIDE FETCH
 # ══════════════════════════════════════════════════════════════════════════════
+@st.cache_data(show_spinner=False, ttl=3600)
+def fetch_fminside_player(player_name: str, team_name: str) -> dict | None:
+    try:
+        surname = _slug(_surname(player_name))
+        full_slug = _slug(player_name)
+        search_url = f"https://fminside.net/players?search={requests.utils.quote(player_name)}"
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        r = requests.get(search_url, headers=headers, timeout=8)
+        if r.status_code != 200: return None
+        links = re.findall(r'href="(/players/\d+/[^"]+)"', r.text)
+        if not links: return None
+        best_link, best_score = None, 0.0
+        for lnk in links[:8]:
+            slug_part = lnk.split("/")[-1].replace("-", " ")
+            sc = max(_similar(_slug(slug_part), full_slug),
+                     _similar(_slug(slug_part.split()[-1] if slug_part.split() else ""), surname))
+            if sc > best_score:
+                best_score = sc
+                best_link = lnk
+        if best_score < 0.45 or not best_link: return None
+        rp = requests.get(f"https://fminside.net{best_link}", headers=headers, timeout=8)
+        if rp.status_code != 200: return None
+        html = rp.text
+        attrs = {}
+        fm_fields = {
+            "pace": r'Pace[^<]*<[^>]+>\s*(\d+)',
+            "acceleration": r'Acceleration[^<]*<[^>]+>\s*(\d+)',
+            "strength": r'Strength[^<]*<[^>]+>\s*(\d+)',
+            "jumping_reach": r'Jumping Reach[^<]*<[^>]+>\s*(\d+)',
+            "stamina": r'Stamina[^<]*<[^>]+>\s*(\d+)',
+            "height": r'(\d{3})\s*cm',
+        }
+        for attr, pattern in fm_fields.items():
+            m = re.search(pattern, html, re.IGNORECASE)
+            if m:
+                val = m.group(1).strip()
+                attrs[attr] = int(val) if val.isdigit() else val
+        attrs["_url"] = f"https://fminside.net{best_link}"
+        return attrs if len(attrs) > 2 else None
+    except Exception:
+        return None
 
+# ══════════════════════════════════════════════════════════════════════════════
+# TRANSFERMARKT FETCH
+# ══════════════════════════════════════════════════════════════════════════════
+@st.cache_data(show_spinner=False, ttl=3600)
+def fetch_transfermarkt_value(player_name: str, team_name: str) -> dict | None:
+    try:
+        search_url = f"https://www.transfermarkt.co.uk/schnellsuche/ergebnis/schnellsuche?query={requests.utils.quote(player_name)}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept-Language": "en-GB,en;q=0.9",
+        }
+        r = requests.get(search_url, headers=headers, timeout=10)
+        if r.status_code != 200: return None
+        player_links = re.findall(
+            r'href="(/[^/]+/profil/spieler/\d+)"[^>]*>([^<]+)</a>', r.text)
+        if not player_links: return None
+        best_link, best_score = None, 0.0
+        full_slug = _slug(player_name)
+        for lnk, name_text in player_links[:6]:
+            sc = _similar(_slug(name_text), full_slug)
+            if sc > best_score:
+                best_score = sc
+                best_link = lnk
+        if best_score < 0.45 or not best_link: return None
+        rp = requests.get(f"https://www.transfermarkt.co.uk{best_link}", headers=headers, timeout=10)
+        if rp.status_code != 200: return None
+        phtml = rp.text
+        value_eur, value_str = None, "—"
+        mv2 = re.search(
+            r'class="[^"]*marketValue[^"]*"[^>]*>\s*€\s*([\d,\.]+)\s*(k|m|Th\.?|Mill\.?)',
+            phtml, re.IGNORECASE)
+        if mv2:
+            raw = mv2.group(1).replace(",", ".").strip()
+            unit = mv2.group(2).lower()
+            try:
+                num = float(raw)
+                if "m" in unit or "mill" in unit:
+                    value_eur = num * 1_000_000
+                    value_str = f"€{num:.1f}m"
+                else:
+                    value_eur = num * 1_000
+                    value_str = f"€{int(num)}k"
+            except Exception:
+                pass
+        contract_match = re.search(
+            r'Contract expires[^:]*:\s*([A-Za-z]+ \d{4}|\d{2}/\d{2}/\d{4})', phtml, re.IGNORECASE)
+        contract = contract_match.group(1).strip() if contract_match else "—"
+        return {"value_str": value_str, "value_eur": value_eur,
+                "contract": contract, "_url": f"https://www.transfermarkt.co.uk{best_link}"}
+    except Exception:
+        return None
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CLAUDE API WRAPPER — rate-limit safe
+# ══════════════════════════════════════════════════════════════════════════════
+def claude_call(client, model: str, messages: list, system: str = "",
+                max_tokens: int = 400, retry: int = 2) -> str:
+    """Wrapper with retry on 429 rate limit."""
+    for attempt in range(retry + 1):
+        try:
+            kwargs = {"model": model, "max_tokens": max_tokens, "messages": messages}
+            if system:
+                kwargs["system"] = system
+            r = client.messages.create(**kwargs)
+            return r.content[0].text.strip()
+        except Exception as e:
+            err = str(e)
+            if "429" in err or "rate_limit" in err.lower():
+                wait = 15 * (attempt + 1)
+                st.warning(f"Rate limit hit — waiting {wait}s before retry...")
+                time.sleep(wait)
+            else:
+                return f"[Error: {err[:120]}]"
+    return "[Rate limit exceeded — try again in a moment]"
+
+def claude_call_with_search(client, prompt: str, system: str = "",
+                             max_tokens: int = 500) -> str:
+    """Sonnet + web search for player bio — with retry."""
+    for attempt in range(2):
+        try:
+            r = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=max_tokens,
+                system=system or "Football analyst. Factual only. Be concise.",
+                messages=[{"role": "user", "content": prompt}],
+                tools=[{"type": "web_search_20250305", "name": "web_search"}],
+            )
+            text_parts = [b.text for b in r.content if hasattr(b, "text")]
+            return " ".join(text_parts).strip()
+        except Exception as e:
+            err = str(e)
+            if "429" in err or "rate_limit" in err.lower():
+                time.sleep(20)
+            else:
+                return ""
+    return ""
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PARAMETER EXTRACTION
+# ══════════════════════════════════════════════════════════════════════════════
 def extract_parameters(client, query: str) -> dict:
-    """Ask Claude to extract structured search parameters from natural language."""
-
-    response = client.messages.create(
+    response = claude_call(
+        client,
         model="claude-haiku-4-5-20251001",
         max_tokens=600,
-        system="""You are a football data analyst. Extract search parameters from 
-a scout query and return ONLY valid JSON. Use these exact field names:
+        system="""Extract search parameters from a scout query and return ONLY valid JSON.
+Fields:
 {
-  "club": "Salford City",           // club name mentioned, null if none
-  "position_prefixes": ["CF"],      // list of Wyscout position codes e.g. CF, LW, RW, AMF, CMF, DMF, CB, RB, LB
-  "max_age": 23,                    // null if not specified
-  "min_age": null,                  // null if not specified
-  "min_minutes": 500,               // default 500
-  "leagues": ["England 4.", "England 3.", "England 2."],  // Wyscout format e.g. "England 4." — infer from context, null = all
-  "max_market_value_m": 1.0,        // in millions EUR, null if not specified
-  "foot": null,                     // "left", "right", or null
-  "key_style_traits": ["target man", "aerial", "pressing"], // tactical/style keywords
-  "physical_traits": ["tall", "fast", "strong"],  // physical keywords for FM lookup
-  "priority_metrics": ["xG per 90", "Aerial duels won, %"],  // top 3 metrics to prioritise
-  "fetch_fminside": true,           // true if physical traits mentioned
-  "fetch_transfermarkt": true       // true if value/contract mentioned
+  "club": "Salford City",
+  "position_prefixes": ["CF"],
+  "max_age": 23,
+  "min_age": null,
+  "min_minutes": 500,
+  "leagues": ["England 4.", "England 3."],
+  "max_market_value_m": 1.0,
+  "foot": null,
+  "key_style_traits": ["target man","aerial"],
+  "physical_traits": ["tall","fast"],
+  "priority_metrics": ["xG per 90","Aerial duels won, %"],
+  "fetch_fminside": true,
+  "fetch_transfermarkt": true
 }
-Return ONLY the JSON, no markdown, no explanation.""",
+Return ONLY the JSON, no markdown.""",
         messages=[{"role": "user", "content": query}]
     )
-
-    raw = response.content[0].text.strip()
-    # Strip markdown fences if present
-    raw = re.sub(r"^```[a-z]*\n?", "", raw)
+    raw = re.sub(r"^```[a-z]*\n?", "", response.strip())
     raw = re.sub(r"\n?```$", "", raw)
-
     try:
         return json.loads(raw)
-    except json.JSONDecodeError:
+    except Exception:
         return {}
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CANDIDATE FILTERING
+# FILTER + SCORE
 # ══════════════════════════════════════════════════════════════════════════════
-
-def filter_candidates(df: pd.DataFrame, params: dict, team_profile: dict | None) -> pd.DataFrame:
-    """Apply structured filters to the merged player dataframe."""
+def filter_candidates(df: pd.DataFrame, params: dict) -> pd.DataFrame:
     pool = df.copy()
-
-    # Numeric coercions
     for col in ["Minutes played", "Age", "Market value"]:
         if col in pool.columns:
             pool[col] = pd.to_numeric(pool[col], errors="coerce")
-
-    # Position filter
     prefixes = [p.upper().strip() for p in (params.get("position_prefixes") or [])]
     if prefixes:
         pool = pool[pool["Position"].astype(str).str.upper().apply(
-            lambda p: any(p.startswith(px) for px in prefixes)
-        )]
-
-    # Age
+            lambda p: any(p.startswith(px) for px in prefixes))]
     if params.get("max_age"):
         pool = pool[pool["Age"] <= float(params["max_age"])]
     if params.get("min_age"):
         pool = pool[pool["Age"] >= float(params["min_age"])]
-
-    # Minutes
     min_mins = float(params.get("min_minutes") or 500)
     pool = pool[pool["Minutes played"] >= min_mins]
-
-    # Leagues
     leagues = params.get("leagues")
     if leagues:
         pool = pool[pool["League"].isin(leagues)]
-
-    # Foot
-    if params.get("foot"):
-        pool = pool[pool.get("Foot", pd.Series(dtype=str)).astype(str).str.lower().str.startswith(
-            params["foot"][0].lower(), na=False
-        )]
-
-    # Market value (CSV column, rough filter before Transfermarkt)
+    if params.get("foot") and "Foot" in pool.columns:
+        pool = pool[pool["Foot"].astype(str).str.lower().str.startswith(
+            params["foot"][0].lower(), na=False)]
     if params.get("max_market_value_m") and "Market value" in pool.columns:
         pool = pool[pool["Market value"] <= float(params["max_market_value_m"]) * 1_000_000]
-
     return pool
 
 def score_candidates(pool: pd.DataFrame, params: dict, team_profile: dict | None,
                      full_pool: pd.DataFrame) -> pd.DataFrame:
-    """Score and rank candidates."""
     if pool.empty:
         return pool
-
     prefixes = [p.upper().strip() for p in (params.get("position_prefixes") or ["CF"])]
     primary_pos = prefixes[0] if prefixes else "CF"
-
-    # Get relevant metrics for this position
     default_metrics = POSITION_METRICS.get(primary_pos, POSITION_METRICS["CF"])
     priority = params.get("priority_metrics") or []
-    all_metrics = list(dict.fromkeys(priority + default_metrics))  # priority first, no dupes
+    all_metrics = list(dict.fromkeys(priority + default_metrics))
     all_metrics = [m for m in all_metrics if m in full_pool.columns]
 
-    # If team profile exists, weight metrics that match their style
     weights = {m: 1.0 for m in all_metrics}
     if team_profile:
-        # High pressing team → weight defensive contribution
         if team_profile["ppda"] < 9:
-            for m in ["Defensive duels per 90", "PAdj Interceptions"]:
-                if m in weights:
-                    weights[m] = 1.8
-        # Direct team with high aerial → weight aerial metrics
+            for m in ["Defensive duels per 90","PAdj Interceptions"]:
+                if m in weights: weights[m] = 1.8
         if team_profile["long_passes_p90"] > 45 and team_profile["aerial_p90"] > 50:
-            for m in ["Aerial duels per 90", "Aerial duels won, %"]:
-                if m in weights:
-                    weights[m] = 2.0
-        # Low possession → weight progressive carries
+            for m in ["Aerial duels per 90","Aerial duels won, %"]:
+                if m in weights: weights[m] = 2.0
         if team_profile["possession"] < 47:
-            for m in ["Progressive runs per 90", "Dribbles per 90"]:
-                if m in weights:
-                    weights[m] = 1.5
+            for m in ["Progressive runs per 90","Dribbles per 90"]:
+                if m in weights: weights[m] = 1.5
 
-    # Style traits from query
     style_traits = [s.lower() for s in (params.get("key_style_traits") or [])]
-    if any(t in style_traits for t in ["target man", "aerial", "header"]):
-        for m in ["Aerial duels per 90", "Aerial duels won, %"]:
-            if m in weights:
-                weights[m] = 2.5
-    if any(t in style_traits for t in ["dribbler", "dribble", "carries", "direct"]):
-        for m in ["Dribbles per 90", "Successful dribbles, %", "Progressive runs per 90"]:
-            if m in weights:
-                weights[m] = 2.0
-    if any(t in style_traits for t in ["pressing", "press", "high press"]):
-        for m in ["Defensive duels per 90", "PAdj Interceptions"]:
-            if m in weights:
-                weights[m] = 2.0
-    if any(t in style_traits for t in ["creative", "playmaker", "link-up"]):
-        for m in ["xA per 90", "Key passes per 90", "Smart passes per 90"]:
-            if m in weights:
-                weights[m] = 2.0
+    if any(t in style_traits for t in ["target man","aerial","header"]):
+        for m in ["Aerial duels per 90","Aerial duels won, %"]:
+            if m in weights: weights[m] = 2.5
+    if any(t in style_traits for t in ["dribbler","dribble","carries"]):
+        for m in ["Dribbles per 90","Successful dribbles, %","Progressive runs per 90"]:
+            if m in weights: weights[m] = 2.0
+    if any(t in style_traits for t in ["pressing","press","high press"]):
+        for m in ["Defensive duels per 90","PAdj Interceptions"]:
+            if m in weights: weights[m] = 2.0
+    if any(t in style_traits for t in ["creative","playmaker","link-up"]):
+        for m in ["xA per 90","Key passes per 90","Smart passes per 90"]:
+            if m in weights: weights[m] = 2.0
 
-    # Compute weighted percentile score
     scored = pool.copy()
     score_acc = np.zeros(len(scored))
     weight_acc = 0.0
-
     for m in all_metrics:
-        if m not in full_pool.columns:
-            continue
+        if m not in full_pool.columns: continue
         vals_full = pd.to_numeric(full_pool[m], errors="coerce").dropna()
-        if vals_full.empty:
-            continue
-        candidate_vals = pd.to_numeric(scored[m], errors="coerce")
-        pcts = candidate_vals.apply(
-            lambda v: (vals_full <= v).mean() * 100 if pd.notna(v) else 50.0
-        ).values
+        if vals_full.empty: continue
+        cand_vals = pd.to_numeric(scored[m], errors="coerce")
+        pcts = cand_vals.apply(
+            lambda v: (vals_full <= v).mean() * 100 if pd.notna(v) else 50.0).values
         w = weights.get(m, 1.0)
         score_acc += pcts * w
         weight_acc += w
 
-    if weight_acc > 0:
-        scored["_scout_score"] = score_acc / weight_acc
-    else:
-        scored["_scout_score"] = 50.0
-
+    scored["_scout_score"] = score_acc / weight_acc if weight_acc > 0 else 50.0
     return scored.sort_values("_scout_score", ascending=False)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CLAUDE — CLUB PROFILE NARRATIVE
+# CLAUDE NARRATIVE CALLS
 # ══════════════════════════════════════════════════════════════════════════════
-
 def generate_club_narrative(client, team_profile: dict, query: str) -> str:
-    prompt = f"""You are a chief scout. Write a brief tactical profile of {team_profile['team']} 
-based on this data. Be specific and concise — 3-4 sentences max.
-
+    prompt = f"""Write a brief tactical profile of {team_profile['team']} in 3-4 sentences.
 Data:
 - League: {team_profile['league']}
 - Record: {team_profile['wins']}W {team_profile['draws']}D {team_profile['losses']}L ({team_profile['points']} pts, xPts: {team_profile['xpoints']})
-- Pressing: PPDA {team_profile['ppda']} ({team_profile['press_style']}) — {team_profile['ppda_pct']}th percentile in league
+- Pressing: PPDA {team_profile['ppda']} ({team_profile['press_style']}) — {team_profile['ppda_pct']}th pct in league
 - Possession: {team_profile['possession']}% ({team_profile['poss_style']})
 - Directness: {team_profile['long_passes_p90']} long passes p90 ({team_profile['directness']})
-- xG p90: {team_profile['xg_p90']} (attack {team_profile['xg_pct']}th pct in league)
-- xGA p90: {team_profile['xga_p90']} (defensive)
-- Aerial duels p90: {team_profile['aerial_p90']} — {team_profile['aerial_pct']}th percentile
-- Progressive runs p90: {team_profile['prog_runs_p90']} — {team_profile['prog_runs_pct']}th percentile
-- Average squad age: {team_profile['avg_age']}
-- Scout query context: {query}
+- xG p90: {team_profile['xg_p90']} ({team_profile['xg_pct']}th pct), xGA p90: {team_profile['xga_p90']}
+- Aerial duels p90: {team_profile['aerial_p90']} — {team_profile['aerial_pct']}th pct
+- Scout context: {query}
+End with one sentence on what type of player suits their style."""
+    return claude_call(client, "claude-haiku-4-5-20251001",
+                       [{"role": "user", "content": prompt}], max_tokens=300)
 
-Write the profile now. End with one sentence on what type of player would suit them based on their style."""
-
-    r = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=300,
-        messages=[{"role": "user", "content": prompt}]
+def fetch_player_bio(client, player: str, team: str, league: str,
+                     season: str, position: str) -> str:
+    """Sonnet + web search for career bio. Capped to 3 sentences."""
+    prompt = (f"Find factual career information about {player}, who plays for {team} "
+              f"in {league} as a {position} ({season} season). "
+              f"Include: nationality, age, career clubs and seasons, international caps if any, "
+              f"goals/assists record. Write EXACTLY 3 sentences. No speculation.")
+    result = claude_call_with_search(
+        client, prompt,
+        system="Football analyst. Return exactly 3 sentences of factual career info. No more.",
+        max_tokens=350,
     )
-    return r.content[0].text.strip()
-
-# ══════════════════════════════════════════════════════════════════════════════
-# CLAUDE — MINI SCOUT REPORT PER CANDIDATE
-# ══════════════════════════════════════════════════════════════════════════════
+    # Hard cap: take first 3 sentences only
+    if result:
+        sentences = re.split(r'(?<=[.!?])\s+', result.strip())
+        return " ".join(sentences[:3])
+    return ""
 
 def generate_mini_report(client, player: pd.Series, params: dict,
                          team_profile: dict | None, full_pool: pd.DataFrame,
-                         fm_data: dict | None, tm_data: dict | None) -> str:
-    """Generate a mini professional scout report for one candidate."""
-
-    # Build stats block with percentiles
+                         fm_data: dict | None, tm_data: dict | None,
+                         bio_context: str, season: str) -> str:
     prefixes = [p.upper().strip() for p in (params.get("position_prefixes") or ["CF"])]
     primary_pos = prefixes[0] if prefixes else "CF"
     metrics = POSITION_METRICS.get(primary_pos, POSITION_METRICS["CF"])
@@ -700,138 +759,113 @@ def generate_mini_report(client, player: pd.Series, params: dict,
     stats_lines = []
     for m in metrics:
         val = pd.to_numeric(player.get(m), errors="coerce")
-        if pd.isna(val):
-            continue
+        if pd.isna(val): continue
         peer_vals = pd.to_numeric(full_pool[m], errors="coerce").dropna()
         pct = int((peer_vals <= val).mean() * 100) if not peer_vals.empty else 50
         stats_lines.append(f"  {m}: {val:.2f} [{pct}th pct]")
 
-    stats_block = "\n".join(stats_lines) if stats_lines else "Stats unavailable."
-
-    # FM block
     fm_block = "Not available."
     if fm_data:
-        parts = []
-        for attr in ["pace","acceleration","strength","jumping_reach","stamina","natural_fitness"]:
-            if attr in fm_data:
-                parts.append(f"{attr.replace('_',' ').title()}: {fm_data[attr]}/20")
-        if "height" in fm_data:
-            parts.append(f"Height: {fm_data['height']}cm")
-        fm_block = ", ".join(parts) if parts else "Partial data only."
+        parts = [f"{a.replace('_',' ').title()}: {fm_data[a]}/20"
+                 for a in ["pace","acceleration","strength","jumping_reach","stamina"]
+                 if a in fm_data]
+        if "height" in fm_data: parts.append(f"Height: {fm_data['height']}cm")
+        fm_block = ", ".join(parts) if parts else "Partial only."
 
-    # TM block
     tm_block = "Not fetched."
     if tm_data:
         tm_block = f"Market Value: {tm_data.get('value_str','—')}, Contract: {tm_data.get('contract','—')}"
 
-    # Club context
-    club_ctx = "No club context provided."
+    club_ctx = "No club context."
     if team_profile:
+        # Realism check
+        player_band = get_league_band(str(player.get("League", "")))
+        club_band = get_league_band(team_profile["league"])
+        band_gap = club_band - player_band
+        realism_note = ""
+        if band_gap < -1:
+            realism_note = (f"NOTE: This player is from {BAND_LABELS.get(player_band,'?')} level — "
+                           f"suggesting them to a {BAND_LABELS.get(club_band,'?')} club is a significant "
+                           f"step up. Flag this clearly in your report.")
         club_ctx = (f"{team_profile['team']} ({team_profile['league']}) — "
                     f"{team_profile['press_style']}, {team_profile['poss_style']}, "
-                    f"{team_profile['directness']}. "
-                    f"Aerial duels p90: {team_profile['aerial_p90']} "
-                    f"({team_profile['aerial_pct']}th pct in league).")
+                    f"{team_profile['directness']}. {realism_note}")
 
-    contract_raw = str(player.get("Contract expires", "—"))
-    mv_raw = fmt_mv(player.get("Market value"))
+    bio_section = f"\nCareer context: {bio_context}" if bio_context else ""
 
     prompt = f"""Write a concise professional scouting report in 4-5 sentences.
-Focus on: fit for the requesting club, statistical standouts, physical profile, and one risk.
-Do NOT use bullet points. Write in flowing scouting prose.
+Focus on: statistical standouts ({season} data), fit for the club, physical profile, one risk.
+No bullet points. Flowing scouting prose. Reference the {season} season explicitly.
+If the player's level is significantly below the requesting club, state this clearly.
 
 Player: {player.get('Player','—')}
-Club: {player.get('Team','—')} ({player.get('League','—')})
+Club: {player.get('Team','—')} ({player.get('League','—')}) — {season} season
 Age: {player.get('Age','—')} | Position: {player.get('Position','—')} | Foot: {player.get('Foot','—')}
-Minutes: {player.get('Minutes played','—')} | Contract: {contract_raw} | Value: {mv_raw}
+Minutes: {player.get('Minutes played','—')} | Contract: {player.get('Contract expires','—')} | CSV Value: {fmt_mv(player.get('Market value'))}
+{bio_section}
 
-Performance stats (pool percentiles):
-{stats_block}
+Stats:
+{chr(10).join(stats_lines) if stats_lines else 'Unavailable.'}
 
-FM Physical Attributes:
-{fm_block}
-
-Transfermarkt:
-{tm_block}
-
-Requesting club context:
-{club_ctx}
-
+FM Physical: {fm_block}
+Transfermarkt: {tm_block}
+Club context: {club_ctx}
 Scout query: {params.get('_raw_query','—')}
 
-Write the report now:"""
+Write the report:"""
 
-    r = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=400,
-        messages=[{"role": "user", "content": prompt}]
-    )
-    return r.content[0].text.strip()
+    return claude_call(client, "claude-sonnet-4-6",
+                       [{"role": "user", "content": prompt}], max_tokens=420)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# STAT PILLS RENDERER
+# STAT PILLS + FM PILLS
 # ══════════════════════════════════════════════════════════════════════════════
-
 def render_stat_pills(player: pd.Series, params: dict, full_pool: pd.DataFrame) -> str:
     prefixes = [p.upper().strip() for p in (params.get("position_prefixes") or ["CF"])]
     primary_pos = prefixes[0] if prefixes else "CF"
     metrics = POSITION_METRICS.get(primary_pos, POSITION_METRICS["CF"])[:6]
     metrics = [m for m in metrics if m in full_pool.columns]
-
     pills = []
     for m in metrics:
         val = pd.to_numeric(player.get(m), errors="coerce")
-        if pd.isna(val):
-            continue
+        if pd.isna(val): continue
         peer_vals = pd.to_numeric(full_pool[m], errors="coerce").dropna()
         pct = int((peer_vals <= val).mean() * 100) if not peer_vals.empty else 50
-        short_label = (m.replace(" per 90","p90")
-                        .replace("Non-penalty goals","NP Goals")
-                        .replace("Accurate ","")
-                        .replace(" won, %"," Win%")
-                        .replace("PAdj Interceptions","PAdj Int"))
+        short = (m.replace(" per 90","p90").replace("Non-penalty goals","NP Goals")
+                  .replace("Accurate ","").replace(" won, %"," Win%")
+                  .replace("PAdj Interceptions","PAdj Int"))
         pills.append(
-            f"<div class='pill'><span class='plab'>{short_label}</span>"
+            f"<div class='pill'><span class='plab'>{short}</span>"
             f"<span class='pval'>{val:.2f} <span style='color:#6b7280;font-size:10px'>({pct}th)</span></span></div>"
         )
     return "".join(pills)
 
 def render_fm_pills(fm_data: dict) -> str:
-    if not fm_data:
-        return ""
+    if not fm_data: return ""
     parts = []
     for attr in ["pace","acceleration","strength","jumping_reach","stamina"]:
-        if attr in fm_data:
-            label = attr.replace("_"," ").title()
-            val = fm_data[attr]
-            color = "#22c55e" if val >= 14 else ("#f59e0b" if val >= 10 else "#ef4444")
-            parts.append(f"<div class='fm-pill'>{label}: <span style='color:{color}'>{val}</span>/20</div>")
+        if attr not in fm_data: continue
+        label = attr.replace("_"," ").title()
+        val = fm_data[attr]
+        color = "#22c55e" if val >= 14 else ("#f59e0b" if val >= 10 else "#ef4444")
+        parts.append(f"<div class='fm-pill'>{label}: <span style='color:{color}'>{val}</span>/20</div>")
     if "height" in fm_data:
         parts.append(f"<div class='fm-pill'>Height: <span>{fm_data['height']}cm</span></div>")
-    return "<div class='fm-row'>" + "".join(parts) + "</div>"
+    return "<div class='fm-row'>" + "".join(parts) + "</div>" if parts else ""
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SIDEBAR — API KEY + CSV SELECTOR
+# SIDEBAR
 # ══════════════════════════════════════════════════════════════════════════════
-
 with st.sidebar:
     st.markdown("### 🤖 AI Scout")
     st.markdown("---")
 
-    # API Key
     api_key_input = st.text_input(
-        "Anthropic API Key",
-        type="password",
+        "Anthropic API Key", type="password",
         value=os.environ.get("ANTHROPIC_API_KEY", ""),
-        help="Get yours at console.anthropic.com",
         placeholder="sk-ant-api03-..."
     )
-
     st.markdown("---")
-
-    # CSV file selector — scans cwd for WORLD*.csv files
-    import glob
-    from pathlib import Path
 
     csv_candidates = sorted(
         glob.glob(str(Path.cwd() / "WORLD*.csv")) +
@@ -841,25 +875,17 @@ with st.sidebar:
 
     if csv_labels:
         selected_csvs = st.multiselect(
-            "Player datasets (select one or more)",
-            options=csv_labels,
-            default=csv_labels[:1] if csv_labels else [],
-            help="Select multiple CSVs to search across all of them simultaneously"
+            "Player datasets", options=csv_labels,
+            default=csv_labels[:1],
+            help="WORLDJUNE25.csv = 2024/25 · Other = 2025/26"
         )
     else:
-        st.info("No WORLD*.csv files found in app directory. Upload below.")
         selected_csvs = []
 
-    # Manual upload fallback
-    uploaded_files = st.file_uploader(
-        "Or upload CSV(s)",
-        type=["csv"],
-        accept_multiple_files=True
-    )
-
+    uploaded_files = st.file_uploader("Or upload CSV(s)", type=["csv"],
+                                       accept_multiple_files=True)
     st.markdown("---")
 
-    # Team stats CSV
     team_stat_candidates = sorted(
         glob.glob(str(Path.cwd() / "*team*stats*.csv")) +
         glob.glob(str(Path.cwd() / "*team*.csv")) +
@@ -875,64 +901,25 @@ with st.sidebar:
         )
     else:
         selected_team_stats = "— None —"
-        st.info("No team stats CSV found. Club context will be unavailable.")
         uploaded_team_stats = st.file_uploader("Upload team stats CSV", type=["csv"])
-    
+
     st.markdown("---")
-    st.caption("Top N results")
-    top_n = st.slider("Candidates to return", 3, 15, 8)
+    st.caption("Results")
+    top_n = st.slider("Total candidates to return", 5, 15, 10,
+                       help="Top 3 get full reports. Rest are listed only.")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # LOAD DATA
 # ══════════════════════════════════════════════════════════════════════════════
-
-@st.cache_data(show_spinner=False)
-def load_and_merge(csv_paths: tuple, upload_bytes: tuple) -> pd.DataFrame:
-    """Load and merge multiple player CSVs."""
-    frames = []
-
-    # Load from file paths
-    for path in csv_paths:
-        try:
-            frames.append(pd.read_csv(path))
-        except Exception:
-            pass
-
-    # Load from uploaded file bytes
-    # upload_bytes is a tuple of (names_tuple, data_tuple)
-    try:
-        names, data_list = upload_bytes
-        if names and data_list:
-            for data in data_list:
-                try:
-                    frames.append(pd.read_csv(io.BytesIO(data)))
-                except Exception:
-                    pass
-    except Exception:
-        pass
-
-    if not frames:
-        return pd.DataFrame()
-
-    merged = pd.concat(frames, ignore_index=True)
-
-    # Deduplicate by player+team, keep first occurrence
-    if "Player" in merged.columns and "Team" in merged.columns:
-        merged = merged.drop_duplicates(subset=["Player", "Team"], keep="first")
-
-    return merged
-
-# Resolve paths
 csv_paths_to_load = tuple(
     str(Path.cwd() / name) for name in selected_csvs
     if (Path.cwd() / name).exists()
 )
 upload_names = tuple(f.name for f in (uploaded_files or []))
-upload_data = tuple(f.getvalue() for f in (uploaded_files or []))
+upload_data  = tuple(f.getvalue() for f in (uploaded_files or []))
 
 player_df = load_and_merge(csv_paths_to_load, (upload_names, upload_data))
 
-# Load team stats
 team_df = None
 if selected_team_stats and selected_team_stats != "— None —":
     ts_path = Path.cwd() / selected_team_stats
@@ -944,122 +931,108 @@ elif 'uploaded_team_stats' in dir() and uploaded_team_stats is not None:
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE HEADER
 # ══════════════════════════════════════════════════════════════════════════════
-
 st.markdown('<h1 class="scout-title">🤖 AI Scout</h1>', unsafe_allow_html=True)
 st.markdown(
     '<div class="scout-sub">Describe what you need in plain English. '
-    'The AI will analyse your database, pull FM attributes and Transfermarkt values, '
-    'and reason over candidates like a senior scout.</div>',
+    'Top 3 get full reports with role scores, career context and FM data. '
+    'Remaining candidates are listed for manual review.</div>',
     unsafe_allow_html=True
 )
 
-# Status checks
 if player_df.empty:
-    st.markdown(
-        "<div class='warn-box'>⚠️ No player data loaded. Select a WORLD*.csv in the sidebar.</div>",
-        unsafe_allow_html=True
-    )
+    st.markdown("<div class='warn-box'>⚠️ No player data loaded. Select a WORLD*.csv in the sidebar.</div>",
+                unsafe_allow_html=True)
 elif not api_key_input:
-    st.markdown(
-        "<div class='warn-box'>⚠️ Enter your Anthropic API key in the sidebar to use the AI Scout.</div>",
-        unsafe_allow_html=True
-    )
+    st.markdown("<div class='warn-box'>⚠️ Enter your Anthropic API key in the sidebar.</div>",
+                unsafe_allow_html=True)
 else:
-    sources = []
-    if selected_csvs:
-        sources.append(f"{len(selected_csvs)} CSV{'s' if len(selected_csvs)>1 else ''}")
-    if uploaded_files:
-        sources.append(f"{len(uploaded_files)} uploaded")
     n_players = len(player_df)
     n_leagues = player_df["League"].nunique() if "League" in player_df.columns else 0
-
-    info_msg = f"✅ {n_players:,} players · {n_leagues} leagues loaded"
-    if team_df is not None:
-        info_msg += f" · Team stats: {len(team_df)} teams"
-    else:
-        info_msg += " · ⚠️ No team stats loaded (club context unavailable)"
-
-    st.markdown(f"<div class='info-box'>{info_msg}</div>", unsafe_allow_html=True)
+    seasons = player_df["_season"].unique().tolist() if "_season" in player_df.columns else []
+    season_str = " · ".join(seasons) if seasons else "—"
+    tm_status = f"Team stats: {len(team_df)} teams" if team_df is not None else "⚠️ No team stats"
+    st.markdown(
+        f"<div class='info-box'>✅ {n_players:,} players · {n_leagues} leagues · "
+        f"Season(s): {season_str} · {tm_status}</div>",
+        unsafe_allow_html=True
+    )
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SEARCH BOX
 # ══════════════════════════════════════════════════════════════════════════════
-
 st.markdown("<div class='search-label'>Scout Request</div>", unsafe_allow_html=True)
 
 query = st.text_area(
-    label="scout_query",
-    label_visibility="collapsed",
+    label="scout_query", label_visibility="collapsed",
     placeholder=(
         "e.g. Salford City in League Two have £1m to spend on a striker. "
-        "Find me the best U23 CFs in the EFL — a tall target man with high xG and good dribbles. "
-        "Athletically fast with a Transfermarkt value under £1m."
+        "Find me the best U23 CFs in the EFL — a tall target man with high xG. "
+        "Fast, athletically strong, Transfermarkt value under £1m."
     ),
-    height=100,
-    key="scout_query_input"
+    height=100, key="scout_query_input"
 )
 
 col_btn, col_clear = st.columns([1, 5])
 with col_btn:
     run = st.button("🔍 Scout", type="primary", use_container_width=True)
 with col_clear:
-    if st.button("Clear", use_container_width=False):
+    if st.button("Clear"):
         st.session_state.pop("scout_results", None)
         st.rerun()
 
-# Example queries
 with st.expander("💡 Example queries"):
     examples = [
-        "Brentford need a left-footed creative winger, U25, max £15m. Someone who dribbles well and creates chances. Preferably from a top 5 European league.",
-        "Find me a ball-playing CB for a Championship club. Must be composed on the ball, good in the air, under 28. Budget £5m. Check FM for pace and strength.",
-        "A defensive midfielder for a mid-table Bundesliga side — high pressing, wins duels, good passer. Under 26, max €8m Transfermarkt value.",
-        "Salford City, League Two, £1m budget. U23 CF, tall target man, high xG and dribbles, fast. EFL leagues only.",
-        "Brighton need an attacking midfielder — creative, progressive passer, high xA. U23, no budget cap, check FM attributes for technical ratings.",
+        "Brentford need a left-footed creative winger, U25, max £15m. Dribbles well, creates chances. Top 5 European league.",
+        "Find a ball-playing CB for a Championship club. Composed on the ball, good in the air, under 28. Budget £5m.",
+        "A defensive midfielder for a mid-table Bundesliga side — high pressing, wins duels. Under 26, max €8m.",
+        "Salford City, League Two, £1m budget. U23 CF, tall target man, high xG, fast. EFL leagues only.",
+        "Brighton need an attacking midfielder — creative, progressive passer, high xA. U23, check FM attributes.",
     ]
     for ex in examples:
-        if st.button(f"→ {ex[:80]}...", key=f"ex_{ex[:20]}"):
+        if st.button(f"→ {ex[:80]}...", key=f"ex_{hash(ex)}"):
             st.session_state["scout_query_prefill"] = ex
             st.rerun()
 
-# Pre-fill if example clicked
 if "scout_query_prefill" in st.session_state and not query:
     query = st.session_state.pop("scout_query_prefill")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MAIN SCOUT LOGIC
 # ══════════════════════════════════════════════════════════════════════════════
-
 if run and query.strip() and not player_df.empty and api_key_input:
+
+    if not ANTHROPIC_AVAILABLE:
+        st.error("anthropic package not installed. Run: pip install anthropic")
+        st.stop()
 
     client = anthropic.Anthropic(api_key=api_key_input)
 
-    # ── Step 1: Extract parameters ────────────────────────────────────────────
+    # Step 1: Extract params
     with st.spinner("🧠 Reading your request..."):
         params = extract_parameters(client, query)
         params["_raw_query"] = query
 
     if not params:
-        st.error("Couldn't parse your request. Try being more specific about position and league.")
+        st.error("Couldn't parse the request. Try being more specific.")
         st.stop()
 
-    # ── Step 2: Club profile ──────────────────────────────────────────────────
+    # Step 2: Club profile
     team_profile = None
     club_name = params.get("club")
-
     if club_name and team_df is not None:
         with st.spinner(f"📊 Loading {club_name} tactical profile..."):
             team_profile = build_team_profile(club_name, team_df)
 
-    # ── Step 3: Show club profile card ───────────────────────────────────────
+    # Step 3: Club profile card
     if team_profile:
-        with st.spinner(f"✍️ Generating {club_name} profile narrative..."):
+        with st.spinner(f"✍️ Generating {club_name} profile..."):
             club_narrative = generate_club_narrative(client, team_profile, query)
 
         st.markdown(f"""
 <div class='club-card'>
   <h3>📋 {team_profile['team']}</h3>
-  <div class='league-badge'>{team_profile['league']} · 
-    {team_profile['wins']}W {team_profile['draws']}D {team_profile['losses']}L · 
+  <div class='league-badge'>{team_profile['league']} ·
+    {team_profile['wins']}W {team_profile['draws']}D {team_profile['losses']}L ·
     {team_profile['points']} pts (xPts: {team_profile['xpoints']})</div>
   <div class='stat-grid'>
     <div class='stat-box'>
@@ -1099,143 +1072,202 @@ if run and query.strip() and not player_df.empty and api_key_input:
 
     elif club_name:
         st.markdown(
-            f"<div class='warn-box'>⚠️ '{club_name}' not found in team stats. "
-            f"Club context unavailable — results will be purely statistical.</div>",
-            unsafe_allow_html=True
-        )
+            f"<div class='warn-box'>⚠️ '{club_name}' not found in team stats. Results are purely statistical.</div>",
+            unsafe_allow_html=True)
 
-    # ── Step 4: Filter and score candidates ──────────────────────────────────
-    with st.spinner("🔎 Filtering player database..."):
-        filtered = filter_candidates(player_df, params, team_profile)
+    # Step 4: Filter + score
+    with st.spinner("🔎 Filtering database..."):
+        filtered = filter_candidates(player_df, params)
         scored = score_candidates(filtered, params, team_profile, player_df)
 
     if scored.empty:
-        st.warning("No players found matching those criteria. Try relaxing the filters.")
+        st.warning("No players found. Try relaxing the filters.")
         st.stop()
 
     top_candidates = scored.head(top_n).copy()
+    leagues_str = ", ".join(params.get("leagues") or ["all loaded leagues"])
+    st.markdown(
+        f"<div class='info-box'>Found <strong>{len(scored):,}</strong> candidates · "
+        f"Leagues: <strong>{leagues_str}</strong> · "
+        f"Top 3 get full reports · #{4}–#{len(top_candidates)} listed below</div>",
+        unsafe_allow_html=True)
 
-    leagues_searched = params.get("leagues") or ["all loaded leagues"]
-    leagues_str = ", ".join(leagues_searched) if isinstance(leagues_searched, list) else str(leagues_searched)
+    # ── TOP 3: Full cards with reports ───────────────────────────────────────
+    st.markdown("## 🎯 Top 3 Candidates")
 
-    st.markdown(f"""
-<div class='info-box'>
-  Found <strong>{len(scored):,}</strong> candidates matching filters across 
-  <strong>{leagues_str}</strong>. Showing top {len(top_candidates)}.
-</div>
-""", unsafe_allow_html=True)
-
-    # ── Step 5: Render each candidate ────────────────────────────────────────
-    st.markdown(f"## 🎯 Top Candidates")
-
-    for rank, (_, player) in enumerate(top_candidates.iterrows(), 1):
+    for rank, (_, player) in enumerate(top_candidates.head(3).iterrows(), 1):
         player_name = str(player.get("Player", "Unknown"))
-        team_name = str(player.get("Team", "—"))
-        league = str(player.get("League", "—"))
-        age = player.get("Age", "—")
-        pos = str(player.get("Position", "—"))
-        foot = str(player.get("Foot", "—"))
-        minutes = player.get("Minutes played", "—")
-        contract = str(player.get("Contract expires", "—"))
-        mv = fmt_mv(player.get("Market value"))
-        score = float(player.get("_scout_score", 0))
+        team_name   = str(player.get("Team", "—"))
+        league      = str(player.get("League", "—"))
+        age         = player.get("Age", "—")
+        pos         = str(player.get("Position", "—"))
+        foot        = str(player.get("Foot", "—"))
+        minutes     = player.get("Minutes played", "—")
+        contract    = str(player.get("Contract expires", "—"))
+        mv          = fmt_mv(player.get("Market value"))
+        score       = float(player.get("_scout_score", 0))
+        season      = str(player.get("_season", "2025/26"))
 
         # FM fetch
         fm_data = None
-        if params.get("fetch_fminside") and player_name != "Unknown":
+        if params.get("fetch_fminside"):
             with st.spinner(f"⚽ Fetching FM data for {player_name}..."):
                 fm_data = fetch_fminside_player(player_name, team_name)
+            time.sleep(1)  # rate limit safety
 
         # Transfermarkt fetch
         tm_data = None
-        if params.get("fetch_transfermarkt") and player_name != "Unknown":
+        if params.get("fetch_transfermarkt"):
             with st.spinner(f"💰 Checking Transfermarkt for {player_name}..."):
                 tm_data = fetch_transfermarkt_value(player_name, team_name)
+            time.sleep(1)
 
-        # Generate mini report
+        # Bio search
+        with st.spinner(f"🔍 Searching career data for {player_name}..."):
+            bio_context = fetch_player_bio(client, player_name, team_name, league, season, pos)
+        time.sleep(2)  # gap before next Sonnet call
+
+        # Role scores
+        pos_pool = player_df[
+            (player_df["Position"].astype(str).apply(
+                lambda p: get_role_key(p) == get_role_key(pos))) &
+            (player_df["League"] == league)
+        ]
+        if len(pos_pool) < 10:
+            pos_pool = player_df[
+                player_df["Position"].astype(str).apply(
+                    lambda p: get_role_key(p) == get_role_key(pos))
+            ]
+        role_scores = compute_role_scores(player, pos_pool, pos)
+
+        # Mini report
         with st.spinner(f"✍️ Writing report for {player_name}..."):
             mini_report = generate_mini_report(
-                client, player, params, team_profile, player_df, fm_data, tm_data
+                client, player, params, team_profile, player_df,
+                fm_data, tm_data, bio_context, season
             )
+        time.sleep(2)  # gap before next report
 
-        # Stat pills HTML
         stat_pills_html = render_stat_pills(player, params, player_df)
-        fm_pills_html = render_fm_pills(fm_data) if fm_data else ""
+        fm_pills_html   = render_fm_pills(fm_data) if fm_data else ""
+        role_pills_html = render_role_pills(role_scores)
 
-        # TM value display
-        tm_value_display = ""
+        tm_display = ""
         if tm_data and tm_data.get("value_str") and tm_data["value_str"] != "—":
-            tm_value_display = f" · TM: {tm_data['value_str']}"
+            tm_display = f" · TM: {tm_data['value_str']}"
             if tm_data.get("contract") and tm_data["contract"] != "—":
-                tm_value_display += f" · Contract: {tm_data['contract']}"
+                tm_display += f" · Contract: {tm_data['contract']}"
 
-        # Score bar colour
-        bar_color = "#22c55e" if score >= 75 else ("#f59e0b" if score >= 55 else "#ef4444")
+        # Season tag
+        season_color = "#2563eb" if season == "2024/25" else "#059669"
+        season_tag = f"<span class='season-tag' style='background:#{season_color}1a;border-color:{season_color};color:{season_color};'>{season}</span>"
+
+        bio_html = ""
+        if bio_context:
+            bio_html = f"<div style='color:#9fb0c8;font-size:13px;margin:8px 0 0 0;font-style:italic;'>{bio_context}</div>"
+
+        mins_str = int(minutes) if str(minutes).replace('.','').isdigit() else minutes
 
         st.markdown(f"""
 <div class='cand-card'>
   <div class='cand-rank'>#{rank} · Score {score:.0f}/100</div>
-  <div class='cand-name'>{player_name}</div>
+  <div class='cand-name'>{player_name} {season_tag}</div>
   <div class='cand-meta'>
-    {team_name} · {league} · {pos} · Age {age} · {foot} foot · 
-    {int(minutes) if str(minutes).replace('.','').isdigit() else minutes} mins · 
-    CSV MV: {mv}{tm_value_display}
+    {team_name} · {league} · {pos} · Age {age} · {foot} foot ·
+    {mins_str} mins · CSV MV: {mv}{tm_display}
   </div>
   <div class='stat-pills'>{stat_pills_html}</div>
+  {role_pills_html}
   {fm_pills_html}
+  {bio_html}
   <div class='report-text'>{mini_report}</div>
 </div>
 """, unsafe_allow_html=True)
 
-    # ── Step 6: Summary recommendation ───────────────────────────────────────
+    # ── CANDIDATES 4-N: Simple table ─────────────────────────────────────────
+    remaining = top_candidates.iloc[3:]
+    if not remaining.empty:
+        st.markdown(f"---\n## 📋 Further Candidates (#{4}–#{len(top_candidates)})")
+        st.caption("Statistical shortlist only — run a new query to profile these individually.")
+
+        rows = []
+        for _, player in remaining.iterrows():
+            pos_str = str(player.get("Position", ""))
+            rk = get_role_key(pos_str)
+            q_pool = player_df[
+                (player_df["Position"].astype(str).apply(lambda p: get_role_key(p) == rk)) &
+                (player_df["League"] == str(player.get("League", "")))
+            ]
+            if len(q_pool) < 10:
+                q_pool = player_df[player_df["Position"].astype(str).apply(lambda p: get_role_key(p) == rk)]
+            qs = compute_role_scores(player, q_pool, pos_str)
+            br = max(qs, key=qs.get) if qs else "—"
+            bs = qs.get(br, 0)
+            age_v = player.get("Age", "")
+            mins_v = player.get("Minutes played", "")
+            mv_v   = player.get("Market value", "")
+            rows.append({
+                "Player": str(player.get("Player", "")),
+                "Team":   str(player.get("Team", "")),
+                "League": str(player.get("League", "")),
+                "Season": str(player.get("_season", "2025/26")),
+                "Pos":    pos_str.split(",")[0].strip().upper(),
+                "Age":    int(float(age_v)) if pd.notna(age_v) and str(age_v) not in ("","nan") else "—",
+                "Mins":   int(float(mins_v)) if pd.notna(mins_v) and str(mins_v) not in ("","nan") else "—",
+                "MV":     fmt_mv(mv_v),
+                "Best Role": f"{br} ({bs:.0f})",
+                "Scout Score": f"{player.get('_scout_score', 0):.0f}",
+            })
+
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    # ── Chief Scout Summary ───────────────────────────────────────────────────
     if len(top_candidates) >= 3:
-        with st.spinner("📝 Writing overall recommendation..."):
+        with st.spinner("📝 Writing chief scout recommendation..."):
+            time.sleep(3)  # let rate limit breathe after 3 reports
             top3_summary = "\n".join([
-                f"{i+1}. {str(r.get('Player','?'))} ({str(r.get('Team','?'))}, {str(r.get('League','?'))}, age {r.get('Age','?')})"
+                f"{i+1}. {str(r.get('Player','?'))} ({str(r.get('Team','?'))}, "
+                f"{str(r.get('League','?'))}, age {r.get('Age','?')}, {r.get('_season','?')})"
                 for i, (_, r) in enumerate(top_candidates.head(3).iterrows())
             ])
-            club_ctx_summary = (
+            club_ctx = (
                 f"{team_profile['team']} — {team_profile['press_style']}, "
                 f"{team_profile['poss_style']}, {team_profile['directness']}."
                 if team_profile else "No club context."
             )
-
-            summary_response = client.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=350,
-                messages=[{"role": "user", "content": f"""You are a chief scout presenting to a director of football.
+            summary = claude_call(
+                client, "claude-sonnet-4-6",
+                [{"role": "user", "content":
+                  f"""You are a chief scout presenting to a director of football.
 Summarise your recommendation in 3-4 sentences. Name your top pick and why. Mention one value alternative.
+Be realistic about player levels — do not oversell.
 
 Scout query: {query}
-Club context: {club_ctx_summary}
-Top 3 candidates:
+Club context: {club_ctx}
+Top 3:
 {top3_summary}
 
-Write the recommendation now:"""}]
+Write the recommendation:"""}],
+                max_tokens=350
             )
-
-            summary_text = summary_response.content[0].text.strip()
 
         st.markdown(f"""
 <div class='club-card' style='margin-top:24px;border-color:#7c3aed;'>
   <h3>🏆 Chief Scout Recommendation</h3>
-  <div class='report-text' style='border-color:#7c3aed;margin-top:8px'>{summary_text}</div>
+  <div class='report-text' style='border-color:#7c3aed;margin-top:8px'>{summary}</div>
 </div>
 """, unsafe_allow_html=True)
 
 elif run and not query.strip():
     st.warning("Please enter a scout request above.")
 elif run and player_df.empty:
-    st.error("No player data loaded. Select a CSV file in the sidebar.")
+    st.error("No player data loaded.")
 elif run and not api_key_input:
     st.error("Enter your Anthropic API key in the sidebar.")
 
-# ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown(
     "<div style='color:#4b5563;font-size:12px;text-align:center'>"
-    "AI Scout · Powered by Claude · Data: Wyscout CSV + FMInside + Transfermarkt · "
-    "For internal scouting use only"
-    "</div>",
-    unsafe_allow_html=True
+    "AI Scout · Claude · Wyscout CSV + FMInside + Transfermarkt · Internal use only"
+    "</div>", unsafe_allow_html=True
 )
