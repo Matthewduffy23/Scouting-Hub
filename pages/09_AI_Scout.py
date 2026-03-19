@@ -2051,11 +2051,14 @@ with st.expander("🔧 Filter overrides (optional)", expanded=False):
         if fo_use_style:
             if fo_positions:
                 _groups = list({_POS_TO_STYLE_GROUP.get(p,"ATT") for p in fo_positions})
+                _hint = f"Showing styles for: {', '.join(_groups)}"
             else:
                 _groups = list(_STYLE_BY_POS_GROUP.keys())
+                _hint = "Tick Position above to filter by role group"
             _opts = list(dict.fromkeys(
                 s for g in _groups for s in _STYLE_BY_POS_GROUP.get(g, [])
             ))
+            st.caption(_hint)
             fo_styles = st.multiselect("Style / Role", _opts, key="fo_styles")
         else:
             fo_styles = []
@@ -2265,10 +2268,36 @@ if run and query.strip() and not player_df.empty and api_key_input:
             reference_player_row=reference_player_row,
             forced_role=fo_override_role,
         )
-        # Apply realism filter
-        requesting_league = params.get("requesting_league") or params.get("club_league") or ""
+        # Apply realism filter — derive requesting_league via multiple fallbacks
+        requesting_league = (
+            params.get("club_league") or
+            params.get("requesting_league") or
+            ""
+        )
+        # Fallback 1: team_profile if found
         if not requesting_league and team_profile:
             requesting_league = team_profile.get("league", "")
+        # Fallback 2: if leagues filter is a single specific league, use that
+        if not requesting_league:
+            leagues_param = params.get("leagues") or []
+            if len(leagues_param) == 1:
+                requesting_league = leagues_param[0]
+        # Fallback 3: scan query text for known league strings
+        if not requesting_league and query:
+            q_lower = query.lower()
+            _league_keywords = {
+                "premier league": "England 1.", "championship": "England 2.",
+                "league one": "England 3.", "league two": "England 4.",
+                "england 1": "England 1.", "england 2": "England 2.",
+                "england 3": "England 3.", "england 4": "England 4.",
+                "la liga": "Spain 1.", "bundesliga": "Germany 1.",
+                "serie a": "Italy 1.", "ligue 1": "France 1.",
+                "eredivisie": "Netherlands 1.", "primeira liga": "Portugal 1.",
+            }
+            for kw, lg in _league_keywords.items():
+                if kw in q_lower:
+                    requesting_league = lg
+                    break
         scored = apply_realism_filter(scored, requesting_league, realism_level)
 
     if scored.empty:
@@ -2284,7 +2313,8 @@ if run and query.strip() and not player_df.empty and api_key_input:
     with st.expander(f"ℹ️ Search details — {len(scored):,} candidates · {pos_str} · {realism_level} realism", expanded=False):
         st.caption(
             f"Positions: **{pos_str}** · Leagues: {leagues_str}\n\n"
-            f"Scoring: {modes_str} · Realism: {realism_level}"
+            f"Scoring: {modes_str} · Realism: {realism_level} · "
+            f"Requesting league (for realism): **{requesting_league or 'not detected — realism inactive'}**"
         )
 
     # ── TOP 3: Full cards with reports ───────────────────────────────────────
