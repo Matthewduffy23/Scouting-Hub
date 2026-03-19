@@ -1336,6 +1336,7 @@ def score_candidates(pool, params, team_profile, full_pool,
     # Scores are percentile ranks (0-100) so a 90th pct player in Norway 1.
     # scores the same as a 90th pct player in England 2. — fair cross-league comparison.
     # Falls back to full league if position group has <10 players.
+    def _percentile_pos_in_league(df_scored, w_map):
         acc  = np.zeros(len(df_scored))
         tot  = 0.0
         idx_arr = np.arange(len(df_scored))
