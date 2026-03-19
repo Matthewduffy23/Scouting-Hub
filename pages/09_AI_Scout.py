@@ -73,12 +73,6 @@ st.markdown("""
   padding:5px 12px;font-size:12px;color:var(--text);}
 .pill .plab{color:var(--muted);font-size:10px;display:block;margin-bottom:1px;}
 .pill .pval{font-weight:700;}
-.pill.p-elite{border-color:#16a34a;background:#052e16;}
-.pill.p-strong{border-color:#4ade80;background:#052e16;}
-.pill.p-avg{border-color:#86efac;background:#052e16;}
-.pill.p-mid{border-color:#f59e0b;background:#1c1208;}
-.pill.p-low{border-color:#f97316;background:#1c0a02;}
-.pill.p-weak{border-color:#ef4444;background:#1c0202;}
 .report-text{color:#cbd5e1;font-size:14px;line-height:1.7;
   border-left:3px solid var(--accent);padding-left:14px;margin-top:10px;}
 
@@ -520,6 +514,7 @@ def build_team_profile(team_name: str, team_df: pd.DataFrame):
         except: return 50
     profile["ppda_pct"] = pct_rank("PPDA")
     profile["xg_pct"] = pct_rank("xG p90")
+    profile["xga_pct"] = 100 - pct_rank("xG Against p90")  # inverted: low xGA = good
     profile["aerial_pct"] = pct_rank("Aerial Duels p90")
     profile["possession_pct"] = pct_rank("Possession %")
     profile["crosses_pct"] = pct_rank("Crosses p90")
@@ -822,25 +817,36 @@ def _pos_matches_strict(pos_str: str, wanted: list) -> bool:
         return False
     return tokens[0] in wanted
 
-def find_player_in_csv(name: str, df: pd.DataFrame):
+def find_player_in_csv(name: str, df: pd.DataFrame, team_hint: str = ""):
     """
-    Fuzzy-match a player name in the dataframe.
-    Returns the best-matching row or None.
+    Fuzzy-match a player name. Uses surname + full name similarity.
+    Optional team_hint boosts candidates from the right team.
     """
     if df.empty or "Player" not in df.columns:
         return None
-    name_slug = _slug(name)
+    name_slug   = _slug(name)
+    name_sn     = _slug(_surname(name))
+    team_slug   = _slug(team_hint) if team_hint else ""
     best_score, best_idx = 0.0, None
+
     for idx, row in df.iterrows():
-        candidate = _slug(str(row.get("Player", "")))
-        score = _similar(name_slug, candidate)
-        # Also try surname-only match
-        surname_score = _similar(_slug(_surname(name)), _slug(_surname(str(row.get("Player","")))))
-        combined = max(score, surname_score * 0.9)
+        cand      = _slug(str(row.get("Player", "")))
+        cand_sn   = _slug(_surname(str(row.get("Player", ""))))
+        full_sc   = _similar(name_slug, cand)
+        sn_sc     = _similar(name_sn,   cand_sn)
+        # Partial surname match — catches "Devlin" inside "P. Devlin"
+        partial   = 1.0 if (name_sn and name_sn in cand) else 0.0
+        combined  = max(full_sc, sn_sc * 0.92, partial * 0.88)
+        # Boost if player is from the hinted team
+        if team_slug and team_slug:
+            cand_team = _slug(str(row.get("Team", "")))
+            if _similar(team_slug, cand_team) > 0.7:
+                combined = min(1.0, combined + 0.1)
         if combined > best_score:
             best_score = combined
-            best_idx = idx
-    if best_score >= 0.55 and best_idx is not None:
+            best_idx   = idx
+
+    if best_score >= 0.50 and best_idx is not None:
         return df.loc[best_idx]
     return None
 
@@ -1710,7 +1716,7 @@ def render_stat_pills(player: pd.Series, params: dict, full_pool: pd.DataFrame) 
         col  = _pct_col(pct)
         name = METRIC_NAMES.get(m, m.replace(" per 90","").replace(", %","% ").strip())
         pills.append(
-            f"<div class='{cls}'>"
+            f"<div class='pill'>"
             f"<span class='plab'>{name}</span>"
             f"<span class='pval' style='color:{col}'>{val:.2f} "
             f"<span style='color:#6b7280;font-size:10px'>({pct}th)</span></span></div>"
@@ -2159,7 +2165,7 @@ if run and query.strip() and not player_df.empty and api_key_input:
     <div class='stat-box'>
       <div class='label'>xGA p90</div>
       <div class='value'>{team_profile['xga_p90']}</div>
-      <div class='rank' style='color:{_tc(100 - team_profile.get("xg_pct", 50))}'>{_pct_label(100 - team_profile.get("xg_pct",50))} defensively</div>
+      <div class='rank' style='color:{_tc(team_profile.get("xga_pct", 50))}'>{_pct_label(team_profile.get("xga_pct", 50))} defensively</div>
     </div>
     <div class='stat-box'>
       <div class='label'>Aerial Duels p90</div>
@@ -2514,11 +2520,19 @@ Write the recommendation:"""}],
             GREY   = colors.HexColor("#6b7280")
             LIGHT  = colors.HexColor("#f1f5f9")
 
-            def style(name, **kw):
-                tc = kw.pop("textColor", DARK)
-                base = ParagraphStyle(name, fontName="Helvetica", fontSize=9, leading=13, **kw)
-                base.textColor = tc
-                return base
+            def style(name, fontName="Helvetica", fontSize=9, leading=13,
+                      textColor=None, alignment=TA_LEFT, leftIndent=0,
+                      spaceBefore=0, spaceAfter=0, borderPad=0, fontName_=None):
+                s = ParagraphStyle(name)
+                s.fontName    = fontName
+                s.fontSize    = fontSize
+                s.leading     = leading
+                s.textColor   = textColor or DARK
+                s.alignment   = alignment
+                s.leftIndent  = leftIndent
+                s.spaceBefore = spaceBefore
+                s.spaceAfter  = spaceAfter
+                return s
 
             S_TITLE   = style("title",   fontName="Helvetica-Bold", fontSize=18, textColor=DARK, leading=22)
             S_QUERY   = style("query",   fontName="Helvetica-Oblique", fontSize=9, textColor=GREY, leading=12)
