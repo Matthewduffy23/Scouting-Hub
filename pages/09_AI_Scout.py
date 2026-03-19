@@ -859,9 +859,98 @@ def filter_candidates(df, params):
 
     return pool
 
-def score_candidates(pool, params, team_profile, full_pool):
+def _similarity_score(pool, ref_row, all_metrics, full_pool):
+    """Player profile similarity — distance from reference player's stat vector."""
+    if ref_row is None:
+        return pd.Series(50.0, index=pool.index)
+
+    scores = []
+    for _, row in pool.iterrows():
+        diffs = []
+        for m in all_metrics:
+            if m not in full_pool.columns: continue
+            pool_vals = pd.to_numeric(full_pool[m], errors="coerce").dropna()
+            ref_val   = pd.to_numeric(ref_row.get(m, np.nan), errors="coerce")
+            cand_val  = pd.to_numeric(row.get(m, np.nan), errors="coerce")
+            if pd.isna(ref_val) or pd.isna(cand_val) or pool_vals.empty: continue
+            spread = pool_vals.std()
+            if spread < 1e-9: continue
+            diffs.append(abs(float(cand_val) - float(ref_val)) / spread)
+        if diffs:
+            dist = float(np.mean(diffs))
+            scores.append(max(0.0, 100.0 - dist * 40.0))
+        else:
+            scores.append(50.0)
+    return pd.Series(scores, index=pool.index)
+
+def _team_style_score(pool, team_profile, all_metrics, weights):
+    """Team style fit — upweight metrics that match the club's tactical profile."""
+    if not team_profile:
+        return pd.Series(50.0, index=pool.index)
+    # Already handled by weights boosting in main scorer — return pure weighted percentile
+    return pd.Series(50.0, index=pool.index)  # placeholder, blended via weights
+
+def apply_realism_filter(scored, requesting_league, realism_level):
+    """
+    Penalise or remove candidates from leagues too far above the requesting club.
+    Players at Man City / Real Madrid shouldn't top a League Two search.
+    """
+    if realism_level == "Off" or not requesting_league:
+        return scored
+
+    req_strength = LEAGUE_STRENGTHS.get(str(requesting_league).strip(), 50.0)
+    req_band     = get_league_band(requesting_league)
+
+    def _pen(row):
+        player_league   = str(row.get("League", ""))
+        player_strength = LEAGUE_STRENGTHS.get(player_league.strip(), 50.0)
+        player_band     = get_league_band(player_league)
+        band_gap        = player_band - req_band   # negative = player is ABOVE requesting club
+
+        # How many bands above the requesting club is this player?
+        bands_above = max(0, -band_gap)
+
+        if realism_level == "Strict":
+            # Must be within ±1 band
+            if bands_above > 1:
+                return 0.0
+        elif realism_level == "Medium":
+            # Up to 2 bands above is ok; beyond that heavy penalty
+            if bands_above > 2:
+                return 0.0
+            elif bands_above == 2:
+                return 0.5   # 50% penalty
+        elif realism_level == "Soft":
+            # Gentle decay — each band above adds 20% penalty
+            if bands_above > 0:
+                return max(0.1, 1.0 - bands_above * 0.2)
+
+        # Also penalise players from elite clubs unless budget allows
+        # (proxy: if player_strength > 85 and req_strength < 65 → top-club penalty)
+        if player_strength > 85 and req_strength < 65:
+            elite_penalty = (player_strength - 85) / 15.0 * 0.4  # up to 40%
+            return max(0.1, 1.0 - elite_penalty)
+
+        return 1.0
+
+    multipliers = scored.apply(_pen, axis=1)
+    scored = scored.copy()
+    scored["_scout_score"] = scored["_scout_score"] * multipliers
+    return scored.sort_values("_scout_score", ascending=False)
+
+def score_candidates(pool, params, team_profile, full_pool,
+                     scoring_modes=None, reference_player_row=None):
+    """
+    Multi-mode scorer. scoring_modes = dict with keys:
+      top_performers, role_fit, similar_player, team_style
+    Each enabled mode contributes equally to the final score unless only one is on.
+    """
     if pool.empty:
         return pool
+
+    if scoring_modes is None:
+        scoring_modes = {"top_performers": True, "role_fit": True,
+                         "similar_player": False, "team_style": False}
 
     prefixes = [p.upper().strip() for p in (params.get("position_prefixes") or ["CF"])]
     primary_pos = expand_positions(prefixes)[0] if prefixes else "CF"
@@ -875,9 +964,7 @@ def score_candidates(pool, params, team_profile, full_pool):
 
     weights = {m: 1.0 for m in all_metrics}
 
-    # ── Step A: Infer best matching role from team profile ─────────────────────
-    # If we have a team profile, find which role bucket best matches their style
-    # and weight those metrics more heavily
+    # ── Role bucket matching from team profile ────────────────────────────────
     matched_role_metrics = {}
     if team_profile and role_key in ROLE_BUCKETS:
         ppda      = team_profile.get("ppda", 10)
@@ -890,19 +977,14 @@ def score_candidates(pool, params, team_profile, full_pool):
         role_fit_scores = {}
         for role_name, role_metrics in ROLE_BUCKETS[role_key].items():
             fit = 0.0
-            # Pressing team → Defensive CM, Defensive FB fit well
             if ppda < 9 and any("Defensive" in m or "Interception" in m for m in role_metrics):
                 fit += 2.0
-            # Direct/aerial team → Target Man, Box Defender, Defensive FB
             if long_p90 > 45 and any("Aerial" in m for m in role_metrics):
                 fit += 2.5
-            # Possession team → Ball Playing CB, Deep Playmaker, Build Up FB
             if poss > 53 and any("passes" in m.lower() for m in role_metrics):
                 fit += 2.0
-            # Crossing team → Attacking FB, Goal Threat ATT
             if crosses > 25 and any("Cross" in m or "box" in m.lower() for m in role_metrics):
                 fit += 1.5
-            # Progressive team → Ball Carrier, Wide roles
             if prog_runs > 25 and any("Progressive runs" in m or "Dribble" in m for m in role_metrics):
                 fit += 1.5
             role_fit_scores[role_name] = fit
@@ -910,22 +992,15 @@ def score_candidates(pool, params, team_profile, full_pool):
         if role_fit_scores:
             best_role = max(role_fit_scores, key=role_fit_scores.get)
             matched_role_metrics = ROLE_BUCKETS[role_key][best_role]
-            # Boost weights for metrics in the best-fit role
-            for met, w in matched_role_metrics.items():
-                if met in weights:
-                    weights[met] = weights[met] * (1.0 + w * 0.3)
 
-    # ── Step B: Expanded style trait → metric inference ────────────────────────
-    # More comprehensive than keyword matching — maps intent to metrics
+    # ── Style trait → metric inference ───────────────────────────────────────
     TRAIT_METRIC_MAP = {
-        # Attacking traits
         "target man":    {"Aerial duels per 90": 2.5, "Aerial duels won, %": 2.5},
         "aerial":        {"Aerial duels per 90": 2.0, "Aerial duels won, %": 2.0},
         "header":        {"Aerial duels per 90": 2.0, "Aerial duels won, %": 2.5},
         "goalscorer":    {"Non-penalty goals per 90": 2.5, "xG per 90": 2.0, "Shots per 90": 1.5},
         "finisher":      {"Non-penalty goals per 90": 2.5, "xG per 90": 2.0},
         "poacher":       {"Touches in box per 90": 2.0, "Non-penalty goals per 90": 2.5},
-        # Creative / passing
         "creative":      {"xA per 90": 2.5, "Key passes per 90": 2.0, "Smart passes per 90": 1.5},
         "playmaker":     {"xA per 90": 2.5, "Progressive passes per 90": 2.0, "Key passes per 90": 1.5},
         "chance creation": {"xA per 90": 2.5, "Key passes per 90": 2.0, "Passes to penalty area per 90": 2.0},
@@ -934,14 +1009,12 @@ def score_candidates(pool, params, team_profile, full_pool):
         "vision":        {"Smart passes per 90": 2.0, "Key passes per 90": 2.0, "xA per 90": 2.0},
         "passer":        {"Accurate passes, %": 2.0, "Passes per 90": 1.5, "Progressive passes per 90": 1.5},
         "build-up":      {"Accurate passes, %": 2.0, "Progressive passes per 90": 2.0},
-        # Carrying / dribbling
         "dribbler":      {"Dribbles per 90": 2.5, "Successful dribbles, %": 2.0},
         "dribble":       {"Dribbles per 90": 2.5, "Successful dribbles, %": 2.0},
         "carries":       {"Progressive runs per 90": 2.0, "Dribbles per 90": 2.0},
         "ball carrier":  {"Dribbles per 90": 2.0, "Progressive runs per 90": 2.0, "Accelerations per 90": 1.5},
         "wide creator":  {"Crosses per 90": 2.0, "xA per 90": 2.0, "Dribbles per 90": 1.5},
         "crossing":      {"Crosses per 90": 2.5, "Accurate crosses, %": 1.5},
-        # Defensive
         "pressing":      {"Defensive duels per 90": 2.0, "PAdj Interceptions": 2.0},
         "press":         {"Defensive duels per 90": 2.0, "PAdj Interceptions": 2.0},
         "high press":    {"Defensive duels per 90": 2.0, "PAdj Interceptions": 2.5, "Accelerations per 90": 1.5},
@@ -949,7 +1022,6 @@ def score_candidates(pool, params, team_profile, full_pool):
         "tackler":       {"Defensive duels per 90": 2.0, "Defensive duels won, %": 2.5},
         "interceptor":   {"PAdj Interceptions": 3.0},
         "box to box":    {"Defensive duels per 90": 1.5, "Progressive runs per 90": 1.5, "xG per 90": 1.5},
-        # Physical
         "fast":          {"Progressive runs per 90": 1.5, "Accelerations per 90": 2.0},
         "quick":         {"Progressive runs per 90": 1.5, "Accelerations per 90": 2.0},
         "strong":        {"Aerial duels won, %": 1.5, "Defensive duels won, %": 1.5},
@@ -964,23 +1036,79 @@ def score_candidates(pool, params, team_profile, full_pool):
                     if met in weights:
                         weights[met] = max(weights[met], boost)
 
-    # ── Step C: Score ──────────────────────────────────────────────────────────
-    scored = pool.copy()
-    score_acc = np.zeros(len(scored))
-    weight_acc = 0.0
-    for m in all_metrics:
-        if m not in full_pool.columns: continue
-        vals_full = pd.to_numeric(full_pool[m], errors="coerce").dropna()
-        if vals_full.empty: continue
-        cand_vals = pd.to_numeric(scored[m], errors="coerce")
-        pcts = cand_vals.apply(
-            lambda v: (vals_full <= v).mean() * 100 if pd.notna(v) else 50.0).values
-        w = weights.get(m, 1.0)
-        score_acc += pcts * w
-        weight_acc += w
+    # ── Apply role/team style weights ─────────────────────────────────────────
+    role_weights = dict(weights)
+    team_weights = dict(weights)
 
-    scored["_scout_score"] = score_acc / weight_acc if weight_acc > 0 else 50.0
-    scored["_matched_role"] = max(matched_role_metrics.keys(), default="") if isinstance(matched_role_metrics, dict) and matched_role_metrics else ""
+    if scoring_modes.get("role_fit") and matched_role_metrics:
+        for met, w in matched_role_metrics.items():
+            if met in role_weights:
+                role_weights[met] = role_weights[met] * (1.0 + w * 0.3)
+
+    if scoring_modes.get("team_style") and team_profile:
+        ppda = team_profile.get("ppda", 10)
+        poss = team_profile.get("possession", 50)
+        long_p90 = team_profile.get("long_passes_p90", 40)
+        aerial = team_profile.get("aerial_p90", 40)
+        if ppda < 8:
+            for m in ["Defensive duels per 90","PAdj Interceptions","Accelerations per 90"]:
+                if m in team_weights: team_weights[m] = team_weights[m] * 2.0
+        if poss > 57:
+            for m in ["Accurate passes, %","Progressive passes per 90"]:
+                if m in team_weights: team_weights[m] = team_weights[m] * 1.8
+        if long_p90 > 50 and poss < 47:
+            for m in ["Aerial duels per 90","Aerial duels won, %"]:
+                if m in team_weights: team_weights[m] = team_weights[m] * 2.2
+
+    # ── Compute per-mode scores ───────────────────────────────────────────────
+    scored = pool.copy()
+
+    def _percentile_score(df_scored, w_map):
+        acc = np.zeros(len(df_scored))
+        tot = 0.0
+        for m in all_metrics:
+            if m not in full_pool.columns: continue
+            vals_full = pd.to_numeric(full_pool[m], errors="coerce").dropna()
+            if vals_full.empty: continue
+            cand_vals = pd.to_numeric(df_scored[m], errors="coerce")
+            pcts = cand_vals.apply(
+                lambda v: (vals_full <= v).mean() * 100 if pd.notna(v) else 50.0).values
+            w = w_map.get(m, 1.0)
+            acc += pcts * w
+            tot += w
+        return acc / tot if tot > 0 else np.full(len(df_scored), 50.0)
+
+    active_modes = []
+    mode_scores  = {}
+
+    if scoring_modes.get("top_performers"):
+        mode_scores["top"] = _percentile_score(scored, weights)
+        active_modes.append("top")
+
+    if scoring_modes.get("role_fit"):
+        mode_scores["role"] = _percentile_score(scored, role_weights)
+        active_modes.append("role")
+
+    if scoring_modes.get("team_style") and team_profile:
+        mode_scores["team"] = _percentile_score(scored, team_weights)
+        active_modes.append("team")
+
+    if scoring_modes.get("similar_player") and reference_player_row is not None:
+        mode_scores["player"] = _similarity_score(scored, reference_player_row,
+                                                   all_metrics, full_pool).values
+        active_modes.append("player")
+
+    # ── Blend active modes equally ────────────────────────────────────────────
+    if active_modes:
+        final_score = np.mean([mode_scores[m] for m in active_modes], axis=0)
+    else:
+        final_score = _percentile_score(scored, weights)
+
+    scored["_scout_score"] = final_score
+    scored["_matched_role"] = (
+        max(matched_role_metrics.keys(), default="")
+        if isinstance(matched_role_metrics, dict) and matched_role_metrics else ""
+    )
     return scored.sort_values("_scout_score", ascending=False)
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1209,6 +1337,34 @@ with st.sidebar:
                           help="Live market value and contract info.")
     do_fm  = st.checkbox("⚽ FMInside attributes", value=False,
                           help="Pace, strength, jumping reach etc from FMInside.")
+
+    st.markdown("---")
+    st.caption("⚖️ Scoring modes (combine any)")
+    mode_top    = st.checkbox("🏆 Top performers",      value=True,
+                               help="Pure percentile — best stats for position vs full database.")
+    mode_role   = st.checkbox("🎯 Role fit",            value=True,
+                               help="Weighted percentile match to the role buckets (Ball Carrying CM etc).")
+    mode_player = st.checkbox("👤 Similar player profile", value=False,
+                               help="Similarity distance to a reference player's stat vector. Requires a named player in the query (e.g. 'replace Fatawu').")
+    mode_team   = st.checkbox("🏟️ Similar team style",  value=False,
+                               help="Weights metrics that match the requesting club's tactical profile (PPDA, possession, aerial stats).")
+
+    if not any([mode_top, mode_role, mode_player, mode_team]):
+        st.warning("Select at least one scoring mode.")
+        mode_top = True
+
+    st.caption("🌍 Realism")
+    realism_level = st.select_slider(
+        "League & team realism",
+        options=["Off", "Soft", "Medium", "Strict"],
+        value="Medium",
+        help=(
+            "Off = no restriction. "
+            "Soft = minor penalty for big gaps. "
+            "Medium = realistic step-up (1-2 bands). "
+            "Strict = same band only."
+        )
+    )
     st.markdown("---")
     st.caption("Results")
     top_n = st.slider("Total candidates to return", 5, 15, 10,
@@ -1449,9 +1605,39 @@ if run and query.strip() and not player_df.empty and api_key_input:
     params.setdefault("leagues", None)
     params.setdefault("regions", None)
 
-    with st.spinner("🔎 Filtering database..."):
+    # Build scoring modes dict from sidebar toggles
+    scoring_modes = {
+        "top_performers":  mode_top,
+        "role_fit":        mode_role,
+        "similar_player":  mode_player,
+        "team_style":      mode_team,
+    }
+    active_mode_labels = []
+    if mode_top:    active_mode_labels.append("🏆 Top performers")
+    if mode_role:   active_mode_labels.append("🎯 Role fit")
+    if mode_player: active_mode_labels.append("👤 Similar player")
+    if mode_team:   active_mode_labels.append("🏟️ Team style")
+
+    # Warn if similar_player is on but no reference player found
+    if mode_player and reference_player_row is None:
+        st.markdown(
+            "<div class='warn-box'>⚠️ Similar player mode is on but no reference player was found in your CSVs. "
+            "Name a player in your query (e.g. 'replace Fatawu') — falling back to other active modes.</div>",
+            unsafe_allow_html=True)
+        scoring_modes["similar_player"] = False
+
+    with st.spinner("🔎 Filtering and scoring..."):
         filtered = filter_candidates(player_df, params)
-        scored = score_candidates(filtered, params, team_profile, player_df)
+        scored = score_candidates(
+            filtered, params, team_profile, player_df,
+            scoring_modes=scoring_modes,
+            reference_player_row=reference_player_row,
+        )
+        # Apply realism filter
+        requesting_league = params.get("requesting_league") or params.get("club_league") or ""
+        if not requesting_league and team_profile:
+            requesting_league = team_profile.get("league", "")
+        scored = apply_realism_filter(scored, requesting_league, realism_level)
 
     if scored.empty:
         st.warning("No players found. Try relaxing the filters.")
@@ -1462,10 +1648,13 @@ if run and query.strip() and not player_df.empty and api_key_input:
     wanted_raw = [p.upper() for p in (params.get("position_prefixes") or [])]
     expanded = expand_positions(wanted_raw)
     pos_str = " + ".join(expanded) if expanded else "all positions"
+    modes_str = " · ".join(active_mode_labels) if active_mode_labels else "Top performers"
+    realism_str = f"Realism: {realism_level}"
     st.markdown(
         f"<div class='info-box'>Found <strong>{len(scored):,}</strong> candidates · "
         f"Positions: <strong>{pos_str}</strong> · "
         f"Leagues: <strong>{leagues_str}</strong> · "
+        f"Scoring: {modes_str} · {realism_str} · "
         f"Top 3 get full reports · #{4}–#{len(top_candidates)} listed below</div>",
         unsafe_allow_html=True)
 
