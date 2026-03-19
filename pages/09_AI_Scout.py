@@ -1645,9 +1645,12 @@ Write exactly 5 sentences, one per line:"""
 # STAT PILLS + FM PILLS
 # ══════════════════════════════════════════════════════════════════════════════
 def render_stat_pills(player: pd.Series, params: dict, full_pool: pd.DataFrame) -> str:
-    prefixes = [p.upper().strip() for p in (params.get("position_prefixes") or ["CF"])]
-    primary_pos = prefixes[0] if prefixes else "CF"
-    role_key = POS_TO_ROLE_KEY.get(primary_pos, "ATT")
+    # Use player's actual primary position — not what was searched
+    actual_pos = str(player.get("Position", "")).split(",")[0].strip().upper()
+    role_key = POS_TO_ROLE_KEY.get(actual_pos, "ATT")
+    primary_pos = actual_pos if actual_pos in POSITION_METRICS else next(
+        (p for p in POSITION_METRICS if POS_TO_ROLE_KEY.get(p) == role_key), "CF"
+    )
     metrics = POSITION_METRICS.get(primary_pos, POSITION_METRICS["CF"])[:6]
     metrics = [m for m in metrics if m in full_pool.columns]
     player_league = str(player.get("League", ""))
