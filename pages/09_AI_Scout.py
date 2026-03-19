@@ -430,12 +430,41 @@ def load_and_merge(csv_paths: tuple, upload_bytes: tuple) -> pd.DataFrame:
 def build_team_profile(team_name: str, team_df: pd.DataFrame):
     if team_df is None or team_df.empty:
         return None
-    mask = team_df["Team"].astype(str).str.lower() == team_name.lower().strip()
+    if not team_name or not team_name.strip():
+        return None
+
+    name_clean = team_name.lower().strip()
+    teams_lower = team_df["Team"].astype(str).str.lower()
+
+    # 1. Exact match
+    mask = teams_lower == name_clean
+    # 2. Contains full name
     if not mask.any():
-        mask = team_df["Team"].astype(str).str.lower().str.contains(
-            team_name.lower().strip()[:8], na=False)
+        mask = teams_lower.str.contains(re.escape(name_clean), na=False)
+    # 3. Name contains any word ≥4 chars from query (e.g. "Leicester" matches "Leicester City")
+    if not mask.any():
+        words = [w for w in re.split(r"\s+", name_clean) if len(w) >= 4]
+        for w in words:
+            m = teams_lower.str.contains(re.escape(w), na=False)
+            if m.any():
+                mask = m
+                break
+    # 4. Token overlap score (≥0.5)
+    if not mask.any():
+        query_tokens = set(re.split(r"\s+", name_clean))
+        best_score, best_idx = 0.0, None
+        for i, t in enumerate(teams_lower):
+            t_tokens = set(re.split(r"\s+", t))
+            overlap = len(query_tokens & t_tokens) / max(len(query_tokens | t_tokens), 1)
+            if overlap > best_score:
+                best_score, best_idx = overlap, i
+        if best_score >= 0.4 and best_idx is not None:
+            mask = pd.Series(False, index=team_df.index)
+            mask.iloc[best_idx] = True
+
     if not mask.any():
         return None
+
     row = team_df[mask].iloc[0]
     def safe(col, default=0.0):
         try: return float(row[col])
@@ -991,135 +1020,135 @@ def _proper_role_fit_score(pool, role_metrics_dict, full_df, beta=0.0):
 
 def _proper_team_style_score(pool, team_profile, role_key, full_df):
     """
-    Proper team style similarity — mirrors _score_block / compute_fullbacks style from streamlit_app.py.
-    Builds composite role dimensions, computes per-league percentile vectors,
-    measures distance from the template club's average profile.
+    Team style similarity using team_profile stats directly (PPDA, possession, etc).
+
+    Maps team-level style dimensions to equivalent player-level composite metrics,
+    computes the template club's target percentile for each dimension from the
+    team stats CSV (already in team_profile as pct_rank fields), then measures
+    how close each candidate's composite metrics are to that target profile.
     """
     if not team_profile or pool.empty:
         return pd.Series(50.0, index=pool.index)
 
-    # Build composite dimensions per role (mirrors the composite features in streamlit_app.py)
-    ROLE_COMPOSITES = {
-        "ATT": {
-            "Goal Threat":        lambda df: 0.4*_safe_num(df,"xG per 90") + 0.4*_safe_num(df,"Non-penalty goals per 90") + 0.2*_safe_num(df,"Touches in box per 90"),
-            "Creativity Threat":  lambda df: 0.65*_safe_num(df,"xA per 90") + 0.35*_safe_num(df,"Passes to penalty area per 90"),
-            "Pass Volume":        lambda df: _safe_num(df,"Passes per 90"),
-            "Ball Carrying":      lambda df: 0.6*_safe_num(df,"Dribbles per 90") + 0.4*_safe_num(df,"Progressive runs per 90"),
-            "Deep Playmaking":    lambda df: 0.5*_safe_num(df,"Progressive passes per 90") + 0.5*_safe_num(df,"Passes to final third per 90"),
-        },
-        "CF": {
-            "Opportunities":      lambda df: 0.7*_safe_num(df,"Touches in box per 90") + 0.3*_safe_num(df,"xG per 90"),
-            "Ball Carrying":      lambda df: 0.65*_safe_num(df,"Dribbles per 90") + 0.35*_safe_num(df,"Progressive runs per 90"),
-            "Aerial Requirement": lambda df: _safe_num(df,"Aerial duels per 90") * _safe_num(df,"Aerial duels won, %") / 100.0,
-            "Pass Volume":        lambda df: _safe_num(df,"Passes per 90"),
-            "Goal Output":        lambda df: _safe_num(df,"Non-penalty goals per 90"),
-        },
-        "CM": {
-            "Pass Verticality":   lambda df: _safe_div_s(df,"Forward passes per 90","Passes per 90"),
-            "Progression Volume": lambda df: _safe_num(df,"Progressive passes per 90") + _safe_num(df,"Progressive runs per 90"),
-            "Defensive Volume":   lambda df: _safe_num(df,"Defensive duels per 90"),
-            "Interception Vol":   lambda df: _safe_num(df,"PAdj Interceptions"),
-            "Pass Volume":        lambda df: _safe_num(df,"Passes per 90"),
-        },
-        "FB": {
-            "Progression Volume":      lambda df: _safe_num(df,"Progressive passes per 90") + _safe_num(df,"Progressive runs per 90"),
-            "Attacking Contribution":  lambda df: 0.4*_safe_num(df,"xA per 90") + 0.2*_safe_num(df,"Crosses per 90") + 0.2*_safe_num(df,"Touches in box per 90") + 0.1*_safe_num(df,"Shots per 90") + 0.1*_safe_num(df,"Passes to penalty area per 90"),
-            "Defensive Volume":        lambda df: 0.5*_safe_num(df,"Defensive duels per 90") + 0.3*_safe_num(df,"PAdj Interceptions") + 0.2*_safe_num(df,"Aerial duels per 90"),
-            "Pass Volume":             lambda df: _safe_num(df,"Passes per 90"),
-        },
-        "CB": {
-            "Aerial Volume":      lambda df: _safe_num(df,"Aerial duels per 90"),
-            "Defensive Volume":   lambda df: _safe_num(df,"Defensive duels per 90"),
-            "Passing Volume":     lambda df: _safe_num(df,"Passes per 90"),
-            "Progression Volume": lambda df: _safe_num(df,"Progressive passes per 90") + _safe_num(df,"Progressive runs per 90"),
-        },
-    }
-
-    composites = ROLE_COMPOSITES.get(role_key, ROLE_COMPOSITES["ATT"])
-    cols = list(composites.keys())
-
-    def _safe_num(df, col):
+    # ── Build composite dimensions for candidates (player-level) ─────────────
+    # These mirror the composites from streamlit_app.py per role
+    def _n(df, col):
         if col not in df.columns:
             return pd.Series(0.0, index=df.index)
         return pd.to_numeric(df[col], errors="coerce").fillna(0.0)
 
-    def _safe_div_s(df, num_col, den_col):
-        n = _safe_num(df, num_col)
-        d = _safe_num(df, den_col).replace(0, np.nan)
-        return (n / d).fillna(0.0)
+    COMPOSITES = {
+        "ATT": {
+            "Goal Threat":       lambda df: 0.4*_n(df,"xG per 90") + 0.4*_n(df,"Non-penalty goals per 90") + 0.2*_n(df,"Touches in box per 90"),
+            "Creativity":        lambda df: 0.65*_n(df,"xA per 90") + 0.35*_n(df,"Passes to penalty area per 90"),
+            "Ball Carrying":     lambda df: 0.6*_n(df,"Dribbles per 90") + 0.4*_n(df,"Progressive runs per 90"),
+            "Pass Volume":       lambda df: _n(df,"Passes per 90"),
+            "Pressing Work":     lambda df: _n(df,"Defensive duels per 90"),
+        },
+        "CF": {
+            "Opportunities":     lambda df: 0.7*_n(df,"Touches in box per 90") + 0.3*_n(df,"xG per 90"),
+            "Aerial Requirement":lambda df: _n(df,"Aerial duels per 90") * _n(df,"Aerial duels won, %") / 100.0,
+            "Ball Carrying":     lambda df: 0.65*_n(df,"Dribbles per 90") + 0.35*_n(df,"Progressive runs per 90"),
+            "Pass Volume":       lambda df: _n(df,"Passes per 90"),
+            "Goal Output":       lambda df: _n(df,"Non-penalty goals per 90"),
+        },
+        "CM": {
+            "Pass Verticality":  lambda df: (_n(df,"Forward passes per 90") /
+                                              _n(df,"Passes per 90").replace(0, np.nan)).fillna(0.0),
+            "Progression":       lambda df: _n(df,"Progressive passes per 90") + _n(df,"Progressive runs per 90"),
+            "Defensive Vol":     lambda df: _n(df,"Defensive duels per 90"),
+            "Interceptions":     lambda df: _n(df,"PAdj Interceptions"),
+            "Pass Volume":       lambda df: _n(df,"Passes per 90"),
+        },
+        "FB": {
+            "Attacking Contrib": lambda df: (0.4*_n(df,"xA per 90") + 0.2*_n(df,"Crosses per 90") +
+                                              0.2*_n(df,"Touches in box per 90") + 0.1*_n(df,"Shots per 90") +
+                                              0.1*_n(df,"Passes to penalty area per 90")),
+            "Defensive Vol":     lambda df: (0.5*_n(df,"Defensive duels per 90") +
+                                              0.3*_n(df,"PAdj Interceptions") + 0.2*_n(df,"Aerial duels per 90")),
+            "Progression":       lambda df: _n(df,"Progressive passes per 90") + _n(df,"Progressive runs per 90"),
+            "Pass Volume":       lambda df: _n(df,"Passes per 90"),
+        },
+        "CB": {
+            "Aerial Volume":     lambda df: _n(df,"Aerial duels per 90"),
+            "Defensive Vol":     lambda df: _n(df,"Defensive duels per 90"),
+            "Passing Volume":    lambda df: _n(df,"Passes per 90"),
+            "Progression":       lambda df: _n(df,"Progressive passes per 90") + _n(df,"Progressive runs per 90"),
+        },
+    }
 
-    # Build composite columns on full pool for percentile reference
+    composites = COMPOSITES.get(role_key, COMPOSITES["ATT"])
+    cols = list(composites.keys())
+
+    # ── Build composite cols on the full reference pool and candidate pool ─────
     ref_all = full_df.copy()
     for col, fn in composites.items():
         ref_all[col] = fn(ref_all)
 
-    # Build on candidate pool
     scored = pool.copy()
     for col, fn in composites.items():
         scored[col] = fn(scored)
 
-    # Template club's average across its players (use full_df filtered by club)
-    template_team = team_profile.get("team", "")
     template_league = team_profile.get("league", "")
-    tmpl_df = full_df[
-        (full_df["Team"].astype(str) == template_team) &
-        (full_df["League"].astype(str) == template_league)
-    ].copy()
 
-    if tmpl_df.empty:
-        # Fall back to league average
-        tmpl_df = full_df[full_df["League"].astype(str) == template_league].copy()
-    if tmpl_df.empty:
-        return pd.Series(50.0, index=pool.index)
+    # ── Build template target vector from team_profile stats directly ──────────
+    # Map each composite dimension to the team_profile percentile already computed
+    # in build_team_profile (ppda_pct, possession_pct, crosses_pct etc).
+    # This avoids the broken player-CSV team lookup.
+    COMPOSITE_TO_TEAM_PCT = {
+        # ATT / CF
+        "Goal Threat":        team_profile.get("xg_pct", 50),
+        "Creativity":         team_profile.get("crosses_pct", 50),
+        "Ball Carrying":      team_profile.get("prog_runs_pct", 50),
+        "Pass Volume":        50 + (team_profile.get("possession_pct", 50) - 50) * 0.6,
+        "Pressing Work":      team_profile.get("ppda_pct", 50),
+        "Opportunities":      team_profile.get("xg_pct", 50),
+        "Aerial Requirement": team_profile.get("aerial_pct", 50),
+        "Goal Output":        team_profile.get("xg_pct", 50),
+        # CM / FB
+        "Pass Verticality":   max(0, 100 - team_profile.get("possession_pct", 50)),
+        "Progression":        team_profile.get("prog_runs_pct", 50),
+        "Defensive Vol":      team_profile.get("ppda_pct", 50),
+        "Interceptions":      team_profile.get("ppda_pct", 50),
+        "Attacking Contrib":  team_profile.get("crosses_pct", 50),
+        # CB
+        "Aerial Volume":      team_profile.get("aerial_pct", 50),
+        "Defensive Vol":      team_profile.get("ppda_pct", 50),
+        "Passing Volume":     team_profile.get("possession_pct", 50),
+        "Attacking Contrib":  team_profile.get("crosses_pct", 50),
+    }
+    tmpl_pct = {col: float(COMPOSITE_TO_TEAM_PCT.get(col, 50)) for col in cols}
 
-    for col, fn in composites.items():
-        tmpl_df[col] = fn(tmpl_df)
+    # ── Candidate percentile vectors per-league ────────────────────────────────
+    pct_cols = {col: np.full(len(scored), 50.0) for col in cols}
 
-    tmpl_vec = tmpl_df[cols].mean().to_dict()
-
-    # Template percentile vs its own league
-    ref_tmpl = ref_all[ref_all["League"].astype(str) == template_league].copy()
-    tmpl_pct = {}
-    for col in cols:
-        s = pd.to_numeric(ref_tmpl.get(col, pd.Series(dtype=float)), errors="coerce").dropna()
-        v = float(tmpl_vec.get(col, 0.0))
-        tmpl_pct[col] = _percentile_of_value(s, v) * 100.0 if not s.empty else 50.0
-
-    # Candidate percentile vectors per-league
-    cand_pct = scored.copy()
-    for col in cols:
-        cand_pct[f"_pct_{col}"] = 50.0
-
-    for lg in scored["League"].dropna().unique():
-        idx = scored["League"].astype(str) == str(lg)
-        ref_lg = ref_all[ref_all["League"].astype(str) == str(lg)]
+    for lg in scored["League"].dropna().astype(str).unique():
+        idx_mask = (scored["League"].astype(str) == lg).values
+        ref_lg = ref_all[ref_all["League"].astype(str) == lg]
         if ref_lg.empty:
             continue
         for col in cols:
             s = pd.to_numeric(ref_lg[col], errors="coerce").dropna()
             if s.empty:
                 continue
-            cand_pct.loc[idx, f"_pct_{col}"] = (
-                pd.to_numeric(scored.loc[idx, col], errors="coerce")
-                .map(lambda v: _percentile_of_value(s, v) * 100.0)
-            )
+            cand_col_vals = pd.to_numeric(scored.loc[scored["League"].astype(str) == lg, col], errors="coerce")
+            pcts = cand_col_vals.apply(
+                lambda v: float((s <= v).mean() * 100) if pd.notna(v) else 50.0
+            ).values
+            pct_cols[col][idx_mask] = pcts
 
-    # Distance from template percentile vector
-    distances = np.array([
-        np.linalg.norm([
-            cand_pct.loc[i, f"_pct_{col}"] - tmpl_pct[col]
-            for col in cols
-        ])
-        for i in scored.index
-    ])
+    # ── Distance → exp-decay score ─────────────────────────────────────────────
+    diff_matrix = np.stack([pct_cols[col] - tmpl_pct[col] for col in cols], axis=1)
+    distances   = np.linalg.norm(diff_matrix, axis=1)
 
-    # Exp-decay to score (mirrors _score_block)
     d_min, d_max = distances.min(), distances.max()
     rng = d_max - d_min
     if rng < 1e-9:
-        base_score = np.full(len(distances), 100.0)
+        base_score = np.full(len(distances), 80.0)   # everyone fits equally well
     else:
         base_score = 100.0 * np.exp(-5.0 * (distances - d_min) / rng)
+
+    return pd.Series(np.clip(base_score, 0.0, 100.0), index=pool.index)
 
     return pd.Series(np.clip(base_score, 0.0, 100.0), index=pool.index)
 
@@ -1335,8 +1364,12 @@ def score_candidates(pool, params, team_profile, full_pool,
             mode_scores["role"] = _percentile_pos_in_league(scored, role_weights)
         active_modes.append("role")
 
-    if scoring_modes.get("team_style") and team_profile:
-        mode_scores["team"] = _proper_team_style_score(scored, team_profile, role_key, full_pool)
+    if scoring_modes.get("team_style"):
+        if team_profile:
+            mode_scores["team"] = _proper_team_style_score(scored, team_profile, role_key, full_pool)
+        else:
+            # No team stats found — contribute neutral 50 so mode is still blended
+            mode_scores["team"] = np.full(len(scored), 50.0)
         active_modes.append("team")
 
     if scoring_modes.get("similar_player") and reference_player_row is not None:
@@ -2253,35 +2286,24 @@ if run and query.strip() and not player_df.empty and api_key_input:
         score       = float(player.get("_scout_score", 0))
         season      = str(player.get("_season", "2025/26"))
 
-        # Per-mode score pills
+        # Build score breakdown line (only for active modes)
+        breakdown_parts = []
         s_top    = player.get("_score_top")
         s_role   = player.get("_score_role")
         s_team   = player.get("_score_team")
         s_player = player.get("_score_player")
-
-        def _score_pill(label, val, active):
-            if not active or val is None or (isinstance(val, float) and np.isnan(val)):
-                return ""
-            v = float(val)
-            col = "#22c55e" if v>=75 else ("#f59e0b" if v>=55 else "#ef4444")
-            return (f"<span style='background:#161a22;border:1px solid {col};"
-                    f"color:{col};border-radius:8px;padding:3px 10px;"
-                    f"font-size:12px;font-weight:700;margin-right:6px;'>"
-                    f"{label} {v:.0f}</span>")
-
-        score_pills = (
-            _score_pill("🏆", s_top,    scoring_modes.get("top_performers")) +
-            _score_pill("🎯", s_role,   scoring_modes.get("role_fit")) +
-            _score_pill("🏟️", s_team,  scoring_modes.get("team_style") and team_profile) +
-            _score_pill("👤", s_player, scoring_modes.get("similar_player") and reference_player_row is not None)
-        )
-        rank_badge = (
-            f"<div style='margin-bottom:8px;'>"
-            f"<span style='color:#9fb0c8;font-size:13px;font-weight:700;margin-right:10px;'>#{rank}</span>"
-            f"{score_pills}"
-            f"<span style='color:#6b7280;font-size:11px;'>Blended: {score:.0f}/100</span>"
-            f"</div>"
-        )
+        if scoring_modes.get("top_performers") and s_top is not None and not (isinstance(s_top, float) and np.isnan(s_top)):
+            breakdown_parts.append(f"🏆 {float(s_top):.0f}")
+        if scoring_modes.get("role_fit") and s_role is not None and not (isinstance(s_role, float) and np.isnan(s_role)):
+            breakdown_parts.append(f"🎯 {float(s_role):.0f}")
+        if scoring_modes.get("team_style") and team_profile and s_team is not None and not (isinstance(s_team, float) and np.isnan(s_team)):
+            breakdown_parts.append(f"🏟️ {float(s_team):.0f}")
+        if scoring_modes.get("similar_player") and reference_player_row is not None and s_player is not None and not (isinstance(s_player, float) and np.isnan(s_player)):
+            breakdown_parts.append(f"👤 {float(s_player):.0f}")
+        breakdown_html = (
+            f"<div style='color:#6b7280;font-size:11px;margin-top:2px;'>"
+            f"{'  ·  '.join(breakdown_parts)}</div>"
+        ) if len(breakdown_parts) > 1 else ""
 
         # FM fetch — only if sidebar toggle on
         fm_data = None
@@ -2359,7 +2381,8 @@ if run and query.strip() and not player_df.empty and api_key_input:
 
         st.markdown(f"""
 <div class='cand-card'>
-  {rank_badge}
+  <div class='cand-rank'>#{rank} · Scout Score {score:.0f}/100{' ℹ️' if breakdown_html else ''}</div>
+  {breakdown_html}
   <div class='cand-name'>{player_name} {season_tag}</div>
   <div class='cand-meta'>
     {team_name} · {league} · {pos} · Age {age} · {foot} foot ·
