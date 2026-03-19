@@ -714,13 +714,24 @@ Use the reference player's strongest metrics (80th percentile+) to infer key_sty
         max_tokens=700,
         system=f"""Extract search parameters from a scout query and return ONLY valid JSON.
 
-IMPORTANT LEAGUE RULES:
-- For specific leagues use Wyscout format with trailing dot: "England 2.", "Spain 1." etc.
-- For regions use these EXACT keywords in the "regions" field: "europe", "south america", "north america", "asia", "top 5", "efl", "championship", "league one", "league two"
-- "European leagues" → regions: ["europe"]
-- "South America" → regions: ["south america"]
-- "Europe or South America" → regions: ["europe", "south america"]
-- If no leagues/regions mentioned, set both to null
+POSITION CODES — use Wyscout format exactly:
+- Striker / Centre Forward → ["CF"]
+- Right Winger / Right Wide Attacker → ["RW"] (do NOT use RCMF or RAMF)
+- Left Winger / Left Wide Attacker → ["LW"] (do NOT use LCMF or LAMF)
+- Attacking Midfielder (10) → ["AMF"]
+- Central Midfielder → ["CMF"] or ["LCMF","RCMF"]
+- Defensive Midfielder → ["DMF"]
+- Right Back / Right Wing Back → ["RB"]
+- Left Back / Left Wing Back → ["LB"]
+- Centre Back → ["CB"]
+- Goalkeeper → ["GK"]
+CRITICAL: "winger", "wide forward", "wide attacker" = RW or LW only — NEVER CMF, RCMF, LCMF
+CRITICAL: "attacker" without side = ["RW","LW","AMF"] — NEVER CMF variants
+
+LEAGUE RULES:
+- Specific leagues: Wyscout format with trailing dot: "England 2.", "Spain 1." etc.
+- Regions (use EXACT keywords in "regions" field): "europe", "south america", "north america", "asia", "top 5", "efl", "championship", "league one", "league two"
+- No leagues/regions mentioned → set both to null
 {ref_section}
 Return this exact JSON structure:
 {{
@@ -1245,27 +1256,34 @@ def generate_mini_report(client, player, params, team_profile, full_pool, fm_dat
 
     bio_section = f"\nCareer context: {bio_context}" if bio_context else ""
 
-    prompt = f"""Write a professional scouting report. STRICT RULES:
-- EXACTLY 5 sentences. No more, no less.
-- Each sentence on its own line.
-- Sentence 1: How well this player fits the CLUB'S TACTICAL STYLE — compare their playing style to the club's press/possession/directness profile using specific stats.
-- Sentence 2: How well they match the ROLE REQUIREMENTS — reference the matched role and their specific role metric scores.
-- Sentence 3: Best standalone statistical standout with exact value and percentile ({season} data), or career context if bio available.
-- Sentence 4: ONE genuine risk or weakness backed by a low stat value (<40th pct). If no weakness exists, name the biggest tactical adjustment they'd need.
-- Sentence 5: SIGN / MONITOR / PASS with one reason. Flag level gap if significant.
-No headers, no bullet points, no markdown.
+    prompt = f"""You are Head of Recruitment at a data-driven Championship club (Brentford / Brighton methodology).
+Write a scouting report that is direct, evidence-based, and grounded in numbers.
 
-PERCENTILE CONTEXT:
-90th+ = Elite. 80-89th = Strong. 70-79th = Above average. 50-69th = Functional. <40th = Weakness.
-Never call 70th+ percentile a weakness or concern.
+STRICT RULES:
+- EXACTLY 5 sentences. One per line. No headers, bullets, markdown.
+- Every claim must cite a specific number from the data below.
+- NEVER label a stat at the 70th percentile or above as a weakness, risk, or concern. That is above average.
+- Only flag genuine weaknesses if a stat is below the 40th percentile.
+- If no weakness exists, describe the tactical adjustment needed for the step-up in level instead.
+- Speak as an experienced scout — confident, precise, no filler phrases.
+
+SENTENCE STRUCTURE — follow exactly:
+S1: TEAM STYLE FIT. Does this player's press intensity, passing volume, and directness match how the requesting club plays? Cite specific numbers from both the club profile and the player's stats.
+S2: ROLE FIT. How do they score on the key metrics for the required role? Name the role, cite 2-3 of the weighted metrics with values and percentiles.
+S3: STANDOUT STRENGTH. Single clearest data-backed quality with exact value and percentile. Include career context if bio is available.
+S4: HONEST WEAKNESS OR TRANSITION NOTE. Sub-40th percentile stat = weakness. No such stat = name the tactical adjustment for the level-up. Do NOT fabricate a concern.
+S5: VERDICT. SIGN / MONITOR / PASS. One reason. If there is a significant league level gap, state it plainly.
+
+PERCENTILE SCALE:
+90th+ = Elite. 80–89 = Strong. 70–79 = Above average. 50–69 = Functional. <40 = Weakness.
 
 Player: {player.get('Player','—')}
-Club: {player.get('Team','—')} ({player.get('League','—')}) — {season}
+Current Club: {player.get('Team','—')} ({player.get('League','—')}) — {season}
 Age: {player.get('Age','—')} | Position: {player.get('Position','—')} | Foot: {player.get('Foot','—')}
 Minutes: {player.get('Minutes played','—')} | Contract: {player.get('Contract expires','—')} | Value: {fmt_mv(player.get('Market value'))}
 {bio_section}
 
-All stats (percentile vs full database):
+PLAYER STATS (percentile vs full database):
 {chr(10).join(stats_lines) if stats_lines else 'Unavailable.'}
 
 FM Physical: {fm_block}
@@ -1275,13 +1293,13 @@ Transfermarkt: {tm_block}
 
 {role_req_block}
 
-Requesting club context: {club_ctx}
+Requesting club: {club_ctx}
 Query: {params.get('_raw_query','—')}
 
-Write 5 sentences now, one per line:"""
+Write exactly 5 sentences, one per line:"""
 
     return claude_call(client, "claude-sonnet-4-6",
-                       [{"role": "user", "content": prompt}], max_tokens=380)
+                       [{"role": "user", "content": prompt}], max_tokens=400)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # STAT PILLS + FM PILLS
