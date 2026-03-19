@@ -815,6 +815,7 @@ def build_player_profile_block(player_row: pd.Series, full_df: pd.DataFrame,
     return "\n".join(lines)
 
 
+def filter_candidates(df, params):
     pool = df.copy()
     for col in ["Minutes played", "Age", "Market value"]:
         if col in pool.columns:
