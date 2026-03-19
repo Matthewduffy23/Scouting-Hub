@@ -427,7 +427,7 @@ def load_and_merge(csv_paths: tuple, upload_bytes: tuple) -> pd.DataFrame:
 # ══════════════════════════════════════════════════════════════════════════════
 # TEAM PROFILE
 # ══════════════════════════════════════════════════════════════════════════════
-def build_team_profile(team_name: str, team_df: pd.DataFrame) -> dict | None:
+def build_team_profile(team_name: str, team_df: pd.DataFrame):
     if team_df is None or team_df.empty:
         return None
     mask = team_df["Team"].astype(str).str.lower() == team_name.lower().strip()
@@ -488,7 +488,7 @@ def build_team_profile(team_name: str, team_df: pd.DataFrame) -> dict | None:
 # FMINSIDE FETCH
 # ══════════════════════════════════════════════════════════════════════════════
 @st.cache_data(show_spinner=False, ttl=3600)
-def fetch_fminside_player(player_name: str, team_name: str) -> dict | None:
+def fetch_fminside_player(player_name: str, team_name: str):
     try:
         surname = _slug(_surname(player_name))
         full_slug = _slug(player_name)
@@ -533,7 +533,7 @@ def fetch_fminside_player(player_name: str, team_name: str) -> dict | None:
 # TRANSFERMARKT FETCH
 # ══════════════════════════════════════════════════════════════════════════════
 @st.cache_data(show_spinner=False, ttl=3600)
-def fetch_transfermarkt_value(player_name: str, team_name: str) -> dict | None:
+def fetch_transfermarkt_value(player_name: str, team_name: str):
     try:
         search_url = f"https://www.transfermarkt.co.uk/schnellsuche/ergebnis/schnellsuche?query={requests.utils.quote(player_name)}"
         headers = {
@@ -665,8 +665,7 @@ REGION_LEAGUES = {
     "league two": ["England 4."],
 }
 
-def resolve_leagues(raw_leagues: list | None, regions: list | None,
-                    available_in_csv: list) -> list | None:
+def resolve_leagues(raw_leagues, regions, available_in_csv):
     """
     Convert region names and league names to actual Wyscout league strings.
     Returns None (= no filter) if nothing specified.
@@ -766,7 +765,7 @@ def _pos_matches(pos_str: str, wanted: list) -> bool:
     player_tokens = _pos_tokens(pos_str)
     return any(tok in wanted for tok in player_tokens)
 
-def find_player_in_csv(name: str, df: pd.DataFrame) -> pd.Series | None:
+def find_player_in_csv(name: str, df: pd.DataFrame):
     """
     Fuzzy-match a player name in the dataframe.
     Returns the best-matching row or None.
@@ -859,8 +858,7 @@ def build_player_profile_block(player_row: pd.Series, full_df: pd.DataFrame,
 
     return pool
 
-def score_candidates(pool: pd.DataFrame, params: dict, team_profile: dict | None,
-                     full_pool: pd.DataFrame) -> pd.DataFrame:
+def score_candidates(pool, params, team_profile, full_pool):
     if pool.empty:
         return pool
 
@@ -1020,10 +1018,7 @@ def fetch_player_bio(client, player: str, team: str, league: str,
         return " ".join(sentences[:3])
     return ""
 
-def generate_mini_report(client, player: pd.Series, params: dict,
-                         team_profile: dict | None, full_pool: pd.DataFrame,
-                         fm_data: dict | None, tm_data: dict | None,
-                         bio_context: str, season: str) -> str:
+def generate_mini_report(client, player, params, team_profile, full_pool, fm_data, tm_data, bio_context, season):
     prefixes = [p.upper().strip() for p in (params.get("position_prefixes") or ["CF"])]
     primary_pos = expand_positions(prefixes)[0] if prefixes else "CF"
     role_key = POS_TO_ROLE_KEY.get(primary_pos, "ATT")
