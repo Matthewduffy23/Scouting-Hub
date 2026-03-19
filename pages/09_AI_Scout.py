@@ -1187,11 +1187,11 @@ def apply_realism_filter(scored, requesting_league, realism_level):
     return scored.sort_values("_scout_score", ascending=False)
 
 def score_candidates(pool, params, team_profile, full_pool,
-                     scoring_modes=None, reference_player_row=None):
+                     scoring_modes=None, reference_player_row=None,
+                     forced_role=None):
     """
-    Multi-mode scorer. scoring_modes = dict with keys:
-      top_performers, role_fit, similar_player, team_style
-    Each enabled mode contributes equally to the final score unless only one is on.
+    Multi-mode scorer.
+    Percentiles = per position-group within league (LWs ranked vs LWs in same league).
     """
     if pool.empty:
         return pool
@@ -1212,158 +1212,145 @@ def score_candidates(pool, params, team_profile, full_pool,
 
     weights = {m: 1.0 for m in all_metrics}
 
-    # ── Role bucket matching from team profile ────────────────────────────────
+    # ── Role bucket: forced override > team-profile inference ─────────────────
+    matched_role_name = ""
     matched_role_metrics = {}
-    if team_profile and role_key in ROLE_BUCKETS:
+
+    if forced_role and role_key in ROLE_BUCKETS:
+        for rname, rmetrics in ROLE_BUCKETS[role_key].items():
+            if rname == forced_role or forced_role in rname:
+                matched_role_name    = rname
+                matched_role_metrics = rmetrics
+                break
+
+    if not matched_role_metrics and team_profile and role_key in ROLE_BUCKETS:
         ppda      = team_profile.get("ppda", 10)
         poss      = team_profile.get("possession", 50)
         long_p90  = team_profile.get("long_passes_p90", 40)
-        aerial    = team_profile.get("aerial_p90", 40)
         crosses   = team_profile.get("crosses_p90", 20)
         prog_runs = team_profile.get("prog_runs_p90", 20)
-
-        role_fit_scores = {}
-        for role_name, role_metrics in ROLE_BUCKETS[role_key].items():
+        scores = {}
+        for rname, rmetrics in ROLE_BUCKETS[role_key].items():
             fit = 0.0
-            if ppda < 9 and any("Defensive" in m or "Interception" in m for m in role_metrics):
-                fit += 2.0
-            if long_p90 > 45 and any("Aerial" in m for m in role_metrics):
-                fit += 2.5
-            if poss > 53 and any("passes" in m.lower() for m in role_metrics):
-                fit += 2.0
-            if crosses > 25 and any("Cross" in m or "box" in m.lower() for m in role_metrics):
-                fit += 1.5
-            if prog_runs > 25 and any("Progressive runs" in m or "Dribble" in m for m in role_metrics):
-                fit += 1.5
-            role_fit_scores[role_name] = fit
+            if ppda < 9   and any("Defensive" in m or "Interception" in m for m in rmetrics): fit += 2.0
+            if long_p90>45 and any("Aerial" in m for m in rmetrics):                          fit += 2.5
+            if poss > 53  and any("passes" in m.lower() for m in rmetrics):                   fit += 2.0
+            if crosses>25 and any("Cross" in m or "box" in m.lower() for m in rmetrics):      fit += 1.5
+            if prog_runs>25 and any("Progressive runs" in m or "Dribble" in m for m in rmetrics): fit += 1.5
+            scores[rname] = fit
+        if scores:
+            matched_role_name    = max(scores, key=scores.get)
+            matched_role_metrics = ROLE_BUCKETS[role_key][matched_role_name]
 
-        if role_fit_scores:
-            best_role = max(role_fit_scores, key=role_fit_scores.get)
-            matched_role_metrics = ROLE_BUCKETS[role_key][best_role]
-
-    # ── Style trait → metric inference ───────────────────────────────────────
+    # ── Style traits → weight boosts ──────────────────────────────────────────
     TRAIT_METRIC_MAP = {
-        "target man":    {"Aerial duels per 90": 2.5, "Aerial duels won, %": 2.5},
-        "aerial":        {"Aerial duels per 90": 2.0, "Aerial duels won, %": 2.0},
-        "header":        {"Aerial duels per 90": 2.0, "Aerial duels won, %": 2.5},
-        "goalscorer":    {"Non-penalty goals per 90": 2.5, "xG per 90": 2.0, "Shots per 90": 1.5},
-        "finisher":      {"Non-penalty goals per 90": 2.5, "xG per 90": 2.0},
-        "poacher":       {"Touches in box per 90": 2.0, "Non-penalty goals per 90": 2.5},
-        "creative":      {"xA per 90": 2.5, "Key passes per 90": 2.0, "Smart passes per 90": 1.5},
-        "playmaker":     {"xA per 90": 2.5, "Progressive passes per 90": 2.0, "Key passes per 90": 1.5},
-        "chance creation": {"xA per 90": 2.5, "Key passes per 90": 2.0, "Passes to penalty area per 90": 2.0},
-        "assist":        {"xA per 90": 2.5, "Key passes per 90": 1.5},
-        "progressive":   {"Progressive passes per 90": 2.0, "Progressive runs per 90": 2.0},
-        "vision":        {"Smart passes per 90": 2.0, "Key passes per 90": 2.0, "xA per 90": 2.0},
-        "passer":        {"Accurate passes, %": 2.0, "Passes per 90": 1.5, "Progressive passes per 90": 1.5},
-        "build-up":      {"Accurate passes, %": 2.0, "Progressive passes per 90": 2.0},
-        "dribbler":      {"Dribbles per 90": 2.5, "Successful dribbles, %": 2.0},
-        "dribble":       {"Dribbles per 90": 2.5, "Successful dribbles, %": 2.0},
-        "carries":       {"Progressive runs per 90": 2.0, "Dribbles per 90": 2.0},
-        "ball carrier":  {"Dribbles per 90": 2.0, "Progressive runs per 90": 2.0, "Accelerations per 90": 1.5},
-        "wide creator":  {"Crosses per 90": 2.0, "xA per 90": 2.0, "Dribbles per 90": 1.5},
-        "crossing":      {"Crosses per 90": 2.5, "Accurate crosses, %": 1.5},
-        "pressing":      {"Defensive duels per 90": 2.0, "PAdj Interceptions": 2.0},
-        "press":         {"Defensive duels per 90": 2.0, "PAdj Interceptions": 2.0},
-        "high press":    {"Defensive duels per 90": 2.0, "PAdj Interceptions": 2.5, "Accelerations per 90": 1.5},
-        "defensive":     {"Defensive duels won, %": 2.0, "PAdj Interceptions": 2.0},
-        "tackler":       {"Defensive duels per 90": 2.0, "Defensive duels won, %": 2.5},
-        "interceptor":   {"PAdj Interceptions": 3.0},
-        "box to box":    {"Defensive duels per 90": 1.5, "Progressive runs per 90": 1.5, "xG per 90": 1.5},
-        "fast":          {"Progressive runs per 90": 1.5, "Accelerations per 90": 2.0},
-        "quick":         {"Progressive runs per 90": 1.5, "Accelerations per 90": 2.0},
-        "strong":        {"Aerial duels won, %": 1.5, "Defensive duels won, %": 1.5},
-        "link-up":       {"Passes per 90": 1.5, "xA per 90": 2.0, "Touches in box per 90": 1.5},
+        "target man":  {"Aerial duels per 90":2.5,"Aerial duels won, %":2.5},
+        "goal threat": {"Non-penalty goals per 90":3.0,"xG per 90":2.5,"Shots per 90":1.5},
+        "goalscorer":  {"Non-penalty goals per 90":2.5,"xG per 90":2.0,"Shots per 90":1.5},
+        "creative":    {"xA per 90":2.5,"Key passes per 90":2.0,"Smart passes per 90":1.5},
+        "playmaker":   {"xA per 90":2.5,"Progressive passes per 90":2.0,"Key passes per 90":1.5},
+        "wide creator":{"Crosses per 90":2.0,"xA per 90":2.0,"Dribbles per 90":1.5},
+        "dribbler":    {"Dribbles per 90":2.5,"Successful dribbles, %":2.0},
+        "ball carrier":{"Dribbles per 90":2.0,"Progressive runs per 90":2.0,"Accelerations per 90":1.5},
+        "pressing":    {"Defensive duels per 90":2.0,"PAdj Interceptions":2.0},
+        "high press":  {"Defensive duels per 90":2.0,"PAdj Interceptions":2.5,"Accelerations per 90":1.5},
+        "defensive":   {"Defensive duels won, %":2.0,"PAdj Interceptions":2.0},
+        "box to box":  {"Defensive duels per 90":1.5,"Progressive runs per 90":1.5,"xG per 90":1.5},
+        "link-up":     {"Passes per 90":1.5,"xA per 90":2.0,"Touches in box per 90":1.5},
+        "build-up":    {"Accurate passes, %":2.0,"Progressive passes per 90":2.0},
+        "fast":        {"Progressive runs per 90":1.5,"Accelerations per 90":2.0},
+        "aerial":      {"Aerial duels per 90":2.0,"Aerial duels won, %":2.0},
     }
-
-    style_traits = [s.lower() for s in (params.get("key_style_traits") or [])]
-    for trait in style_traits:
-        for phrase, metric_boosts in TRAIT_METRIC_MAP.items():
+    for trait in [s.lower() for s in (params.get("key_style_traits") or [])]:
+        for phrase, boosts in TRAIT_METRIC_MAP.items():
             if phrase in trait or trait in phrase:
-                for met, boost in metric_boosts.items():
+                for met, boost in boosts.items():
                     if met in weights:
                         weights[met] = max(weights[met], boost)
 
-    # ── Apply role/team style weights ─────────────────────────────────────────
     role_weights = dict(weights)
-    team_weights = dict(weights)
-
-    if scoring_modes.get("role_fit") and matched_role_metrics:
+    if matched_role_metrics:
         for met, w in matched_role_metrics.items():
             if met in role_weights:
                 role_weights[met] = role_weights[met] * (1.0 + w * 0.3)
 
-    if scoring_modes.get("team_style") and team_profile:
-        ppda = team_profile.get("ppda", 10)
-        poss = team_profile.get("possession", 50)
-        long_p90 = team_profile.get("long_passes_p90", 40)
-        aerial = team_profile.get("aerial_p90", 40)
-        if ppda < 8:
-            for m in ["Defensive duels per 90","PAdj Interceptions","Accelerations per 90"]:
-                if m in team_weights: team_weights[m] = team_weights[m] * 2.0
-        if poss > 57:
-            for m in ["Accurate passes, %","Progressive passes per 90"]:
-                if m in team_weights: team_weights[m] = team_weights[m] * 1.8
-        if long_p90 > 50 and poss < 47:
-            for m in ["Aerial duels per 90","Aerial duels won, %"]:
-                if m in team_weights: team_weights[m] = team_weights[m] * 2.2
+    # ── Per-position-group-in-league percentile (the correct approach) ─────────
+    def _percentile_pos_in_league(df_scored, w_map):
+        """
+        Each candidate is ranked vs players of the SAME role_key in the SAME league.
+        E.g. a LW in England 2. is ranked vs all ATT players in England 2.
+        Falls back to full league if position group < 10 players.
+        """
+        acc  = np.zeros(len(df_scored))
+        tot  = 0.0
+        idx_arr = np.arange(len(df_scored))
 
-    # ── Compute per-mode scores ───────────────────────────────────────────────
-    scored = pool.copy()
-
-    def _percentile_score(df_scored, w_map):
-        acc = np.zeros(len(df_scored))
-        tot = 0.0
         for m in all_metrics:
             if m not in full_pool.columns: continue
-            vals_full = pd.to_numeric(full_pool[m], errors="coerce").dropna()
-            if vals_full.empty: continue
-            cand_vals = pd.to_numeric(df_scored[m], errors="coerce")
-            pcts = cand_vals.apply(
-                lambda v: (vals_full <= v).mean() * 100 if pd.notna(v) else 50.0).values
             w = w_map.get(m, 1.0)
-            acc += pcts * w
+            metric_pcts = np.full(len(df_scored), 50.0)
+
+            for lg in df_scored["League"].dropna().astype(str).unique():
+                cand_mask = (df_scored["League"].astype(str) == lg)
+                # same role group + same league in full pool
+                ref_mask = (
+                    (full_pool["League"].astype(str) == lg) &
+                    (full_pool["Position"].astype(str).apply(
+                        lambda p: POS_TO_ROLE_KEY.get(
+                            p.split(",")[0].strip().upper(), "ATT") == role_key
+                    ))
+                )
+                ref_vals = pd.to_numeric(full_pool.loc[ref_mask, m], errors="coerce").dropna()
+                if len(ref_vals) < 10:   # too few — fall back to full league
+                    ref_vals = pd.to_numeric(
+                        full_pool.loc[full_pool["League"].astype(str)==lg, m],
+                        errors="coerce").dropna()
+                if ref_vals.empty:
+                    continue
+
+                cand_vals = pd.to_numeric(df_scored.loc[cand_mask, m], errors="coerce")
+                pcts = cand_vals.apply(
+                    lambda v: float((ref_vals <= v).mean()*100) if pd.notna(v) else 50.0
+                ).values
+                positions_in_scored = np.where(cand_mask.values)[0]
+                for pi, pv in zip(positions_in_scored, pcts):
+                    metric_pcts[pi] = pv
+
+            acc += metric_pcts * w
             tot += w
+
         return acc / tot if tot > 0 else np.full(len(df_scored), 50.0)
 
-    active_modes = []
-    mode_scores  = {}
+    scored = pool.copy()
+    active_modes, mode_scores = [], {}
 
     if scoring_modes.get("top_performers"):
-        mode_scores["top"] = _percentile_score(scored, weights)
+        mode_scores["top"] = _percentile_pos_in_league(scored, weights)
         active_modes.append("top")
 
     if scoring_modes.get("role_fit"):
-        # Use proper per-league percentile × role weights (mirrors compute_weighted_role_score)
         if matched_role_metrics:
             mode_scores["role"] = _proper_role_fit_score(scored, matched_role_metrics, full_pool)
         else:
-            mode_scores["role"] = _percentile_score(scored, role_weights)
+            mode_scores["role"] = _percentile_pos_in_league(scored, role_weights)
         active_modes.append("role")
 
     if scoring_modes.get("team_style") and team_profile:
-        # Use proper composite dimension distance (mirrors _score_block from streamlit_app.py)
         mode_scores["team"] = _proper_team_style_score(scored, team_profile, role_key, full_pool)
         active_modes.append("team")
 
     if scoring_modes.get("similar_player") and reference_player_row is not None:
-        # Use proper StandardScaler + per-league percentile similarity
         mode_scores["player"] = _proper_similarity_score(
-            scored, reference_player_row, all_metrics, full_pool
-        ).values
+            scored, reference_player_row, all_metrics, full_pool).values
         active_modes.append("player")
 
-    # ── Blend active modes equally ────────────────────────────────────────────
-    if active_modes:
-        final_score = np.mean([mode_scores[m] for m in active_modes], axis=0)
-    else:
-        final_score = _percentile_score(scored, weights)
-
-    scored["_scout_score"] = final_score
-    scored["_matched_role"] = (
-        max(matched_role_metrics.keys(), default="")
-        if isinstance(matched_role_metrics, dict) and matched_role_metrics else ""
+    final_score = (
+        np.mean([mode_scores[m] for m in active_modes], axis=0)
+        if active_modes else _percentile_pos_in_league(scored, weights)
     )
+
+    scored["_scout_score"]   = final_score
+    scored["_matched_role"]  = matched_role_name
     return scored.sort_values("_scout_score", ascending=False)
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1402,7 +1389,195 @@ def fetch_player_bio(client, player: str, team: str, league: str,
         return " ".join(sentences[:3])
     return ""
 
-def generate_mini_report(client, player, params, team_profile, full_pool, fm_data, tm_data, bio_context, season):
+def generate_mini_report(client, player, params, team_profile, full_pool,
+                         fm_data, tm_data, bio_context, season,
+                         scoring_modes=None):
+    prefixes = [p.upper().strip() for p in (params.get("position_prefixes") or ["CF"])]
+    primary_pos = expand_positions(prefixes)[0] if prefixes else "CF"
+    role_key = POS_TO_ROLE_KEY.get(primary_pos, "ATT")
+    metrics = POSITION_METRICS.get(primary_pos,
+              POSITION_METRICS.get(role_key, POSITION_METRICS["CF"]))
+    metrics = [m for m in metrics if m in full_pool.columns]
+
+    player_league = str(player.get("League", ""))
+    matched_role  = str(player.get("_matched_role", ""))
+
+    # ── Stats: per-position-group-in-league percentile ────────────────────────
+    stats_lines = []
+    for m in metrics:
+        val = pd.to_numeric(player.get(m), errors="coerce")
+        if pd.isna(val): continue
+        # Same role group, same league
+        ref_mask = (
+            (full_pool["League"].astype(str) == player_league) &
+            (full_pool["Position"].astype(str).apply(
+                lambda p: POS_TO_ROLE_KEY.get(p.split(",")[0].strip().upper(), "ATT") == role_key
+            ))
+        )
+        peer_vals = pd.to_numeric(full_pool.loc[ref_mask, m], errors="coerce").dropna()
+        if len(peer_vals) < 10:  # too few — fall back to full league
+            peer_vals = pd.to_numeric(
+                full_pool.loc[full_pool["League"].astype(str)==player_league, m],
+                errors="coerce").dropna()
+        pct = int((peer_vals <= val).mean() * 100) if not peer_vals.empty else 50
+        stats_lines.append(f"  {m}: {val:.2f} [{pct}th pct vs {role_key}s in {player_league}]")
+
+    # ── FM / TM blocks ────────────────────────────────────────────────────────
+    fm_block = "Not available."
+    if fm_data:
+        parts = [f"{a.replace('_',' ').title()}: {fm_data[a]}/20"
+                 for a in ["pace","acceleration","strength","jumping_reach","stamina"]
+                 if a in fm_data]
+        if "height" in fm_data: parts.append(f"Height: {fm_data['height']}cm")
+        fm_block = ", ".join(parts) if parts else "Not available."
+
+    tm_block = "Not fetched."
+    if tm_data:
+        tm_block = f"Market Value: {tm_data.get('value_str','—')}, Contract: {tm_data.get('contract','—')}"
+
+    # ── Role requirements: matched role's top metrics vs player's values ──────
+    role_req_lines = []
+    if matched_role and role_key in ROLE_BUCKETS:
+        role_mets = ROLE_BUCKETS[role_key].get(matched_role, {})
+        if role_mets:
+            role_req_lines.append(f"ROLE: '{matched_role}' — key metrics (weight × player value [pct]):")
+            for met, w in sorted(role_mets.items(), key=lambda x: -x[1])[:5]:
+                val = pd.to_numeric(player.get(met, np.nan), errors="coerce")
+                if pd.isna(val):
+                    role_req_lines.append(f"  {met} (×{w:.0f}): no data")
+                    continue
+                ref_mask = (
+                    (full_pool["League"].astype(str) == player_league) &
+                    (full_pool["Position"].astype(str).apply(
+                        lambda p: POS_TO_ROLE_KEY.get(
+                            p.split(",")[0].strip().upper(), "ATT") == role_key
+                    ))
+                )
+                peer_vals = pd.to_numeric(full_pool.loc[ref_mask, met], errors="coerce").dropna()
+                if len(peer_vals) < 10:
+                    peer_vals = pd.to_numeric(
+                        full_pool.loc[full_pool["League"].astype(str)==player_league, met],
+                        errors="coerce").dropna()
+                pct = int((peer_vals <= val).mean() * 100) if not peer_vals.empty else 50
+                role_req_lines.append(f"  {met} (×{w:.0f}): {val:.2f} [{pct}th pct]")
+    role_req_block = "\n".join(role_req_lines) if role_req_lines else "Role requirements: not matched."
+
+    # ── Team style comparison ─────────────────────────────────────────────────
+    team_style_block = ""
+    player_team_style_block = ""
+    if team_profile:
+        team_style_block = (
+            f"REQUESTING CLUB — {team_profile['team']} ({team_profile['league']}):\n"
+            f"  PPDA: {team_profile['ppda']} ({team_profile['press_style']}, {team_profile['ppda_pct']}th pct)\n"
+            f"  Possession: {team_profile['possession']}% ({team_profile['poss_style']})\n"
+            f"  Long passes p90: {team_profile['long_passes_p90']} ({team_profile['directness']})\n"
+            f"  Aerial duels p90: {team_profile['aerial_p90']} ({team_profile['aerial_pct']}th pct)\n"
+            f"  xG p90: {team_profile['xg_p90']} ({team_profile['xg_pct']}th pct in league)"
+        )
+        # Try to find player's current club stats for direct comparison
+        player_team_name = str(player.get("Team", ""))
+        if "Team" in full_pool.columns and "League" in full_pool.columns:
+            pt_mask = (
+                (full_pool["Team"].astype(str) == player_team_name) &
+                (full_pool["League"].astype(str) == player_league)
+            )
+            if pt_mask.any():
+                # Estimate pressing proxy from player stats
+                def_duels = pd.to_numeric(
+                    full_pool.loc[pt_mask, "Defensive duels per 90"], errors="coerce"
+                ).mean() if "Defensive duels per 90" in full_pool.columns else np.nan
+                pass_vol = pd.to_numeric(
+                    full_pool.loc[pt_mask, "Passes per 90"], errors="coerce"
+                ).mean() if "Passes per 90" in full_pool.columns else np.nan
+                long_p = pd.to_numeric(
+                    full_pool.loc[pt_mask, "Long passes per 90"], errors="coerce"
+                ).mean() if "Long passes per 90" in full_pool.columns else np.nan
+                if not np.isnan(def_duels) or not np.isnan(pass_vol):
+                    player_team_style_block = (
+                        f"PLAYER'S CURRENT CLUB — {player_team_name} ({player_league}) estimated profile:\n"
+                    )
+                    if not np.isnan(def_duels):
+                        player_team_style_block += f"  Defensive duels p90 (squad avg): {def_duels:.2f}\n"
+                    if not np.isnan(pass_vol):
+                        player_team_style_block += f"  Passes p90 (squad avg): {pass_vol:.2f}\n"
+                    if not np.isnan(long_p):
+                        player_team_style_block += f"  Long passes p90 (squad avg): {long_p:.2f}"
+
+    # ── Level gap ─────────────────────────────────────────────────────────────
+    level_note = ""
+    if team_profile:
+        p_band = get_league_band(player_league)
+        c_band = get_league_band(team_profile["league"])
+        if c_band - p_band < -1:
+            level_note = (f"LEVEL GAP: Player plays in {BAND_LABELS.get(p_band,'?')} "
+                         f"— requesting club is {BAND_LABELS.get(c_band,'?')}. "
+                         f"Significant step down in level. Flag in report.")
+
+    bio_section = f"Career context: {bio_context}" if bio_context else ""
+
+    # ── Adaptive sentence structure based on active modes ─────────────────────
+    sm = scoring_modes or {}
+    has_team_style  = bool(sm.get("team_style") and team_profile)
+    has_role_fit    = bool(sm.get("role_fit") or matched_role)
+    has_similar_pl  = bool(sm.get("similar_player"))
+
+    if has_team_style and has_role_fit:
+        s1 = "S1 — TEAM STYLE FIT: Compare the player's press intensity (defensive duels p90), passing volume, and directness to the requesting club's PPDA, possession%, and long passes p90. Use exact numbers from both profiles. If player's club stats are available, note the similarity or difference."
+        s2 = "S2 — ROLE FIT: Name the matched role. Cite the top 3 weighted role metrics with the player's actual value and percentile. Be specific about how well they fit."
+    elif has_team_style:
+        s1 = "S1 — TEAM STYLE FIT: Compare how this player's statistical profile matches the club's tactical style. Use exact numbers."
+        s2 = "S2 — STANDOUT STAT: Best single metric with exact value and percentile."
+    elif has_role_fit:
+        s1 = "S1 — ROLE FIT: Name the matched role. Cite the top 3 weighted role metrics with the player's actual value and percentile."
+        s2 = "S2 — SECOND STRENGTH: Second best quality with exact value and percentile."
+    else:
+        s1 = "S1 — BEST STAT: Single clearest data-backed strength with exact value and percentile."
+        s2 = "S2 — SECOND STRENGTH: Second best quality with exact value and percentile."
+
+    prompt = f"""You are Head of Recruitment at a data-driven Championship club (Brentford / Brighton methodology).
+Write a scouting report. Experienced, direct, grounded in numbers. No filler.
+
+HARD RULES:
+- EXACTLY 5 sentences. One per line. No headers, bullets, or markdown.
+- Every claim needs a specific number from the data.
+- Percentile ≥70 = above average. NEVER call this a weakness.
+- Only flag a weakness if a stat is genuinely <40th percentile.
+- If no <40th pct stat exists: describe the tactical adjustment needed for the step up, not a made-up flaw.
+
+SENTENCE STRUCTURE:
+{s1}
+{s2}
+S3 — STANDOUT QUALITY or CAREER CONTEXT: Clearest individual strength with exact value/pct, or career context if bio provided.
+S4 — HONEST WEAKNESS or TRANSITION NOTE: Sub-40th pct = weakness with the stat. No weakness = state the one tactical adjustment for this level. Do not fabricate.
+S5 — VERDICT: SIGN / MONITOR / PASS. One decisive reason. State level gap plainly if {level_note}.
+
+PERCENTILE SCALE: 90th+=Elite · 80-89=Strong · 70-79=Above avg · 50-69=Functional · <40=Weakness
+
+=== DATA ===
+Player: {player.get('Player','—')} | {player.get('Team','—')} ({player_league}) | {season}
+Age: {player.get('Age','—')} | Position: {player.get('Position','—')} | Foot: {player.get('Foot','—')}
+Minutes: {player.get('Minutes played','—')} | Contract: {player.get('Contract expires','—')} | Value: {fmt_mv(player.get('Market value'))}
+{bio_section}
+
+PLAYER STATS (per-position-group in {player_league}):
+{chr(10).join(stats_lines) if stats_lines else 'Unavailable.'}
+
+FM Physical: {fm_block}
+Transfermarkt: {tm_block}
+
+{team_style_block}
+{player_team_style_block}
+
+{role_req_block}
+
+{level_note}
+Query: {params.get('_raw_query','—')}
+===
+
+Write exactly 5 sentences, one per line:"""
+
+    return claude_call(client, "claude-sonnet-4-6",
+                       [{"role": "user", "content": prompt}], max_tokens=420)
     prefixes = [p.upper().strip() for p in (params.get("position_prefixes") or ["CF"])]
     primary_pos = expand_positions(prefixes)[0] if prefixes else "CF"
     role_key = POS_TO_ROLE_KEY.get(primary_pos, "ATT")
@@ -1754,6 +1929,191 @@ with st.expander("💡 Example queries"):
             st.session_state["scout_query_prefill"] = ex
             st.rerun()
 
+# ── Filter overrides ──────────────────────────────────────────────────────────
+# Position → available style groups
+_STYLE_BY_POS_GROUP = {
+    "GK":  ["Shot Stopper", "Ball Playing GK", "Sweeper GK"],
+    "CB":  ["Ball Playing CB", "Wide CB", "Box Defender"],
+    "FB":  ["Attacking FB", "Build Up FB", "Defensive FB"],
+    "CM":  ["Deep Playmaker CM", "Advanced Playmaker CM", "Defensive CM", "Ball Carrying CM"],
+    "ATT": ["Goal Threat ATT", "Playmaker ATT", "Ball Carrier", "Wide Creator"],
+    "CF":  ["Target Man CF", "Goal Threat CF", "Link Up CF"],
+}
+_POS_TO_STYLE_GROUP = {
+    "GK":"GK","CB":"CB","LCB":"CB","RCB":"CB",
+    "LB":"FB","RB":"FB","LWB":"FB","RWB":"FB",
+    "DMF":"CM","LDMF":"CM","RDMF":"CM","LCMF":"CM","RCMF":"CM",
+    "AMF":"ATT","LAMF":"ATT","RAMF":"ATT","LW":"ATT","LWF":"ATT","RW":"ATT","RWF":"ATT",
+    "CF":"CF",
+}
+
+with st.expander("🔧 Filter overrides (optional)", expanded=False):
+    st.caption("Tick to enforce. Unticked = Claude uses what it extracts from your query.")
+    fc1, fc2, fc3 = st.columns(3)
+
+    with fc1:
+        fo_use_pos = st.checkbox("📍 Position", key="fo_use_pos")
+        if fo_use_pos:
+            _all_pos = ["GK","CB","LCB","RCB","LB","RB","LWB","RWB",
+                        "DMF","LDMF","RDMF","LCMF","RCMF",
+                        "AMF","LAMF","RAMF","LW","LWF","RW","RWF","CF"]
+            fo_positions = st.multiselect("Position(s)", _all_pos, key="fo_positions")
+        else:
+            fo_positions = []
+
+        fo_use_age = st.checkbox("🎂 Age", key="fo_use_age")
+        if fo_use_age:
+            fo_age_min, fo_age_max = st.slider("Age range", 14, 45, (16, 30), key="fo_age")
+        else:
+            fo_age_min = fo_age_max = None
+
+    with fc2:
+        fo_use_region = st.checkbox("🌍 Region", key="fo_use_region")
+        if fo_use_region:
+            fo_regions = st.multiselect("Region(s)", [
+                "europe","south america","north america","asia","africa",
+                "top 5","efl","championship","league one","league two",
+            ], key="fo_regions")
+        else:
+            fo_regions = []
+
+        fo_use_band = st.checkbox("🏷️ League Band", key="fo_use_band")
+        if fo_use_band:
+            fo_bands = st.multiselect("Band(s)", [1,2,3,4,5,6], key="fo_bands",
+                help="1=Top5 EU · 2=Champ/Strong EU · 3=L1/Mid EU · 4=L2/Lower EU · 5=NL · 6=Amateur")
+        else:
+            fo_bands = []
+
+    with fc3:
+        fo_use_value = st.checkbox("💰 Market Value (max)", key="fo_use_value")
+        if fo_use_value:
+            fo_value_max = st.number_input("Max £m", 0.0, 200.0, 5.0, 0.5, key="fo_value")
+        else:
+            fo_value_max = None
+
+        fo_use_style = st.checkbox("🎯 Style / Role", key="fo_use_style")
+        if fo_use_style:
+            if fo_positions:
+                _groups = list({_POS_TO_STYLE_GROUP.get(p,"ATT") for p in fo_positions})
+            else:
+                _groups = list(_STYLE_BY_POS_GROUP.keys())
+            _opts = list(dict.fromkeys(
+                s for g in _groups for s in _STYLE_BY_POS_GROUP.get(g, [])
+            ))
+            fo_styles = st.multiselect("Style / Role", _opts, key="fo_styles")
+        else:
+            fo_styles = []
+
+# ── Filter overrides (optional — layer on top of or instead of query) ─────────
+# Position → style options
+STYLE_OPTIONS_BY_ROLE = {
+    "GK":  ["Shot Stopper", "Ball Playing GK", "Sweeper GK"],
+    "CB":  ["Ball Playing CB", "Wide CB", "Box Defender"],
+    "FB":  ["Attacking FB", "Build Up FB", "Defensive FB"],
+    "CM":  ["Deep Playmaker", "Advanced Playmaker", "Defensive CM", "Ball Carrying CM"],
+    "ATT": ["Goal Threat", "Wide Creator", "Playmaker ATT", "Ball Carrier"],
+    "CF":  ["Target Man", "Goal Threat CF", "Link Up CF"],
+}
+# Map position codes to style group keys
+POS_TO_STYLE_GROUP = {
+    "GK":"GK","CB":"CB","LCB":"CB","RCB":"CB",
+    "LB":"FB","RB":"FB","LWB":"FB","RWB":"FB",
+    "DMF":"CM","LDMF":"CM","RDMF":"CM","LCMF":"CM","RCMF":"CM",
+    "AMF":"ATT","LAMF":"ATT","RAMF":"ATT","LW":"ATT","LWF":"ATT","RW":"ATT","RWF":"ATT",
+    "CF":"CF",
+}
+# Map style name → role bucket name
+STYLE_TO_ROLE_BUCKET = {
+    "Shot Stopper": "Shot Stopper GK",
+    "Ball Playing GK": "Ball Playing GK",
+    "Sweeper GK": "Sweeper GK",
+    "Ball Playing CB": "Ball Playing CB",
+    "Wide CB": "Wide CB",
+    "Box Defender": "Box Defender",
+    "Attacking FB": "Attacking FB",
+    "Build Up FB": "Build Up FB",
+    "Defensive FB": "Defensive FB",
+    "Deep Playmaker": "Deep Playmaker CM",
+    "Advanced Playmaker": "Advanced Playmaker CM",
+    "Defensive CM": "Defensive CM",
+    "Ball Carrying CM": "Ball Carrying CM",
+    "Goal Threat": "Goal Threat ATT",
+    "Wide Creator": "Ball Carrier",
+    "Playmaker ATT": "Playmaker ATT",
+    "Ball Carrier": "Ball Carrier",
+    "Target Man": "Target Man CF",
+    "Goal Threat CF": "Goal Threat CF",
+    "Link Up CF": "Link Up CF",
+}
+
+with st.expander("🔧 Filter overrides (optional — layer on top of query)", expanded=False):
+    st.caption("Tick any you want to enforce. Leave unticked to use what Claude extracts from your query.")
+
+    fo_col1, fo_col2, fo_col3 = st.columns(3)
+
+    with fo_col1:
+        use_pos_override = st.checkbox("📍 Position", value=False, key="fo_use_pos")
+        if use_pos_override:
+            all_pos_options = ["GK","CB","LCB","RCB","LB","RB","LWB","RWB",
+                               "DMF","LDMF","RDMF","LCMF","RCMF",
+                               "AMF","LAMF","RAMF","LW","LWF","RW","RWF","CF"]
+            fo_positions = st.multiselect("Position(s)", all_pos_options,
+                                           default=[], key="fo_positions")
+        else:
+            fo_positions = []
+
+        use_age_override = st.checkbox("🎂 Age", value=False, key="fo_use_age")
+        if use_age_override:
+            fo_age_min, fo_age_max = st.slider("Age range", 14, 45, (16, 30),
+                                                key="fo_age_range")
+        else:
+            fo_age_min, fo_age_max = None, None
+
+    with fo_col2:
+        use_region_override = st.checkbox("🌍 Region", value=False, key="fo_use_region")
+        if use_region_override:
+            fo_regions = st.multiselect("Region(s)",
+                ["europe","south america","north america","asia","africa","top 5","efl","championship","league one","league two"],
+                default=[], key="fo_regions")
+        else:
+            fo_regions = []
+
+        use_band_override = st.checkbox("🏷️ League Band", value=False, key="fo_use_band")
+        if use_band_override:
+            fo_bands = st.multiselect("Band(s)",
+                [1,2,3,4,5,6],
+                default=[],
+                key="fo_bands",
+                help="1=Top 5 EU · 2=Championship/Strong EU · 3=L1/Mid EU · 4=L2/Lower EU · 5=NL · 6=Amateur"
+            )
+        else:
+            fo_bands = []
+
+    with fo_col3:
+        use_value_override = st.checkbox("💰 Market Value", value=False, key="fo_use_value")
+        if use_value_override:
+            fo_value_max = st.number_input("Max value (£m)", min_value=0.0,
+                                            max_value=200.0, value=5.0, step=0.5,
+                                            key="fo_value_max")
+        else:
+            fo_value_max = None
+
+        use_style_override = st.checkbox("🎯 Style / Role", value=False, key="fo_use_style")
+        if use_style_override:
+            # Determine which style group to show based on position override or all
+            if fo_positions:
+                style_groups = list({POS_TO_STYLE_GROUP.get(p, "ATT") for p in fo_positions})
+            else:
+                style_groups = list(STYLE_OPTIONS_BY_ROLE.keys())
+            all_style_opts = []
+            for g in style_groups:
+                all_style_opts.extend(STYLE_OPTIONS_BY_ROLE.get(g, []))
+            all_style_opts = list(dict.fromkeys(all_style_opts))
+            fo_styles = st.multiselect("Style / Role", all_style_opts,
+                                        default=[], key="fo_styles")
+        else:
+            fo_styles = []
+
 if "scout_query_prefill" in st.session_state and not query:
     query = st.session_state.pop("scout_query_prefill")
 
@@ -1815,6 +2175,69 @@ if run and query.strip() and not player_df.empty and api_key_input:
     if not params:
         st.error("Couldn't parse the request. Try being more specific about position and league.")
         st.stop()
+
+    # ── Apply filter overrides ────────────────────────────────────────────────
+    if fo_use_pos and fo_positions:
+        params["position_prefixes"] = fo_positions
+    if fo_use_age and fo_age_min is not None:
+        params["min_age"] = fo_age_min
+        params["max_age"] = fo_age_max
+    if fo_use_value and fo_value_max is not None:
+        params["max_market_value_m"] = fo_value_max
+    if fo_use_region and fo_regions:
+        params["regions"] = fo_regions
+        params["leagues"] = None
+    if fo_use_band and fo_bands:
+        available_in_df = player_df["League"].dropna().unique().tolist()
+        params["leagues"] = [lg for lg in LEAGUE_STRENGTHS
+                              if get_league_band(lg) in fo_bands
+                              and lg in available_in_df] or None
+
+    # Style override → forced role bucket name for scorer
+    fo_override_role = None
+    if fo_use_style and fo_styles:
+        fo_override_role = fo_styles[0]   # role bucket name matches _STYLE_BY_POS_GROUP values
+        params.setdefault("key_style_traits", [])
+        params["key_style_traits"] = list(set(
+            params["key_style_traits"] + [s.lower() for s in fo_styles]
+        ))
+
+    # ── Apply filter overrides on top of extracted params ────────────────────
+    if use_pos_override and fo_positions:
+        params["position_prefixes"] = fo_positions
+
+    if use_age_override and fo_age_min is not None:
+        params["min_age"] = fo_age_min
+        params["max_age"] = fo_age_max
+
+    if use_value_override and fo_value_max is not None:
+        params["max_market_value_m"] = fo_value_max
+
+    if use_region_override and fo_regions:
+        params["regions"] = fo_regions
+        params["leagues"] = None  # clear specific leagues if region override
+
+    if use_band_override and fo_bands:
+        # Translate band numbers to specific leagues
+        band_leagues = [
+            lg for lg, s in LEAGUE_STRENGTHS.items()
+            if get_league_band(lg) in fo_bands
+        ]
+        available_in_df = player_df["League"].dropna().unique().tolist() if not player_df.empty else []
+        params["leagues"] = [lg for lg in band_leagues if lg in available_in_df] or None
+
+    # Store style override for use in scoring
+    fo_override_role = None
+    if use_style_override and fo_styles:
+        # Map first selected style to role bucket name
+        fo_override_role = STYLE_TO_ROLE_BUCKET.get(fo_styles[0])
+        # Also add style as key_style_traits
+        params.setdefault("key_style_traits", [])
+        params["key_style_traits"] = list(set(
+            params["key_style_traits"] + [s.lower() for s in fo_styles]
+        ))
+    else:
+        fo_override_role = None
 
     # Show reference player card if found
     if reference_player_row is not None:
@@ -1931,6 +2354,7 @@ if run and query.strip() and not player_df.empty and api_key_input:
             filtered, params, team_profile, player_df,
             scoring_modes=scoring_modes,
             reference_player_row=reference_player_row,
+            forced_role=fo_override_role,
         )
         # Apply realism filter
         requesting_league = params.get("requesting_league") or params.get("club_league") or ""
@@ -2011,7 +2435,8 @@ if run and query.strip() and not player_df.empty and api_key_input:
         with st.spinner(f"✍️ Writing report for {player_name}..."):
             mini_report = generate_mini_report(
                 client, player, params, team_profile, player_df,
-                fm_data, tm_data, bio_context, season
+                fm_data, tm_data, bio_context, season,
+                scoring_modes=scoring_modes,
             )
         time.sleep(2)  # gap before next report
 
