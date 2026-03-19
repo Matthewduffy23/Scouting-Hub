@@ -209,30 +209,32 @@ ROLE_BUCKETS = {
             "PAdj Interceptions":3,"Defensive duels won, %":3.5},
     },
     "CM": {
-        "Deep Playmaker":     {"Passes per 90":1,"Accurate passes, %":1,"Progressive passes per 90":3,
+        "Deep Playmaker CM":     {"Passes per 90":1,"Accurate passes, %":1,"Progressive passes per 90":3,
             "Passes to final third per 90":2.5,"Accurate long passes, %":1},
-        "Advanced Playmaker": {"xA per 90":4,"Key passes per 90":1,"Smart passes per 90":2,
+        "Advanced Playmaker CM": {"xA per 90":4,"Key passes per 90":1,"Smart passes per 90":2,
             "Passes to penalty area per 90":2},
-        "Defensive CM":       {"Defensive duels per 90":4,"Defensive duels won, %":4,
+        "Defensive CM":          {"Defensive duels per 90":4,"Defensive duels won, %":4,
             "PAdj Interceptions":3,"Aerial duels won, %":1},
-        "Ball Carrying CM":   {"Dribbles per 90":4,"Successful dribbles, %":2,
+        "Ball Carrying CM":      {"Dribbles per 90":4,"Successful dribbles, %":2,
             "Progressive runs per 90":3,"Accelerations per 90":3},
     },
     "ATT": {
-        "Goal Threat":   {"xG per 90":3,"Non-penalty goals per 90":3,"Shots per 90":2,
+        "Goal Threat ATT":   {"xG per 90":3,"Non-penalty goals per 90":3,"Shots per 90":2,
             "Touches in box per 90":2},
         "Playmaker ATT": {"xA per 90":3,"Key passes per 90":1,"Passes to penalty area per 90":2},
         "Ball Carrier":  {"Dribbles per 90":4,"Successful dribbles, %":2,"Progressive runs per 90":3},
+        "Wide Creator":  {"Crosses per 90":2,"xA per 90":2,"Dribbles per 90":2,
+            "Progressive runs per 90":2},
     },
     "CF": {
-        "Target Man":    {"Aerial duels per 90":3,"Aerial duels won, %":5},
+        "Target Man CF":    {"Aerial duels per 90":3,"Aerial duels won, %":5},
         "Goal Threat CF":{"Non-penalty goals per 90":3,"Shots per 90":1.5,"xG per 90":3,
             "Touches in box per 90":1},
         "Link Up CF":    {"Passes per 90":2,"xA per 90":3,"Dribbles per 90":2,
             "Progressive runs per 90":2,"Accurate passes, %":1.5},
     },
     "GK": {
-        "Shot Stopper":   {"Prevented goals per 90":3,"Save rate, %":1},
+        "Shot Stopper GK":   {"Prevented goals per 90":3,"Save rate, %":1},
         "Ball Playing GK":{"Passes per 90":1,"Accurate passes, %":3,"Accurate long passes, %":2},
         "Sweeper GK":     {"Exits per 90":1},
     },
@@ -1158,8 +1160,6 @@ def _proper_team_style_score(pool, team_profile, role_key, full_df):
 
     return pd.Series(np.clip(base_score, 0.0, 100.0), index=pool.index)
 
-    return pd.Series(np.clip(base_score, 0.0, 100.0), index=pool.index)
-
 
 def _safe_num(df, col):
     if col not in df.columns:
@@ -1174,51 +1174,61 @@ def _safe_div_s(df, num_col, den_col):
 
 def apply_realism_filter(scored, requesting_league, realism_level):
     """
-    Penalise or remove candidates from leagues too far above the requesting club.
-    Players at Man City / Real Madrid shouldn't top a League Two search.
+    Continuous league-strength multiplier based on actual strength scores (0–100).
+
+    Two-sided logic:
+    - Players from leagues MUCH STRONGER than the requesting club get penalised
+      (a League Two club can't realistically sign a La Liga regular)
+    - Players from leagues MUCH WEAKER also get penalised unless they are
+      genuinely elite performers in their league (handled by their scout score)
+    - Sweet spot: similar strength ±15 pts → no penalty
+    - An elite player from a weaker league gets a softer penalty than an average
+      one (their high scout score already reflects quality)
+
+    Realism levels control how aggressively the curve bends:
+      Off    → multiplier = 1.0 always
+      Soft   → gentle curve, only extreme gaps penalised
+      Medium → moderate curve, 25pt gap = ~70% score
+      Strict → sharp curve, 15pt gap = ~70% score
     """
     if realism_level == "Off" or not requesting_league:
         return scored
 
-    req_strength = LEAGUE_STRENGTHS.get(str(requesting_league).strip(), 50.0)
-    req_band     = get_league_band(requesting_league)
-
-    def _pen(row):
-        player_league   = str(row.get("League", ""))
-        player_strength = LEAGUE_STRENGTHS.get(player_league.strip(), 50.0)
-        player_band     = get_league_band(player_league)
-        band_gap        = player_band - req_band   # negative = player is ABOVE requesting club
-
-        # How many bands above the requesting club is this player?
-        bands_above = max(0, -band_gap)
-
-        if realism_level == "Strict":
-            # Must be within ±1 band
-            if bands_above > 1:
-                return 0.0
-        elif realism_level == "Medium":
-            # Up to 2 bands above is ok; beyond that heavy penalty
-            if bands_above > 2:
-                return 0.0
-            elif bands_above == 2:
-                return 0.5   # 50% penalty
-        elif realism_level == "Soft":
-            # Gentle decay — each band above adds 20% penalty
-            if bands_above > 0:
-                return max(0.1, 1.0 - bands_above * 0.2)
-
-        # Also penalise players from elite clubs unless budget allows
-        # (proxy: if player_strength > 85 and req_strength < 65 → top-club penalty)
-        if player_strength > 85 and req_strength < 65:
-            elite_penalty = (player_strength - 85) / 15.0 * 0.4  # up to 40%
-            return max(0.1, 1.0 - elite_penalty)
-
-        return 1.0
-
     if "_scout_score" not in scored.columns:
         return scored
 
-    multipliers = scored.apply(_pen, axis=1)
+    req_str = float(LEAGUE_STRENGTHS.get(str(requesting_league).strip(), 50.0))
+
+    # Steepness of the penalty curve per realism level
+    # Higher k = steeper penalty for the same strength gap
+    K = {"Soft": 0.018, "Medium": 0.038, "Strict": 0.065}.get(realism_level, 0.038)
+
+    # How asymmetric: being ABOVE the club is penalised more than being BELOW
+    # above_factor > 1 means upward gaps hurt more
+    ABOVE_FACTOR = {"Soft": 1.2, "Medium": 1.6, "Strict": 2.2}.get(realism_level, 1.6)
+
+    # Grace zone: gaps within this range get no penalty at all
+    GRACE = {"Soft": 20.0, "Medium": 12.0, "Strict": 6.0}.get(realism_level, 12.0)
+
+    def _multiplier(row):
+        pl = str(row.get("League", ""))
+        pl_str = float(LEAGUE_STRENGTHS.get(pl.strip(), 50.0))
+        gap = pl_str - req_str   # positive = player is in STRONGER league
+
+        if abs(gap) <= GRACE:
+            return 1.0
+
+        if gap > 0:
+            # Player is in a stronger league — apply asymmetric penalty
+            effective_gap = (gap - GRACE) * ABOVE_FACTOR
+        else:
+            # Player is in a weaker league — softer penalty
+            effective_gap = abs(gap) - GRACE
+
+        multiplier = np.exp(-K * effective_gap)
+        return float(np.clip(multiplier, 0.05, 1.0))
+
+    multipliers = scored.apply(_multiplier, axis=1)
     scored = scored.copy()
     scored["_scout_score"] = scored["_scout_score"] * multipliers.values
     return scored.sort_values("_scout_score", ascending=False)
@@ -1978,7 +1988,7 @@ with st.expander("💡 Example queries"):
 # ── Filter overrides ──────────────────────────────────────────────────────────
 # Position → available style groups
 _STYLE_BY_POS_GROUP = {
-    "GK":  ["Shot Stopper", "Ball Playing GK", "Sweeper GK"],
+    "GK":  ["Shot Stopper GK", "Ball Playing GK", "Sweeper GK"],
     "CB":  ["Ball Playing CB", "Wide CB", "Box Defender"],
     "FB":  ["Attacking FB", "Build Up FB", "Defensive FB"],
     "CM":  ["Deep Playmaker CM", "Advanced Playmaker CM", "Defensive CM", "Ball Carrying CM"],
