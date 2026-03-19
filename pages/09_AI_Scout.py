@@ -158,33 +158,33 @@ def realistic_destination_bands(player_league: str) -> list:
     return [max(1, b - 1), b]  # one step up or same level
 
 POSITION_METRICS = {
-    "CF": ["Non-penalty goals per 90","xG per 90","Shots per 90","Touches in box per 90",
-           "Dribbles per 90","Progressive runs per 90","Aerial duels per 90",
-           "Aerial duels won, %","Passes per 90","xA per 90"],
-    "LW": ["Non-penalty goals per 90","xG per 90","xA per 90","Dribbles per 90",
-           "Successful dribbles, %","Crosses per 90","Progressive runs per 90",
-           "Key passes per 90","Touches in box per 90","Passes per 90"],
-    "RW": ["Non-penalty goals per 90","xG per 90","xA per 90","Dribbles per 90",
-           "Successful dribbles, %","Crosses per 90","Progressive runs per 90",
-           "Key passes per 90","Touches in box per 90","Passes per 90"],
-    "AMF": ["xA per 90","Key passes per 90","Passes to penalty area per 90","xG per 90",
-            "Dribbles per 90","Smart passes per 90","Progressive passes per 90",
-            "Touches in box per 90","Passes per 90","Accurate passes, %"],
+    "CF": ["xG per 90","Non-penalty goals per 90","xA per 90",
+           "Dribbles per 90","Passes per 90","Shots per 90",
+           "Touches in box per 90","Progressive runs per 90"],
+    "LW": ["xG per 90","Non-penalty goals per 90","xA per 90",
+           "Dribbles per 90","Passes per 90","Shots per 90",
+           "Touches in box per 90","Progressive runs per 90"],
+    "RW": ["xG per 90","Non-penalty goals per 90","xA per 90",
+           "Dribbles per 90","Passes per 90","Shots per 90",
+           "Touches in box per 90","Progressive runs per 90"],
+    "AMF": ["xG per 90","Non-penalty goals per 90","xA per 90",
+            "Dribbles per 90","Passes per 90","Shots per 90",
+            "Touches in box per 90","Progressive passes per 90"],
     "CMF": ["Passes per 90","Accurate passes, %","Progressive passes per 90",
-            "Progressive runs per 90","xA per 90","Defensive duels per 90",
-            "PAdj Interceptions","Touches in box per 90","Dribbles per 90","xG per 90"],
-    "DMF": ["Passes per 90","Accurate passes, %","PAdj Interceptions",
-            "Defensive duels per 90","Defensive duels won, %","Aerial duels per 90",
-            "Aerial duels won, %","Progressive passes per 90","Long passes per 90","Shots blocked per 90"],
-    "CB":  ["Aerial duels per 90","Aerial duels won, %","Defensive duels per 90",
-            "Defensive duels won, %","PAdj Interceptions","Shots blocked per 90",
-            "Passes per 90","Accurate passes, %","Progressive passes per 90","Long passes per 90"],
-    "RB":  ["Crosses per 90","xA per 90","Progressive runs per 90","Dribbles per 90",
-            "Defensive duels per 90","Aerial duels won, %","Passes per 90",
-            "Accurate passes, %","Touches in box per 90","PAdj Interceptions"],
-    "LB":  ["Crosses per 90","xA per 90","Progressive runs per 90","Dribbles per 90",
-            "Defensive duels per 90","Aerial duels won, %","Passes per 90",
-            "Accurate passes, %","Touches in box per 90","PAdj Interceptions"],
+            "Touches in box per 90","Defensive duels per 90",
+            "PAdj Interceptions","xA per 90","Dribbles per 90"],
+    "DMF": ["Passes per 90","Accurate passes, %","Progressive passes per 90",
+            "Touches in box per 90","Defensive duels per 90",
+            "PAdj Interceptions","Defensive duels won, %","Aerial duels won, %"],
+    "CB":  ["Aerial duels won, %","Defensive duels won, %","PAdj Interceptions",
+            "Passes per 90","Progressive passes per 90","Aerial duels per 90",
+            "Defensive duels per 90","Accurate passes, %"],
+    "RB":  ["xA per 90","Dribbles per 90","Crosses per 90","Passes per 90",
+            "Defensive duels per 90","Progressive runs per 90",
+            "Accurate passes, %","PAdj Interceptions"],
+    "LB":  ["xA per 90","Dribbles per 90","Crosses per 90","Passes per 90",
+            "Defensive duels per 90","Progressive runs per 90",
+            "Accurate passes, %","PAdj Interceptions"],
     "GK":  ["Save rate, %","Prevented goals per 90","Exits per 90",
             "Accurate long passes, %","Passes per 90"],
 }
@@ -1274,11 +1274,9 @@ def score_candidates(pool, params, team_profile, full_pool,
     matched_role_metrics = {}
 
     if forced_role and role_key in ROLE_BUCKETS:
-        for rname, rmetrics in ROLE_BUCKETS[role_key].items():
-            if rname == forced_role or forced_role in rname:
-                matched_role_name    = rname
-                matched_role_metrics = rmetrics
-                break
+        if forced_role in ROLE_BUCKETS[role_key]:
+            matched_role_name    = forced_role
+            matched_role_metrics = ROLE_BUCKETS[role_key][forced_role]
 
     if not matched_role_metrics and team_profile and role_key in ROLE_BUCKETS:
         ppda      = team_profile.get("ppda", 10)
@@ -1643,165 +1641,41 @@ Write exactly 5 sentences, one per line:"""
 
     return claude_call(client, "claude-sonnet-4-6",
                        [{"role": "user", "content": prompt}], max_tokens=420)
-    prefixes = [p.upper().strip() for p in (params.get("position_prefixes") or ["CF"])]
-    primary_pos = expand_positions(prefixes)[0] if prefixes else "CF"
-    role_key = POS_TO_ROLE_KEY.get(primary_pos, "ATT")
-    metrics = POSITION_METRICS.get(primary_pos,
-              POSITION_METRICS.get(role_key, POSITION_METRICS["CF"]))
-    metrics = [m for m in metrics if m in full_pool.columns]
-
-    stats_lines = []
-    for m in metrics:
-        val = pd.to_numeric(player.get(m), errors="coerce")
-        if pd.isna(val): continue
-        peer_vals = pd.to_numeric(full_pool[m], errors="coerce").dropna()
-        pct = int((peer_vals <= val).mean() * 100) if not peer_vals.empty else 50
-        stats_lines.append(f"  {m}: {val:.2f} [{pct}th pct]")
-
-    fm_block = "Not available."
-    if fm_data:
-        parts = [f"{a.replace('_',' ').title()}: {fm_data[a]}/20"
-                 for a in ["pace","acceleration","strength","jumping_reach","stamina"]
-                 if a in fm_data]
-        if "height" in fm_data: parts.append(f"Height: {fm_data['height']}cm")
-        fm_block = ", ".join(parts) if parts else "Partial only."
-
-    tm_block = "Not fetched."
-    if tm_data:
-        tm_block = f"Market Value: {tm_data.get('value_str','—')}, Contract: {tm_data.get('contract','—')}"
-
-    # Build role requirements context from team profile
-    role_req_block = ""
-    if team_profile and role_key in ROLE_BUCKETS:
-        role_lines = []
-        for role_name, role_metrics in ROLE_BUCKETS[role_key].items():
-            top_mets = sorted(role_metrics.items(), key=lambda x: -x[1])[:3]
-            role_lines.append(f"  {role_name}: {', '.join(m for m,_ in top_mets)}")
-        role_req_block = f"\nAvailable roles for this position:\n" + "\n".join(role_lines)
-
-    matched_role = str(player.get("_matched_role", ""))
-
-    # Build team style comparison block
-    team_style_block = ""
-    player_team_style = ""
-    if team_profile:
-        # Try to get the player's team stats from full_pool for comparison
-        player_team = str(player.get("Team", ""))
-        player_league_name = str(player.get("League", ""))
-        team_style_block = (
-            f"REQUESTING CLUB STYLE ({team_profile['team']}, {team_profile['league']}):\n"
-            f"  Press: PPDA {team_profile['ppda']} ({team_profile['press_style']})\n"
-            f"  Possession: {team_profile['possession']}% ({team_profile['poss_style']})\n"
-            f"  Directness: {team_profile['long_passes_p90']} long p90 ({team_profile['directness']})\n"
-            f"  Aerial: {team_profile['aerial_p90']} duels p90 ({team_profile['aerial_pct']}th pct)\n"
-            f"  xG p90: {team_profile['xg_p90']} (attack {team_profile['xg_pct']}th pct in league)"
-        )
-
-    # Build role requirements block — show the matched role's key metrics vs player's actual values
-    role_req_block = ""
-    if team_profile and role_key in ROLE_BUCKETS and matched_role:
-        role_metrics_dict = ROLE_BUCKETS[role_key].get(matched_role, {})
-        if role_metrics_dict:
-            req_lines = [f"ROLE REQUIREMENTS for '{matched_role}' (top metrics by weight):"]
-            for met, w in sorted(role_metrics_dict.items(), key=lambda x: -x[1])[:5]:
-                val = pd.to_numeric(player.get(met, np.nan), errors="coerce")
-                if pd.isna(val):
-                    req_lines.append(f"  {met} (weight {w:.0f}x): no data")
-                    continue
-                peer_vals = pd.to_numeric(full_pool[met], errors="coerce").dropna()
-                pct = int((peer_vals <= val).mean() * 100) if not peer_vals.empty else 50
-                req_lines.append(f"  {met} (weight {w:.0f}x): {val:.2f} [{pct}th pct]")
-            role_req_block = "\n".join(req_lines)
-    elif role_key in ROLE_BUCKETS:
-        # No matched role — show all roles for this position
-        role_lines = ["Available roles for this position:"]
-        for role_name, role_metrics in ROLE_BUCKETS[role_key].items():
-            top_mets = sorted(role_metrics.items(), key=lambda x: -x[1])[:3]
-            role_lines.append(f"  {role_name}: {', '.join(m for m,_ in top_mets)}")
-        role_req_block = "\n".join(role_lines)
-
-    club_ctx = "No club context."
-    if team_profile:
-        player_band = get_league_band(str(player.get("League", "")))
-        club_band   = get_league_band(team_profile["league"])
-        band_gap    = club_band - player_band
-        realism_note = ""
-        if band_gap < -1:
-            realism_note = (f" LEVEL GAP: Player is {BAND_LABELS.get(player_band,'?')} "
-                           f"→ club is {BAND_LABELS.get(club_band,'?')} — significant step up, flag this.")
-        club_ctx = (f"{team_profile['team']} ({team_profile['league']}) — "
-                    f"{team_profile['press_style']}, {team_profile['poss_style']}, "
-                    f"{team_profile['directness']}.{realism_note}")
-        if matched_role:
-            club_ctx += f" Required role: {matched_role}."
-
-    bio_section = f"\nCareer context: {bio_context}" if bio_context else ""
-
-    prompt = f"""You are Head of Recruitment at a data-driven Championship club (Brentford / Brighton methodology).
-Write a scouting report that is direct, evidence-based, and grounded in numbers.
-
-STRICT RULES:
-- EXACTLY 5 sentences. One per line. No headers, bullets, markdown.
-- Every claim must cite a specific number from the data below.
-- NEVER label a stat at the 70th percentile or above as a weakness, risk, or concern. That is above average.
-- Only flag genuine weaknesses if a stat is below the 40th percentile.
-- If no weakness exists, describe the tactical adjustment needed for the step-up in level instead.
-- Speak as an experienced scout — confident, precise, no filler phrases.
-
-SENTENCE STRUCTURE — follow exactly:
-S1: TEAM STYLE FIT. Does this player's press intensity, passing volume, and directness match how the requesting club plays? Cite specific numbers from both the club profile and the player's stats.
-S2: ROLE FIT. How do they score on the key metrics for the required role? Name the role, cite 2-3 of the weighted metrics with values and percentiles.
-S3: STANDOUT STRENGTH. Single clearest data-backed quality with exact value and percentile. Include career context if bio is available.
-S4: HONEST WEAKNESS OR TRANSITION NOTE. Sub-40th percentile stat = weakness. No such stat = name the tactical adjustment for the level-up. Do NOT fabricate a concern.
-S5: VERDICT. SIGN / MONITOR / PASS. One reason. If there is a significant league level gap, state it plainly.
-
-PERCENTILE SCALE:
-90th+ = Elite. 80–89 = Strong. 70–79 = Above average. 50–69 = Functional. <40 = Weakness.
-
-Player: {player.get('Player','—')}
-Current Club: {player.get('Team','—')} ({player.get('League','—')}) — {season}
-Age: {player.get('Age','—')} | Position: {player.get('Position','—')} | Foot: {player.get('Foot','—')}
-Minutes: {player.get('Minutes played','—')} | Contract: {player.get('Contract expires','—')} | Value: {fmt_mv(player.get('Market value'))}
-{bio_section}
-
-PLAYER STATS (percentile vs full database):
-{chr(10).join(stats_lines) if stats_lines else 'Unavailable.'}
-
-FM Physical: {fm_block}
-Transfermarkt: {tm_block}
-
-{team_style_block}
-
-{role_req_block}
-
-Requesting club: {club_ctx}
-Query: {params.get('_raw_query','—')}
-
-Write exactly 5 sentences, one per line:"""
-
-    return claude_call(client, "claude-sonnet-4-6",
-                       [{"role": "user", "content": prompt}], max_tokens=400)
-
 # ══════════════════════════════════════════════════════════════════════════════
 # STAT PILLS + FM PILLS
 # ══════════════════════════════════════════════════════════════════════════════
 def render_stat_pills(player: pd.Series, params: dict, full_pool: pd.DataFrame) -> str:
     prefixes = [p.upper().strip() for p in (params.get("position_prefixes") or ["CF"])]
     primary_pos = prefixes[0] if prefixes else "CF"
+    role_key = POS_TO_ROLE_KEY.get(primary_pos, "ATT")
     metrics = POSITION_METRICS.get(primary_pos, POSITION_METRICS["CF"])[:6]
     metrics = [m for m in metrics if m in full_pool.columns]
+    player_league = str(player.get("League", ""))
     pills = []
     for m in metrics:
         val = pd.to_numeric(player.get(m), errors="coerce")
         if pd.isna(val): continue
-        peer_vals = pd.to_numeric(full_pool[m], errors="coerce").dropna()
+        # Per-position-group in same league
+        ref_mask = (
+            (full_pool["League"].astype(str) == player_league) &
+            (full_pool["Position"].astype(str).apply(
+                lambda p: POS_TO_ROLE_KEY.get(p.split(",")[0].strip().upper(), "ATT") == role_key
+            ))
+        )
+        peer_vals = pd.to_numeric(full_pool.loc[ref_mask, m], errors="coerce").dropna()
+        if len(peer_vals) < 10:
+            peer_vals = pd.to_numeric(
+                full_pool.loc[full_pool["League"].astype(str) == player_league, m],
+                errors="coerce").dropna()
         pct = int((peer_vals <= val).mean() * 100) if not peer_vals.empty else 50
+        col = "#22c55e" if pct >= 80 else ("#f59e0b" if pct >= 50 else "#ef4444")
         short = (m.replace(" per 90","p90").replace("Non-penalty goals","NP Goals")
                   .replace("Accurate ","").replace(" won, %"," Win%")
                   .replace("PAdj Interceptions","PAdj Int"))
         pills.append(
             f"<div class='pill'><span class='plab'>{short}</span>"
-            f"<span class='pval'>{val:.2f} <span style='color:#6b7280;font-size:10px'>({pct}th)</span></span></div>"
+            f"<span class='pval' style='color:{col}'>{val:.2f} "
+            f"<span style='color:#6b7280;font-size:10px'>({pct}th)</span></span></div>"
         )
     return "".join(pills)
 
