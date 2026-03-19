@@ -73,6 +73,12 @@ st.markdown("""
   padding:5px 12px;font-size:12px;color:var(--text);}
 .pill .plab{color:var(--muted);font-size:10px;display:block;margin-bottom:1px;}
 .pill .pval{font-weight:700;}
+.pill.p-elite{border-color:#16a34a;background:#052e16;}
+.pill.p-strong{border-color:#4ade80;background:#052e16;}
+.pill.p-avg{border-color:#86efac;background:#052e16;}
+.pill.p-mid{border-color:#f59e0b;background:#1c1208;}
+.pill.p-low{border-color:#f97316;background:#1c0a02;}
+.pill.p-weak{border-color:#ef4444;background:#1c0202;}
 .report-text{color:#cbd5e1;font-size:14px;line-height:1.7;
   border-left:3px solid var(--accent);padding-left:14px;margin-top:10px;}
 
@@ -1645,7 +1651,37 @@ Write exactly 5 sentences, one per line:"""
 # STAT PILLS + FM PILLS
 # ══════════════════════════════════════════════════════════════════════════════
 def render_stat_pills(player: pd.Series, params: dict, full_pool: pd.DataFrame) -> str:
-    # Use player's actual primary position — not what was searched
+    # Metric display name map
+    METRIC_NAMES = {
+        "xG per 90": "xG", "Non-penalty goals per 90": "Goals",
+        "xA per 90": "xA", "Dribbles per 90": "Dribbles",
+        "Passes per 90": "Passes", "Shots per 90": "Shots",
+        "Touches in box per 90": "Box Touches", "Progressive runs per 90": "Prog Runs",
+        "Accurate passes, %": "Pass Acc%", "Progressive passes per 90": "Prog Passes",
+        "Aerial duels per 90": "Aerial Duels", "Aerial duels won, %": "Aerial Win%",
+        "Defensive duels per 90": "Def Duels", "Defensive duels won, %": "Def Win%",
+        "PAdj Interceptions": "PAdj Int", "Crosses per 90": "Crosses",
+        "Key passes per 90": "Key Passes", "Forward passes per 90": "Fwd Passes",
+        "Accurate long passes, %": "Long Pass%", "Save rate, %": "Save Rate%",
+        "Prevented goals per 90": "Prev Goals", "Exits per 90": "Exits",
+    }
+
+    def _pill_class(pct):
+        if pct >= 90: return "pill p-elite"
+        if pct >= 80: return "pill p-strong"
+        if pct >= 65: return "pill p-avg"
+        if pct >= 45: return "pill p-mid"
+        if pct >= 30: return "pill p-low"
+        return "pill p-weak"
+
+    def _pct_col(pct):
+        if pct >= 90: return "#4ade80"
+        if pct >= 80: return "#86efac"
+        if pct >= 65: return "#fde68a"
+        if pct >= 45: return "#fbbf24"
+        if pct >= 30: return "#f97316"
+        return "#ef4444"
+
     actual_pos = str(player.get("Position", "")).split(",")[0].strip().upper()
     role_key = POS_TO_ROLE_KEY.get(actual_pos, "ATT")
     primary_pos = actual_pos if actual_pos in POSITION_METRICS else next(
@@ -1658,7 +1694,6 @@ def render_stat_pills(player: pd.Series, params: dict, full_pool: pd.DataFrame) 
     for m in metrics:
         val = pd.to_numeric(player.get(m), errors="coerce")
         if pd.isna(val): continue
-        # Per-position-group in same league
         ref_mask = (
             (full_pool["League"].astype(str) == player_league) &
             (full_pool["Position"].astype(str).apply(
@@ -1671,12 +1706,12 @@ def render_stat_pills(player: pd.Series, params: dict, full_pool: pd.DataFrame) 
                 full_pool.loc[full_pool["League"].astype(str) == player_league, m],
                 errors="coerce").dropna()
         pct = int((peer_vals <= val).mean() * 100) if not peer_vals.empty else 50
-        col = "#22c55e" if pct >= 80 else ("#f59e0b" if pct >= 50 else "#ef4444")
-        short = (m.replace(" per 90","p90").replace("Non-penalty goals","NP Goals")
-                  .replace("Accurate ","").replace(" won, %"," Win%")
-                  .replace("PAdj Interceptions","PAdj Int"))
+        cls  = _pill_class(pct)
+        col  = _pct_col(pct)
+        name = METRIC_NAMES.get(m, m.replace(" per 90","").replace(", %","% ").strip())
         pills.append(
-            f"<div class='pill'><span class='plab'>{short}</span>"
+            f"<div class='{cls}'>"
+            f"<span class='plab'>{name}</span>"
             f"<span class='pval' style='color:{col}'>{val:.2f} "
             f"<span style='color:#6b7280;font-size:10px'>({pct}th)</span></span></div>"
         )
@@ -2063,6 +2098,22 @@ if run and query.strip() and not player_df.empty and api_key_input:
             team_profile = build_team_profile(club_name, team_df)
 
     # Step 3: Club profile card
+    # Colour + label helpers for team stat tiles
+    def _tc(pct):
+        p = int(pct or 0)
+        if p >= 80: return "#4ade80"
+        if p >= 65: return "#86efac"
+        if p >= 45: return "#fbbf24"
+        if p >= 30: return "#f97316"
+        return "#ef4444"
+    def _pct_label(pct):
+        p = int(pct or 0)
+        if p >= 90: return "Elite"
+        if p >= 80: return "Strong"
+        if p >= 65: return "Above avg"
+        if p >= 45: return "Moderate"
+        if p >= 30: return "Below avg"
+        return "Weak"
     if team_profile:
         with st.spinner(f"✍️ Generating {club_name} profile..."):
             club_narrative_raw = generate_club_narrative(client, team_profile, query)
@@ -2083,27 +2134,37 @@ if run and query.strip() and not player_df.empty and api_key_input:
     <div class='stat-box'>
       <div class='label'>Pressing (PPDA)</div>
       <div class='value'>{team_profile['ppda']}</div>
-      <div class='rank' style='color:#{"22c55e" if team_profile["ppda_pct"]>60 else "f59e0b"}'>{team_profile['press_style']}</div>
+      <div class='rank' style='color:{_tc(team_profile["ppda_pct"])}'>{team_profile['press_style']} · {team_profile['ppda_pct']}th pct</div>
     </div>
     <div class='stat-box'>
       <div class='label'>Possession</div>
       <div class='value'>{team_profile['possession']}%</div>
-      <div class='rank' style='color:#9fb0c8'>{team_profile['poss_style']}</div>
+      <div class='rank' style='color:{_tc(team_profile["possession_pct"])}'>{team_profile['poss_style']} · {team_profile['possession_pct']}th pct</div>
     </div>
     <div class='stat-box'>
-      <div class='label'>Directness</div>
+      <div class='label'>Passes p90</div>
+      <div class='value'>{team_profile['passes_p90']}</div>
+      <div class='rank' style='color:#9fb0c8'>{team_profile['directness']}</div>
+    </div>
+    <div class='stat-box'>
+      <div class='label'>Directness (Long p90)</div>
       <div class='value'>{team_profile['long_passes_p90']}</div>
-      <div class='rank' style='color:#9fb0c8'>Long p90 · {team_profile['directness']}</div>
+      <div class='rank' style='color:#9fb0c8'>Long passes per 90</div>
     </div>
     <div class='stat-box'>
       <div class='label'>xG p90</div>
       <div class='value'>{team_profile['xg_p90']}</div>
-      <div class='rank' style='color:#9fb0c8'>{team_profile['xg_pct']}th pct in league</div>
+      <div class='rank' style='color:{_tc(team_profile["xg_pct"])}'>{_pct_label(team_profile["xg_pct"])} · {team_profile['xg_pct']}th pct</div>
+    </div>
+    <div class='stat-box'>
+      <div class='label'>xGA p90</div>
+      <div class='value'>{team_profile['xga_p90']}</div>
+      <div class='rank' style='color:{_tc(100 - team_profile.get("xg_pct", 50))}'>{_pct_label(100 - team_profile.get("xg_pct",50))} defensively</div>
     </div>
     <div class='stat-box'>
       <div class='label'>Aerial Duels p90</div>
       <div class='value'>{team_profile['aerial_p90']}</div>
-      <div class='rank' style='color:#9fb0c8'>{team_profile['aerial_pct']}th pct in league</div>
+      <div class='rank' style='color:{_tc(team_profile["aerial_pct"])}'>{_pct_label(team_profile["aerial_pct"])} · {team_profile['aerial_pct']}th pct</div>
     </div>
     <div class='stat-box'>
       <div class='label'>Avg Squad Age</div>
@@ -2454,8 +2515,9 @@ Write the recommendation:"""}],
             LIGHT  = colors.HexColor("#f1f5f9")
 
             def style(name, **kw):
-                base = ParagraphStyle(name, fontName="Helvetica", fontSize=9,
-                                      textColor=DARK, leading=13, **kw)
+                tc = kw.pop("textColor", DARK)
+                base = ParagraphStyle(name, fontName="Helvetica", fontSize=9, leading=13, **kw)
+                base.textColor = tc
                 return base
 
             S_TITLE   = style("title",   fontName="Helvetica-Bold", fontSize=18, textColor=DARK, leading=22)
