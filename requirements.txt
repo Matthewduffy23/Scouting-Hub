@@ -7,7 +7,7 @@ altair
 unicodedata2
 requests
 adjustText
-
+anthropic
 
 
 
