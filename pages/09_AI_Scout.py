@@ -890,22 +890,36 @@ with st.sidebar:
 def load_and_merge(csv_paths: tuple, upload_bytes: tuple) -> pd.DataFrame:
     """Load and merge multiple player CSVs."""
     frames = []
+
+    # Load from file paths
     for path in csv_paths:
         try:
             frames.append(pd.read_csv(path))
         except Exception:
             pass
-    for name, data in zip(*upload_bytes) if upload_bytes[0] else ([], []):
-        try:
-            frames.append(pd.read_csv(io.BytesIO(data)))
-        except Exception:
-            pass
+
+    # Load from uploaded file bytes
+    # upload_bytes is a tuple of (names_tuple, data_tuple)
+    try:
+        names, data_list = upload_bytes
+        if names and data_list:
+            for data in data_list:
+                try:
+                    frames.append(pd.read_csv(io.BytesIO(data)))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     if not frames:
         return pd.DataFrame()
+
     merged = pd.concat(frames, ignore_index=True)
+
     # Deduplicate by player+team, keep first occurrence
     if "Player" in merged.columns and "Team" in merged.columns:
-        merged = merged.drop_duplicates(subset=["Player","Team"], keep="first")
+        merged = merged.drop_duplicates(subset=["Player", "Team"], keep="first")
+
     return merged
 
 # Resolve paths
