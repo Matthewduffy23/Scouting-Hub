@@ -1351,6 +1351,11 @@ def score_candidates(pool, params, team_profile, full_pool,
 
     scored["_scout_score"]   = final_score
     scored["_matched_role"]  = matched_role_name
+    # Store individual mode scores for display in cards
+    scored["_score_top"]    = mode_scores.get("top",    np.full(len(scored), np.nan))
+    scored["_score_role"]   = mode_scores.get("role",   np.full(len(scored), np.nan))
+    scored["_score_team"]   = mode_scores.get("team",   np.full(len(scored), np.nan))
+    scored["_score_player"] = mode_scores.get("player", np.full(len(scored), np.nan))
     return scored.sort_values("_scout_score", ascending=False)
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2223,16 +2228,14 @@ if run and query.strip() and not player_df.empty and api_key_input:
     leagues_str = ", ".join(params.get("leagues") or ["all loaded leagues"])
     wanted_raw = [p.upper() for p in (params.get("position_prefixes") or [])]
     expanded = expand_positions(wanted_raw)
-    pos_str = " + ".join(expanded) if expanded else "all positions"
-    modes_str = " · ".join(active_mode_labels) if active_mode_labels else "Top performers"
-    realism_str = f"Realism: {realism_level}"
-    st.markdown(
-        f"<div class='info-box'>Found <strong>{len(scored):,}</strong> candidates · "
-        f"Positions: <strong>{pos_str}</strong> · "
-        f"Leagues: <strong>{leagues_str}</strong> · "
-        f"Scoring: {modes_str} · {realism_str} · "
-        f"Top 3 get full reports · #{4}–#{len(top_candidates)} listed below</div>",
-        unsafe_allow_html=True)
+    pos_str  = " + ".join(expanded) if expanded else "all positions"
+    modes_str   = " · ".join(active_mode_labels) if active_mode_labels else "Top performers"
+
+    with st.expander(f"ℹ️ Search details — {len(scored):,} candidates · {pos_str} · {realism_level} realism", expanded=False):
+        st.caption(
+            f"Positions: **{pos_str}** · Leagues: {leagues_str}\n\n"
+            f"Scoring: {modes_str} · Realism: {realism_level}"
+        )
 
     # ── TOP 3: Full cards with reports ───────────────────────────────────────
     st.markdown("## 🎯 Top 3 Candidates")
@@ -2249,6 +2252,36 @@ if run and query.strip() and not player_df.empty and api_key_input:
         mv          = fmt_mv(player.get("Market value"))
         score       = float(player.get("_scout_score", 0))
         season      = str(player.get("_season", "2025/26"))
+
+        # Per-mode score pills
+        s_top    = player.get("_score_top")
+        s_role   = player.get("_score_role")
+        s_team   = player.get("_score_team")
+        s_player = player.get("_score_player")
+
+        def _score_pill(label, val, active):
+            if not active or val is None or (isinstance(val, float) and np.isnan(val)):
+                return ""
+            v = float(val)
+            col = "#22c55e" if v>=75 else ("#f59e0b" if v>=55 else "#ef4444")
+            return (f"<span style='background:#161a22;border:1px solid {col};"
+                    f"color:{col};border-radius:8px;padding:3px 10px;"
+                    f"font-size:12px;font-weight:700;margin-right:6px;'>"
+                    f"{label} {v:.0f}</span>")
+
+        score_pills = (
+            _score_pill("🏆", s_top,    scoring_modes.get("top_performers")) +
+            _score_pill("🎯", s_role,   scoring_modes.get("role_fit")) +
+            _score_pill("🏟️", s_team,  scoring_modes.get("team_style") and team_profile) +
+            _score_pill("👤", s_player, scoring_modes.get("similar_player") and reference_player_row is not None)
+        )
+        rank_badge = (
+            f"<div style='margin-bottom:8px;'>"
+            f"<span style='color:#9fb0c8;font-size:13px;font-weight:700;margin-right:10px;'>#{rank}</span>"
+            f"{score_pills}"
+            f"<span style='color:#6b7280;font-size:11px;'>Blended: {score:.0f}/100</span>"
+            f"</div>"
+        )
 
         # FM fetch — only if sidebar toggle on
         fm_data = None
@@ -2326,7 +2359,7 @@ if run and query.strip() and not player_df.empty and api_key_input:
 
         st.markdown(f"""
 <div class='cand-card'>
-  <div class='cand-rank' title='Style Match Score: weighted percentile of key position metrics vs full database, boosted by your query traits (aerial, dribbling etc). Higher = better fit for what you searched. Does not adjust for league level — check the report for level context.'>#{rank} · Style Match {score:.0f}/100 ℹ</div>
+  {rank_badge}
   <div class='cand-name'>{player_name} {season_tag}</div>
   <div class='cand-meta'>
     {team_name} · {league} · {pos} · Age {age} · {foot} foot ·
