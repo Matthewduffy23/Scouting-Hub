@@ -819,34 +819,58 @@ def _pos_matches_strict(pos_str: str, wanted: list) -> bool:
 
 def find_player_in_csv(name: str, df: pd.DataFrame, team_hint: str = ""):
     """
-    Fuzzy-match a player name. Uses surname + full name similarity.
-    Optional team_hint boosts candidates from the right team.
+    Find a player by name. Strategy:
+    1. If team_hint given, search that team's players by surname first (exact then fuzzy)
+    2. Fall back to full database fuzzy match
     """
     if df.empty or "Player" not in df.columns:
         return None
-    name_slug   = _slug(name)
-    name_sn     = _slug(_surname(name))
-    team_slug   = _slug(team_hint) if team_hint else ""
-    best_score, best_idx = 0.0, None
 
+    name_clean = name.strip()
+    name_slug  = _slug(name_clean)
+    name_sn    = _slug(_surname(name_clean))
+
+    # Step 1: Team-scoped search (fast — exact then fuzzy within team)
+    if team_hint and "Team" in df.columns:
+        team_slug = _slug(team_hint)
+        team_mask = df["Team"].astype(str).apply(
+            lambda t: _similar(_slug(t), team_slug) > 0.6
+        )
+        team_df = df[team_mask]
+        if not team_df.empty:
+            # Exact surname match within team
+            for idx, row in team_df.iterrows():
+                if name_sn and name_sn == _slug(_surname(str(row.get("Player","")))):
+                    return row
+            # Substring surname match within team (catches "Devlin" in "C. Devlin")
+            for idx, row in team_df.iterrows():
+                if name_sn and len(name_sn) >= 4 and name_sn in _slug(str(row.get("Player",""))):
+                    return row
+            # Fuzzy surname within team
+            best_score, best_idx = 0.0, None
+            for idx, row in team_df.iterrows():
+                sc = _similar(name_sn, _slug(_surname(str(row.get("Player","")))))
+                if sc > best_score:
+                    best_score, best_idx = sc, idx
+            if best_score >= 0.70 and best_idx is not None:
+                return df.loc[best_idx]
+
+    # Step 2: Full database fuzzy match
+    best_score, best_idx = 0.0, None
     for idx, row in df.iterrows():
-        cand      = _slug(str(row.get("Player", "")))
-        cand_sn   = _slug(_surname(str(row.get("Player", ""))))
-        full_sc   = _similar(name_slug, cand)
-        sn_sc     = _similar(name_sn,   cand_sn)
-        # Partial surname match — catches "Devlin" inside "P. Devlin"
-        partial   = 1.0 if (name_sn and name_sn in cand) else 0.0
-        combined  = max(full_sc, sn_sc * 0.92, partial * 0.88)
-        # Boost if player is from the hinted team
-        if team_slug and team_slug:
-            cand_team = _slug(str(row.get("Team", "")))
-            if _similar(team_slug, cand_team) > 0.7:
+        cand     = _slug(str(row.get("Player", "")))
+        cand_sn  = _slug(_surname(str(row.get("Player", ""))))
+        full_sc  = _similar(name_slug, cand)
+        sn_sc    = _similar(name_sn, cand_sn)
+        partial  = 1.0 if (name_sn and len(name_sn) >= 4 and name_sn in cand) else 0.0
+        combined = max(full_sc, sn_sc * 0.92, partial * 0.85)
+        if team_hint and "Team" in df.columns:
+            if _similar(_slug(str(row.get("Team",""))), _slug(team_hint)) > 0.6:
                 combined = min(1.0, combined + 0.1)
         if combined > best_score:
-            best_score = combined
-            best_idx   = idx
+            best_score, best_idx = combined, idx
 
-    if best_score >= 0.50 and best_idx is not None:
+    if best_score >= 0.52 and best_idx is not None:
         return df.loc[best_idx]
     return None
 
@@ -2023,11 +2047,21 @@ if run and query.strip() and not player_df.empty and api_key_input:
     _SKIP_NAMES = {"the","a","an","their","this","that","my","our","hearts","celtic",
                    "rangers","united","city","town","athletic","rovers","wanderers"}
 
-    # Also try to extract team hint from query for better player matching
+    # Extract team hint from query — used to scope player name matching
+    # Looks for "for/at/from TEAM" or "TEAM player/in" patterns
     _team_hint = ""
-    _team_match = re.search(r"(?:at|for|from|Hearts|Celtic|Rangers)\s+([A-Z][a-z]+)", query)
-    if _team_match:
-        _team_hint = _team_match.group(1)
+    _team_patterns = [
+        r"(?:for|at|from)\s+([A-Z][a-zA-Z\s]+?)(?:\s+in\s|\s+player|\s+[A-Z]{2,}|$)",
+        r"([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\s+(?:in\s+Scotland|in\s+England|in\s+Spain|in\s+Germany|in\s+France|in\s+Italy)",
+        r"replacement\s+for\s+\S+\.\s+([A-Z][a-zA-Z]+)",
+    ]
+    for _tp in _team_patterns:
+        _tm = re.search(_tp, query)
+        if _tm:
+            _team_hint = _tm.group(1).strip()
+            break
+    # Also use club from params if Haiku extracted it
+    # (will be set later, so this is just the pre-extraction hint)
 
     if not player_df.empty:
         for pattern in ref_patterns:
@@ -2743,27 +2777,31 @@ Write the recommendation:"""}],
                     story.append(st_tbl)
                     story.append(Spacer(1, 4))
 
-                # ── Role scores bar ───────────────────────────────────────────
+                # ── Role scores bar
                 if d["role_scores"]:
                     rs_items = sorted(d["role_scores"].items(), key=lambda x:-x[1])[:4]
-                    rs_cells = []
-                    for rname, rscore in rs_items:
-                        rc = _pct_color(rscore)
-                        rs_cells.append(Paragraph(
-                            f'<font color="#94a3b8">{rname}</font>  '
-                            f'<b><font color="{rc.hexval() if hasattr(rc,"hexval") else "#86efac"}">'
-                            f'{rscore:.0f}</font></b>',
-                            S(f"rs_{rname}", fs=8, lead=11)))
-                    rs_tbl = Table([rs_cells], colWidths=[W/len(rs_cells)]*len(rs_cells))
-                    rs_tbl.setStyle(TableStyle([
-                        ("TOPPADDING",    (0,0),(-1,-1), 3),
-                        ("BOTTOMPADDING", (0,0),(-1,-1), 3),
-                        ("BACKGROUND",    (0,0),(-1,-1), colors.HexColor("#0f1629")),
-                        ("LINEABOVE",     (0,0),(-1,0), 0.3, BORDER),
-                        ("LINEBELOW",     (0,-1),(-1,-1), 0.3, BORDER),
-                    ]))
-                    story.append(rs_tbl)
-                    story.append(Spacer(1, 4))
+                    if rs_items:
+                        rs_cells = []
+                        for rname, rscore in rs_items:
+                            rc = _pct_color(rscore)
+                            try:   rc_hex = rc.hexval()
+                            except: rc_hex = "#86efac"
+                            rs_cells.append(Paragraph(
+                                f'<font color="#94a3b8">{rname}</font>  '
+                                f'<b><font color="{rc_hex}">{rscore:.0f}</font></b>',
+                                S(f"rs_{id(rname)}", fs=8, lead=11)))
+                        n = len(rs_cells)
+                        cw_rs = [W/n]*n
+                        rs_tbl = Table([rs_cells], colWidths=cw_rs)
+                        rs_tbl.setStyle(TableStyle([
+                            ("TOPPADDING",    (0,0),(-1,-1), 3),
+                            ("BOTTOMPADDING", (0,0),(-1,-1), 3),
+                            ("BACKGROUND",    (0,0),(-1,-1), colors.HexColor("#0f1629")),
+                            ("LINEABOVE",     (0,0),(-1,0), 0.3, BORDER),
+                            ("LINEBELOW",     (0,-1),(-1,-1), 0.3, BORDER),
+                        ]))
+                        story.append(rs_tbl)
+                        story.append(Spacer(1, 4))
 
                 # ── FM physical ───────────────────────────────────────────────
                 if d["fm"]:
@@ -2779,8 +2817,21 @@ Write the recommendation:"""}],
                     if "height" in d["fm"]:
                         fm_parts.append(f'<font color="#94a3b8">Height</font> {d["fm"]["height"]}cm')
                     if fm_parts:
-                        story.append(Paragraph("  ·  ".join(fm_parts),
-                                               S("fm", fs=8, tc=OFFWHITE, lead=11, sa=3)))
+                        fm_parts_safe = []
+                        for attr in ["pace","acceleration","strength","jumping_reach","stamina"]:
+                            if attr in d["fm"]:
+                                v = int(d["fm"][attr])
+                                fc = _pct_color(v*5)
+                                try:    fc_hex = fc.hexval()
+                                except: fc_hex = "#86efac"
+                                fm_parts_safe.append(
+                                    f'<font color="#94a3b8">{attr.replace("_"," ").title()}</font> '
+                                    f'<b><font color="{fc_hex}">{v}</font></b>/20')
+                        if "height" in d["fm"]:
+                            fm_parts_safe.append(f'<font color="#94a3b8">Height</font> {d["fm"]["height"]}cm')
+                        if fm_parts_safe:
+                            story.append(Paragraph("  ·  ".join(fm_parts_safe),
+                                                   S("fm", fs=8, tc=OFFWHITE, lead=11, sa=3)))
 
                 # ── Bio ───────────────────────────────────────────────────────
                 if d["bio"]:
