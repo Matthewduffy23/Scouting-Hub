@@ -2545,56 +2545,27 @@ Write the recommendation:"""}],
     # ── PDF Download ──────────────────────────────────────────────────────────
     if pdf_data:
         def generate_scout_pdf(pdf_data, query, team_profile, summary_text=""):
+            import io, datetime, unicodedata, textwrap
+            from reportlab.pdfgen import canvas
             from reportlab.lib.pagesizes import A4
             from reportlab.lib import colors
             from reportlab.lib.units import mm
-            from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
-                                            Table, TableStyle, HRFlowable, KeepTogether)
-            from reportlab.lib.styles import ParagraphStyle
-            from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
-            from reportlab.graphics.shapes import Rect, Line, String, Group
-            import io, datetime
 
-            W_PAGE, H_PAGE = A4
-            LM = RM = 16*mm
-            W = W_PAGE - LM - RM   # ~163mm = ~462pt
-
-            # ── Design system
-            C = {
-                "bg":       colors.HexColor("#07090f"),
-                "surface":  colors.HexColor("#0d1117"),
-                "card":     colors.HexColor("#111827"),
-                "border":   colors.HexColor("#1f2937"),
-                "accent":   colors.HexColor("#6366f1"),
-                "accent2":  colors.HexColor("#818cf8"),
-                "gold":     colors.HexColor("#f59e0b"),
-                "white":    colors.HexColor("#ffffff"),
-                "off":      colors.HexColor("#e2e8f0"),
-                "muted":    colors.HexColor("#64748b"),
-                "dim":      colors.HexColor("#374151"),
-            }
-
-            def pcolor(p):
-                p = int(p or 0)
-                if p >= 88: return colors.HexColor("#22c55e")
-                if p >= 75: return colors.HexColor("#86efac")
-                if p >= 60: return colors.HexColor("#bef264")
-                if p >= 45: return colors.HexColor("#f59e0b")
-                if p >= 30: return colors.HexColor("#f97316")
-                return colors.HexColor("#ef4444")
-
-            def phex(c):
-                try: return c.hexval()
-                except: return "#86efac"
-
-            def safe_txt(s):
-                """Strip non-ASCII so reportlab built-in fonts don't show boxes."""
-                import unicodedata
+            def clean(s):
                 s = str(s or "")
                 s = unicodedata.normalize("NFKD", s)
-                return "".join(c for c in s if ord(c) < 128)
+                return "".join(c for c in s if ord(c) < 128).strip()
 
-            def plabel(p):
+            def pct_color(p):
+                p = int(p or 0)
+                if p >= 88: return (0.13, 0.77, 0.37)   # green
+                if p >= 75: return (0.53, 0.94, 0.67)   # light green
+                if p >= 60: return (0.75, 0.93, 0.39)   # yellow-green
+                if p >= 45: return (0.98, 0.75, 0.18)   # amber
+                if p >= 30: return (0.98, 0.59, 0.09)   # orange
+                return (0.96, 0.27, 0.27)                # red
+
+            def pct_label(p):
                 p = int(p or 0)
                 if p >= 88: return "Elite"
                 if p >= 75: return "Strong"
@@ -2603,156 +2574,195 @@ Write the recommendation:"""}],
                 if p >= 30: return "Avg-"
                 return "Weak"
 
-            def sty(name, fn="Helvetica", fs=9, tc=None, align=TA_LEFT,
-                    li=0, ri=0, sb=0, sa=0, lead=None):
-                s = ParagraphStyle(name)
-                s.fontName    = fn
-                s.fontSize    = fs
-                s.leading     = lead or max(fs + 3, 11)
-                s.textColor   = tc or C["off"]
-                s.alignment   = align
-                s.leftIndent  = li
-                s.rightIndent = ri
-                s.spaceBefore = sb
-                s.spaceAfter  = sa
-                return s
+            def score_color(s):
+                if s >= 80: return (0.13, 0.77, 0.37)
+                if s >= 65: return (0.53, 0.94, 0.67)
+                if s >= 50: return (0.98, 0.75, 0.18)
+                return (0.96, 0.27, 0.27)
 
-            def Par(name, txt, **kw):
-                return Paragraph(txt, sty(name, **kw))
-
-            def HR(c=None, thick=0.5, sb=2, sa=2):
-                return HRFlowable(width="100%", thickness=thick,
-                                  color=c or C["border"], spaceBefore=sb, spaceAfter=sa)
-
-            # Stat bar drawing — name | bar | value | pct label
-            def stat_bar_row(metric_name, val_str, pct, bar_w=120):
-                pc = pcolor(pct)
-                filled = max(2, int(bar_w * pct / 100))
-                d = Drawing(W, 14)
-                # bg bar
-                d.add(Rect(90, 3, bar_w, 8,
-                           fillColor=C["dim"], strokeColor=None))
-                # filled bar
-                d.add(Rect(90, 3, filled, 8,
-                           fillColor=pc, strokeColor=None))
-                # metric name
-                d.add(String(0, 3, metric_name,
-                             fontName="Helvetica", fontSize=7.5,
-                             fillColor=C["muted"]))
-                # value
-                d.add(String(220, 3, val_str,
-                             fontName="Helvetica-Bold", fontSize=7.5,
-                             fillColor=C["off"]))
-                # pct
-                d.add(String(255, 3, f"{pct}th",
-                             fontName="Helvetica-Bold", fontSize=7.5,
-                             fillColor=pc))
-                # label
-                d.add(String(290, 3, plabel(pct),
-                             fontName="Helvetica", fontSize=6.5,
-                             fillColor=C["muted"]))
-                return d
+            W, H = A4
+            LM, RM = 14*mm, 14*mm
+            UW = W - LM - RM   # usable width
 
             buf = io.BytesIO()
+            c = canvas.Canvas(buf, pagesize=A4)
             now = datetime.datetime.now().strftime("%d %b %Y")
 
-            def draw_page(canv, doc):
-                canv.saveState()
-                # Full dark background
-                canv.setFillColor(C["bg"])
-                canv.rect(0, 0, W_PAGE, H_PAGE, fill=1, stroke=0)
-                # Top bar — double stripe
-                canv.setFillColor(C["accent"])
-                canv.rect(0, H_PAGE - 6*mm, W_PAGE, 6*mm, fill=1, stroke=0)
-                canv.setFillColor(C["gold"])
-                canv.rect(0, H_PAGE - 7*mm, W_PAGE, 1*mm, fill=1, stroke=0)
-                # Bottom bar
-                canv.setFillColor(C["dim"])
-                canv.rect(0, 0, W_PAGE, 5*mm, fill=1, stroke=0)
-                canv.setFillColor(C["muted"])
-                canv.setFont("Helvetica", 7)
-                canv.drawRightString(W_PAGE - LM, 1.8*mm, f"CONFIDENTIAL · {now} · Page {doc.page}")
-                canv.restoreState()
+            # ── colours (RGB 0-1)
+            BG      = (0.027, 0.035, 0.063)   # #071023
+            CARD    = (0.067, 0.098, 0.157)   # #111927
+            SURF    = (0.047, 0.071, 0.118)   # #0c1230
+            ACCENT  = (0.388, 0.400, 0.945)   # #6366f1
+            GOLD    = (0.965, 0.620, 0.071)   # #f69e12
+            WHITE   = (1,1,1)
+            OFF     = (0.886, 0.910, 0.941)   # #e2e8f0
+            MUTED   = (0.392, 0.455, 0.545)   # #6474 8b
+            DIM     = (0.216, 0.255, 0.318)   # #374151
+            BORDER  = (0.122, 0.161, 0.227)   # #1f2939
 
-            doc = SimpleDocTemplate(buf, pagesize=A4,
-                leftMargin=LM, rightMargin=RM,
-                topMargin=18*mm, bottomMargin=10*mm,
-                onFirstPage=draw_page, onLaterPages=draw_page)
+            def setfill(rgb): c.setFillColorRGB(*rgb)
+            def setstroke(rgb): c.setStrokeColorRGB(*rgb)
 
-            story = []
+            def rect(x,y,w,h,fill=None,stroke=None,radius=0):
+                if fill:   c.setFillColorRGB(*fill)
+                if stroke: c.setStrokeColorRGB(*stroke)
+                if radius:
+                    c.roundRect(x,y,w,h,radius,
+                                fill=1 if fill else 0,
+                                stroke=1 if stroke else 0)
+                else:
+                    c.rect(x,y,w,h,
+                           fill=1 if fill else 0,
+                           stroke=1 if stroke else 0)
 
-            # ══════════════════════════════════════════════════════
-            # COVER HEADER
-            # ══════════════════════════════════════════════════════
-            story.append(Spacer(1, 4))
-            story.append(Par("doc_label",
-                "RECRUITMENT INTELLIGENCE REPORT",
-                fn="Helvetica-Bold", fs=9, tc=C["accent2"],
-                sb=0, sa=3))
-            story.append(Par("main_title",
-                "PLAYER SCOUTING REPORT",
-                fn="Helvetica-Bold", fs=22, tc=C["white"],
-                sb=0, sa=2))
-            story.append(HR(C["accent"], thick=2, sb=0, sa=4))
+            def text(x,y,s,font="Helvetica",size=9,rgb=None,align="left",maxw=None):
+                s = clean(s)
+                if maxw:
+                    # simple truncation
+                    while c.stringWidth(s,font,size) > maxw and len(s) > 3:
+                        s = s[:-1]
+                    s = s.rstrip()
+                if rgb: c.setFillColorRGB(*rgb)
+                c.setFont(font,size)
+                if align == "right":
+                    c.drawRightString(x,y,s)
+                elif align == "center":
+                    c.drawCentredString(x,y,s)
+                else:
+                    c.drawString(x,y,s)
 
-            # Query + club row
-            story.append(Par("q_label",
-                f'<font color="#64748b">SEARCH QUERY</font>',
-                fn="Helvetica-Bold", fs=7, tc=C["muted"], sa=1))
-            story.append(Par("q_text", f'<i>{safe_txt(query)}</i>',
-                fs=9, tc=C["off"], sa=6))
+            def wrapped_text(x,y,s,font="Helvetica",size=9,rgb=None,maxw=None,
+                             line_height=13, max_lines=20):
+                """Draw wrapped text, return final y position."""
+                s = clean(s)
+                if rgb: c.setFillColorRGB(*rgb)
+                c.setFont(font, size)
+                maxw = maxw or UW
+                words = s.split()
+                lines, line = [], []
+                for w in words:
+                    test = " ".join(line + [w])
+                    if c.stringWidth(test, font, size) <= maxw:
+                        line.append(w)
+                    else:
+                        if line: lines.append(" ".join(line))
+                        line = [w]
+                if line: lines.append(" ".join(line))
+                for i, ln in enumerate(lines[:max_lines]):
+                    c.drawString(x, y - i*line_height, ln)
+                return y - (min(len(lines), max_lines)-1)*line_height
 
+            def new_page():
+                c.showPage()
+                # Dark background
+                rect(0,0,W,H,fill=BG)
+                # Top bar
+                rect(0,H-6*mm,W,6*mm,fill=ACCENT)
+                rect(0,H-7*mm,W,1*mm,fill=GOLD)
+                # Footer
+                rect(0,0,W,5*mm,fill=BORDER)
+                c.setFillColorRGB(*MUTED)
+                c.setFont("Helvetica",7)
+                c.drawRightString(W-LM, 1.8*mm, f"CONFIDENTIAL  ·  {now}")
+
+            # ════════════════════════════════════════
+            # PAGE 1 — COVER + CANDIDATES
+            # ════════════════════════════════════════
+            rect(0,0,W,H,fill=BG)
+            rect(0,H-6*mm,W,6*mm,fill=ACCENT)
+            rect(0,H-7*mm,W,1*mm,fill=GOLD)
+            rect(0,0,W,5*mm,fill=BORDER)
+            c.setFillColorRGB(*MUTED)
+            c.setFont("Helvetica",7)
+            c.drawRightString(W-LM, 1.8*mm, f"CONFIDENTIAL  ·  {now}  ·  Page 1")
+
+            y = H - 16*mm
+
+            # Title block
+            text(LM, y, "RECRUITMENT INTELLIGENCE REPORT",
+                 font="Helvetica-Bold", size=7, rgb=tuple(x/255 for x in (129,140,248)))
+            y -= 8
+            text(LM, y, "PLAYER SCOUTING REPORT",
+                 font="Helvetica-Bold", size=20, rgb=WHITE)
+            y -= 5
+            # Accent rule
+            c.setStrokeColorRGB(*ACCENT)
+            c.setLineWidth(1.5)
+            c.line(LM, y, W-RM, y)
+            y -= 10
+
+            # Query
+            text(LM, y, "SEARCH QUERY", font="Helvetica-Bold", size=7, rgb=MUTED)
+            y -= 11
+            y = wrapped_text(LM, y, query, font="Helvetica-Oblique", size=8.5,
+                             rgb=OFF, maxw=UW, line_height=12)
+            y -= 10
+
+            # Club profile block
             if team_profile:
                 tp = team_profile
-                # Club info block
-                club_rows = [
-                    [Par("cl","REQUESTING CLUB",fn="Helvetica-Bold",
-                         fs=7,tc=C["accent2"]),
-                     Par("cl2","TACTICAL PROFILE",fn="Helvetica-Bold",
-                         fs=7,tc=C["accent2"]),
-                     Par("cl3","LEAGUE CONTEXT",fn="Helvetica-Bold",
-                         fs=7,tc=C["accent2"])],
-                    [Par(f"cn",f'<b><font size="12" color="#ffffff">{safe_txt(tp["team"])}</font></b><br/>'
-                         f'<font color="#64748b">{tp["league"]}</font>',
-                         fs=9,tc=C["off"]),
-                     Par("ct",
-                         f'<font color="#64748b">Press (PPDA)</font> '
-                         f'<b>{tp["ppda"]}</b> · {tp["press_style"]}<br/>'
-                         f'<font color="#64748b">Possession</font> '
-                         f'<b>{tp["possession"]}%</b> · {tp["poss_style"]}<br/>'
-                         f'<font color="#64748b">Directness</font> '
-                         f'<b>{tp["long_passes_p90"]}</b> long p90',
-                         fs=8,tc=C["off"]),
-                     Par("cx",
-                         f'<font color="#64748b">xG p90</font> '
-                         f'<b>{tp["xg_p90"]}</b> ({tp["xg_pct"]}th pct)<br/>'
-                         f'<font color="#64748b">xGA p90</font> '
-                         f'<b>{tp["xga_p90"]}</b><br/>'
-                         f'<font color="#64748b">Aerial p90</font> '
-                         f'<b>{tp["aerial_p90"]}</b> ({tp["aerial_pct"]}th pct)',
-                         fs=8,tc=C["off"])],
-                ]
-                # 8pt left+right padding per cell across 3 cols = 48pt total
-                CW3 = [(W - 48)/3, (W - 48)/3, (W - 48)/3]
-                club_tbl = Table(club_rows, colWidths=CW3)
-                club_tbl.setStyle(TableStyle([
-                    ("BACKGROUND",    (0,0),(-1,-1), C["card"]),
-                    ("LINEABOVE",     (0,0),(-1,0),  0.4, C["accent"]),
-                    ("LINEBELOW",     (0,-1),(-1,-1),0.4, C["border"]),
-                    ("LINEBEFORE",    (1,0),(1,-1),  0.4, C["border"]),
-                    ("LINEBEFORE",    (2,0),(2,-1),  0.4, C["border"]),
-                    ("TOPPADDING",    (0,0),(-1,-1), 5),
-                    ("BOTTOMPADDING", (0,0),(-1,-1), 6),
-                    ("LEFTPADDING",   (0,0),(-1,-1), 8),
-                    ("RIGHTPADDING",  (0,0),(-1,-1), 8),
-                    ("VALIGN",        (0,0),(-1,-1), "TOP"),
-                ]))
-                story.append(club_tbl)
-                story.append(Spacer(1, 10))
+                bh = 38*mm
+                rect(LM, y-bh, UW, bh, fill=CARD, radius=2)
+                # left accent bar
+                rect(LM, y-bh, 2, bh, fill=ACCENT)
+                # column dividers
+                cx1 = LM + UW*0.30
+                cx2 = LM + UW*0.62
+                c.setStrokeColorRGB(*BORDER)
+                c.setLineWidth(0.4)
+                c.line(cx1, y-bh+3, cx1, y-3)
+                c.line(cx2, y-bh+3, cx2, y-3)
 
-            # ══════════════════════════════════════════════════════
-            # CANDIDATE CARDS
-            # ══════════════════════════════════════════════════════
+                ty = y - 7
+                # col headers
+                for lbl, xp in [("CLUB",LM+6), ("TACTICAL",cx1+6), ("ATTACK / DEF",cx2+6)]:
+                    text(xp, ty, lbl, font="Helvetica-Bold", size=6,
+                         rgb=tuple(x/255 for x in (99,102,241)))
+                ty -= 10
+
+                # Col 1 — club
+                text(LM+6, ty, clean(tp["team"]),
+                     font="Helvetica-Bold", size=12, rgb=WHITE)
+                ty -= 12
+                text(LM+6, ty, clean(tp["league"]), size=8, rgb=MUTED)
+                ty -= 10
+                wins = tp.get("wins","?"); draws = tp.get("draws","?"); losses = tp.get("losses","?")
+                text(LM+6, ty, f"{wins}W  {draws}D  {losses}L", size=8, rgb=OFF)
+
+                # Col 2 — tactical
+                ty2 = y - 17
+                for lbl, val in [
+                    ("PPDA", f'{tp["ppda"]}  {tp["press_style"]}'),
+                    ("Possession", f'{tp["possession"]}%  {tp["poss_style"]}'),
+                    ("Directness", f'{tp["long_passes_p90"]} long p90'),
+                    ("Passes p90", str(tp.get("passes_p90","—"))),
+                ]:
+                    text(cx1+6, ty2, lbl, size=7, rgb=MUTED)
+                    text(cx1+45, ty2, clean(val), font="Helvetica-Bold", size=7.5, rgb=OFF)
+                    ty2 -= 10
+
+                # Col 3 — attack/def
+                ty3 = y - 17
+                def pct_txt(val, pct_key):
+                    pct = tp.get(pct_key, 50)
+                    col = pct_color(pct)
+                    return str(val), f"{pct}th", col
+                for lbl, val, pct_key in [
+                    ("xG p90",    tp["xg_p90"],    "xg_pct"),
+                    ("xGA p90",   tp["xga_p90"],   "xga_pct"),
+                    ("Aerial p90",tp["aerial_p90"],"aerial_pct"),
+                    ("Poss %",    f'{tp["possession"]}%', "possession_pct"),
+                ]:
+                    text(cx2+6, ty3, lbl, size=7, rgb=MUTED)
+                    text(cx2+45, ty3, str(val), font="Helvetica-Bold", size=7.5, rgb=OFF)
+                    pct = tp.get(pct_key, 50)
+                    pc  = pct_color(pct)
+                    text(cx2+68, ty3, f"{pct}th", font="Helvetica-Bold", size=7, rgb=pc)
+                    ty3 -= 10
+
+                y -= bh + 8
+
+            # ── Candidate cards
             MNAMES = {
                 "xG per 90":"xG p90","Non-penalty goals per 90":"Goals p90",
                 "xA per 90":"xA p90","Dribbles per 90":"Dribbles p90",
@@ -2764,85 +2774,87 @@ Write the recommendation:"""}],
                 "PAdj Interceptions":"PAdj Int","Crosses per 90":"Crosses p90",
                 "Key passes per 90":"Key Passes","Save rate, %":"Save Rate%",
                 "Prevented goals per 90":"Prev Goals","Exits per 90":"Exits p90",
-                "Forward passes per 90":"Fwd Passes","Accurate long passes, %":"Long Pass%",
             }
 
+            page_num = 1
+
             for d in pdf_data:
-                sc   = d["score"]
-                scol = pcolor(sc)
+                sc    = d["score"]
+                scol  = score_color(sc)
 
-                # ── Candidate header
-                rank_col = C["accent2"]
+                # Estimate card height
+                n_stats = 8
+                report_lines = 0
+                if d["report"]:
+                    import re as _re
+                    sents = _re.split(r'(?<=[.!?])\s+', d["report"].strip())
+                    for sent in [s.strip() for s in sents if s.strip()][:5]:
+                        # estimate ~100 chars per line at 8.5pt over UW-12
+                        report_lines += max(1, len(clean(sent)) // 90 + 1)
+                n_role = min(4, len(d.get("role_scores",{})))
+                est_h = (14 + 10 + 2 + n_stats//2*11 + 8 + max(1,n_role)*14
+                         + report_lines*13 + 16) * mm * 0.7
 
-                # Score badge  ── score / 100 in a coloured circle drawn inline
-                score_bar_w = int(W * sc / 100)
+                if y - est_h < 12*mm:
+                    new_page()
+                    page_num += 1
+                    c.setFillColorRGB(*MUTED)
+                    c.setFont("Helvetica",7)
+                    c.drawRightString(W-LM, 1.8*mm,
+                        f"CONFIDENTIAL  ·  {now}  ·  Page {page_num}")
+                    y = H - 14*mm
 
-                hdr_rows = [
-                    [Par(f"rk{d['rank']}",
-                         f'<font color="#818cf8">#{d["rank"]}</font>',
-                         fn="Helvetica-Bold", fs=10),
-                     Par(f"nm{d['rank']}",
-                         f'<b><font size="15" color="#ffffff">{safe_txt(d["name"])}</font></b>',
-                         fs=9, tc=C["white"]),
-                     Par(f"sc{d['rank']}",
-                         f'<b><font color="{phex(scol)}" size="15">{sc:.0f}</font></b>'
-                         f'<font color="#64748b" size="9"> /100</font>',
-                         fs=9, tc=C["off"], align=TA_RIGHT)],
-                ]
-                hdr_tbl = Table(hdr_rows, colWidths=[(W-48)*0.06, (W-48)*0.72, (W-48)*0.22])
-                hdr_tbl.setStyle(TableStyle([
-                    ("BACKGROUND",    (0,0),(-1,-1), C["card"]),
-                    ("LINEABOVE",     (0,0),(-1,0),  1.5, C["accent"]),
-                    ("TOPPADDING",    (0,0),(-1,-1), 7),
-                    ("BOTTOMPADDING", (0,0),(-1,-1), 4),
-                    ("LEFTPADDING",   (0,0),(-1,-1), 8),
-                    ("RIGHTPADDING",  (0,0),(-1,-1), 8),
-                    ("VALIGN",        (0,0),(-1,-1), "MIDDLE"),
-                ]))
-                story.append(KeepTogether([hdr_tbl]))
+                # ── Header bar
+                rect(LM, y-12, UW, 14, fill=CARD, radius=2)
+                rect(LM, y-12, 3, 14, fill=ACCENT)
+                text(LM+7,  y-9, f"#{d['rank']}",
+                     font="Helvetica-Bold", size=9,
+                     rgb=tuple(x/255 for x in (129,140,248)))
+                text(LM+22, y-9, clean(d["name"]),
+                     font="Helvetica-Bold", size=12, rgb=WHITE)
+                # Score on right
+                sc_str = f"{sc:.0f}"
+                text(W-RM, y-9, f"{sc_str} / 100",
+                     font="Helvetica-Bold", size=11, rgb=scol, align="right")
+                y -= 14
 
-                # Meta row
-                meta_parts = [d["team"], d["league"], d["pos"],
-                    f'Age {d["age"]}',
-                    (f'{d["foot"]} foot' if str(d["foot"]) not in ("nan","unknown","") else ""),
-                    f'{d["mins"]} mins', f'MV {d["mv"]}', d["season"],
-                    (f'TM: {d["tm"]["value_str"]}' if d["tm"].get("value_str") else ""),
-                ]
-                meta_str = "  ·  ".join(x for x in meta_parts if x and str(x) not in ("—","nan",""))
-                role_str = d["matched_role"] or "—"
+                # ── Meta strip
+                meta_parts = [clean(d["team"]), clean(d["league"]),
+                               clean(d["pos"]),
+                               f'Age {d["age"]}',
+                               (f'{d["foot"]} foot' if str(d["foot"]) not in
+                                ("nan","unknown","") else None),
+                               f'{d["mins"]} mins',
+                               f'MV {d["mv"]}',
+                               d["season"],
+                               (f'TM: {d["tm"]["value_str"]}'
+                                if d["tm"].get("value_str") else None),
+                              ]
+                meta_str = "  ·  ".join(x for x in meta_parts
+                                         if x and str(x) not in ("—","nan",""))
+                rect(LM, y-9, UW, 11, fill=SURF)
+                text(LM+6, y-6, meta_str, size=7.5, rgb=MUTED,
+                     maxw=UW*0.70)
+                # Role on right
+                role_str = clean(d.get("matched_role","—"))
+                text(W-RM, y-6, f"ROLE: {role_str}",
+                     font="Helvetica-Bold", size=7, rgb=tuple(x/255 for x in (129,140,248)),
+                     align="right")
+                y -= 11
 
-                meta_row = [[
-                    Par(f"mt{d['rank']}", meta_str, fs=7.5, tc=C["muted"]),
-                    Par(f"rl{d['rank']}",
-                        f'<font color="#64748b">ROLE</font>  '
-                        f'<b><font color="#818cf8">{role_str}</font></b>'
-                        + (f'  <font color="#374151">|</font>  {d["breakdown"]}'
-                           if d["breakdown"] else ""),
-                        fs=7.5, tc=C["muted"], align=TA_RIGHT),
-                ]]
-                meta_tbl = Table(meta_row, colWidths=[(W-16)*0.6, (W-16)*0.4])
-                meta_tbl.setStyle(TableStyle([
-                    ("BACKGROUND",    (0,0),(-1,-1), C["surface"]),
-                    ("TOPPADDING",    (0,0),(-1,-1), 4),
-                    ("BOTTOMPADDING", (0,0),(-1,-1), 4),
-                    ("LEFTPADDING",   (0,0),(-1,-1), 8),
-                    ("RIGHTPADDING",  (0,0),(-1,-1), 8),
-                ]))
-                story.append(meta_tbl)
-
-                # ── Stats — two column with inline bar drawings
-                actual_pos = d["pos"].split(",")[0].strip().upper()
-                rk   = POS_TO_ROLE_KEY.get(actual_pos, "ATT")
+                # ── Stats grid  2 × 4
+                actual_pos = clean(d["pos"].split(",")[0]).upper()
+                rk = POS_TO_ROLE_KEY.get(actual_pos, "ATT")
                 ppos = actual_pos if actual_pos in POSITION_METRICS else next(
                     (p for p in POSITION_METRICS if POS_TO_ROLE_KEY.get(p)==rk), "CF")
-                stat_cols = POSITION_METRICS.get(ppos, POSITION_METRICS["CF"])[:8]
+                stat_keys = POSITION_METRICS.get(ppos, POSITION_METRICS["CF"])[:8]
 
-                stats_built = []
+                stats = []
                 match = player_df[player_df["Player"].astype(str) == d["name"]]
                 if not match.empty:
                     prow = match.iloc[0]
                     pl   = str(prow.get("League",""))
-                    for m in stat_cols:
+                    for m in stat_keys:
                         if m not in player_df.columns: continue
                         val = pd.to_numeric(prow.get(m), errors="coerce")
                         if pd.isna(val): continue
@@ -2852,154 +2864,129 @@ Write the recommendation:"""}],
                                     p.split(",")[0].strip().upper(),"ATT")==rk))
                         peers = pd.to_numeric(
                             player_df.loc[rm,m],errors="coerce").dropna()
-                        if len(peers) < 10:
+                        if len(peers)<10:
                             peers = pd.to_numeric(
                                 player_df.loc[player_df["League"].astype(str)==pl,m],
                                 errors="coerce").dropna()
                         pct = int((peers<=val).mean()*100) if not peers.empty else 50
-                        pc  = pcolor(pct)
-                        stats_built.append((MNAMES.get(m,m.replace(" per 90","").strip()),
-                                            f"{val:.2f}", pct, pc))
+                        stats.append((MNAMES.get(m,m[:18]), val, pct))
 
-                if stats_built:
-                    half  = (len(stats_built)+1)//2
-                    left  = stats_built[:half]
-                    right = stats_built[half:]
-                    while len(right) < len(left):
-                        right.append(("","","50",C["muted"]))
+                if stats:
+                    row_h = 11
+                    half  = (len(stats)+1)//2
+                    col_w = UW/2 - 2
+                    rect(LM, y - half*row_h - 2, UW, half*row_h+4, fill=SURF)
 
-                    def sP(n,t,tc=None,fs=7.5,fn="Helvetica",align=TA_LEFT):
-                        s = ParagraphStyle(n)
-                        s.fontName=fn; s.fontSize=fs; s.leading=10
-                        s.textColor=tc or C["muted"]
-                        s.alignment=align
-                        s.spaceBefore=0; s.spaceAfter=0
-                        s.leftIndent=0; s.rightIndent=0
-                        return Paragraph(str(t), s)
+                    # Bar constants
+                    bar_total = 38
+                    nm_w = 52; val_w = 22; pct_w = 20; lbl_w = 24
 
-                    tdata = []
-                    for (ln,lv,lp,lc),(rn,rv,rp,rc) in zip(left, right):
-                        lp_i = int(lp) if str(lp).isdigit() else 50
-                        rp_i = int(rp) if str(rp).isdigit() else 50
-                        tdata.append([
-                            sP(f"sn{ln}", safe_txt(ln), tc=C["muted"]),
-                            sP(f"sv{ln}", f"<b>{lv}</b>", tc=C["off"],
-                               fn="Helvetica-Bold"),
-                            sP(f"sp{ln}", f"<b>{lp_i}th</b> {plabel(lp_i)}",
-                               tc=lc, fn="Helvetica-Bold"),
-                            sP(f"div","", tc=C["muted"]),
-                            sP(f"sn2{rn}", safe_txt(rn), tc=C["muted"]),
-                            sP(f"sv2{rn}", f"<b>{rv}</b>", tc=C["off"],
-                               fn="Helvetica-Bold"),
-                            sP(f"sp2{rn}", f"<b>{rp_i}th</b> {plabel(rp_i)}",
-                               tc=rc, fn="Helvetica-Bold"),
-                        ])
+                    for i, (mn, val, pct) in enumerate(stats):
+                        col_x = LM + (i // half) * (col_w + 4)
+                        row_y = y - (i % half + 1) * row_h + 2
+                        pc = pct_color(pct)
 
-                    # 7 cols: [name, val, pct+label, div, name, val, pct+label]
-                    PAD = 3
-                    _n  = 47*mm - PAD*2
-                    _v  = 17*mm - PAD*2
-                    _p  = 28*mm - PAD*2
-                    _d  = 4*mm
-                    CW  = [_n, _v, _p, _d, _n, _v, _p]
-                    # Scale to fit W exactly
-                    total = sum(CW) + PAD*2*6   # 6 padded cols
-                    if total > W:
-                        scale = W / total
-                        CW = [c*scale for c in CW]
+                        # Metric name
+                        text(col_x+4, row_y, mn, size=7, rgb=MUTED,
+                             maxw=nm_w)
+                        # Value
+                        text(col_x+4+nm_w, row_y,
+                             f"{val:.2f}", font="Helvetica-Bold", size=7.5, rgb=OFF,
+                             maxw=val_w)
+                        # Percentile bar
+                        bx = col_x+4+nm_w+val_w
+                        filled = max(1, int(bar_total * pct/100))
+                        rect(bx, row_y-1, bar_total, 7, fill=DIM)
+                        rect(bx, row_y-1, filled,    7, fill=pc)
+                        # pct number
+                        text(bx+bar_total+3, row_y, f"{pct}th",
+                             font="Helvetica-Bold", size=7, rgb=pc)
+                        # label
+                        text(bx+bar_total+22, row_y, pct_label(pct),
+                             size=6.5, rgb=MUTED, maxw=lbl_w)
 
-                    st = Table(tdata, colWidths=CW)
-                    st.setStyle(TableStyle([
-                        ("BACKGROUND",    (0,0),(-1,-1), C["surface"]),
-                        ("LINEAFTER",     (2,0),(2,-1),  0.4, C["border"]),
-                        ("TOPPADDING",    (0,0),(-1,-1), 2),
-                        ("BOTTOMPADDING", (0,0),(-1,-1), 2),
-                        ("LEFTPADDING",   (0,0),(-1,-1), PAD),
-                        ("RIGHTPADDING",  (0,0),(-1,-1), PAD),
-                        ("ROWBACKGROUNDS",(0,0),(-1,-1),
-                         [C["surface"], C["card"]]),
-                    ]))
-                    story.append(st)
+                    y -= half*row_h + 6
 
-                # ── Role scores
+                # ── Role scores  (horizontal pills)
                 if d["role_scores"]:
                     rs = sorted(d["role_scores"].items(), key=lambda x:-x[1])[:4]
-                    if rs:
-                        n = len(rs)
-                        cells = []
-                        for rname, rscore in rs:
-                            rc    = pcolor(rscore)
-                            rc_h  = phex(rc)
-                            cells.append(Par(f"rsc{rname}",
-                                f'<font color="#64748b" size="7">{rname}</font><br/>'
-                                f'<b><font color="{rc_h}" size="11">{rscore:.0f}</font></b>'
-                                f'<font color="#64748b" size="7"> /100</font>',
-                                fs=8, tc=C["muted"], align=TA_CENTER, sa=0))
-                        CW_RS = [W/n]*n  # reportlab handles float colWidths fine here since no leftIndent
-                        # Use 0 padding so widths are exact
-                        rtbl = Table([cells], colWidths=CW_RS)
-                        rtbl.setStyle(TableStyle([
-                            ("BACKGROUND",    (0,0),(-1,-1), C["card"]),
-                            ("LINEABOVE",     (0,0),(-1,0),  0.3, C["border"]),
-                            ("TOPPADDING",    (0,0),(-1,-1), 5),
-                            ("BOTTOMPADDING", (0,0),(-1,-1), 5),
-                            ("LEFTPADDING",   (0,0),(-1,-1), 2),
-                            ("RIGHTPADDING",  (0,0),(-1,-1), 2),
-                            ("LINEBEFORE",    (1,0),(-1,-1), 0.3, C["border"]),
-                        ]))
-                        story.append(rtbl)
+                    pill_w = UW / max(len(rs),1)
+                    for i,(rname,rscore) in enumerate(rs):
+                        px = LM + i*pill_w
+                        rc = score_color(rscore)
+                        rect(px, y-12, pill_w-2, 13, fill=CARD, radius=2)
+                        text(px+4, y-5, clean(rname), size=6.5, rgb=MUTED,
+                             maxw=pill_w-34)
+                        text(px+pill_w-6, y-5, f"{rscore:.0f}",
+                             font="Helvetica-Bold", size=9, rgb=rc, align="right")
+                    y -= 15
 
-                # ── FM physical
-                if d["fm"]:
-                    fp = []
-                    for attr in ["pace","acceleration","strength","jumping_reach","stamina"]:
-                        if attr in d["fm"]:
-                            v  = int(d["fm"][attr])
-                            fc = phex(pcolor(v*5))
-                            fp.append(f'<font color="#64748b">'
-                                      f'{attr.replace("_"," ").title()}</font> '
-                                      f'<b><font color="{fc}">{v}</font></b>/20')
-                    if "height" in d["fm"]:
-                        fp.append(f'<font color="#64748b">Height</font> {d["fm"]["height"]}cm')
-                    if fp:
-                        story.append(Par("fm","  ·  ".join(fp),
-                            fs=7.5, tc=C["off"], sb=3, sa=2))
+                # ── Score mode breakdown
+                if d.get("breakdown"):
+                    text(LM, y-1, d["breakdown"], size=7, rgb=MUTED)
+                    y -= 9
 
-                # ── Bio
-                if d["bio"]:
-                    story.append(Par("bio", d["bio"],
-                        fn="Helvetica-Oblique", fs=8, tc=C["muted"], sb=3, sa=2))
-
-                # ── Scout report
+                # ── Report sentences
                 if d["report"]:
-                    story.append(HR(C["accent"], thick=0.8, sb=4, sa=3))
-                    sents = re.split(r'(?<=[.!?])\s+', d["report"].strip())
-                    for i, sent in enumerate([s.strip() for s in sents if s.strip()][:5]):
-                        dot_col = [C["accent2"], C["accent2"], C["gold"],
-                                   C["gold"], C["muted"]][i]
-                        dot_hex = phex(dot_col)
-                        story.append(Par(f"rep{i}",
-                            f'<font color="{dot_hex}">▍</font> {sent}',
-                            fs=8.5, tc=C["off"], li=6, sb=0, sa=4))
+                    import re as _re2
+                    c.setStrokeColorRGB(*ACCENT)
+                    c.setLineWidth(0.8)
+                    c.line(LM, y-1, LM+20, y-1)
+                    y -= 7
 
-                story.append(Spacer(1, 8))
+                    sents = _re2.split(r'(?<=[.!?])\s+', d["report"].strip())
+                    for si, sent in enumerate([s.strip() for s in sents if s.strip()][:5]):
+                        dot_rgb = [ACCENT,ACCENT,GOLD,GOLD,MUTED][si]
+                        # Dot marker
+                        c.setFillColorRGB(*dot_rgb)
+                        c.circle(LM+4, y-2, 2, fill=1, stroke=0)
+                        # Text
+                        y = wrapped_text(LM+11, y, sent,
+                                         font="Helvetica", size=8.5,
+                                         rgb=OFF, maxw=UW-14, line_height=12)
+                        y -= 8
 
-            # ══════════════════════════════════════════════════════
-            # CHIEF SCOUT RECOMMENDATION
-            # ══════════════════════════════════════════════════════
+                        if y < 14*mm:
+                            new_page()
+                            page_num += 1
+                            c.setFillColorRGB(*MUTED)
+                            c.setFont("Helvetica",7)
+                            c.drawRightString(W-LM, 1.8*mm,
+                                f"CONFIDENTIAL  ·  {now}  ·  Page {page_num}")
+                            y = H - 14*mm
+
+                # Divider
+                c.setStrokeColorRGB(*BORDER)
+                c.setLineWidth(0.4)
+                c.line(LM, y-2, W-RM, y-2)
+                y -= 10
+
+            # ── Chief Scout
             if summary_text:
-                story.append(HR(C["accent"], thick=1.5, sb=6, sa=4))
-                story.append(Par("csh_label",
-                    "CHIEF SCOUT RECOMMENDATION",
-                    fn="Helvetica-Bold", fs=8, tc=C["accent2"], sb=0, sa=3))
-                clean = re.sub(r'\*\*', '', summary_text)
-                for sent in re.split(r'(?<=[.!?])\s+', clean.strip()):
-                    if sent.strip():
-                        story.append(Par("css", sent.strip(),
-                            fn="Helvetica-Oblique", fs=9.5,
-                            tc=C["off"], sb=0, sa=4))
+                if y < 60*mm:
+                    new_page()
+                    page_num += 1
+                    c.setFillColorRGB(*MUTED)
+                    c.setFont("Helvetica",7)
+                    c.drawRightString(W-LM, 1.8*mm,
+                        f"CONFIDENTIAL  ·  {now}  ·  Page {page_num}")
+                    y = H - 14*mm
 
-            doc.build(story)
+                # Header
+                rect(LM, y-14, UW, 16, fill=CARD, radius=2)
+                rect(LM, y-14, 3, 16, fill=GOLD)
+                text(LM+8, y-8, "CHIEF SCOUT RECOMMENDATION",
+                     font="Helvetica-Bold", size=9,
+                     rgb=GOLD)
+                y -= 20
+
+                import re as _re3
+                clean_sum = _re3.sub(r'\*\*|#+\s*', '', summary_text)
+                y = wrapped_text(LM, y, clean_sum,
+                                 font="Helvetica-Oblique", size=9,
+                                 rgb=OFF, maxw=UW, line_height=13)
+
+            c.save()
             buf.seek(0)
             return buf.getvalue()
 
