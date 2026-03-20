@@ -2587,14 +2587,21 @@ Write the recommendation:"""}],
                 try: return c.hexval()
                 except: return "#86efac"
 
+            def safe_txt(s):
+                """Strip non-ASCII so reportlab built-in fonts don't show boxes."""
+                import unicodedata
+                s = str(s or "")
+                s = unicodedata.normalize("NFKD", s)
+                return "".join(c for c in s if ord(c) < 128)
+
             def plabel(p):
                 p = int(p or 0)
-                if p >= 88: return "ELITE"
-                if p >= 75: return "STRONG"
-                if p >= 60: return "ABOVE AVG"
-                if p >= 45: return "FUNCTIONAL"
-                if p >= 30: return "BELOW AVG"
-                return "WEAK"
+                if p >= 88: return "Elite"
+                if p >= 75: return "Strong"
+                if p >= 60: return "Avg+"
+                if p >= 45: return "Mid"
+                if p >= 30: return "Avg-"
+                return "Weak"
 
             def sty(name, fn="Helvetica", fs=9, tc=None, align=TA_LEFT,
                     li=0, ri=0, sb=0, sa=0, lead=None):
@@ -2692,7 +2699,7 @@ Write the recommendation:"""}],
             story.append(Par("q_label",
                 f'<font color="#64748b">SEARCH QUERY</font>',
                 fn="Helvetica-Bold", fs=7, tc=C["muted"], sa=1))
-            story.append(Par("q_text", f'<i>{query}</i>',
+            story.append(Par("q_text", f'<i>{safe_txt(query)}</i>',
                 fs=9, tc=C["off"], sa=6))
 
             if team_profile:
@@ -2705,7 +2712,7 @@ Write the recommendation:"""}],
                          fs=7,tc=C["accent2"]),
                      Par("cl3","LEAGUE CONTEXT",fn="Helvetica-Bold",
                          fs=7,tc=C["accent2"])],
-                    [Par(f"cn",f'<b><font size="12" color="#ffffff">{tp["team"]}</font></b><br/>'
+                    [Par(f"cn",f'<b><font size="12" color="#ffffff">{safe_txt(tp["team"])}</font></b><br/>'
                          f'<font color="#64748b">{tp["league"]}</font>',
                          fs=9,tc=C["off"]),
                      Par("ct",
@@ -2775,7 +2782,7 @@ Write the recommendation:"""}],
                          f'<font color="#818cf8">#{d["rank"]}</font>',
                          fn="Helvetica-Bold", fs=10),
                      Par(f"nm{d['rank']}",
-                         f'<b><font size="15" color="#ffffff">{d["name"]}</font></b>',
+                         f'<b><font size="15" color="#ffffff">{safe_txt(d["name"])}</font></b>',
                          fs=9, tc=C["white"]),
                      Par(f"sc{d['rank']}",
                          f'<b><font color="{phex(scol)}" size="15">{sc:.0f}</font></b>'
@@ -2875,46 +2882,36 @@ Write the recommendation:"""}],
                         lp_i = int(lp) if str(lp).isdigit() else 50
                         rp_i = int(rp) if str(rp).isdigit() else 50
                         tdata.append([
-                            sP(f"sn{ln}", ln, tc=C["muted"]),
+                            sP(f"sn{ln}", safe_txt(ln), tc=C["muted"]),
                             sP(f"sv{ln}", f"<b>{lv}</b>", tc=C["off"],
                                fn="Helvetica-Bold"),
-                            sP(f"sp{ln}", f"<b>{lp_i}th</b>",
-                               tc=lc, fn="Helvetica-Bold", align=TA_RIGHT),
-                            sP(f"sl{ln}", plabel(lp_i),
-                               tc=C["muted"], fs=6.5),
+                            sP(f"sp{ln}", f"<b>{lp_i}th</b> {plabel(lp_i)}",
+                               tc=lc, fn="Helvetica-Bold"),
                             sP(f"div","", tc=C["muted"]),
-                            sP(f"sn2{rn}", rn, tc=C["muted"]),
+                            sP(f"sn2{rn}", safe_txt(rn), tc=C["muted"]),
                             sP(f"sv2{rn}", f"<b>{rv}</b>", tc=C["off"],
                                fn="Helvetica-Bold"),
-                            sP(f"sp2{rn}", f"<b>{rp_i}th</b>",
-                               tc=rc, fn="Helvetica-Bold", align=TA_RIGHT),
-                            sP(f"sl2{rn}", plabel(rp_i),
-                               tc=C["muted"], fs=6.5),
+                            sP(f"sp2{rn}", f"<b>{rp_i}th</b> {plabel(rp_i)}",
+                               tc=rc, fn="Helvetica-Bold"),
                         ])
 
-                    # Fixed mm widths — must account for cell padding (3pt each side = 6pt per col)
-                    # 9 cols: name(45), val(20), pct(18), label(22), div(4), name(45), val(20), pct(18), label(22) = 214mm-ish
-                    # Use points directly, sum must be <= W
-                    PAD = 3  # left+right per cell
-                    CW = [45*mm - PAD*2,  # metric name
-                          16*mm - PAD*2,  # value
-                          14*mm - PAD*2,  # pct
-                          18*mm - PAD*2,  # label
-                          3*mm,           # divider
-                          45*mm - PAD*2,  # metric name
-                          16*mm - PAD*2,  # value
-                          14*mm - PAD*2,  # pct
-                          18*mm - PAD*2]  # label
-                    # Ensure sum fits in W — scale down if needed
-                    total = sum(CW) + PAD*2*8  # add back padding for all padded cols
+                    # 7 cols: [name, val, pct+label, div, name, val, pct+label]
+                    PAD = 3
+                    _n  = 47*mm - PAD*2
+                    _v  = 17*mm - PAD*2
+                    _p  = 28*mm - PAD*2
+                    _d  = 4*mm
+                    CW  = [_n, _v, _p, _d, _n, _v, _p]
+                    # Scale to fit W exactly
+                    total = sum(CW) + PAD*2*6   # 6 padded cols
                     if total > W:
                         scale = W / total
-                        CW = [c * scale for c in CW]
+                        CW = [c*scale for c in CW]
 
                     st = Table(tdata, colWidths=CW)
                     st.setStyle(TableStyle([
                         ("BACKGROUND",    (0,0),(-1,-1), C["surface"]),
-                        ("LINEAFTER",     (3,0),(3,-1),  0.4, C["border"]),
+                        ("LINEAFTER",     (2,0),(2,-1),  0.4, C["border"]),
                         ("TOPPADDING",    (0,0),(-1,-1), 2),
                         ("BOTTOMPADDING", (0,0),(-1,-1), 2),
                         ("LEFTPADDING",   (0,0),(-1,-1), PAD),
