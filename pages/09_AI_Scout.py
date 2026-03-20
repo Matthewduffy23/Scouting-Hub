@@ -2725,7 +2725,8 @@ Write the recommendation:"""}],
                          f'<b>{tp["aerial_p90"]}</b> ({tp["aerial_pct"]}th pct)',
                          fs=8,tc=C["off"])],
                 ]
-                CW3 = [W*0.28, W*0.38, W*0.34]
+                # 8pt left+right padding per cell across 3 cols = 48pt total
+                CW3 = [(W - 48)/3, (W - 48)/3, (W - 48)/3]
                 club_tbl = Table(club_rows, colWidths=CW3)
                 club_tbl.setStyle(TableStyle([
                     ("BACKGROUND",    (0,0),(-1,-1), C["card"]),
@@ -2781,7 +2782,7 @@ Write the recommendation:"""}],
                          f'<font color="#64748b" size="9"> /100</font>',
                          fs=9, tc=C["off"], align=TA_RIGHT)],
                 ]
-                hdr_tbl = Table(hdr_rows, colWidths=[W*0.06, W*0.72, W*0.22])
+                hdr_tbl = Table(hdr_rows, colWidths=[(W-48)*0.06, (W-48)*0.72, (W-48)*0.22])
                 hdr_tbl.setStyle(TableStyle([
                     ("BACKGROUND",    (0,0),(-1,-1), C["card"]),
                     ("LINEABOVE",     (0,0),(-1,0),  1.5, C["accent"]),
@@ -2812,7 +2813,7 @@ Write the recommendation:"""}],
                            if d["breakdown"] else ""),
                         fs=7.5, tc=C["muted"], align=TA_RIGHT),
                 ]]
-                meta_tbl = Table(meta_row, colWidths=[W*0.6, W*0.4])
+                meta_tbl = Table(meta_row, colWidths=[(W-16)*0.6, (W-16)*0.4])
                 meta_tbl.setStyle(TableStyle([
                     ("BACKGROUND",    (0,0),(-1,-1), C["surface"]),
                     ("TOPPADDING",    (0,0),(-1,-1), 4),
@@ -2891,13 +2892,24 @@ Write the recommendation:"""}],
                                tc=C["muted"], fs=6.5),
                         ])
 
-                    # Proportional column widths summing to W
-                    # [name, val, pct, label, div, name, val, pct, label]
-                    CW = [int(W*f) for f in [0.20,0.08,0.07,0.10, 0.02,
-                                              0.20,0.08,0.07,0.10]]
-                    # Fix rounding so sum == W exactly
-                    diff = int(W) - sum(CW)
-                    CW[-1] += diff
+                    # Fixed mm widths — must account for cell padding (3pt each side = 6pt per col)
+                    # 9 cols: name(45), val(20), pct(18), label(22), div(4), name(45), val(20), pct(18), label(22) = 214mm-ish
+                    # Use points directly, sum must be <= W
+                    PAD = 3  # left+right per cell
+                    CW = [45*mm - PAD*2,  # metric name
+                          16*mm - PAD*2,  # value
+                          14*mm - PAD*2,  # pct
+                          18*mm - PAD*2,  # label
+                          3*mm,           # divider
+                          45*mm - PAD*2,  # metric name
+                          16*mm - PAD*2,  # value
+                          14*mm - PAD*2,  # pct
+                          18*mm - PAD*2]  # label
+                    # Ensure sum fits in W — scale down if needed
+                    total = sum(CW) + PAD*2*8  # add back padding for all padded cols
+                    if total > W:
+                        scale = W / total
+                        CW = [c * scale for c in CW]
 
                     st = Table(tdata, colWidths=CW)
                     st.setStyle(TableStyle([
@@ -2905,8 +2917,8 @@ Write the recommendation:"""}],
                         ("LINEAFTER",     (3,0),(3,-1),  0.4, C["border"]),
                         ("TOPPADDING",    (0,0),(-1,-1), 2),
                         ("BOTTOMPADDING", (0,0),(-1,-1), 2),
-                        ("LEFTPADDING",   (0,0),(-1,-1), 6),
-                        ("RIGHTPADDING",  (0,0),(-1,-1), 4),
+                        ("LEFTPADDING",   (0,0),(-1,-1), PAD),
+                        ("RIGHTPADDING",  (0,0),(-1,-1), PAD),
                         ("ROWBACKGROUNDS",(0,0),(-1,-1),
                          [C["surface"], C["card"]]),
                     ]))
@@ -2926,16 +2938,16 @@ Write the recommendation:"""}],
                                 f'<b><font color="{rc_h}" size="11">{rscore:.0f}</font></b>'
                                 f'<font color="#64748b" size="7"> /100</font>',
                                 fs=8, tc=C["muted"], align=TA_CENTER, sa=0))
-                        CW_RS  = [int(W/n)]*n
-                        CW_RS[-1] += int(W) - sum(CW_RS)
+                        CW_RS = [W/n]*n  # reportlab handles float colWidths fine here since no leftIndent
+                        # Use 0 padding so widths are exact
                         rtbl = Table([cells], colWidths=CW_RS)
                         rtbl.setStyle(TableStyle([
                             ("BACKGROUND",    (0,0),(-1,-1), C["card"]),
                             ("LINEABOVE",     (0,0),(-1,0),  0.3, C["border"]),
                             ("TOPPADDING",    (0,0),(-1,-1), 5),
                             ("BOTTOMPADDING", (0,0),(-1,-1), 5),
-                            ("LEFTPADDING",   (0,0),(-1,-1), 4),
-                            ("RIGHTPADDING",  (0,0),(-1,-1), 4),
+                            ("LEFTPADDING",   (0,0),(-1,-1), 2),
+                            ("RIGHTPADDING",  (0,0),(-1,-1), 2),
                             ("LINEBEFORE",    (1,0),(-1,-1), 0.3, C["border"]),
                         ]))
                         story.append(rtbl)
