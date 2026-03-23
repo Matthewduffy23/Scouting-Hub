@@ -16,28 +16,39 @@ from matplotlib.patches import Circle, Wedge, Rectangle
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 import requests
 
-# TEMPORARY DEBUG — paste near top of app.py, after imports
+# ─── TEMPORARY DEBUG v2 ────────────────────────────────────────
 import requests
-import streamlit as st
-
-st.subheader("🔧 FotMob Debug")
+st.subheader("🔧 FotMob Endpoint Test")
 team_id = "9825"  # Arsenal
-url = f"https://www.fotmob.com/api/teams?id={team_id}"
-try:
-    r = requests.get(url, timeout=12, headers={"User-Agent": "Mozilla/5.0"})
-    st.write(f"Status code: {r.status_code}")
-    if r.status_code == 200:
-        data = r.json()
-        st.write(f"Top-level keys: {list(data.keys())}")
-        squad_raw = data.get("squad")
-        st.write(f"squad type: {type(squad_raw)}")
-        if isinstance(squad_raw, list) and squad_raw:
-            st.write(f"First section keys: {list(squad_raw[0].keys())}")
-    else:
-        st.write(f"Response text: {r.text[:500]}")
-except Exception as e:
-    st.write(f"Exception: {e}")
 
+endpoints = [
+    f"https://www.fotmob.com/api/teams?id={team_id}",
+    f"https://www.fotmob.com/api/team?id={team_id}",
+    f"https://www.fotmob.com/api/teams/{team_id}/squad",
+    f"https://www.fotmob.com/api/teams/{team_id}",
+    f"https://www.fotmob.com/api/squads?teamId={team_id}",
+]
+
+headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Referer": "https://www.fotmob.com/",
+    "Accept": "application/json",
+}
+
+for url in endpoints:
+    try:
+        r = requests.get(url, timeout=8, headers=headers)
+        st.write(f"**{r.status_code}** — `{url}`")
+        if r.status_code == 200:
+            try:
+                st.write(f"Keys: {list(r.json().keys())}")
+            except Exception:
+                st.write(f"(not JSON) {r.text[:200]}")
+    except Exception as e:
+        st.write(f"Error — `{url}` → {e}")
+
+st.stop()
+# ───────────────────────────────────────────────────────────────
 
 
 # ---- Optional sklearn (fallback provided) ----
