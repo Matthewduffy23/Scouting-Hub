@@ -16,6 +16,28 @@ from matplotlib.patches import Circle, Wedge, Rectangle
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 import requests
 
+# TEMPORARY DEBUG — paste near top of app.py, after imports
+import requests
+import streamlit as st
+
+st.subheader("🔧 FotMob Debug")
+team_id = "9825"  # Arsenal
+url = f"https://www.fotmob.com/api/teams?id={team_id}"
+try:
+    r = requests.get(url, timeout=12, headers={"User-Agent": "Mozilla/5.0"})
+    st.write(f"Status code: {r.status_code}")
+    if r.status_code == 200:
+        data = r.json()
+        st.write(f"Top-level keys: {list(data.keys())}")
+        squad_raw = data.get("squad")
+        st.write(f"squad type: {type(squad_raw)}")
+        if isinstance(squad_raw, list) and squad_raw:
+            st.write(f"First section keys: {list(squad_raw[0].keys())}")
+    else:
+        st.write(f"Response text: {r.text[:500]}")
+except Exception as e:
+    st.write(f"Exception: {e}")
+
 
 
 # ---- Optional sklearn (fallback provided) ----
