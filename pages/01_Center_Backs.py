@@ -16,36 +16,36 @@ from matplotlib.patches import Circle, Wedge, Rectangle
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 import requests
 
-# ─── TEMPORARY DEBUG v2 ────────────────────────────────────────
+# ─── TEMPORARY DEBUG v9 ────────────────────────────────────────
 import requests
-st.subheader("🔧 FotMob Endpoint Test")
-team_id = "9825"  # Arsenal
+st.subheader("🔧 Transfermarkt Test")
 
-endpoints = [
-    f"https://www.fotmob.com/api/teams?id={team_id}",
-    f"https://www.fotmob.com/api/team?id={team_id}",
-    f"https://www.fotmob.com/api/teams/{team_id}/squad",
-    f"https://www.fotmob.com/api/teams/{team_id}",
-    f"https://www.fotmob.com/api/squads?teamId={team_id}",
-]
+headers = {"User-Agent": "Mozilla/5.0"}
+test_players = ["Ben Cabango", "Lawrence Vigouroux", "Josh Key"]
 
-headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Referer": "https://www.fotmob.com/",
-    "Accept": "application/json",
-}
-
-for url in endpoints:
+for name in test_players:
     try:
-        r = requests.get(url, timeout=8, headers=headers)
-        st.write(f"**{r.status_code}** — `{url}`")
+        r = requests.get(
+            f"https://transfermarkt-api.fly.dev/players/search/{requests.utils.quote(name)}",
+            headers=headers,
+            timeout=8
+        )
+        st.write(f"**{r.status_code}** — {name}")
         if r.status_code == 200:
-            try:
-                st.write(f"Keys: {list(r.json().keys())}")
-            except Exception:
-                st.write(f"(not JSON) {r.text[:200]}")
+            results = r.json().get("results", [])
+            if results:
+                st.write(f"Photo: `{results[0].get('image','none')}`")
+                st.write(f"ID: `{results[0].get('id','none')}`")
+                img = results[0].get('image','')
+                if img:
+                    st.image(img, width=88)
+            else:
+                st.write("No results found")
+        else:
+            st.write(r.text[:200])
     except Exception as e:
-        st.write(f"Error — `{url}` → {e}")
+        st.write(f"Error: {e}")
+    st.divider()
 
 st.stop()
 # ───────────────────────────────────────────────────────────────
