@@ -16,42 +16,6 @@ from matplotlib.patches import Circle, Wedge, Rectangle
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 import requests
 
-# ─── TEMPORARY DEBUG v10 ────────────────────────────────────────
-import requests
-st.subheader("🔧 Transfermarkt Photo URL Test")
-
-headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Referer": "https://www.transfermarkt.com/",
-}
-
-# IDs from previous test
-players = {
-    "Ben Cabango": "496659",
-    "Lawrence Vigouroux": "243591",
-    "Josh Key": "533912",
-}
-
-# Transfermarkt photo URL patterns to try
-for name, pid in players.items():
-    st.write(f"**{name}**")
-    urls = [
-        f"https://img.transfermarkt.com/portrait/medium/{pid}.jpg",
-        f"https://img.transfermarkt.com/portrait/big/{pid}.jpg",
-        f"https://img.transfermarkt.com/portrait/header/{pid}.jpg",
-    ]
-    for url in urls:
-        r = requests.get(url, headers=headers, timeout=6)
-        st.write(f"{r.status_code} — `{url}`")
-        if r.status_code == 200 and "image" in r.headers.get("content-type",""):
-            st.image(url, width=88)
-            break
-    st.divider()
-
-st.stop()
-# ───────────────────────────────────────────────────────────────
-
-
 # ---- Optional sklearn (fallback provided) ----
 try:
     from sklearn.preprocessing import StandardScaler
