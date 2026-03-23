@@ -16,35 +16,36 @@ from matplotlib.patches import Circle, Wedge, Rectangle
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 import requests
 
-# ─── TEMPORARY DEBUG v9 ────────────────────────────────────────
+# ─── TEMPORARY DEBUG v10 ────────────────────────────────────────
 import requests
-st.subheader("🔧 Transfermarkt Test")
+st.subheader("🔧 Transfermarkt Photo URL Test")
 
-headers = {"User-Agent": "Mozilla/5.0"}
-test_players = ["Ben Cabango", "Lawrence Vigouroux", "Josh Key"]
+headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Referer": "https://www.transfermarkt.com/",
+}
 
-for name in test_players:
-    try:
-        r = requests.get(
-            f"https://transfermarkt-api.fly.dev/players/search/{requests.utils.quote(name)}",
-            headers=headers,
-            timeout=8
-        )
-        st.write(f"**{r.status_code}** — {name}")
-        if r.status_code == 200:
-            results = r.json().get("results", [])
-            if results:
-                st.write(f"Photo: `{results[0].get('image','none')}`")
-                st.write(f"ID: `{results[0].get('id','none')}`")
-                img = results[0].get('image','')
-                if img:
-                    st.image(img, width=88)
-            else:
-                st.write("No results found")
-        else:
-            st.write(r.text[:200])
-    except Exception as e:
-        st.write(f"Error: {e}")
+# IDs from previous test
+players = {
+    "Ben Cabango": "496659",
+    "Lawrence Vigouroux": "243591",
+    "Josh Key": "533912",
+}
+
+# Transfermarkt photo URL patterns to try
+for name, pid in players.items():
+    st.write(f"**{name}**")
+    urls = [
+        f"https://img.transfermarkt.com/portrait/medium/{pid}.jpg",
+        f"https://img.transfermarkt.com/portrait/big/{pid}.jpg",
+        f"https://img.transfermarkt.com/portrait/header/{pid}.jpg",
+    ]
+    for url in urls:
+        r = requests.get(url, headers=headers, timeout=6)
+        st.write(f"{r.status_code} — `{url}`")
+        if r.status_code == 200 and "image" in r.headers.get("content-type",""):
+            st.image(url, width=88)
+            break
     st.divider()
 
 st.stop()
