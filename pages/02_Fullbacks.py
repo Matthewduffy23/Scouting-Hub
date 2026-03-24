@@ -12,6 +12,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Circle, Wedge
+from photo_utils import get_player_photo_url, load_player_photo_cached, get_player_photo_pil
 
 # ---- Optional sklearn (fallback provided) ----
 try:
@@ -2181,20 +2182,17 @@ import unicodedata
 import pandas as pd
 import numpy as np
 import streamlit as st
-
-# ✅ Needed for FotMob squad lookup + URL quoting
 import requests
 from urllib.parse import quote
-
-# ✅ Needed for override uploads
 import base64
 import io
 import os
 
+# ==========================================================
+# ✅ Photo system — uses GitHub photo repo via photo_utils
+# ==========================================================
+from photo_utils import get_player_photo_url, load_player_photo_cached, get_player_photo_pil
 
-# ==========================================================
-# ✅ Shared constants / helpers
-# ==========================================================
 PLAYER_PHOTO_OVERRIDES_JSON = "player_photo_overrides.json"
 
 def load_local_photo_overrides(path: str) -> dict:
@@ -2206,15 +2204,6 @@ def load_local_photo_overrides(path: str) -> dict:
             return json.load(f) or {}
     except Exception:
         return {}
-
-# --- FotMob team url mapping (your project may already provide this) ---
-try:
-    from team_fotmob_urls import FOTMOB_TEAM_URLS  # must exist in your repo (same as CB page uses)
-except Exception:
-    FOTMOB_TEAM_URLS = {}
-
-def get_fotmob_url(team: str) -> str:
-    return (FOTMOB_TEAM_URLS.get(team) or "").strip()
 
 def _norm(s: str) -> str:
     if not s:
@@ -2229,32 +2218,6 @@ def _fotmob_crest_url(team_url: str) -> str:
     tid = _fotmob_team_id_from_url(team_url)
     return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png" if tid else ""
 
-def _player_surname(player: str) -> str:
-    p = (player or "").strip()
-    if not p:
-        return ""
-    # "Surname, Name" → surname else last token
-    if "," in p:
-        return p.split(",", 1)[0].strip()
-    parts = p.split()
-    return parts[-1].strip() if parts else ""
-
-
-# ==========================================================
-# ✅ URL photo system (same as FB/CM fixed version)
-# ==========================================================
-PLAYER_PHOTO_OVERRIDES_JSON = "player_photo_overrides.json"
-
-def load_local_photo_overrides(path: str) -> dict:
-    try:
-        import json
-        if not path or not os.path.exists(path):
-            return {}
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f) or {}
-    except Exception:
-        return {}
-
 try:
     from team_fotmob_urls import FOTMOB_TEAM_URLS
 except Exception:
@@ -2262,84 +2225,6 @@ except Exception:
 
 def get_fotmob_url(team: str) -> str:
     return (FOTMOB_TEAM_URLS.get(team) or "").strip()
-
-def _fotmob_team_id_from_url(team_url: str) -> str:
-    m = _re.search(r"/teams/(\d+)/", str(team_url or ""))
-    return m.group(1) if m else ""
-
-def _fotmob_crest_url(team_url: str) -> str:
-    tid = _fotmob_team_id_from_url(team_url)
-    return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png" if tid else ""
-
-def _player_surname(player: str) -> str:
-    p = (player or "").strip()
-    if not p:
-        return ""
-    if "," in p:
-        return p.split(",", 1)[0].strip()
-    parts = p.split()
-    return parts[-1].strip() if parts else ""
-
-# ✅ Accent tolerant slug
-def _slug_name(s: str) -> str:
-    if not s:
-        return ""
-    s = str(s).strip().lower()
-
-    repl = {
-        "ø":"o","œ":"oe","æ":"ae","å":"a","ä":"a","ö":"o","ü":"u",
-        "ß":"ss","ł":"l","đ":"d","ð":"d","þ":"th","ç":"c",
-        "ş":"s","ğ":"g","ı":"i",
-    }
-    for k, v in repl.items():
-        s = s.replace(k, v)
-
-    s = unicodedata.normalize("NFKD", s)
-    s = "".join(ch for ch in s if not unicodedata.combining(ch))
-    s = _re.sub(r"[^a-z0-9]+", "", s)
-    return s
-
-# ✅ fuzzy helper
-from difflib import SequenceMatcher
-def _similar(a: str, b: str) -> float:
-    return SequenceMatcher(None, a, b).ratio()
-
-def _fotmob_team_squad(team_id: str) -> list[dict]:
-    cache = st.session_state.setdefault("_fotmob_team_squad_cache", {})
-    if team_id in cache:
-        return cache[team_id] or []
-
-    squad: list[dict] = []
-    try:
-        url = f"https://www.fotmob.com/api/teams?id={team_id}"
-        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-        if r.status_code == 200:
-            data = r.json() or {}
-            raw_squad = data.get("squad", None)
-
-            if isinstance(raw_squad, list):
-                for section in raw_squad:
-                    members = section.get("members") or section.get("players") or []
-                    if isinstance(members, list):
-                        squad.extend([m for m in members if isinstance(m, dict)])
-
-            elif isinstance(raw_squad, dict):
-                for k in ("members", "players"):
-                    members = raw_squad.get(k)
-                    if isinstance(members, list):
-                        squad.extend([m for m in members if isinstance(m, dict)])
-
-                nested = raw_squad.get("squad")
-                if isinstance(nested, list):
-                    for section in nested:
-                        members = section.get("members") or section.get("players") or []
-                        if isinstance(members, list):
-                            squad.extend([m for m in members if isinstance(m, dict)])
-    except Exception:
-        squad = []
-
-    cache[team_id] = squad
-    return squad
 
 def resolve_player_photo(player: str,
                          team: str,
@@ -2349,73 +2234,9 @@ def resolve_player_photo(player: str,
                          global_overrides: dict) -> str:
     if session_photo_map.get(key_id):
         return session_photo_map[key_id]
-
     if global_overrides.get(key_id):
         return global_overrides[key_id]
-
-    team_url = get_fotmob_url(team)
-    tid = _fotmob_team_id_from_url(team_url)
-    if tid:
-        squad = _fotmob_team_squad(tid)
-
-        target_surname = _slug_name(_player_surname(player))
-        target_full    = _slug_name(player)
-
-        best_id = ""
-
-        # ---- exact surname match first ----
-        if target_surname:
-            for m in squad:
-                name = m.get("name") or m.get("playerName") or ""
-                pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
-                if not pid:
-                    continue
-
-                if _slug_name(_player_surname(name)) == target_surname:
-                    best_id = str(pid)
-                    if target_full and target_full in _slug_name(name):
-                        break
-
-        # ---- exact full-name contains ----
-        if not best_id and target_full:
-            for m in squad:
-                name = m.get("name") or m.get("playerName") or ""
-                pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
-                if not pid:
-                    continue
-
-                if target_full in _slug_name(name):
-                    best_id = str(pid)
-                    break
-
-        # ---- FUZZY fallback (only if still not found) ----
-        if not best_id and target_surname:
-            best_score = 0.0
-            best_pid = ""
-
-            for m in squad:
-                name = m.get("name") or m.get("playerName") or ""
-                pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
-                if not pid:
-                    continue
-
-                sn = _slug_name(_player_surname(name))
-                sc = _similar(sn, target_surname)
-
-                if sc > best_score:
-                    best_score = sc
-                    best_pid = str(pid)
-
-            if best_score >= 0.86:   # safe threshold
-                best_id = best_pid
-
-        if best_id and str(best_id).isdigit():
-            url = f"https://images.fotmob.com/image_resources/playerimages/{best_id}.png"
-            session_photo_map[key_id] = url
-            return url
-
-    return "https://i.redd.it/43axcjdu59nd1.jpeg"
-
+    return get_player_photo_url(player, team)
 
 
 # ==========================================================
@@ -2490,7 +2311,6 @@ TWEMOJI_SPECIAL = {
     "wls":"1f3f4-e0067-e0062-e0077-e006c-e0073-e007f",
 }
 
-# (country map kept as in your snippets; unchanged)
 COUNTRY_TO_CC = {
     "united kingdom":"gb","great britain":"gb","northern ireland":"nir","england":"eng","scotland":"sct","wales":"wls",
     "ireland":"ie","republic of ireland":"ie","spain":"es","france":"fr","germany":"de","italy":"it","portugal":"pt",
@@ -2509,14 +2329,14 @@ COUNTRY_TO_CC = {
     "dr congo":"cd","drc":"cd","democratic republic of the congo":"cd","congo kinshasa":"cd",
     "djibouti":"dj","egypt":"eg","equatorial guinea":"gq","eritrea":"er","eswatini":"sz","swaziland":"sz",
     "ethiopia":"et","gabon":"ga","gambia":"gm","ghana":"gh","guinea":"gn","guinea-bissau":"gw","guinea bissau":"gw",
-    "ivory coast":"ci","cote d'ivoire":"ci","cote divoire":"ci","cote d ivoire":"ci","côte d’ivoire":"ci","côte d'ivoire":"ci",
+    "ivory coast":"ci","cote d'ivoire":"ci","cote divoire":"ci","cote d ivoire":"ci","côte d'ivoire":"ci","côte d'ivoire":"ci",
     "kenya":"ke","lesotho":"ls","liberia":"lr","libya":"ly","madagascar":"mg","malawi":"mw","mali":"ml","mauritania":"mr",
     "mauritius":"mu","morocco":"ma","mozambique":"mz","namibia":"na","niger":"ne","nigeria":"ng","rwanda":"rw",
     "sao tome and principe":"st","sao tome":"st","são tomé and príncipe":"st","são tomé":"st","sao tome & principe":"st",
     "senegal":"sn","seychelles":"sc","sierra leone":"sl","somalia":"so","south africa":"za","south sudan":"ss","sudan":"sd",
     "tanzania":"tz","united republic of tanzania":"tz","togo":"tg","tunisia":"tn","uganda":"ug","zambia":"zm","zimbabwe":"zw",
     "western sahara":"eh","réunion":"re","reunion":"re","mayotte":"yt",
-    "maroc":"ma","algerie":"dz","tunis":"tn","egypte":"eg","cameroun":"cm","cote d’ivoire":"ci","cote-d-ivoire":"ci",
+    "maroc":"ma","algerie":"dz","tunis":"tn","egypte":"eg","cameroun":"cm","cote d'ivoire":"ci","cote-d-ivoire":"ci",
     "somaliland":"so","ethiopie":"et",
     "eswatini (swaziland)":"sz","swaziland (eswatini)":"sz",
     "congo-brazzaville":"cg","congo-kinshasa":"cd","gbissau":"gw",
@@ -2572,7 +2392,6 @@ def _get_foot(row) -> str:
                     return s
     return ""
 
-# Label → (column_name, pretty_label)
 _FB_ROLE_MAP = [
     ("Build Up FB Score", "Build Up FB"),
     ("Attacking FB Score", "Attacking FB"),
@@ -2584,24 +2403,18 @@ _FB_ROLE_MAP = [
 
 
 def _fmt_mv_gbp(v) -> str:
-    """Formats market value to £k/£m/£bn. Handles values stored as full £ or as 'millions'."""
     try:
         x = float(v)
     except Exception:
         return "—"
-
-    # handle NaN / <=0
     try:
         if np.isnan(x) or x <= 0:
             return "—"
     except Exception:
         if x <= 0:
             return "—"
-
-    # If stored as millions (e.g., 12.5 => £12.5m)
     if x < 1_000:
         x *= 1_000_000
-
     if x >= 1_000_000_000:
         return f"£{x/1_000_000_000:.1f}bn".replace(".0", "")
     if x >= 1_000_000:
@@ -2611,9 +2424,7 @@ def _fmt_mv_gbp(v) -> str:
     return f"£{x:.0f}"
 
 
-
 def render_pro_layout_fb(df_view: pd.DataFrame, top_n: int = 20):
-    # ---- CSS (CB-style + metrics raw value + badge) ----
     st.markdown("""
     <style>
     html, body, .block-container *{
@@ -2655,7 +2466,6 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n: int = 20):
     .crest-icon{ height:1.35em; width:auto; object-fit:contain; image-rendering:auto; }
     .crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
 
-    /* ---- Individual Metrics (CB style: label + raw + badge) ---- */
     .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
     .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
 
@@ -2671,12 +2481,10 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n: int = 20):
     </style>
     """, unsafe_allow_html=True)
 
-    # ---- CB-style globals ----
     global_photo_overrides = load_local_photo_overrides(PLAYER_PHOTO_OVERRIDES_JSON)
     st.session_state.setdefault("photo_map", {})
     st.session_state.setdefault("crest_map", {})
 
-    # ---- UI ROW 1: Age, Role sort, Search ----
     c1, c2, c3 = st.columns([1, 1.4, 2])
     with c1:
         age_choice = st.selectbox(
@@ -2693,11 +2501,9 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n: int = 20):
     with c3:
         search_q = st.text_input("🔎 Search player / team / league", "", key="fb_global_search")
 
-    # ---- Order toggle ----
     sort_dir_label = st.radio("Order", options=["High → Low", "Low → High"], index=0, key="pro_sort_dir_fb", horizontal=True)
     asc = (sort_dir_label == "Low → High")
 
-    # ---- Pill toggle (choose 3 from FB set) ----
     available = [(col, label) for col, label in _FB_ROLE_MAP if col in df_view.columns]
     if not available:
         st.info("No fullback role score columns found in the dataframe.")
@@ -2723,12 +2529,8 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n: int = 20):
         st.warning("Please select exactly 3 pills — showing the first three available.")
         selected_labels = (selected_labels + [lbl for lbl in labels if lbl not in selected_labels])[:3]
 
-    # ---- start from full table ----
     df_filtered = df_view.copy()
 
-    # -----------------
-    # Market Value (display-only) + print toggle
-    # -----------------
     show_mv_next_to_contract = st.checkbox(
         "Show Market Value next to contract",
         value=False,
@@ -2742,11 +2544,7 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n: int = 20):
         key="pro_mv_mode_fb"
     )
 
-    df_filtered["__mv"] = pd.to_numeric(
-        df_filtered.get("Market value"),
-        errors="coerce"
-    )
-
+    df_filtered["__mv"] = pd.to_numeric(df_filtered.get("Market value"), errors="coerce")
     mv_mask = df_filtered["__mv"] < 1_000
     df_filtered.loc[mv_mask, "__mv"] = df_filtered.loc[mv_mask, "__mv"] * 1_000_000
 
@@ -2754,23 +2552,10 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n: int = 20):
     mv_max = None
 
     if mv_mode == "Max only":
-        mv_max_m = st.slider(
-            "Max Market Value (millions)",
-            0.0, 400.0,
-            30.0,
-            step=0.5,
-            key="pro_mv_max_m_fb"
-        )
+        mv_max_m = st.slider("Max Market Value (millions)", 0.0, 400.0, 30.0, step=0.5, key="pro_mv_max_m_fb")
         mv_max = mv_max_m * 1_000_000
-
     elif mv_mode == "Range":
-        mv_min_m, mv_max_m = st.slider(
-            "Market Value Range (millions)",
-            0.0, 400.0,
-            (0.0, 30.0),
-            step=0.5,
-            key="pro_mv_range_m_fb"
-        )
+        mv_min_m, mv_max_m = st.slider("Market Value Range (millions)", 0.0, 400.0, (0.0, 30.0), step=0.5, key="pro_mv_range_m_fb")
         mv_min = mv_min_m * 1_000_000
         mv_max = mv_max_m * 1_000_000
 
@@ -2779,9 +2564,6 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n: int = 20):
     if mv_min is not None:
         df_filtered = df_filtered[df_filtered["__mv"] >= mv_min]
 
-
-
-    # ---- Global search (Player / Team / League) ----
     if search_q:
         s = str(search_q).strip().lower()
         cols = [c for c in ("Player", "Team", "League") if c in df_filtered.columns]
@@ -2791,7 +2573,6 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n: int = 20):
                 mask_any = mask_any | df_filtered[c].astype(str).str.lower().str.contains(s, na=False)
             df_filtered = df_filtered[mask_any]
 
-    # ---- Age filter ----
     if "Age" in df_filtered.columns and age_choice != "All":
         try:
             df_filtered["Age_num"] = pd.to_numeric(df_filtered["Age"], errors="coerce")
@@ -2808,7 +2589,6 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n: int = 20):
         except Exception:
             pass
 
-    # ---- Contract expiry filter (max year) ----
     if "Contract expires" in df_filtered.columns:
         contract_choice = st.selectbox(
             "Contract expires (max year)",
@@ -2825,28 +2605,21 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n: int = 20):
             except Exception:
                 pass
 
-    # ---- Birth country filter ----
     if "Birth country" in df_filtered.columns:
-        country_vals = (
-            df_filtered["Birth country"].dropna().astype(str).str.strip()
-        )
+        country_vals = df_filtered["Birth country"].dropna().astype(str).str.strip()
         country_vals = sorted({c for c in country_vals if c and c.lower() not in {"nan","none","null"}})
         selected_countries = st.multiselect("Birth country", options=country_vals, default=[], key="pro_birth_country_filter_fb")
         if selected_countries:
             df_filtered = df_filtered[df_filtered["Birth country"].isin(selected_countries)]
 
-    # ---- Foot filter ----
     df_filtered["__foot"] = df_filtered.apply(_get_foot, axis=1)
-    foot_vals = (
-        df_filtered["__foot"].dropna().astype(str).str.strip()
-    )
+    foot_vals = df_filtered["__foot"].dropna().astype(str).str.strip()
     foot_vals = sorted({f for f in foot_vals if f and f.lower() not in {"nan","none","null"}})
     if foot_vals:
         selected_feet = st.multiselect("Foot", options=foot_vals, default=[], key="pro_foot_filter_fb")
         if selected_feet:
             df_filtered = df_filtered[df_filtered["__foot"].isin(selected_feet)]
 
-    # ---------- optional minimum role score filters ----------
     ROLE_SCORE_COLS_FILTER = [col for col, _ in _FB_ROLE_MAP if col in df_filtered.columns]
     use_role_filters = st.checkbox("Filter by minimum role score(s)", value=False, key="fb_role_filter_toggle")
 
@@ -2861,7 +2634,6 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n: int = 20):
                 df_filtered[col] = pd.to_numeric(df_filtered[col], errors="coerce")
                 df_filtered = df_filtered[df_filtered[col] >= thr]
 
-    # ---- data check ----
     all_col = "All In Score"
     if all_col not in df_view.columns:
         st.info("Pro Layout needs the role scores. Make sure the table section above ran first.")
@@ -2870,7 +2642,6 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n: int = 20):
         st.info("No players match the selected filters.")
         return
 
-    # ---- Sorting ----
     _sort_col = "__sort_val"
     df_filtered[_sort_col] = pd.to_numeric(df_filtered.get(sort_by, pd.Series(index=df_filtered.index)), errors="coerce")
     ranked = (
@@ -2881,14 +2652,12 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n: int = 20):
         .reset_index(drop=True)
     )
 
-    # ========================= RENDER CARDS =========================
     for i, row in ranked.iterrows():
         player = str(row.get("Player", "")) or ""
         team = str(row.get("Team", "")) or ""
         league = str(row.get("League", "")) or ""
         pos = str(row.get("Position", "")) or ""
 
-        # Age text
         try:
             age_val = int(row.get("Age")) if not pd.isna(row.get("Age", None)) else int(row.get("Age_num", 0))
         except Exception:
@@ -2907,7 +2676,6 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n: int = 20):
         flag = _flag_html(birth)
         foot = _get_foot(row) or "—"
 
-        # ---- role pills (driven by selection) ----
         pill_triplet = []
         for lbl in selected_labels:
             col = label_to_col.get(lbl, "")
@@ -2919,7 +2687,6 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n: int = 20):
         pill_triplet = pill_triplet[:3]
         (l1, v1, t1), (l2, v2, t2), (l3, v3, t3) = pill_triplet
 
-        # ---- positions — preserve dataset order & de-dupe ----
         raw = (pos or "").strip().upper()
         codes = [c for c in _re.split(r"[,\s/;]+", raw) if c]
         seen = set()
@@ -2933,7 +2700,6 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n: int = 20):
             for c in ordered
         )
 
-        # ✅ CB-style avatar resolver (team + surname -> squad)
         key_id = f"{_norm(player)}|{_norm(team)}"
         avatar_url = resolve_player_photo(
             player=player,
@@ -2944,7 +2710,6 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n: int = 20):
             global_overrides=global_photo_overrides,
         )
 
-        # ✅ crest resolver (same as CB)
         crest_store_key = f"{_norm(team)}|{_norm(league)}"
         crest_url = st.session_state.get("crest_map", {}).get(crest_store_key, "")
         if not crest_url:
@@ -2975,7 +2740,7 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n: int = 20):
           <div class='pro-card'>
             <div class='leftcol'>
               <div class='pro-avatar'>
-                <img src="{avatar_url}" srcset="{avatar_url} 1x, {avatar_url} 2x" alt="{player}" loading="lazy" />
+                <img src="{avatar_url}" onerror="this.onerror=null;this.src='https://i.redd.it/43axcjdu59nd1.jpeg'" alt="{player}" loading="lazy" />
               </div>
               <div class='row leftrow1'>{flag}<span class='chip'>{age_txt}</span></div>
               <div class='row leftrow-foot'><span class='chip'>{foot}</span></div>
@@ -2994,7 +2759,6 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n: int = 20):
         </div>
         """, unsafe_allow_html=True)
 
-        # ========================= EXPANDER (FULL, BACK) =========================
         with st.expander("Individual Metrics", expanded=False):
 
             ATT = [
@@ -3048,10 +2812,8 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n: int = 20):
                     pct = _metric_pct(row, met)
                     p = _pro_show99(pct if not pd.isna(pct) else 0.0)
                     ptxt = _fmt2(p)
-
                     raw = _metric_val(row, met)
                     raw_txt = "—" if pd.isna(raw) else f"{raw:.2f}".rstrip("0").rstrip(".")
-
                     rows.append(
                         "<div class='m-row'>"
                         f"<div class='m-label'>{lab}</div>"
@@ -3071,7 +2833,6 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n: int = 20):
                 unsafe_allow_html=True
             )
 
-            # --- Player image override (per-player keys) ---
             img_key = f"imgurl_{i}_{key_id}"
             default_url = st.session_state.get("photo_map", {}).get(key_id, "")
             uploaded_file = st.file_uploader(
@@ -3096,7 +2857,6 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n: int = 20):
                                 Image.open(io.BytesIO(data))
                             except Exception:
                                 pass
-
                             mime = getattr(uploaded_file, "type", "") or ""
                             if not mime.startswith("image/"):
                                 ext = os.path.splitext(uploaded_file.name or "")[1].lower()
@@ -3104,7 +2864,6 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n: int = 20):
                                 elif ext == ".png": mime = "image/png"
                                 elif ext in (".jpg", ".jpeg"): mime = "image/jpeg"
                                 else: mime = "image/png"
-
                             b64 = base64.b64encode(data).decode("ascii")
                             st.session_state.setdefault("photo_map", {})[key_id] = f"data:{mime};base64,{b64}"
                             st.success("Uploaded image saved!")
@@ -3130,7 +2889,6 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n: int = 20):
                     try: st.rerun()
                     except Exception: st.experimental_rerun()
 
-            # --- Club crest override (stored per-club) ---
             crest_widget_ns = f"{crest_store_key}|{key_id}|{i}"
             crest_default = st.session_state.get("crest_map", {}).get(crest_store_key, "")
             crest_upload = st.file_uploader(
@@ -3188,7 +2946,6 @@ with tabs[4]:
     st.subheader("Pro Layout — Top Fullbacks (Tiles)")
     render_pro_layout_fb(df_f, top_n=top_n)
 # ----------------- END PRO LAYOUT TAB — FULLBACKS -----------------
-
 
 # ----------------- METRIC LEADERBOARD — themed + palettes + custom title + highlights (UPDATED) -----------------
 import re, numpy as np, matplotlib.pyplot as plt
