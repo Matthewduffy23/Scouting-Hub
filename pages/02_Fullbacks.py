@@ -12,6 +12,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Circle, Wedge
+from photo_utils import get_player_photo_url, load_player_photo_cached, get_player_photo_pil
 
 # ---- Optional sklearn (fallback provided) ----
 try:
@@ -2181,20 +2182,17 @@ import unicodedata
 import pandas as pd
 import numpy as np
 import streamlit as st
-
-# ✅ Needed for FotMob squad lookup + URL quoting
 import requests
 from urllib.parse import quote
-
-# ✅ Needed for override uploads
 import base64
 import io
 import os
 
+# ==========================================================
+# ✅ Photo system — uses GitHub photo repo via photo_utils
+# ==========================================================
+from photo_utils import get_player_photo_url, load_player_photo_cached, get_player_photo_pil
 
-# ==========================================================
-# ✅ Shared constants / helpers
-# ==========================================================
 PLAYER_PHOTO_OVERRIDES_JSON = "player_photo_overrides.json"
 
 def load_local_photo_overrides(path: str) -> dict:
@@ -2206,140 +2204,11 @@ def load_local_photo_overrides(path: str) -> dict:
             return json.load(f) or {}
     except Exception:
         return {}
-
-# --- FotMob team url mapping (your project may already provide this) ---
-try:
-    from team_fotmob_urls import FOTMOB_TEAM_URLS  # must exist in your repo (same as CB page uses)
-except Exception:
-    FOTMOB_TEAM_URLS = {}
-
-def get_fotmob_url(team: str) -> str:
-    return (FOTMOB_TEAM_URLS.get(team) or "").strip()
 
 def _norm(s: str) -> str:
     if not s:
         return ""
     return unicodedata.normalize("NFKD", str(s)).encode("ascii","ignore").decode("ascii").strip().lower()
-
-def _fotmob_team_id_from_url(team_url: str) -> str:
-    m = _re.search(r"/teams/(\d+)/", str(team_url or ""))
-    return m.group(1) if m else ""
-
-def _fotmob_crest_url(team_url: str) -> str:
-    tid = _fotmob_team_id_from_url(team_url)
-    return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png" if tid else ""
-
-def _player_surname(player: str) -> str:
-    p = (player or "").strip()
-    if not p:
-        return ""
-    # "Surname, Name" → surname else last token
-    if "," in p:
-        return p.split(",", 1)[0].strip()
-    parts = p.split()
-    return parts[-1].strip() if parts else ""
-
-
-# ==========================================================
-# ✅ URL photo system (same as FB/CM fixed version)
-# ==========================================================
-PLAYER_PHOTO_OVERRIDES_JSON = "player_photo_overrides.json"
-
-def load_local_photo_overrides(path: str) -> dict:
-    try:
-        import json
-        if not path or not os.path.exists(path):
-            return {}
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f) or {}
-    except Exception:
-        return {}
-
-try:
-    from team_fotmob_urls import FOTMOB_TEAM_URLS
-except Exception:
-    FOTMOB_TEAM_URLS = {}
-
-def get_fotmob_url(team: str) -> str:
-    return (FOTMOB_TEAM_URLS.get(team) or "").strip()
-
-def _fotmob_team_id_from_url(team_url: str) -> str:
-    m = _re.search(r"/teams/(\d+)/", str(team_url or ""))
-    return m.group(1) if m else ""
-
-def _fotmob_crest_url(team_url: str) -> str:
-    tid = _fotmob_team_id_from_url(team_url)
-    return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png" if tid else ""
-
-def _player_surname(player: str) -> str:
-    p = (player or "").strip()
-    if not p:
-        return ""
-    if "," in p:
-        return p.split(",", 1)[0].strip()
-    parts = p.split()
-    return parts[-1].strip() if parts else ""
-
-# ✅ Accent tolerant slug
-def _slug_name(s: str) -> str:
-    if not s:
-        return ""
-    s = str(s).strip().lower()
-
-    repl = {
-        "ø":"o","œ":"oe","æ":"ae","å":"a","ä":"a","ö":"o","ü":"u",
-        "ß":"ss","ł":"l","đ":"d","ð":"d","þ":"th","ç":"c",
-        "ş":"s","ğ":"g","ı":"i",
-    }
-    for k, v in repl.items():
-        s = s.replace(k, v)
-
-    s = unicodedata.normalize("NFKD", s)
-    s = "".join(ch for ch in s if not unicodedata.combining(ch))
-    s = _re.sub(r"[^a-z0-9]+", "", s)
-    return s
-
-# ✅ fuzzy helper
-from difflib import SequenceMatcher
-def _similar(a: str, b: str) -> float:
-    return SequenceMatcher(None, a, b).ratio()
-
-def _fotmob_team_squad(team_id: str) -> list[dict]:
-    cache = st.session_state.setdefault("_fotmob_team_squad_cache", {})
-    if team_id in cache:
-        return cache[team_id] or []
-
-    squad: list[dict] = []
-    try:
-        url = f"https://www.fotmob.com/api/teams?id={team_id}"
-        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-        if r.status_code == 200:
-            data = r.json() or {}
-            raw_squad = data.get("squad", None)
-
-            if isinstance(raw_squad, list):
-                for section in raw_squad:
-                    members = section.get("members") or section.get("players") or []
-                    if isinstance(members, list):
-                        squad.extend([m for m in members if isinstance(m, dict)])
-
-            elif isinstance(raw_squad, dict):
-                for k in ("members", "players"):
-                    members = raw_squad.get(k)
-                    if isinstance(members, list):
-                        squad.extend([m for m in members if isinstance(m, dict)])
-
-                nested = raw_squad.get("squad")
-                if isinstance(nested, list):
-                    for section in nested:
-                        members = section.get("members") or section.get("players") or []
-                        if isinstance(members, list):
-                            squad.extend([m for m in members if isinstance(m, dict)])
-    except Exception:
-        squad = []
-
-    cache[team_id] = squad
-    return squad
 
 def resolve_player_photo(player: str,
                          team: str,
@@ -2349,73 +2218,9 @@ def resolve_player_photo(player: str,
                          global_overrides: dict) -> str:
     if session_photo_map.get(key_id):
         return session_photo_map[key_id]
-
     if global_overrides.get(key_id):
         return global_overrides[key_id]
-
-    team_url = get_fotmob_url(team)
-    tid = _fotmob_team_id_from_url(team_url)
-    if tid:
-        squad = _fotmob_team_squad(tid)
-
-        target_surname = _slug_name(_player_surname(player))
-        target_full    = _slug_name(player)
-
-        best_id = ""
-
-        # ---- exact surname match first ----
-        if target_surname:
-            for m in squad:
-                name = m.get("name") or m.get("playerName") or ""
-                pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
-                if not pid:
-                    continue
-
-                if _slug_name(_player_surname(name)) == target_surname:
-                    best_id = str(pid)
-                    if target_full and target_full in _slug_name(name):
-                        break
-
-        # ---- exact full-name contains ----
-        if not best_id and target_full:
-            for m in squad:
-                name = m.get("name") or m.get("playerName") or ""
-                pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
-                if not pid:
-                    continue
-
-                if target_full in _slug_name(name):
-                    best_id = str(pid)
-                    break
-
-        # ---- FUZZY fallback (only if still not found) ----
-        if not best_id and target_surname:
-            best_score = 0.0
-            best_pid = ""
-
-            for m in squad:
-                name = m.get("name") or m.get("playerName") or ""
-                pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
-                if not pid:
-                    continue
-
-                sn = _slug_name(_player_surname(name))
-                sc = _similar(sn, target_surname)
-
-                if sc > best_score:
-                    best_score = sc
-                    best_pid = str(pid)
-
-            if best_score >= 0.86:   # safe threshold
-                best_id = best_pid
-
-        if best_id and str(best_id).isdigit():
-            url = f"https://images.fotmob.com/image_resources/playerimages/{best_id}.png"
-            session_photo_map[key_id] = url
-            return url
-
-    return "https://i.redd.it/43axcjdu59nd1.jpeg"
-
+    return get_player_photo_url(player, team)
 
 
 # ==========================================================
@@ -2975,7 +2780,8 @@ def render_pro_layout_fb(df_view: pd.DataFrame, top_n: int = 20):
           <div class='pro-card'>
             <div class='leftcol'>
               <div class='pro-avatar'>
-                <img src="{avatar_url}" srcset="{avatar_url} 1x, {avatar_url} 2x" alt="{player}" loading="lazy" />
+                <img src="{avatar_url}" onerror="this.onerror=null;this.src='https://i.redd.it/43axcjdu59nd1.jpeg'"
+alt="{player}" loading="lazy" />
               </div>
               <div class='row leftrow1'>{flag}<span class='chip'>{age_txt}</span></div>
               <div class='row leftrow-foot'><span class='chip'>{foot}</span></div>
@@ -4964,7 +4770,7 @@ else:
         try: return Image.open(u).convert("RGBA")
         except Exception: return None
 
-    if enable_images:
+if enable_images:
         auto_pil_right = auto_pil_mid = auto_pil_left = None
         if auto_images:
             # rightmost = league logo
@@ -4973,7 +4779,9 @@ else:
             auto_pil_mid   = _npimg_to_pil_rgba(_auto_team_badge(player_row))
             # leftmost  = player photo (unless hidden)
             if not hide_player_photo:
-                auto_pil_left  = _npimg_to_pil_rgba(_auto_player_photo(player_row))
+                _pname = _safe_get(player_row, "Player", "").strip()
+                _tname = _safe_get(player_row, "Team", "").strip()
+                auto_pil_left = get_player_photo_pil(_pname, _tname)
 
         def add_header_image(pil_img, right_index=0):
             if pil_img is None: return
