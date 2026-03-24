@@ -21,14 +21,14 @@ from tqdm import tqdm
 
 try:
     from rembg import remove as rembg_remove
-    REMBG_OK = True
+    REMBG_OK = False
     print("✅ rembg loaded — backgrounds will be removed")
 except Exception:
     REMBG_OK = False
     print("⚠️  rembg not available — photos saved as-is")
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-PHOTOS_DIR = SCRIPT_DIR / "photos"
+PHOTOS_DIR = Path(r"C:\Users\matth\OneDrive\Documents\GitHub\scouting-photos\photos")
 CACHE_FILE = SCRIPT_DIR / "photo_id_cache.json"
 CSV_FILE   = SCRIPT_DIR / "WORLDplayers_updated.csv"
 PHOTOS_DIR.mkdir(exist_ok=True)
