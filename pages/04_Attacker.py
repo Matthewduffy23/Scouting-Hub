@@ -12,6 +12,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Circle, Wedge
+from photo_utils import get_player_photo_url, load_player_photo_cached, get_player_photo_pil
 
 # ---- Optional sklearn (fallback provided) ----
 try:
@@ -2006,7 +2007,7 @@ for role, role_def in ROLES.items():
         st.dataframe(top_table(filtered_view(df_f, value_max=v_max), role, top_n), use_container_width=True)
         st.divider()
 
-# ----------------- PRO LAYOUT TAB (tiles) — ATTACKERS (fixed: URL photo system + metric labels) -----------------
+# ----------------- PRO LAYOUT TAB (tiles) — ATTACKERS -----------------
 import os
 import io
 import base64
@@ -2014,30 +2015,30 @@ import requests
 import pandas as pd
 import numpy as np
 import streamlit as st
+import unicodedata
+import re as _re
 
-# ----------------- helpers (keep as provided) -----------------
+from photo_utils import get_player_photo_url, load_player_photo_cached, get_player_photo_pil
+
+# ----------------- helpers -----------------
 def _pro_rating_color(v: float) -> str:
     v = float(v)
-
     COLORS = [
-        (85, "#2E6114"),  # Deep green
-        (75, "#5C9E2E"),  # Green+
-        (66, "#7FBC41"),  # Green
-        (54, "#A7D763"),  # Green-
-        (44, "#F6D645"),  # Bright yellow (improved)
-        (25, "#D77A2E"),  # Orange
-        (0,  "#C63733"),  # Red
+        (85, "#2E6114"),
+        (75, "#5C9E2E"),
+        (66, "#7FBC41"),
+        (54, "#A7D763"),
+        (44, "#F6D645"),
+        (25, "#D77A2E"),
+        (0,  "#C63733"),
     ]
-
     for threshold, color in COLORS:
         if v >= threshold:
             return color
     return COLORS[-1][1]
 
-
 def _pro_show99(x) -> int:
     try:
-        # floor instead of round to avoid “mystery 99s”
         return max(0, min(99, int(float(x))))
     except Exception:
         return 0
@@ -2051,19 +2052,14 @@ def _fmt_mv_gbp(v) -> str:
         x = float(v)
     except Exception:
         return "—"
-
     try:
         if np.isnan(x) or x <= 0:
             return "—"
     except Exception:
         if x <= 0:
             return "—"
-
-    # If your dataset stores Market value in millions (e.g. 25.0),
-    # convert to absolute number for formatting.
     if x < 1_000:
         x *= 1_000_000
-
     if x >= 1_000_000_000:
         return f"£{x/1_000_000_000:.1f}bn".replace(".0", "")
     if x >= 1_000_000:
@@ -2077,18 +2073,8 @@ _POS_COLORS = {
     "AMF":"#7FE28A","LCMF":"#5FD37A","RCMF":"#5FD37A","RDMF":"#31B56B","LDMF":"#31B56B","DMF":"#31B56B",
     "LWB":"#FFD34D","RWB":"#FFD34D","LB":"#FF9A3C","RB":"#FF9A3C","RCB":"#D1763A","CB":"#D1763A","LCB":"#D1763A",
 }
-
-
-_POS_COLORS = {
-    "CF":"#6EA8FF","LWF":"#6EA8FF","LW":"#6EA8FF","LAMF":"#6EA8FF","RW":"#6EA8FF","RWF":"#6EA8FF","RAMF":"#6EA8FF",
-    "AMF":"#7FE28A","LCMF":"#5FD37A","RCMF":"#5FD37A","RDMF":"#31B56B","LDMF":"#31B56B","DMF":"#31B56B",
-    "LWB":"#FFD34D","RWB":"#FFD34D","LB":"#FF9A3C","RB":"#FF9A3C","RCB":"#D1763A","CB":"#D1763A","LCB":"#D1763A",
-}
 def _pro_chip_color(p:str)->str:
     return _POS_COLORS.get(str(p).strip().upper(),"#2d3550")
-
-import unicodedata
-import re as _re
 
 TWEMOJI_SPECIAL = {
     "eng":"1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
@@ -2096,12 +2082,8 @@ TWEMOJI_SPECIAL = {
     "wls":"1f3f4-e0067-e0062-e0077-e006c-e0073-e007f",
 }
 
-# Expanded country-name -> ISO-2 code map (many African additions + aliases)
 COUNTRY_TO_CC = {
-    # UK home nations (kept as before)
     "united kingdom":"gb","great britain":"gb","northern ireland":"nir","england":"eng","scotland":"sct","wales":"wls",
-
-    # Europe (existing + a few extras for completeness)
     "ireland":"ie","republic of ireland":"ie","spain":"es","france":"fr","germany":"de","italy":"it","portugal":"pt",
     "netherlands":"nl","belgium":"be","austria":"at","switzerland":"ch","denmark":"dk","sweden":"se","norway":"no",
     "finland":"fi","iceland":"is","poland":"pl","czech republic":"cz","czechia":"cz","slovakia":"sk","slovenia":"si",
@@ -2110,46 +2092,28 @@ COUNTRY_TO_CC = {
     "kazakhstan":"kz","azerbaijan":"az","armenia":"am","turkey":"tr","cyprus":"cy","luxembourg":"lu","andorra":"ad",
     "monaco":"mc","san marino":"sm","malta":"mt","moldova":"md","north macedonia":"mk","macedonia":"mk","estonia":"ee",
     "latvia":"lv","lithuania":"lt",
-
-    # Middle East & Asia (existing)
     "qatar":"qa","saudi arabia":"sa","uae":"ae","united arab emirates":"ae","israel":"il","japan":"jp","korea":"kr",
     "south korea":"kr","korea republic":"kr","china":"cn",
-
-    # Africa — big expansion
     "algeria":"dz","angola":"ao","benin":"bj","botswana":"bw","burkina faso":"bf","burundi":"bi","cabo verde":"cv",
     "cape verde":"cv","cameroon":"cm","central african republic":"cf","car":"cf","chad":"td","comoros":"km",
     "congo":"cg","republic of the congo":"cg","congo brazzaville":"cg",
     "dr congo":"cd","drc":"cd","democratic republic of the congo":"cd","congo kinshasa":"cd",
     "djibouti":"dj","egypt":"eg","equatorial guinea":"gq","eritrea":"er","eswatini":"sz","swaziland":"sz",
     "ethiopia":"et","gabon":"ga","gambia":"gm","ghana":"gh","guinea":"gn","guinea-bissau":"gw","guinea bissau":"gw",
-    "ivory coast":"ci","cote d'ivoire":"ci","cote divoire":"ci","cote d ivoire":"ci","côte d’ivoire":"ci","côte d'ivoire":"ci",
+    "ivory coast":"ci","cote d'ivoire":"ci","cote divoire":"ci","cote d ivoire":"ci","côte d'ivoire":"ci","côte d'ivoire":"ci",
     "kenya":"ke","lesotho":"ls","liberia":"lr","libya":"ly","madagascar":"mg","malawi":"mw","mali":"ml","mauritania":"mr",
     "mauritius":"mu","morocco":"ma","mozambique":"mz","namibia":"na","niger":"ne","nigeria":"ng","rwanda":"rw",
     "sao tome and principe":"st","sao tome":"st","são tomé and príncipe":"st","são tomé":"st","sao tome & principe":"st",
     "senegal":"sn","seychelles":"sc","sierra leone":"sl","somalia":"so","south africa":"za","south sudan":"ss","sudan":"sd",
     "tanzania":"tz","united republic of tanzania":"tz","togo":"tg","tunisia":"tn","uganda":"ug","zambia":"zm","zimbabwe":"zw",
     "western sahara":"eh","réunion":"re","reunion":"re","mayotte":"yt",
-
-    # North Africa already above; also include common Arabic/French variants (normalized by _norm)
-    "maroc":"ma","algerie":"dz","tunis":"tn","egypte":"eg","cameroun":"cm","cote d’ivoire":"ci","cote-d-ivoire":"ci",
-
-    # Horn/variants
+    "maroc":"ma","algerie":"dz","tunis":"tn","egypte":"eg","cameroun":"cm","cote d'ivoire":"ci","cote-d-ivoire":"ci",
     "somaliland":"so","ethiopie":"et",
-
-    # Southern Africa variants
     "eswatini (swaziland)":"sz","swaziland (eswatini)":"sz",
-
-    # West/Central variants
     "congo-brazzaville":"cg","congo-kinshasa":"cd","gbissau":"gw",
-
-    # Americas (existing)
     "brazil":"br","argentina":"ar","uruguay":"uy","chile":"cl","colombia":"co","peru":"pe","ecuador":"ec","paraguay":"py",
     "bolivia":"bo","mexico":"mx","canada":"ca","united states":"us","usa":"us",
-
-    # Oceania (existing)
     "australia":"au","new zealand":"nz",
-
-    # Extras sometimes seen in datasets
     "palestine":"ps","state of palestine":"ps",
     "hong kong":"hk","macau":"mo","macao":"mo",
     "curacao":"cw","curaçao":"cw","cape verde islands":"cv",
@@ -2178,7 +2142,6 @@ def _flag_html(country_name: str) -> str:
         return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
     return f"<span class='chip'>{cc.upper()}</span>"
 
-# --- SAFE foot extractor ---
 def _get_foot(row) -> str:
     for col in ("Foot","Preferred foot","Preferred Foot"):
         if col in row.index:
@@ -2197,7 +2160,7 @@ def _get_foot(row) -> str:
     return ""
 
 # ==========================================================
-# ✅ URL photo system (same as FB/CM fixed version)
+# ✅ Photo system — uses GitHub photo repo via photo_utils
 # ==========================================================
 PLAYER_PHOTO_OVERRIDES_JSON = "player_photo_overrides.json"
 
@@ -2227,76 +2190,6 @@ def _fotmob_crest_url(team_url: str) -> str:
     tid = _fotmob_team_id_from_url(team_url)
     return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png" if tid else ""
 
-def _player_surname(player: str) -> str:
-    p = (player or "").strip()
-    if not p:
-        return ""
-    if "," in p:
-        return p.split(",", 1)[0].strip()
-    parts = p.split()
-    return parts[-1].strip() if parts else ""
-
-# ✅ Accent tolerant slug
-def _slug_name(s: str) -> str:
-    if not s:
-        return ""
-    s = str(s).strip().lower()
-
-    repl = {
-        "ø":"o","œ":"oe","æ":"ae","å":"a","ä":"a","ö":"o","ü":"u",
-        "ß":"ss","ł":"l","đ":"d","ð":"d","þ":"th","ç":"c",
-        "ş":"s","ğ":"g","ı":"i",
-    }
-    for k, v in repl.items():
-        s = s.replace(k, v)
-
-    s = unicodedata.normalize("NFKD", s)
-    s = "".join(ch for ch in s if not unicodedata.combining(ch))
-    s = _re.sub(r"[^a-z0-9]+", "", s)
-    return s
-
-# ✅ fuzzy helper
-from difflib import SequenceMatcher
-def _similar(a: str, b: str) -> float:
-    return SequenceMatcher(None, a, b).ratio()
-
-def _fotmob_team_squad(team_id: str) -> list[dict]:
-    cache = st.session_state.setdefault("_fotmob_team_squad_cache", {})
-    if team_id in cache:
-        return cache[team_id] or []
-
-    squad: list[dict] = []
-    try:
-        url = f"https://www.fotmob.com/api/teams?id={team_id}"
-        r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-        if r.status_code == 200:
-            data = r.json() or {}
-            raw_squad = data.get("squad", None)
-
-            if isinstance(raw_squad, list):
-                for section in raw_squad:
-                    members = section.get("members") or section.get("players") or []
-                    if isinstance(members, list):
-                        squad.extend([m for m in members if isinstance(m, dict)])
-
-            elif isinstance(raw_squad, dict):
-                for k in ("members", "players"):
-                    members = raw_squad.get(k)
-                    if isinstance(members, list):
-                        squad.extend([m for m in members if isinstance(m, dict)])
-
-                nested = raw_squad.get("squad")
-                if isinstance(nested, list):
-                    for section in nested:
-                        members = section.get("members") or section.get("players") or []
-                        if isinstance(members, list):
-                            squad.extend([m for m in members if isinstance(m, dict)])
-    except Exception:
-        squad = []
-
-    cache[team_id] = squad
-    return squad
-
 def resolve_player_photo(player: str,
                          team: str,
                          league: str,
@@ -2305,74 +2198,10 @@ def resolve_player_photo(player: str,
                          global_overrides: dict) -> str:
     if session_photo_map.get(key_id):
         return session_photo_map[key_id]
-
     if global_overrides.get(key_id):
         return global_overrides[key_id]
+    return get_player_photo_url(player, team)
 
-    team_url = get_fotmob_url(team)
-    tid = _fotmob_team_id_from_url(team_url)
-    if tid:
-        squad = _fotmob_team_squad(tid)
-
-        target_surname = _slug_name(_player_surname(player))
-        target_full    = _slug_name(player)
-
-        best_id = ""
-
-        # ---- exact surname match first ----
-        if target_surname:
-            for m in squad:
-                name = m.get("name") or m.get("playerName") or ""
-                pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
-                if not pid:
-                    continue
-
-                if _slug_name(_player_surname(name)) == target_surname:
-                    best_id = str(pid)
-                    if target_full and target_full in _slug_name(name):
-                        break
-
-        # ---- exact full-name contains ----
-        if not best_id and target_full:
-            for m in squad:
-                name = m.get("name") or m.get("playerName") or ""
-                pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
-                if not pid:
-                    continue
-
-                if target_full in _slug_name(name):
-                    best_id = str(pid)
-                    break
-
-        # ---- FUZZY fallback (only if still not found) ----
-        if not best_id and target_surname:
-            best_score = 0.0
-            best_pid = ""
-
-            for m in squad:
-                name = m.get("name") or m.get("playerName") or ""
-                pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
-                if not pid:
-                    continue
-
-                sn = _slug_name(_player_surname(name))
-                sc = _similar(sn, target_surname)
-
-                if sc > best_score:
-                    best_score = sc
-                    best_pid = str(pid)
-
-            if best_score >= 0.86:   # safe threshold
-                best_id = best_pid
-
-        if best_id and str(best_id).isdigit():
-            url = f"https://images.fotmob.com/image_resources/playerimages/{best_id}.png"
-            session_photo_map[key_id] = url
-            return url
-
-    return "https://i.redd.it/43axcjdu59nd1.jpeg"
-
-# ✅ Metric helpers (raw value + percentile badge like FB)
 def _available_metric_pairs(df_view: pd.DataFrame, pairs: list[tuple[str, str]]):
     cols = set(df_view.columns)
     out = []
@@ -2398,9 +2227,7 @@ def _metric_val(row: pd.Series, met: str):
             return row[met]
     return np.nan
 
-# ==========================================================
-# ✅ MAIN RENDER (kept same behaviour; swapped in URL system + metric labels)
-# ==========================================================
+
 def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     st.markdown("""
     <style>
@@ -2443,7 +2270,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     .crest-icon{ height:1.35em; width:auto; object-fit:contain; image-rendering:auto; }
     .crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
 
-    /* ✅ metrics (FB label + raw + badge) */
     .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
     .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
 
@@ -2459,12 +2285,10 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     </style>
     """, unsafe_allow_html=True)
 
-    # ✅ init caches like FB
     global_photo_overrides = load_local_photo_overrides(PLAYER_PHOTO_OVERRIDES_JSON)
     st.session_state.setdefault("photo_map", {})
     st.session_state.setdefault("crest_map", {})
 
-    # ---- Filters: Age buckets ----
     age_choice = st.selectbox(
         "Age",
         ["All","U18","U20","U21","U22","U23","U25","U30","30+","25+","28+"],
@@ -2489,9 +2313,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
     df_filtered = df_view.copy()
 
-    # -----------------
-    # Market Value (display-only)
-    # -----------------
     show_mv_next_to_contract = st.checkbox(
         "Show Market Value next to contract",
         value=False,
@@ -2505,11 +2326,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         key="pro_mv_mode_att"
     )
 
-    df_filtered["__mv"] = pd.to_numeric(
-        df_filtered.get("Market value"),
-        errors="coerce"
-    )
-
+    df_filtered["__mv"] = pd.to_numeric(df_filtered.get("Market value"), errors="coerce")
     mv_mask = df_filtered["__mv"] < 1_000
     df_filtered.loc[mv_mask, "__mv"] = df_filtered.loc[mv_mask, "__mv"] * 1_000_000
 
@@ -2517,23 +2334,10 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     mv_max = None
 
     if mv_mode == "Max only":
-        mv_max_m = st.slider(
-            "Max Market Value (millions)",
-            0.0, 400.0,
-            30.0,
-            step=0.5,
-            key="pro_mv_max_m_att"
-        )
+        mv_max_m = st.slider("Max Market Value (millions)", 0.0, 400.0, 30.0, step=0.5, key="pro_mv_max_m_att")
         mv_max = mv_max_m * 1_000_000
-
     elif mv_mode == "Range":
-        mv_min_m, mv_max_m = st.slider(
-            "Market Value Range (millions)",
-            0.0, 400.0,
-            (0.0, 30.0),
-            step=0.5,
-            key="pro_mv_range_m_att"
-        )
+        mv_min_m, mv_max_m = st.slider("Market Value Range (millions)", 0.0, 400.0, (0.0, 30.0), step=0.5, key="pro_mv_range_m_att")
         mv_min = mv_min_m * 1_000_000
         mv_max = mv_max_m * 1_000_000
 
@@ -2541,7 +2345,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         df_filtered = df_filtered[df_filtered["__mv"] <= mv_max]
     if mv_min is not None:
         df_filtered = df_filtered[df_filtered["__mv"] >= mv_min]
-
 
     if search_text:
         terms = [t.strip().lower() for t in search_text.split(",") if t.strip()]
@@ -2588,9 +2391,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         if contract_choice != "Any":
             try:
                 max_year = int(contract_choice)
-                df_filtered["_contract_year"] = pd.to_datetime(
-                    df_filtered["Contract expires"], errors="coerce"
-                ).dt.year
+                df_filtered["_contract_year"] = pd.to_datetime(df_filtered["Contract expires"], errors="coerce").dt.year
                 df_filtered = df_filtered[df_filtered["_contract_year"] <= max_year]
             except Exception:
                 pass
@@ -2598,12 +2399,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
     if "Birth country" in df_filtered.columns:
         country_vals = df_filtered["Birth country"].dropna().astype(str).str.strip()
         country_vals = sorted({c for c in country_vals if c and c.lower() not in {"nan","none","null"}})
-        selected_countries = st.multiselect(
-            "Birth country",
-            options=country_vals,
-            default=[],
-            key="pro_birth_country_filter_att"
-        )
+        selected_countries = st.multiselect("Birth country", options=country_vals, default=[], key="pro_birth_country_filter_att")
         if selected_countries:
             df_filtered = df_filtered[df_filtered["Birth country"].isin(selected_countries)]
 
@@ -2615,7 +2411,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         if selected_feet:
             df_filtered = df_filtered[df_filtered["__foot"].isin(selected_feet)]
 
-    # ---------- optional minimum role score filters ----------
     try:
         role_names_filter = list(ROLES.keys())
     except Exception:
@@ -2634,7 +2429,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
             if thr > 0:
                 df_filtered[col] = pd.to_numeric(df_filtered[col], errors="coerce")
                 df_filtered = df_filtered[df_filtered[col] >= thr]
-    # ---------- end minima ----------
 
     all_col = "All In Score"
     if all_col not in df_view.columns:
@@ -2644,7 +2438,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         st.info("No players match the selected filters/search.")
         return
 
-    # ---- sorting ----
     try:
         role_names = list(ROLES.keys())
     except Exception:
@@ -2690,7 +2483,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
 
     _sort_col = "__sort_val"
     df_filtered[_sort_col] = pd.to_numeric(df_filtered.get(sort_by, pd.Series(index=df_filtered.index)), errors="coerce")
-
     ranked = (
         df_filtered
         .sort_values([_sort_col, all_col], ascending=[asc, False], na_position="last")
@@ -2715,15 +2507,12 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         cyr = int(cy.year) if pd.notna(cy) else 0
         birth = row.get("Birth country","") if "Birth country" in row else ""
         foot = _get_foot(row) or "—"
-
         flag = _flag_html(birth)
         contract_txt = f"{cyr}" if cyr > 0 else "—"
 
         mv_txt = _fmt_mv_gbp(row.get("Market value")) if "Market value" in ranked.columns else "—"
         if show_mv_next_to_contract and mv_txt != "—":
             contract_txt = f"{contract_txt} · {mv_txt}" if contract_txt != "—" else mv_txt
-
-
 
         raw = (pos or "").strip().upper()
         codes = [c for c in _re.split(r"[,\s/;]+", raw) if c]
@@ -2737,15 +2526,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
             for c in ordered
         )
 
-        flag = _flag_html(birth)
-        contract_txt = f"{cyr}" if cyr > 0 else "—"
-
-        mv_txt = _fmt_mv_gbp(row.get("Market value")) if "Market value" in ranked.columns else "—"
-        if show_mv_next_to_contract and mv_txt != "—":
-            contract_txt = f"{contract_txt} · {mv_txt}" if contract_txt != "—" else mv_txt
-
-
-        # ✅ URL photo system (resolver + caching)
         key_id = f"{_norm(player)}|{_norm(team)}"
         avatar_url = resolve_player_photo(
             player=player,
@@ -2756,7 +2536,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
             global_overrides=global_photo_overrides,
         )
 
-        # ✅ crest: auto from fotmob if missing
         crest_store_key = f"{_norm(team)}|{_norm(league)}"
         crest_url = st.session_state.get("crest_map", {}).get(crest_store_key, "")
         if not crest_url:
@@ -2773,7 +2552,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         else:
             teamline_html = f"<div class='teamline'>{team} · {league}</div>"
 
-        # pills (3 ordered)
         pill_rows = []
         for lbl in selected_labels:
             col = label_to_col.get(lbl, f"{lbl} Score")
@@ -2792,7 +2570,7 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
           <div class='pro-card'>
             <div class='leftcol'>
               <div class='pro-avatar'>
-                <img src="{avatar_url}" srcset="{avatar_url} 1x, {avatar_url} 2x" alt="{player}" loading="lazy" />
+                <img src="{avatar_url}" alt="{player}" loading="lazy" />
               </div>
               <div class='row leftrow1'>{flag}<span class='chip'>{age_txt}</span></div>
               <div class='row leftrow-foot'><span class='chip'>{foot}</span></div>
@@ -2809,7 +2587,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
         </div>
         """, unsafe_allow_html=True)
 
-        # ----- Expander: metrics (NOW FB style raw+badge) + overrides -----
         with st.expander("Individual Metrics", expanded=False):
 
             ATT=[("Crosses","Crosses per 90"),
@@ -2829,23 +2606,22 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                  ("Defensive Duel Success %","Defensive duels won, %"),
                  ("PAdj. Interceptions","PAdj Interceptions")]
 
-            POS = [
-                ("Accelerations", "Accelerations per 90"),
-                ("Deep Completions", "Deep completions per 90"),
-                ("Dribbles", "Dribbles per 90"),
-                ("Dribbling Success %", "Successful dribbles, %"),
-                ("Forward Passes", "Forward passes per 90"),
-                ("Long Passes", "Long passes per 90"),
-                ("Key Passes", "Key passes per 90"),
-                ("Passes", "Passes per 90"),
-                ("Passing Accuracy %", "Accurate passes, %"),
-                ("Passes to F3rd", "Passes to final third per 90"),
-                ("Passes F3rd %", "Accurate passes to final third, %"),
-                ("Passes to Penalty Area", "Passes to penalty area per 90"),
-                ("Passes to Penalty Area %", "Accurate passes to penalty area, %"),
-                ("Progressive Passes", "Progressive passes per 90"),
-                ("Prog Pass %", "Accurate progressive passes, %"),
-                ("Smart Passes", "Smart passes per 90")]
+            POS=[("Accelerations","Accelerations per 90"),
+                 ("Deep Completions","Deep completions per 90"),
+                 ("Dribbles","Dribbles per 90"),
+                 ("Dribbling Success %","Successful dribbles, %"),
+                 ("Forward Passes","Forward passes per 90"),
+                 ("Long Passes","Long passes per 90"),
+                 ("Key Passes","Key passes per 90"),
+                 ("Passes","Passes per 90"),
+                 ("Passing Accuracy %","Accurate passes, %"),
+                 ("Passes to F3rd","Passes to final third per 90"),
+                 ("Passes F3rd %","Accurate passes to final third, %"),
+                 ("Passes to Penalty Area","Passes to penalty area per 90"),
+                 ("Passes to Penalty Area %","Accurate passes to penalty area, %"),
+                 ("Progressive Passes","Progressive passes per 90"),
+                 ("Prog Pass %","Accurate progressive passes, %"),
+                 ("Smart Passes","Smart passes per 90")]
 
             def _sec_html(title, pairs):
                 pairs = _available_metric_pairs(df_view, pairs)
@@ -2854,10 +2630,8 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                     pct = _metric_pct(row, met)
                     p = _pro_show99(pct if not pd.isna(pct) else 0.0)
                     ptxt = _fmt2(p)
-
                     rawv = _metric_val(row, met)
                     raw_txt = "—" if pd.isna(rawv) else f"{rawv:.2f}".rstrip("0").rstrip(".")
-
                     rows.append(
                         "<div class='m-row'>"
                         f"<div class='m-label'>{lab}</div>"
@@ -2877,14 +2651,12 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                 unsafe_allow_html=True
             )
 
-            # --- Player image override (per-player unique keys) ---
             img_key = f"imgurl_{i}_{key_id}"
             default_url = st.session_state.get("photo_map", {}).get(key_id, "")
             uploaded_file = st.file_uploader("Upload player image (PNG/JPG)", type=["png","jpg","jpeg"], key=f"upload_{i}_{key_id}")
             _ = st.text_input(
                 "Custom image URL (override avatar — e.g., https://images.fotmob.com/image_resources/playerimages/1199383.png)",
-                value=default_url,
-                key=img_key
+                value=default_url, key=img_key
             )
 
             col_a, col_b = st.columns([1, 3])
@@ -2898,7 +2670,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                                 Image.open(io.BytesIO(data))
                             except Exception:
                                 pass
-
                             mime = getattr(uploaded_file, "type", "") or ""
                             if not mime.startswith("image/"):
                                 ext = os.path.splitext(uploaded_file.name or "")[1].lower()
@@ -2906,7 +2677,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                                 elif ext == ".png": mime = "image/png"
                                 elif ext in (".jpg", ".jpeg"): mime = "image/jpeg"
                                 else: mime = "image/png"
-
                             b64 = base64.b64encode(data).decode("ascii")
                             st.session_state.setdefault("photo_map", {})[key_id] = f"data:{mime};base64,{b64}"
                             st.success("Uploaded image saved!")
@@ -2932,7 +2702,6 @@ def render_pro_layout(df_view: pd.DataFrame, top_n:int=20):
                     try: st.rerun()
                     except Exception: st.experimental_rerun()
 
-            # --- Club crest override (stored per-club) ---
             crest_widget_ns = f"{crest_store_key}|{key_id}|{i}"
             crest_default = st.session_state.get("crest_map", {}).get(crest_store_key, "")
             crest_upload = st.file_uploader("Upload club crest (SVG/PNG/JPG)", type=["svg","png","jpg","jpeg"], key=f"crest_upload_{crest_widget_ns}")
@@ -4208,7 +3977,6 @@ from matplotlib.font_manager import FontProperties
 from PIL import Image
 import streamlit as st
 
-# --- NEW: auto image fetch helpers ---
 import io
 import re
 import unicodedata
@@ -4216,22 +3984,21 @@ from difflib import SequenceMatcher
 from pathlib import Path
 import requests
 
-# --- NEW: league logos lookup (your new page) ---
+from photo_utils import get_player_photo_pil
+
 try:
     from league_logo_urls import get_league_logo_url
 except Exception:
     def get_league_logo_url(_league: str) -> str:
         return ""
 
-# --- NEW: optional FotMob team URL mapping (if you have it) ---
 try:
     from team_fotmob_urls import FOTMOB_TEAM_URLS as _FZ_FOTMOB_TEAM_URLS
 except Exception:
     _FZ_FOTMOB_TEAM_URLS = {}
 
-# optional: external getter if you have it
 try:
-    from team_fotmob_urls import get_fotmob_url as _external_get_fotmob_url  # returns "" if not found
+    from team_fotmob_urls import get_fotmob_url as _external_get_fotmob_url
 except Exception:
     _external_get_fotmob_url = None
 
@@ -4245,7 +4012,6 @@ with st.expander("Feature Z options", expanded=False):
     name_override_on = st.checkbox("Edit player display name", value=False)
     name_override    = st.text_input("Display name", "", disabled=not name_override_on)
 
-    # --- Height (existing pattern) ---
     default_height = ""
     try:
         if not player_row.empty:
@@ -4255,12 +4021,10 @@ with st.expander("Feature Z options", expanded=False):
     except Exception: pass
     height_text = st.text_input("Height value (e.g., 6'2\")", default_height)
 
-    # --- NEW: editable footer caption (toggle) ---
     _CAPTION_DEFAULT = "Percentile Rank"
     _edit_footer = st.toggle("Edit footer caption", value=False, key="fz_edit_footer")
     footer_caption_text = st.text_input("Footer caption", _CAPTION_DEFAULT, disabled=not _edit_footer, key="fz_footer_text")
 
-    # --- NEW: Edit 'Foot' in information row (like Height) ---
     default_foot = ""
     try:
         if not player_row.empty:
@@ -4272,41 +4036,33 @@ with st.expander("Feature Z options", expanded=False):
     foot_override_text = st.text_input("Foot value (e.g., Left)", default_foot, disabled=not foot_override_on, key="fz_foot_text")
 
     if enable_images:
-        # --- NEW: auto images toggle (uploads still override) ---
         auto_images = st.checkbox(
             "Auto header images (league logo / team badge / player photo) if not uploaded",
             value=True,
             key="fz_auto_images"
         )
-
-        # --- NEW: remove individual images (per slot) ---
         st.caption("Hide any header image slot (even if uploaded/auto).")
         hide_img1 = st.checkbox("Hide Image 1 (rightmost / league logo)", value=False, key="fz_hide_img1")
         hide_img2 = st.checkbox("Hide Image 2 (middle / team badge)",    value=False, key="fz_hide_img2")
         hide_img3 = st.checkbox("Hide Image 3 (leftmost / player photo)",value=False, key="fz_hide_img3")
-
         st.caption("Upload up to three header images (PNG recommended). Rightmost is the anchor.")
         up_img1 = st.file_uploader("Image 1 (rightmost)", type=["png","jpg","jpeg","webp"], key="fz_img1")
         up_img2 = st.file_uploader("Image 2 (middle)",   type=["png","jpg","jpeg","webp"], key="fz_img2")
         up_img3 = st.file_uploader("Image 3 (leftmost)", type=["png","jpg","jpeg","webp"], key="fz_img3")
-
-        # Spacing presets
         spacing_preset = st.selectbox(
             "Badge spacing",
             ["Tight (default)", "Tight +", "Medium", "Wide"],
             index=0,
             help="Keeps equal gaps; each step is a little wider than the previous."
         )
-
-        # --- NEW: per-image horizontal fine-tune (figure fraction; negative=left, positive=right) ---
-        st.caption("Fine-tune each image’s horizontal position (− left, + right).")
+        st.caption("Fine-tune each image's horizontal position (− left, + right).")
         img1_dx = st.slider("Shift Image 1 (rightmost)", min_value=-0.05, max_value=0.05, value=0.00, step=0.001, key="fz_dx_img1")
         img2_dx = st.slider("Shift Image 2 (middle)",    min_value=-0.05, max_value=0.05, value=0.00, step=0.001, key="fz_dx_img2")
         img3_dx = st.slider("Shift Image 3 (leftmost)",  min_value=-0.05, max_value=0.05, value=0.00, step=0.001, key="fz_dx_img3")
     else:
         up_img1 = up_img2 = up_img3 = None
-        spacing_preset = "Tight (default)"  # unused when images disabled
-        img1_dx = img2_dx = img3_dx = 0.0   # ensure defined even when disabled
+        spacing_preset = "Tight (default)"
+        img1_dx = img2_dx = img3_dx = 0.0
         auto_images = False
         hide_img1 = hide_img2 = hide_img3 = False
 
@@ -4337,34 +4093,22 @@ BAR_VALUE_FP = FontProperties(family=FONT_BOOK_FAMILY,  weight='regular',  size=
 TICK_FP      = FontProperties(family=FONT_BOOK_FAMILY,  weight='medium',   size=10)
 FOOTER_FP    = FontProperties(family=FONT_BOOK_FAMILY,  weight='medium', size=10)
 
-# ----------------------------
-# NEW: auto image utilities
-# ----------------------------
 def _try_load_img(url: str):
-    """
-    Returns an image array for a valid URL, else None.
-    Robust: uses PIL fallback for JPEG/odd formats.
-    """
     if not url or not (str(url).startswith("http://") or str(url).startswith("https://")):
         return None
     try:
         r = requests.get(str(url), timeout=12, headers={"User-Agent": "Mozilla/5.0"})
         if r.status_code != 200 or not r.content:
             return None
-
-        # First try matplotlib (works great for PNG)
         try:
             return plt.imread(io.BytesIO(r.content))
         except Exception:
             pass
-
-        # Fallback: PIL (handles JPEG/WebP/etc)
         try:
             im = Image.open(io.BytesIO(r.content)).convert("RGB")
             return np.array(im)
         except Exception:
             return None
-
     except Exception:
         return None
 
@@ -4385,10 +4129,7 @@ def _npimg_to_pil_rgba(arr):
     except Exception:
         return None
 
-BADGE_DIRS = [
-    Path.cwd() / "badges",
-    Path.cwd() / "crests",
-]
+BADGE_DIRS = [Path.cwd() / "badges", Path.cwd() / "crests"]
 for d in BADGE_DIRS:
     try: d.mkdir(exist_ok=True)
     except Exception: pass
@@ -4416,11 +4157,6 @@ def _norm(s: str) -> str:
     return unicodedata.normalize("NFKD", str(s)).encode("ascii","ignore").decode("ascii").strip().lower()
 
 def get_fotmob_url(team: str) -> str:
-    """
-    Priority:
-    1) dict from team_fotmob_urls (FOTMOB_TEAM_URLS)
-    2) external get_fotmob_url(team) if present
-    """
     t = _norm(team)
     for k, v in (_FZ_FOTMOB_TEAM_URLS or {}).items():
         if _norm(k) == t and str(v).strip():
@@ -4470,137 +4206,6 @@ def _auto_league_logo(player_row_like):
         return None
     return _try_load_img(url)
 
-def _player_surname(player: str) -> str:
-    p = (player or "").strip()
-    if not p:
-        return ""
-    if "," in p:
-        return p.split(",", 1)[0].strip()
-    parts = p.split()
-    return parts[-1].strip() if parts else ""
-
-def _slug_name(s: str) -> str:
-    if not s:
-        return ""
-    s = str(s).strip().lower()
-    repl = {
-        "ø":"o","œ":"oe","æ":"ae","å":"a","ä":"a","ö":"o","ü":"u",
-        "ß":"ss","ł":"l","đ":"d","ð":"d","þ":"th","ç":"c",
-        "ş":"s","ğ":"g","ı":"i",
-    }
-    for k, v in repl.items():
-        s = s.replace(k, v)
-    s = unicodedata.normalize("NFKD", s)
-    s = "".join(ch for ch in s if not unicodedata.combining(ch))
-    s = re.sub(r"[^a-z0-9]+", "", s)
-    return s
-
-def _similar(a: str, b: str) -> float:
-    return SequenceMatcher(None, a, b).ratio()
-
-@st.cache_data(show_spinner=False, ttl=60*60*6)
-def _fotmob_team_squad(team_id: str) -> list[dict]:
-    squad: list[dict] = []
-    if not team_id:
-        return squad
-    try:
-        url = f"https://www.fotmob.com/api/teams?id={team_id}"
-        r = requests.get(url, timeout=12, headers={"User-Agent": "Mozilla/5.0"})
-        if r.status_code != 200:
-            return squad
-        data = r.json() or {}
-        raw_squad = data.get("squad", None)
-
-        if isinstance(raw_squad, list):
-            for section in raw_squad:
-                members = section.get("members") or section.get("players") or []
-                if isinstance(members, list):
-                    squad.extend([m for m in members if isinstance(m, dict)])
-
-        elif isinstance(raw_squad, dict):
-            for k in ("members", "players"):
-                members = raw_squad.get(k)
-                if isinstance(members, list):
-                    squad.extend([m for m in members if isinstance(m, dict)])
-
-            nested = raw_squad.get("squad")
-            if isinstance(nested, list):
-                for section in nested:
-                    members = section.get("members") or section.get("players") or []
-                    if isinstance(members, list):
-                        squad.extend([m for m in members if isinstance(m, dict)])
-    except Exception:
-        squad = []
-    return squad
-
-def _resolve_fotmob_player_photo_url(player: str, team: str) -> str:
-    team_url = get_fotmob_url(team)
-    tid = _fotmob_team_id_from_url(team_url)
-    if not tid:
-        return ""
-    squad = _fotmob_team_squad(tid)
-
-    target_surname = _slug_name(_player_surname(player))
-    target_full    = _slug_name(player)
-
-    best_id = ""
-
-    # exact surname match first
-    if target_surname:
-        for m in squad:
-            name = m.get("name") or m.get("playerName") or ""
-            pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
-            if not pid:
-                continue
-            if _slug_name(_player_surname(name)) == target_surname:
-                best_id = str(pid)
-                if target_full and target_full in _slug_name(name):
-                    break
-
-    # exact full-name contains
-    if not best_id and target_full:
-        for m in squad:
-            name = m.get("name") or m.get("playerName") or ""
-            pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
-            if not pid:
-                continue
-            if target_full in _slug_name(name):
-                best_id = str(pid)
-                break
-
-    # fuzzy surname fallback
-    if not best_id and target_surname:
-        best_score = 0.0
-        best_pid = ""
-        for m in squad:
-            name = m.get("name") or m.get("playerName") or ""
-            pid = m.get("id") or m.get("playerId") or m.get("primaryId") or ""
-            if not pid:
-                continue
-            sn = _slug_name(_player_surname(name))
-            sc = _similar(sn, target_surname)
-            if sc > best_score:
-                best_score = sc
-                best_pid = str(pid)
-        if best_score >= 0.86:
-            best_id = best_pid
-
-    if best_id and str(best_id).isdigit():
-        return f"https://images.fotmob.com/image_resources/playerimages/{best_id}.png"
-    return ""
-
-def _auto_player_photo(player_row_like):
-    # IMPORTANT: NO placeholder, if fails -> None
-    player_name = _safe_get(player_row_like, "Player", _safe_get(player_row_like, "Name", "")).strip()
-    team = _safe_get(player_row_like, "Team", "").strip()
-    if not player_name or not team:
-        return None
-    url = _resolve_fotmob_player_photo_url(player_name, team)
-    if not url:
-        return None
-    img = _try_load_img(url)
-    return img  # may be None -> blank
-
 
 if player_row.empty:
     st.info("Pick a player above.")
@@ -4613,15 +4218,13 @@ else:
     try: age = f"{float(age_raw):.0f}"
     except Exception: age = age_raw
     games   = _safe_get(player_row, "Matches played", _safe_get(player_row, "Games", _safe_get(player_row, "Apps", "—")))
-    minutes = _safe_get(player_row, "Minutes", _safe_get(player_row, "Minutes played", "—"))  # prefers Minutes
+    minutes = _safe_get(player_row, "Minutes", _safe_get(player_row, "Minutes played", "—"))
     goals   = _safe_get(player_row, "Goals", "—")
     assists = _safe_get(player_row, "Assists", "—")
     foot    = _safe_get(player_row, "Foot", _safe_get(player_row, "Preferred Foot", "—"))
 
-    # Apply foot override (if enabled)
     foot_display = (foot_override_text.strip() if (foot_override_on and foot_override_text and foot_override_text.strip()) else foot)
 
-    # === sections (unchanged) ===
     ATTACKING = []
     for lab, met in [
         ("Crosses", "Crosses per 90"),
@@ -4667,17 +4270,16 @@ else:
         ("Smart Passes", "Smart passes per 90"),
     ]:
         POSSESSION.append((lab, float(np.nan_to_num(pct_of(met), nan=0.0)), val_of(met)[1]))
+
     sections = [("Attacking",ATTACKING),("Defensive",DEFENSIVE),("Possession",POSSESSION)]
     sections = [(t,lst) for t,lst in sections if lst]
 
-    # === styling ===
     PAGE_BG = "#ebebeb"; AX_BG = "#f3f3f3"; TRACK="#d6d6d6"
     TITLE_C="#111111"; LABEL_C="#222222"; DIVIDER="#000000"
     TAB_RED=np.array([199,54,60]); TAB_GOLD=np.array([240,197,106]); TAB_GREEN=np.array([61,166,91])
     def _blend(c1,c2,t): c=c1+(c2-c1)*np.clip(t,0,1); return f"#{int(c[0]):02x}{int(c[1]):02x}{int(c[2]):02x}"
     def pct_to_rgb(v): v=float(np.clip(v,0,100)); return _blend(TAB_RED,TAB_GOLD,v/50) if v<=50 else _blend(TAB_GOLD,TAB_GREEN,(v-50)/50)
 
-    # === layout (HEADROOM increased a touch; labels restored) ===
     if not enable_images:
         fig_size   = (10, 8); dpi = 100
         title_row_h = 0.075
@@ -4686,10 +4288,8 @@ else:
     else:
         fig_size   = (11.8, 9.6); dpi = 120
         title_row_h = 0.125
-        header_block_h = title_row_h + 0.055   # unchanged
+        header_block_h = title_row_h + 0.055
         img_box_w = img_box_h = 0.16
-
-        # Presets for baseline spacing (equalize with s2 = 2*s1)
         preset_map = {
             "Tight (default)": {"img_gap": 0.0001, "s0": 0.02, "s1": 0.050},
             "Tight +":         {"img_gap": 0.0030, "s0": 0.02, "s1": 0.047},
@@ -4698,7 +4298,7 @@ else:
         }
         _p = preset_map.get(spacing_preset, preset_map["Tight (default)"])
         img_gap = _p["img_gap"]
-        _s0, _s1, _s2 = _p["s0"], _p["s1"], 2 * _p["s1"]   # keep gaps uniform
+        _s0, _s1, _s2 = _p["s0"], _p["s1"], 2 * _p["s1"]
 
     GLOBAL_LEFT_PAD = 0.02
     BASE_LEFT, RIGHT = 0.035, 0.020
@@ -4716,11 +4316,9 @@ else:
     gutter = 0.215
     ticks = np.arange(0,101,10)
 
-    # --- title ---
     fig.text(LEFT + TITLE_LEFT_NUDGE, 1 - TOP - 0.010, f"{name_}\u2009|\u2009{team}",
              ha="left", va="top", color=TITLE_C, fontproperties=TITLE_FP)
 
-    # --- info rows (now anchored just below the title) ---
     def draw_pairs_line(pairs_line, y):
         x = LEFT; renderer = fig.canvas.get_renderer()
         for i,(lab,val) in enumerate(pairs_line):
@@ -4741,32 +4339,28 @@ else:
         row1 = [("Position: ",pos), ("Age: ",age), ("Height: ", (height_text.strip() if (show_height and height_text.strip()) else "—"))]
         row2 = [("Games: ",games), ("Goals: ",goals), ("Assists: ",assists)]
         row3 = [("Minutes: ",minutes), ("Foot: ",foot_display)]
-
         title_y = 1 - TOP - 0.010
         y1 = title_y - 0.055
         y2 = y1 - 0.039
         y3 = y2 - 0.039
-
         draw_pairs_line(row1, y1)
         draw_pairs_line(row2, y2)
         draw_pairs_line(row3, y3)
 
-    # --- images ---
     def _open_upload(u):
         if u is None: return None
         try: return Image.open(u).convert("RGBA")
         except Exception: return None
 
     if enable_images:
-        # Order required:
-        # far left  = player photo
-        # center    = team badge
-        # far right = league logo
         auto_pil_right = auto_pil_mid = auto_pil_left = None
         if auto_images:
             auto_pil_right = _npimg_to_pil_rgba(_auto_league_logo(player_row))
             auto_pil_mid   = _npimg_to_pil_rgba(_auto_team_badge(player_row))
-            auto_pil_left  = _npimg_to_pil_rgba(_auto_player_photo(player_row))  # may be None; NO placeholder
+            if not hide_img3:
+                _pname = _safe_get(player_row, "Player", "").strip()
+                _tname = _safe_get(player_row, "Team", "").strip()
+                auto_pil_left = get_player_photo_pil(_pname, _tname)
 
         def add_header_image(pil_img, right_index=0):
             if pil_img is None: return
@@ -4783,15 +4377,10 @@ else:
             ax_img = fig.add_axes([x, y, img_box_w, img_box_h])
             ax_img.imshow(pil_img); ax_img.axis("off")
 
-        # Uploads override each slot:
-        # rightmost slot (img1) = league logo
-        # middle slot   (img2) = team badge
-        # leftmost slot (img3) = player photo
         pil_right = _open_upload(up_img1) or auto_pil_right
         pil_mid   = _open_upload(up_img2) or auto_pil_mid
         pil_left  = _open_upload(up_img3) or auto_pil_left
 
-        # Respect per-slot hide toggles (remove individual images)
         if hide_img1: pil_right = None
         if hide_img2: pil_mid   = None
         if hide_img3: pil_left  = None
@@ -4800,40 +4389,32 @@ else:
         add_header_image(pil_mid,   right_index=1)
         add_header_image(pil_left,  right_index=2)
 
-    # --- divider a touch lower (headroom) ---
     fig.lines.append(plt.Line2D([LEFT, 1 - RIGHT],
                                 [1 - TOP - header_block_h + 0.004]*2,
                                 transform=fig.transFigure, color=DIVIDER, lw=0.8, alpha=0.35))
 
-    # --- panels (labels back to their original y offset) ---
     def draw_panel(panel_top, title, tuples, *, show_xticks=False, draw_bottom_divider=True):
         n = len(tuples); panel_h = header_h + n*row_slot
         fig.text(LEFT, panel_top - 0.012, title, ha="left", va="top", color=TITLE_C, fontproperties=H2_FP)
-
         ax = fig.add_axes([LEFT + gutter, panel_top - header_h - n*row_slot, 1 - LEFT - RIGHT - gutter, n*row_slot])
         ax.set_facecolor(AX_BG); ax.set_xlim(0,100); ax.set_ylim(-0.5,n-0.5)
         for s in ax.spines.values(): s.set_visible(False)
         ax.tick_params(axis="x", bottom=False, labelbottom=False, length=0)
         ax.tick_params(axis="y", left=False,  labelleft=False,  length=0)
         ax.set_yticks([]); ax.get_yaxis().set_visible(False)
-
         for i in range(n):
             ax.add_patch(plt.Rectangle((0, i-(BAR_FRAC/2)), 100, BAR_FRAC, color=TRACK, ec="none", zorder=0.5))
         for gx in ticks:
             ax.vlines(gx, -0.5, n-0.5, colors=(0,0,0,0.16), linewidth=0.8, zorder=0.75)
-
         for i,(lab,pct,val_str) in enumerate(tuples[::-1]):
             y = i; bar_w = float(np.clip(pct,0,100))
             ax.add_patch(plt.Rectangle((0, y-(BAR_FRAC/2)), bar_w, BAR_FRAC, color=pct_to_rgb(bar_w), ec="none", zorder=1.0))
             x_text = 1.0 if bar_w >= 3 else min(100.0, bar_w + 0.8)
             ax.text(x_text, y, val_str, ha="left", va="center", color="#0B0B0B", fontproperties=BAR_VALUE_FP, zorder=2.0, clip_on=False)
-
         ax.axvline(50, color="#000000", ls=(0,(4,4)), lw=1.5, alpha=0.7, zorder=3.5)
-
         for i,(lab,_,_) in enumerate(tuples[::-1]):
             y_fig = (panel_top - header_h - n*row_slot) + ((i + 0.5) * row_slot)
             fig.text(LEFT, y_fig, lab, ha="left", va="center", color=LABEL_C, fontproperties=LABEL_FP)
-
         if show_xticks:
             trans = ax.get_xaxis_transform()
             offset_inner   = ScaledTranslation(7/72,0,fig.dpi_scale_trans)
@@ -4846,7 +4427,6 @@ else:
                 if gx==0:   ax.text(gx, y_label, "%", transform=trans+offset_pct_0,   ha="left", va="top", color="#000", fontproperties=TICK_FP)
                 elif gx==100: ax.text(gx, y_label, "%", transform=trans+offset_pct_100, ha="left", va="top", color="#000", fontproperties=TICK_FP)
                 else:       ax.text(gx, y_label, "%", transform=trans+offset_inner,   ha="left", va="top", color="#000", fontproperties=TICK_FP)
-
         if draw_bottom_divider:
             y0 = panel_top - panel_h - 0.008
             fig.lines.append(plt.Line2D([LEFT, 1 - RIGHT], [y0, y0], transform=fig.transFigure, color=DIVIDER, lw=1.2, alpha=0.35))
@@ -4874,7 +4454,6 @@ else:
     )
     plt.close(fig)
 # ============================ END — Feature Z ============================
-
 
 
 
