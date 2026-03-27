@@ -1080,14 +1080,10 @@ def resolve_player_photo(player: str, team: str, league: str) -> str:
     override = st.session_state.get("photo_map", {}).get(key_id, "")
     if override:
         return override
-    team_url = ""
     try:
-        from team_fotmob_urls import FOTMOB_TEAM_URLS
-        team_url = (FOTMOB_TEAM_URLS.get(team) or "").strip()
+        from photo_utils import get_player_photo_url
+        return get_player_photo_url(player, team)
     except Exception:
-        team_url = ""
-    tid = _fotmob_team_id_from_url(team_url)
-    if not tid:
         return PLACEHOLDER_IMG
     squad = _fotmob_team_squad(tid)
     target_surname = _slug_name(_player_surname(player))
