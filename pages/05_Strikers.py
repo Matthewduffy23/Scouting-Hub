@@ -286,7 +286,6 @@ YOUTH_LEAGUES = {
     "USA 2.",
     "Ireland 2.",
     "Estonia 2.",
-    "Panama 1.",
     "Portugal 4.",
 }
 
@@ -310,7 +309,7 @@ COUNTRY_TO_REGION = {
     "Brazil": "South America", "Argentina": "South America", "Colombia": "South America",
     "Ecuador": "South America", "Paraguay": "South America", "Uruguay": "South America",
     "Chile": "South America", "Bolivia": "South America", "Peru": "South America",
-    "Venezuela": "South America",
+    "Venezuela": "South America", "Panama": "South America",
 
     # North America
     "USA": "North America", "Mexico": "North America", "Costa Rica": "North America",
