@@ -2967,7 +2967,7 @@ def score_to_color(v: float) -> str:
 rows = [{"Role": r, "Percentile": role_scores.get(r, np.nan)} for r in ROLES.keys()]
 role_df = pd.DataFrame(rows).set_index("Role")
 styled = (
-    role_df.style.applymap(
+    role_df.style.map(
         lambda x: score_to_color(float(x)) if pd.notna(x) else "background-color:#fff",
         subset=["Percentile"],
     ).format(
@@ -6480,6 +6480,9 @@ else:
         mime="image/png",
         key="gbe_download_image_btn",
     )
+
+
+
 
 
 
