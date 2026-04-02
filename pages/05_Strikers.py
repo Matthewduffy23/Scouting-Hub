@@ -3371,7 +3371,7 @@ rows = [{"Role": r, "Percentile": role_scores.get(r, np.nan)} for r in ROLES.key
 role_df = pd.DataFrame(rows).set_index("Role")
 styled = (
     role_df.style
-    .applymap(lambda x: score_to_color(float(x)) if pd.notna(x) else "background-color:#fff", subset=["Percentile"])
+    .map(lambda x: score_to_color(float(x)) if pd.notna(x) else "background-color:#fff", subset=["Percentile"])
     .format({"Percentile": lambda x: f"{int(round(x))}" if pd.notna(x) else "—"})
 )
 st.dataframe(styled, use_container_width=True)
