@@ -30,7 +30,7 @@ except Exception:
 SCRIPT_DIR = Path(__file__).resolve().parent
 PHOTOS_DIR = Path(r"C:\Users\matth\OneDrive\Documents\GitHub\scouting-photos\photos")
 CACHE_FILE = SCRIPT_DIR / "photo_id_cache.json"
-CSV_FILE   = SCRIPT_DIR / "WORLDplayers_updated.csv"
+CSV_FILE = SCRIPT_DIR / "WORLDplayers_updatedddALLAPR26.csv"
 PHOTOS_DIR.mkdir(exist_ok=True)
 
 HEADERS = {
