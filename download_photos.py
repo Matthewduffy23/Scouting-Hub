@@ -42,8 +42,8 @@ HEADERS = {
 SEARCH_URL = "https://www.fotmob.com/api/data/search/suggest?hits=50&lang=en&term={}"
 PHOTO_URL  = "https://images.fotmob.com/image_resources/playerimages/{}.png"
 
-DELAY_SEARCH = 0.8
-DELAY_PHOTO  = 0.3
+DELAY_SEARCH = 0.5
+DELAY_PHOTO  = 0.2
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
