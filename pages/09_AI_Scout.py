@@ -1772,11 +1772,12 @@ with st.sidebar:
     )
     st.markdown("---")
 
-    csv_candidates = sorted(
-        glob.glob(str(Path.cwd() / "WORLD*.csv")) +
-        glob.glob(str(Path.cwd().parent / "WORLD*.csv"))
+all_csvs = sorted(
+        [Path(p) for p in glob.glob(str(Path.cwd() / "*.csv"))] +
+        [Path(p) for p in glob.glob(str(Path.cwd().parent / "*.csv"))],
+        key=lambda f: f.stat().st_mtime, reverse=True
     )
-    csv_labels = [Path(p).name for p in csv_candidates]
+    csv_labels = [p.name for p in all_csvs]
 
     if csv_labels:
         selected_csvs = st.multiselect(
