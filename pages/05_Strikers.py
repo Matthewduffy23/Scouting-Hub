@@ -57,9 +57,10 @@ def load_df(csv_name: str) -> pd.DataFrame:
     return _read_csv_from_bytes(up.getvalue())
 
 # 🔍 Detect all CSVs starting with WORLD*
-csv_files = [f.name for f in Path.cwd().glob("WORLD*.csv")]
+csv_files = sorted(Path.cwd().glob("*.csv"), key=lambda f: f.stat().st_mtime, reverse=True)
+csv_files = [f.name for f in csv_files]
 if not csv_files:
-    st.error("No WORLD*.csv files found in the project folder.")
+    st.error("No CSV files found in the project folder.")
     st.stop()
 
 # ----------------- PAGE -----------------
