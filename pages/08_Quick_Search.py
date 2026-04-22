@@ -57,9 +57,9 @@ def _candidate_dirs() -> List[Path]:
 def _find_world_csvs() -> List[Path]:
     files: List[Path] = []
     for base in _candidate_dirs():
-        files.extend(sorted(base.glob("WORLD*.csv")))
+        files.extend(base.glob("*.csv"))
     seen, uniq = set(), []
-    for p in files:
+    for p in sorted(files, key=lambda f: f.stat().st_mtime, reverse=True):
         rp = p.resolve()
         if rp not in seen:
             seen.add(rp)
@@ -77,7 +77,7 @@ def pick_or_upload_world_csv() -> Tuple[pd.DataFrame, str]:
     labels = ["Upload a CSV…"] + labels_found
     default_index = 1 if found else 0
 
-    sel = st.selectbox("Select a WORLD*.csv file", labels, index=default_index, key="world_csv_picker")
+    sel = st.selectbox("Select a CSV file", labels, index=default_index, key="world_csv_picker")
 
     if sel == "Upload a CSV…":
         up = st.file_uploader("Upload a WORLD*.csv", type=["csv"], key="world_csv_uploader")

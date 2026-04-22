@@ -58,9 +58,10 @@ def load_df(csv_name: str) -> pd.DataFrame:
     return _read_csv_from_bytes(up.getvalue())
 
 # 🔍 Detect all CSVs starting with WORLD*
-csv_files = [f.name for f in Path.cwd().glob("WORLD*.csv")]
+csv_files = sorted(Path.cwd().glob("*.csv"), key=lambda f: f.stat().st_mtime, reverse=True)
+csv_files = [f.name for f in csv_files]
 if not csv_files:
-    st.error("No WORLD*.csv files found in the project folder.")
+    st.error("No CSV files found in the project folder.")
     st.stop()
 
 # ----------------- PAGE -----------------
@@ -106,7 +107,7 @@ INCLUDED_LEAGUES = [
 'Estonia 1.','England 9.','Northern Ireland 1.','Serbia 2.','Denmark 3.',
 'Sweden 3.','Slovenia 2.','Slovakia 2.','Greece 2.','Wales 1.',
 'USA 3.','Scotland 3.','England 6.','England 8.','England 10.',
-'Estonia 2.', 'China 1.', 'Ireland 2.', 'Faroe Islands 1.',
+'Estonia 2.', 'China 1.', 'Ireland 2.', 'Faroe Islands 1.', 'Panama 1.', 'Portugal 4.',
 ]
 
 PRESET_LEAGUES = {
@@ -242,7 +243,7 @@ LEAGUE_STRENGTHS = {
 'Estonia 1.':40,'England 9.':31.37,'Northern Ireland 1.':30.98,'Serbia 2.':30.39,'Denmark 3.':29.41,
 'Sweden 3.':29.41,'Slovenia 2.':28.82,'Slovakia 2.':28.24,'Greece 2.':27.06,'Wales 1.':26.67,
 'USA 3.':22.55,'Scotland 3.':20.00,'England 6.':16.08,'England 8.':15.69,'England 10.':3.92,
-'Estonia 2.':3, 'Ireland 2.':10, 'Faroe Islands 1.':35.02,
+'Estonia 2.':3, 'Ireland 2.':10, 'Faroe Islands 1.':35.02, 'Panama 1.':44.1, 'Portugal 4.':40,
 }
 
 # ---- GBE league bands (custom: all UK & Ireland leagues in Band 1) ----
