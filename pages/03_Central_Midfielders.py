@@ -1,4301 +1,7194 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Scout Board Pro</title>
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>
-:root {
-  --bg: #07090f;
-  --s0: #0b0e18;
-  --s1: #0f1420;
-  --s2: #141b28;
-  --s3: #1a2235;
-  --s4: #1f293f;
-  --border: #1e2d45;
-  --border2: #28395a;
-  --text: #e4eaf5;
-  --muted: #6b82a0;
-  --muted2: #3f5270;
-  --accent: #00c8f0;
-  --accent2: #0099cc;
-
-  /* Status colours */
-  --c-summer: #e53e3e;
-  --c-monitor: #3182ce;
-  --c-january: #d69e2e;
-  --c-signed: #38a169;
-  --c-rejected: #718096;
-
-  /* Target move */
-  --c-pl: #38a169;
-  --c-champ: #d69e2e;
-  --c-eb1: #e53e3e;
-  --c-eb12: #dd6b20;
-  --c-eb23: #d69e2e;
-  --c-plmon: #3182ce;
-  --c-chmon: #805ad5;
-  --c-tbc: #4a5568;
-
-  /* Score bands */
-  --score-80: #2b6cb0;
-  --score-76: #3182ce;
-  --score-72: #63b3ed;
-  --score-66: #718096;
-  --score-60: #4a5568;
-
-  /* Status column */
-  --c-noprog: #c53030;
-  --c-relationship: #2f855a;
-  --c-agency: #b7791f;
-  --c-contact: #6b46c1;
-
-  /* Agency */
-  --c-small: #276749;
-  --c-medium: #b7791f;
-  --c-big: #9b2c2c;
-
-  /* Recent move */
-  --c-yes: #276749;
-  --c-no: #c53030;
-}
-
-* { margin:0; padding:0; box-sizing:border-box; }
-
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: 'DM Sans', sans-serif;
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-/* Grain */
-body::after {
-  content:'';
-  position:fixed;
-  inset:0;
-  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
-  pointer-events:none;
-  z-index:9998;
-}
-
-/* ── TOP BAR ── */
-.topbar {
-  height: 52px;
-  background: var(--s1);
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  padding: 0 20px;
-  gap: 16px;
-  flex-shrink: 0;
-  z-index: 50;
-}
-
-.logo {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-right: 8px;
-}
-
-.logo-mark {
-  width: 30px;
-  height: 30px;
-  background: linear-gradient(135deg,var(--accent),var(--accent2));
-  border-radius: 7px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 15px;
-  flex-shrink: 0;
-}
-
-.logo-text {
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 19px;
-  letter-spacing: 2px;
-  color: var(--text);
-  line-height: 1;
-}
-
-.logo-sub {
-  font-size: 9px;
-  color: var(--muted2);
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-}
-
-.topbar-sep { width:1px; height:28px; background:var(--border); }
-
-.board-name {
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 17px;
-  letter-spacing: 1.5px;
-  color: var(--text);
-  cursor: pointer;
-}
-
-.topbar-spacer { flex:1; }
-
-.btn {
-  padding: 6px 14px;
-  border-radius: 7px;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  border: none;
-  transition: all 0.15s;
-  white-space: nowrap;
-}
-
-.btn-primary {
-  background: var(--accent);
-  color: #000;
-  font-weight: 600;
-}
-.btn-primary:hover { background: #33d4f5; }
-
-.btn-ghost {
-  background: transparent;
-  color: var(--muted);
-  border: 1px solid var(--border);
-}
-.btn-ghost:hover { border-color: var(--border2); color: var(--text); }
-
-.btn-sm { padding: 4px 10px; font-size: 11px; }
-
-/* ── TABS ── */
-.tabs {
-  height: 40px;
-  background: var(--s1);
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: flex-end;
-  padding: 0 20px;
-  gap: 2px;
-  flex-shrink: 0;
-}
-
-.tab {
-  padding: 8px 16px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--muted);
-  cursor: pointer;
-  border-radius: 6px 6px 0 0;
-  border: 1px solid transparent;
-  border-bottom: none;
-  transition: all 0.15s;
-  white-space: nowrap;
-  position: relative;
-  bottom: -1px;
-}
-
-.tab:hover { color: var(--text); background: var(--s2); }
-
-.tab.active {
-  color: var(--text);
-  background: var(--s2);
-  border-color: var(--border);
-  border-bottom-color: var(--s2);
-}
-
-.tab-add {
-  padding: 6px 10px;
-  color: var(--muted2);
-  cursor: pointer;
-  border-radius: 6px;
-  font-size: 16px;
-  transition: all 0.15s;
-}
-.tab-add:hover { color: var(--text); }
-
-/* ── TOOLBAR ── */
-.toolbar {
-  height: 46px;
-  background: var(--s2);
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  padding: 0 20px;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
-.search-wrap {
-  position: relative;
-  width: 260px;
-}
-
-.search-icon {
-  position: absolute;
-  left: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--muted);
-  font-size: 12px;
-  pointer-events: none;
-}
-
-.search-input {
-  width: 100%;
-  background: var(--s3);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  padding: 6px 10px 6px 30px;
-  color: var(--text);
-  font-family: 'DM Sans', sans-serif;
-  font-size: 12px;
-  outline: none;
-  transition: border-color 0.2s;
-}
-.search-input:focus { border-color: var(--accent); }
-.search-input::placeholder { color: var(--muted2); }
-
-.filter-sel {
-  background: var(--s3);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  padding: 6px 10px;
-  color: var(--text);
-  font-family: 'DM Sans', sans-serif;
-  font-size: 12px;
-  outline: none;
-  cursor: pointer;
-}
-
-.toolbar-sep { flex:1; }
-
-.record-count {
-  font-family: 'DM Mono', monospace;
-  font-size: 11px;
-  color: var(--muted2);
-  background: var(--s3);
-  padding: 4px 10px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-}
-
-/* ── MAIN AREA ── */
-.main {
-  flex: 1;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-/* ── TABLE ── */
-.table-scroll {
-  flex: 1;
-  overflow: auto;
-}
-
-.table-scroll::-webkit-scrollbar { width:6px; height:6px; }
-.table-scroll::-webkit-scrollbar-track { background: transparent; }
-.table-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius:4px; }
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12.5px;
-  min-width: 1600px;
-}
-
-thead {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-}
-
-thead th {
-  background: var(--s1);
-  padding: 10px 12px;
-  text-align: left;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: var(--muted);
-  border-bottom: 2px solid var(--border);
-  border-right: 1px solid var(--border);
-  white-space: nowrap;
-  cursor: pointer;
-  user-select: none;
-  transition: color 0.15s;
-}
-thead th:hover { color: var(--text); }
-thead th:last-child { border-right: none; }
-
-.th-check { width: 36px; }
-.th-player { min-width: 180px; }
-
-tbody tr {
-  border-bottom: 1px solid var(--border);
-  cursor: pointer;
-  transition: background 0.1s;
-  animation: rowIn 0.25s ease forwards;
-  opacity: 0;
-}
-
-@keyframes rowIn {
-  to { opacity:1; }
-}
-
-tbody tr:hover { background: rgba(0,200,240,0.04); }
-
-tbody td {
-  padding: 10px 12px;
-  border-right: 1px solid rgba(30,45,69,0.4);
-  white-space: nowrap;
-  vertical-align: middle;
-  color: var(--text);
-  font-size: 13px;
-}
-tbody td:last-child { border-right: none; }
-
-.td-player {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  min-width: 180px;
-}
-
-.player-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  object-fit: cover;
-  background: var(--s4);
-  border: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.player-avatar-ph {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--s4);
-  border: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  flex-shrink: 0;
-  color: var(--muted);
-}
-
-.player-name {
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--text);
-}
-
-.player-pos-tag {
-  font-size: 9px;
-  font-weight: 700;
-  padding: 2px 5px;
-  border-radius: 3px;
-  background: var(--s4);
-  color: var(--muted);
-  letter-spacing: 0.5px;
-}
-
-/* Coloured pills */
-.pill {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 10px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.pill-summer { background: var(--c-summer); color: #fff; }
-.pill-monitor { background: var(--c-monitor); color: #fff; }
-.pill-january { background: var(--c-january); color: #fff; }
-.pill-signed { background: var(--c-signed); color: #fff; }
-.pill-rejected { background: var(--c-rejected); color: #fff; }
-
-.pill-pl { background: var(--c-pl); color: #fff; }
-.pill-champ { background: var(--c-champ); color: #fff; }
-.pill-eb1 { background: var(--c-eb1); color: #fff; }
-.pill-eb12 { background: var(--c-eb12); color: #fff; }
-.pill-eb23 { background: var(--c-eb23); color: #fff; }
-.pill-plmon { background: var(--c-plmon); color: #fff; }
-.pill-chmon { background: var(--c-chmon); color: #fff; }
-.pill-tbc { background: var(--c-tbc); color: #aaa; }
-
-.pill-noprog { background: var(--c-noprog); color: #fff; }
-.pill-relationship { background: var(--c-relationship); color: #fff; }
-.pill-agency { background: var(--c-agency); color: #fff; }
-.pill-contact { background: var(--c-contact); color: #fff; }
-
-.pill-small { background: var(--c-small); color: #fff; }
-.pill-medium { background: var(--c-medium); color: #fff; }
-.pill-big { background: var(--c-big); color: #fff; }
-
-.pill-yes { background: var(--c-yes); color: #fff; }
-.pill-no { background: var(--c-no); color: #fff; }
-
-/* Score bands */
-.score-band {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 4px 10px;
-  border-radius: 5px;
-  font-family: 'DM Mono', monospace;
-  font-size: 11.5px;
-  font-weight: 600;
-  min-width: 60px;
-  text-align: center;
-  letter-spacing: 0.3px;
-}
-
-.sb-80 { background: #1a4731; color: #6ee7b7; border: 1px solid rgba(110,231,183,0.3); }
-.sb-76 { background: #1a3a4a; color: #7dd3fc; border: 1px solid rgba(125,211,252,0.3); }
-.sb-72 { background: #2d3a1a; color: #bef264; border: 1px solid rgba(190,242,100,0.3); }
-.sb-66 { background: #3a2a0a; color: #fde68a; border: 1px solid rgba(253,230,138,0.3); }
-.sb-60 { background: #3a1a0a; color: #fdba74; border: 1px solid rgba(253,186,116,0.3); }
-.sb-55 { background: var(--s3); color: var(--muted); border: 1px solid var(--border); }
-
-/* Stars */
-.stars { color: #f6c90e; font-size: 13px; letter-spacing: -1px; }
-.stars-empty { color: var(--s4); font-size: 13px; letter-spacing: -1px; }
-
-/* Role badge */
-.role-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 8px;
-  border-radius: 4px;
-  font-size: 10.5px;
-  font-weight: 700;
-  background: rgba(0,200,240,0.1);
-  color: var(--accent);
-  border: 1px solid rgba(0,200,240,0.25);
-  margin-right: 3px;
-  letter-spacing: 0.3px;
-}
-
-/* Style tag */
-.style-tag {
-  font-size: 11px;
-  color: #c4b5fd;
-  background: rgba(167,139,250,0.1);
-  padding: 3px 9px;
-  border-radius: 4px;
-  border: 1px solid rgba(167,139,250,0.25);
-}
-
-/* Physical tag */
-.phys-tag {
-  font-size: 11px;
-  padding: 3px 9px;
-  border-radius: 4px;
-  background: rgba(148,163,184,0.1);
-  color: #94a3b8;
-  border: 1px solid rgba(148,163,184,0.2);
-}
-
-/* Mono values */
-.mono { font-family: 'DM Mono', monospace; font-size: 12.5px; }
-.val-green { color: #4ade80; font-weight: 500; }
-.val-gold { color: #f6e05e; }
-
-/* TM Link */
-.tm-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--accent);
-  text-decoration: none;
-  background: rgba(0,200,240,0.08);
-  padding: 3px 8px;
-  border-radius: 4px;
-  border: 1px solid rgba(0,200,240,0.2);
-  transition: all 0.15s;
-}
-.tm-link:hover { background: rgba(0,200,240,0.15); }
-
-/* Data docs */
-.doc-icons { display: flex; gap: 3px; }
-.doc-icon {
-  width: 20px;
-  height: 24px;
-  background: var(--s4);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.doc-icon:hover { background: var(--s3); border-color: var(--border2); }
-.doc-icon.filled { background: rgba(66,153,225,0.15); border-color: rgba(66,153,225,0.4); color: #63b3ed; }
-
-/* Notes text */
-.notes-text {
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--muted);
-  font-size: 11px;
-}
-
-/* Checkbox */
-.cb-wrap { display: flex; justify-content: center; }
-
-.table-checkbox {
-  width: 14px;
-  height: 14px;
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-
-/* ── MODAL ── */
-.overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.75);
-  backdrop-filter: blur(6px);
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s;
-}
-.overlay.open { opacity:1; pointer-events:all; }
-
-.modal {
-  background: var(--s1);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  width: 680px;
-  max-width: 95vw;
-  max-height: 92vh;
-  overflow-y: auto;
-  transform: translateY(16px) scale(0.98);
-  transition: transform 0.2s;
-  box-shadow: 0 32px 100px rgba(0,0,0,0.6);
-}
-.overlay.open .modal { transform: translateY(0) scale(1); }
-.modal::-webkit-scrollbar { width:4px; }
-.modal::-webkit-scrollbar-thumb { background: var(--border); border-radius:4px; }
-
-.modal-head {
-  padding: 18px 22px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  position: sticky;
-  top: 0;
-  background: var(--s1);
-  z-index: 5;
-}
-
-.modal-title {
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 20px;
-  letter-spacing: 1.5px;
-}
-
-.modal-x {
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
-  background: var(--s3);
-  border: 1px solid var(--border);
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s;
-}
-.modal-x:hover { color: var(--text); }
-
-.modal-body { padding: 20px 22px; }
-
-.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.form-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
-.form-full { grid-column: 1/-1; }
-
-.form-group { display: flex; flex-direction: column; gap: 5px; }
-
-.form-label {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.8px;
-  text-transform: uppercase;
-  color: var(--muted2);
-}
-
-.form-input, .form-select, .form-textarea {
-  background: var(--s3);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  padding: 8px 10px;
-  color: var(--text);
-  font-family: 'DM Sans', sans-serif;
-  font-size: 12.5px;
-  outline: none;
-  transition: border-color 0.2s;
-}
-.form-input:focus, .form-select:focus, .form-textarea:focus { border-color: var(--accent); }
-.form-textarea { resize: vertical; min-height: 70px; }
-
-.section-divider {
-  margin: 20px 0 14px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.section-divider-label {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-  color: var(--muted2);
-  white-space: nowrap;
-}
-
-.section-divider-line {
-  flex: 1;
-  height: 1px;
-  background: var(--border);
-}
-
-.modal-foot {
-  padding: 14px 22px;
-  border-top: 1px solid var(--border);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  position: sticky;
-  bottom: 0;
-  background: var(--s1);
-}
-
-/* ── DETAIL PANEL ── */
-.detail-modal { width: 820px; }
-
-.detail-hero {
-  display: flex;
-  gap: 20px;
-  padding: 22px;
-  border-bottom: 1px solid var(--border);
-  background: linear-gradient(135deg, var(--s2), var(--s1));
-}
-
-.detail-photo {
-  width: 90px;
-  height: 90px;
-  border-radius: 12px;
-  object-fit: cover;
-  background: var(--s4);
-  border: 2px solid var(--border);
-  flex-shrink: 0;
-}
-
-.detail-photo-ph {
-  width: 90px;
-  height: 90px;
-  border-radius: 12px;
-  background: var(--s4);
-  border: 2px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 36px;
-  flex-shrink: 0;
-}
-
-.detail-info { flex: 1; }
-
-.detail-name {
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 32px;
-  letter-spacing: 1px;
-  line-height: 1;
-  margin-bottom: 6px;
-}
-
-.detail-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 10px;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.detail-meta-chip {
-  background: var(--s3);
-  padding: 3px 8px;
-  border-radius: 4px;
-  border: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.detail-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-
-/* Stats grid in detail */
-.detail-stats-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-}
-
-.detail-stat {
-  padding: 14px 16px;
-  text-align: center;
-  border-right: 1px solid var(--border);
-}
-.detail-stat:last-child { border-right: none; }
-
-.ds-val {
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 24px;
-  letter-spacing: 0.5px;
-  color: var(--text);
-  display: block;
-}
-
-.ds-lbl {
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: var(--muted2);
-  margin-top: 3px;
-}
-
-/* Score display in detail */
-.score-display {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-
-.score-bar-wrap {
-  width: 100%;
-  height: 3px;
-  background: var(--s4);
-  border-radius: 2px;
-  overflow: hidden;
-  margin-top: 4px;
-}
-
-.score-bar-fill {
-  height: 100%;
-  border-radius: 2px;
-  background: var(--accent);
-}
-
-/* Notes */
-.notes-area { padding: 18px 22px; }
-
-.notes-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.notes-title {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: var(--muted2);
-}
-
-.note-item {
-  background: var(--s3);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 11px 14px;
-  margin-bottom: 8px;
-}
-
-.note-text { font-size: 13px; color: var(--text); line-height: 1.55; }
-.note-date { font-size: 10px; color: var(--muted2); margin-top: 5px; font-family: 'DM Mono', monospace; }
-
-.note-input-row { display: flex; gap: 8px; margin-top: 12px; }
-.note-input-row .form-input { flex: 1; }
-
-/* ── TOAST ── */
-.toast {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  background: var(--s2);
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  padding: 10px 16px;
-  font-size: 12.5px;
-  color: var(--text);
-  z-index: 9000;
-  transform: translateY(60px);
-  opacity: 0;
-  transition: all 0.25s;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-  pointer-events: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.toast.show { transform: translateY(0); opacity: 1; }
-
-/* ── EMPTY STATE ── */
-.empty {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  color: var(--muted2);
-  font-size: 13px;
-}
-.empty-icon { font-size: 40px; opacity: 0.3; }
-
-/* ── MISC ── */
-.hidden { display: none !important; }
-.text-right { text-align: right; }
-.nowrap { white-space: nowrap; }
-
-/* Context actions on row hover */
-.row-actions {
-  display: none;
-  gap: 4px;
-}
-tbody tr:hover .row-actions { display: flex; }
-
-/* By League view */
-.league-group { margin-bottom: 0; }
-
-.league-group-header {
-  padding: 10px 20px;
-  background: var(--s2);
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  cursor: pointer;
-  position: sticky;
-  top: 0;
-  z-index: 5;
-}
-
-.league-group-name {
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 15px;
-  letter-spacing: 1.5px;
-  color: var(--accent);
-}
-
-.league-group-count {
-  font-family: 'DM Mono', monospace;
-  font-size: 11px;
-  color: var(--muted2);
-  background: var(--s3);
-  padding: 2px 7px;
-  border-radius: 4px;
-}
-
-/* Sortable header indicator */
-th.sort-asc::after { content: ' ↑'; color: var(--accent); }
-th.sort-desc::after { content: ' ↓'; color: var(--accent); }
-
-/* View toggle */
-.view-toggle-btn {
-  padding: 5px 12px;
-  background: transparent;
-  border: none;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 11px;
-  font-family: 'DM Sans', sans-serif;
-  font-weight: 500;
-  transition: all 0.15s;
-}
-.view-toggle-btn.active { background: var(--s4); color: var(--text); }
-.view-toggle-btn:hover:not(.active) { color: var(--text); }
-
-/* League group */
-.lg-header {
-  padding: 10px 20px;
-  background: var(--s2);
-  border-bottom: 1px solid var(--border);
-  border-top: 2px solid var(--accent);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  cursor: pointer;
-  user-select: none;
-}
-.lg-name {
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 14px;
-  letter-spacing: 2px;
-  color: var(--accent);
-}
-.lg-count {
-  font-family: 'DM Mono', monospace;
-  font-size: 11px;
-  color: var(--muted2);
-  background: var(--s3);
-  padding: 2px 8px;
-  border-radius: 4px;
-  border: 1px solid var(--border);
-}
-.lg-stats {
-  margin-left: auto;
-  display: flex;
-  gap: 16px;
-  font-size: 11px;
-  color: var(--muted2);
-  font-family: 'DM Mono', monospace;
-}
-/* League group */
-.lg-header {
-  padding: 11px 20px;
-  background: var(--s2);
-  border-bottom: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  cursor: pointer;
-  user-select: none;
-}
-.lg-header:hover { background: var(--s3); }
-.lg-name {
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 15px;
-  letter-spacing: 2px;
-  color: var(--text);
-}
-.lg-flag { font-size: 18px; line-height: 1; }
-.lg-count {
-  font-family: 'DM Mono', monospace;
-  font-size: 11px;
-  color: var(--accent);
-  background: rgba(0,200,240,0.1);
-  padding: 2px 8px;
-  border-radius: 4px;
-  border: 1px solid rgba(0,200,240,0.2);
-  font-weight: 600;
-}
-.lg-stats {
-  margin-left: auto;
-  display: flex;
-  gap: 20px;
-  font-size: 11px;
-  color: var(--muted);
-  font-family: 'DM Mono', monospace;
-}
-.lg-stats span { display: flex; align-items: center; gap: 4px; }
-.lg-body { overflow: hidden; transition: max-height 0.3s ease; }
-.lg-body.collapsed { max-height: 0 !important; }
-.lg-table { width: 100%; border-collapse: collapse; }
-.lg-table th {
-  background: var(--s1);
-  padding: 8px 12px;
-  text-align: left;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: var(--muted);
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-}
-.lg-table td {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
-  font-size: 13px;
-  color: var(--text);
-  white-space: nowrap;
-  vertical-align: middle;
-}
-.lg-table tr:hover td { background: rgba(0,200,240,0.03); cursor: pointer; }
-.lg-table tr:last-child td { border-bottom: none; }
-
-/* ── LIGHT MODE ── */
-body.light-mode {
-  --bg:     #f0f4f8;
-  --s1:     #ffffff;
-  --s2:     #f7f9fc;
-  --s3:     #edf2f7;
-  --s4:     #e2e8f0;
-  --border: #d1dbe8;
-  --border2:#b8c8da;
-  --text:   #1a2535;
-  --muted:  #4a5568;
-  --muted2: #718096;
-  --accent: #0891b2;
-}
-body.light-mode .topbar { background: #fff; border-color: #d1dbe8; }
-body.light-mode thead th { background: #edf2f7; color: #4a5568; }
-body.light-mode tbody tr:hover { background: rgba(8,145,178,0.04); }
-body.light-mode .pill-summer { background: #e53e3e; }
-body.light-mode .pill-monitor { background: #3182ce; }
-body.light-mode .pill-january { background: #6b46c1; }
-body.light-mode .pill-signed { background: #38a169; }
-body.light-mode .pill-rejected { background: #718096; }
-body.light-mode .tab.active { background: #fff; color: #0891b2; border-color: #d1dbe8; }
-body.light-mode .tab { color: #718096; }
-body.light-mode .tab:hover { background: #edf2f7; color: #1a2535; }
-body.light-mode .modal { background: #fff; border-color: #d1dbe8; }
-body.light-mode .form-input { background: #f7f9fc; border-color: #d1dbe8; color: #1a2535; }
-body.light-mode .form-input:focus { border-color: #0891b2; }
-body.light-mode .filter-sel { background: #fff; border-color: #d1dbe8; color: #1a2535; }
-body.light-mode .overlay { background: rgba(0,0,0,0.4); }
-body.light-mode .lg-header { background: #f7f9fc; border-left-color: #0891b2; }
-body.light-mode .lg-header:hover { background: #edf2f7; }
-body.light-mode .detail-stat { border-color: #d1dbe8; }
-body.light-mode .val-green { color: #276749; }
-body.light-mode .score-band { filter: brightness(1.1) saturate(0.9); }
-/* ── MOBILE ────────────────────────────────────────────────────────────────── */
-@media (max-width: 768px) {
-  /* Show only essential buttons */
-  #mobile-btn { display: inline-flex !important; }
-  #theme-btn  { display: inline-flex !important; }
-  button[onclick="exportCSV()"] { display: none !important; }
-  button[onclick="syncAll()"]   { display: none !important; }
-  button[onclick="openImport()"]{ display: none !important; }
-  button[onclick="openAdd()"]   { display: none !important; }
-  /* Topbar */
-  .topbar { padding: 0 10px; gap: 6px; height: auto; min-height: 52px; }
-  .topbar-spacer, .topbar-sep { display: none; }
-  .logo-sub { display: none; }
-  .logo-text { font-size: 13px; }
-  /* Tabs */
-  .tabs-bar { padding: 0 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap; }
-  .tab { padding: 8px 10px; font-size: 11px; white-space: nowrap; flex-shrink: 0; }
-  /* Toolbar */
-  .toolbar { padding: 8px 10px; gap: 6px; flex-wrap: wrap; }
-  .search-wrap { width: 100%; order: -1; }
-  .search-input { width: 100%; }
-  .filter-sel { font-size: 11px; max-width: 110px; }
-  #extra-filter-btn { display: none !important; }
-  #extra-filters { display: none !important; }
-  /* Table */
-  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  /* Detail modal — bottom sheet */
-  .overlay { align-items: flex-end; padding: 0; }
-  .detail-modal { width: 100% !important; max-width: 100% !important; max-height: 92vh; border-radius: 18px 18px 0 0; overflow-y: auto; }
-  .modal { width: calc(100vw - 24px) !important; max-height: 88vh; overflow-y: auto; }
-  /* Detail layout */
-  .detail-hero { flex-direction: column; align-items: center; text-align: center; padding: 14px 16px; }
-  .detail-meta { justify-content: center; flex-wrap: wrap; }
-  .detail-tags { justify-content: center; flex-wrap: wrap; }
-  .detail-stats-grid { grid-template-columns: repeat(3, 1fr); }
-  /* Form */
-  .form-grid { grid-template-columns: 1fr !important; }
-  .form-full { grid-column: 1 !important; }
-}
-@media (max-width: 480px) {
-  .detail-stats-grid { grid-template-columns: repeat(2, 1fr); }
-  .filter-sel { max-width: 88px; font-size: 10px; }
-}
-
-/* Mobile view mode — activated manually on desktop too */
-body.mobile-view {
-  --mobile-pad: 12px;
-}
-body.mobile-view .table-scroll { display: none; }
-body.mobile-view .lg-wrap { display: none; }
-body.mobile-view .perf-wrap { display: none; }
-body.mobile-view #mobile-cards { display: block; }
-
-#mobile-cards {
-  display: none;
-  padding: 10px 12px;
-  overflow-y: auto;
-}
-.mobile-card {
-  background: var(--s2);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 12px 14px;
-  margin-bottom: 10px;
-  cursor: pointer;
-  transition: border-color 0.15s;
-}
-.mobile-card:hover { border-color: var(--accent); }
-.mobile-card-top { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-.mobile-card-photo { width: 42px; height: 42px; border-radius: 50%; overflow: hidden; background: var(--s3); display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; }
-.mobile-card-photo img { width:100%; height:100%; object-fit:cover; }
-.mobile-card-name { font-size: 14px; font-weight: 700; color: var(--text); }
-.mobile-card-sub { font-size: 11px; color: var(--muted2); margin-top: 1px; }
-.mobile-card-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
-.mobile-card-stats { display: grid; grid-template-columns: repeat(4,1fr); gap: 4px; margin-top: 8px; border-top: 1px solid var(--border); padding-top: 8px; }
-.mobile-card-stat { text-align: center; }
-.mobile-card-stat .v { font-size: 14px; font-weight: 700; color: var(--text); font-family: 'DM Mono', monospace; }
-.mobile-card-stat .l { font-size: 9px; color: var(--muted2); text-transform: uppercase; letter-spacing: .04em; margin-top: 1px; }</style>
-</head>
-<body>
-
-<!-- TOP BAR -->
-<div class="topbar">
-  <div class="logo">
-    <div class="logo-mark">⚽</div>
-    <div>
-      <div class="logo-text">Database</div>
-      <div class="logo-sub">Pro Edition</div>
-    </div>
-  </div>
-  <div class="topbar-sep"></div>
-  <div class="board-name" id="board-title">CB List</div>
-  <div class="topbar-spacer"></div>
-  <button class="btn btn-ghost" onclick="toggleLightMode()" id="theme-btn" style="font-size:11px">☀️ Light</button>
-  <button class="btn btn-ghost" onclick="toggleMobileView()" id="mobile-btn" style="font-size:11px;display:none">📱 Mobile</button>
-  <button class="btn btn-ghost" onclick="exportCSV()" style="font-size:11px">📊 Export CSV</button>
-  <button class="btn btn-ghost" onclick="syncAll()" id="sync-all-btn" style="font-size:11px">🔄 Sync All TM</button>
-  <button class="btn btn-ghost" onclick="openImport()" style="font-size:11px">📥 Import</button>
-  <button class="btn btn-primary" onclick="openAdd()">＋ New Player</button>
-</div>
-
-<!-- TABS -->
-<div class="tabs" id="tabs-bar">
-  <!-- Generated dynamically -->
-  <div class="tab-add" onclick="addTab()" title="New board">＋</div>
-</div>
-
-<!-- TOOLBAR -->
-<div class="toolbar">
-  <div class="search-wrap">
-    <span class="search-icon">🔍</span>
-    <input class="search-input" id="searchInput" placeholder="Search players, teams, leagues..." oninput="renderAll()">
-  </div>
-  <select class="filter-sel" id="windowFilter" onchange="renderAll()">
-    <option value="">All Windows</option>
-    <option value="Summer">Summer</option>
-    <option value="Monitor">Monitor</option>
-    <option value="January">January</option>
-    <option value="Signed">Signed</option>
-  </select>
-  <select class="filter-sel" id="targetFilter" onchange="renderAll()">
-    <option value="">All Targets</option>
-    <option value="Premier League">Premier League</option>
-    <option value="Championship">Championship</option>
-    <option value="Europe Band 1">Europe Band 1</option>
-    <option value="Europe Band 1-2">Europe Band 1-2</option>
-    <option value="Europe Band 2-3">Europe Band 2-3</option>
-    <option value="PL Monitor">PL Monitor</option>
-    <option value="CH Monitor">CH Monitor</option>
-    <option value="TBC">TBC</option>
-  </select>
-  <select class="filter-sel" id="statusFilter" onchange="renderAll()">
-    <option value="">All Statuses</option>
-    <option value="No Progress">No Progress</option>
-    <option value="Relationship">Relationship</option>
-    <option value="Agency Link">Agency Link</option>
-    <option value="Contact Made">Contact Made</option>
-  </select>
-  <select class="filter-sel" id="agencyFilter" onchange="renderAll()">
-    <option value="">All Agencies</option>
-    <option value="Small">Small</option>
-    <option value="Medium">Medium</option>
-    <option value="Big">Big</option>
-  </select>
-  <button id="extra-filter-btn" onclick="toggleExtraFilters()" style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:6px 11px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;white-space:nowrap;flex-shrink:0">⊕ Filters</button>
-  <div class="topbar-spacer"></div>
-  <span class="record-count" id="rec-count">0 players</span>
-  <div style="display:flex;background:var(--s3);border:1px solid var(--border);border-radius:7px;overflow:hidden;margin-left:8px">
-    <button id="vbtn-table" class="view-toggle-btn active" onclick="setView('table')" title="Table view">≡ Table</button>
-    <button id="vbtn-league" class="view-toggle-btn" onclick="setView('league')" title="Group by League">🌍 By League</button>
-    <button id="vbtn-perf" class="view-toggle-btn" onclick="setView('perf')" title="Performance scores">📊 Performance</button>
-  </div>
-  <div style="position:relative;margin-left:8px">
-    <button class="view-toggle-btn" onclick="toggleColPicker()" title="Show/hide columns" style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:6px 12px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;white-space:nowrap">⚙ Columns</button>
-    <div id="col-picker" style="display:none;position:absolute;right:0;top:calc(100% + 6px);background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:12px;z-index:500;min-width:220px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
-      <div style="font-size:10px;font-weight:700;color:var(--muted2);letter-spacing:.08em;margin-bottom:8px">VISIBLE COLUMNS</div>
-      <div id="col-picker-list" style="display:flex;flex-direction:column;gap:4px"></div>
-      <div style="margin-top:10px;display:flex;gap:6px">
-        <button onclick="colPickerAll(true)" style="flex:1;font-size:11px;padding:4px 0;background:var(--s3);border:1px solid var(--border);border-radius:5px;color:var(--muted);cursor:pointer">All</button>
-        <button onclick="colPickerAll(false)" style="flex:1;font-size:11px;padding:4px 0;background:var(--s3);border:1px solid var(--border);border-radius:5px;color:var(--muted);cursor:pointer">None</button>
-        <button onclick="colPickerReset()" style="flex:1;font-size:11px;padding:4px 0;background:var(--s3);border:1px solid var(--border);border-radius:5px;color:var(--muted);cursor:pointer">Reset</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- EXTRA FILTERS ROW -->
-<div id="extra-filters" style="display:none;background:var(--s2);border-bottom:1px solid var(--border);padding:8px 20px;display:none;align-items:center;gap:10px;flex-wrap:wrap">
-  <span style="font-size:10px;font-weight:700;color:var(--muted2);letter-spacing:.08em;margin-right:4px">FILTERS</span>
-
-  <div style="display:flex;align-items:center;gap:6px">
-    <label style="font-size:11px;color:var(--muted);white-space:nowrap">Foot</label>
-    <select class="filter-sel" id="footFilter" onchange="renderAll()">
-      <option value="">Any</option>
-      <option value="Left">Left</option>
-      <option value="Right">Right</option>
-      <option value="Both">Both</option>
-    </select>
-  </div>
-
-  <div style="display:flex;align-items:center;gap:6px">
-    <label style="font-size:11px;color:var(--muted);white-space:nowrap">Style</label>
-    <select class="filter-sel" id="styleFilter" onchange="renderAll()">
-      <option value="">Any</option>
-      <option value="Wide CB">Wide CB</option>
-      <option value="Rounded CB">Rounded CB</option>
-      <option value="Complete CB">Complete CB</option>
-      <option value="Ball Playing CB">Ball Playing CB</option>
-      <option value="Box Defender">Box Defender</option>
-      <option value="Attacking FB">Attacking FB</option>
-      <option value="Defensive FB">Defensive FB</option>
-      <option value="Inverted FB">Inverted FB</option>
-      <option value="Box-to-Box">Box-to-Box</option>
-      <option value="Defensive CM">Defensive CM</option>
-      <option value="Playmaker">Playmaker</option>
-      <option value="Wide">Wide</option>
-      <option value="Inside Forward">Inside Forward</option>
-      <option value="Target Man">Target Man</option>
-      <option value="Press &amp; Run">Press &amp; Run</option>
-    </select>
-  </div>
-
-  <div style="display:flex;align-items:center;gap:6px">
-    <label style="font-size:11px;color:var(--muted);white-space:nowrap">Value ≤</label>
-    <select class="filter-sel" id="valueFilter" onchange="renderAll()">
-      <option value="">Any</option>
-      <option value="1">€1M</option>
-      <option value="2">€2M</option>
-      <option value="3">€3M</option>
-      <option value="5">€5M</option>
-      <option value="8">€8M</option>
-      <option value="10">€10M</option>
-      <option value="15">€15M</option>
-      <option value="20">€20M</option>
-      <option value="30">€30M</option>
-      <option value="50">€50M</option>
-    </select>
-  </div>
-
-  <div style="display:flex;align-items:center;gap:6px">
-    <label style="font-size:11px;color:var(--muted);white-space:nowrap">Contract ≤</label>
-    <select class="filter-sel" id="contractFilter" onchange="renderAll()">
-      <option value="">Any</option>
-      <option value="2025">2025</option>
-      <option value="2026">2026</option>
-      <option value="2027">2027</option>
-      <option value="2028">2028</option>
-      <option value="2029">2029</option>
-    </select>
-  </div>
-
-  <div style="display:flex;align-items:center;gap:6px">
-    <label style="font-size:11px;color:var(--muted);white-space:nowrap">GBE Band</label>
-    <div style="position:relative">
-      <button id="gbe-band-btn" onclick="toggleGBEBandPicker()" style="background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:11px;color:var(--muted);cursor:pointer;white-space:nowrap;min-width:80px;text-align:left">All Bands ▾</button>
-      <div id="gbe-band-picker" style="display:none;position:absolute;top:calc(100% + 4px);left:0;background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;z-index:500;min-width:160px;box-shadow:0 8px 24px rgba(0,0,0,0.4)">
-        <div style="font-size:10px;color:var(--muted2);margin-bottom:6px;font-weight:700;letter-spacing:.06em">GBE BAND (FA 2025/26)</div>
-        <label style="display:flex;align-items:center;gap:7px;font-size:11px;color:var(--fg);cursor:pointer;padding:2px 0"><input type="checkbox" class="gbe-band-cb" value="1" checked onchange="applyGBEBandFilter()" style="accent-color:var(--accent)"> Band 1 – Big 5</label>
-        <label style="display:flex;align-items:center;gap:7px;font-size:11px;color:var(--fg);cursor:pointer;padding:2px 0"><input type="checkbox" class="gbe-band-cb" value="2" checked onchange="applyGBEBandFilter()" style="accent-color:var(--accent)"> Band 2</label>
-        <label style="display:flex;align-items:center;gap:7px;font-size:11px;color:var(--fg);cursor:pointer;padding:2px 0"><input type="checkbox" class="gbe-band-cb" value="3" checked onchange="applyGBEBandFilter()" style="accent-color:var(--accent)"> Band 3</label>
-        <label style="display:flex;align-items:center;gap:7px;font-size:11px;color:var(--fg);cursor:pointer;padding:2px 0"><input type="checkbox" class="gbe-band-cb" value="4" checked onchange="applyGBEBandFilter()" style="accent-color:var(--accent)"> Band 4</label>
-        <label style="display:flex;align-items:center;gap:7px;font-size:11px;color:var(--fg);cursor:pointer;padding:2px 0"><input type="checkbox" class="gbe-band-cb" value="5" checked onchange="applyGBEBandFilter()" style="accent-color:var(--accent)"> Band 5</label>
-        <label style="display:flex;align-items:center;gap:7px;font-size:11px;color:var(--fg);cursor:pointer;padding:2px 0"><input type="checkbox" class="gbe-band-cb" value="6" checked onchange="applyGBEBandFilter()" style="accent-color:var(--accent)"> Band 6 / Other</label>
-        <div style="margin-top:6px;display:flex;gap:6px">
-          <button onclick="setAllGBEBands(true)" style="flex:1;font-size:10px;padding:3px 0;background:var(--s3);border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer">All</button>
-          <button onclick="setAllGBEBands(false)" style="flex:1;font-size:10px;padding:3px 0;background:var(--s3);border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer">None</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <button onclick="clearExtraFilters()" style="background:transparent;border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:11px;color:var(--muted2);cursor:pointer;margin-left:4px">✕ Clear</button>
-</div>
-
-<!-- MAIN -->
-<div class="main">
-  <!-- MOBILE CARDS VIEW -->
-  <div id="mobile-cards"></div>
-
-  <!-- TABLE VIEW -->
-  <div class="table-scroll" id="table-area">
-    <table id="main-table">
-      <thead id="thead"></thead>
-      <tbody id="tbody"></tbody>
-    </table>
-    <div class="empty hidden" id="empty-state">
-      <div class="empty-icon">📋</div>
-      <div>No players found</div>
-      <div style="font-size:11px;color:var(--muted2)">Add your first player or adjust filters</div>
-    </div>
-  </div>
-  <!-- LEAGUE VIEW -->
-  <div class="table-scroll hidden" id="league-area"></div>
-  <div class="table-scroll hidden" id="perf-area" style="padding:20px"></div>
-</div>
-
-<!-- ADD / EDIT MODAL -->
-<div class="overlay" id="add-overlay">
-<div class="modal" id="add-modal">
-  <div class="modal-head">
-    <div class="modal-title" id="add-title">NEW PLAYER</div>
-    <button class="modal-x" onclick="closeAdd()">✕</button>
-  </div>
-  <div class="modal-body">
-    <div class="form-grid">
-      <div class="form-group">
-        <label class="form-label">Player Name *</label>
-        <input class="form-input" id="f-name" placeholder="e.g. V. van Dijk">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Full Name</label>
-        <input class="form-input" id="f-fullname" placeholder="e.g. Virgil van Dijk">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Team</label>
-        <input class="form-input" id="f-team" placeholder="e.g. Liverpool">
-      </div>
-      <div class="form-group">
-        <label class="form-label">League</label>
-        <input class="form-input" id="f-league" placeholder="e.g. England 1.">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Age</label>
-        <input class="form-input" id="f-age" type="number" placeholder="24">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Foot</label>
-        <select class="form-select" id="f-foot">
-          <option value="">—</option>
-          <option value="Right">Right</option>
-          <option value="Left">Left</option>
-          <option value="Both">Both</option>
-        </select>
-      </div>
-    </div>
-
-    <div class="section-divider"><div class="section-divider-label">Scouting</div><div class="section-divider-line"></div></div>
-    <div class="form-grid">
-      <div class="form-group">
-        <label class="form-label">Window</label>
-        <select class="form-select" id="f-window">
-          <option value="Monitor">Monitor</option>
-          <option value="Summer">Summer</option>
-          <option value="January">January</option>
-          <option value="Signed">Signed</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Target Move</label>
-        <select class="form-select" id="f-target">
-          <option value="Premier League">Premier League</option>
-          <option value="Championship">Championship</option>
-          <option value="Europe Band 1">Europe Band 1</option>
-          <option value="Europe Band 1-2">Europe Band 1-2</option>
-          <option value="Europe Band 2-3">Europe Band 2-3</option>
-          <option value="PL Monitor">PL Monitor</option>
-          <option value="CH Monitor">CH Monitor</option>
-          <option value="TBC">TBC</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Status</label>
-        <select class="form-select" id="f-status">
-          <option value="No Progress">No Progress</option>
-          <option value="Relationship">Relationship</option>
-          <option value="Agency Link">Agency Link</option>
-          <option value="Contact Made">Contact Made</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Agency Size</label>
-        <select class="form-select" id="f-agency">
-          <option value="Small">Small</option>
-          <option value="Medium">Medium</option>
-          <option value="Big">Big</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Recent Move</label>
-        <select class="form-select" id="f-recentmove">
-          <option value="No">No</option>
-          <option value="Yes">Yes</option>
-          <option value="N/A">N/A</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Priority (1–5 ★)</label>
-        <select class="form-select" id="f-priority">
-          <option value="1">★ 1</option>
-          <option value="2">★★ 2</option>
-          <option value="3" selected>★★★ 3</option>
-          <option value="4">★★★★ 4</option>
-          <option value="5">★★★★★ 5</option>
-        </select>
-      </div>
-    </div>
-
-    <div class="section-divider"><div class="section-divider-label">Profile</div><div class="section-divider-line"></div></div>
-    <div class="form-grid">
-      <div class="form-group">
-        <label class="form-label">Style</label>
-        <select class="form-select" id="f-style">
-          <option value="">—</option>
-          <option value="Ball Playing CB">Ball Playing CB</option>
-          <option value="Wide CB">Wide CB</option>
-          <option value="Complete CB">Complete CB</option>
-          <option value="Box Defender">Box Defender</option>
-          <option value="Ball Playing GK">Ball Playing GK</option>
-          <option value="Sweeper GK">Sweeper GK</option>
-          <option value="Box-to-Box">Box-to-Box</option>
-          <option value="Deep-Lying PM">Deep-Lying PM</option>
-          <option value="Progressive FB">Progressive FB</option>
-          <option value="Defensive FB">Defensive FB</option>
-          <option value="Inside Forward">Inside Forward</option>
-          <option value="Traditional Winger">Traditional Winger</option>
-          <option value="Target Man">Target Man</option>
-          <option value="Advanced Forward">Advanced Forward</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Primary Role</label>
-        <select class="form-select" id="f-role1">
-          <option value="">—</option>
-          <option value="CB2">CB2</option>
-          <option value="CB3">CB3</option>
-          <option value="GK1">GK1</option>
-          <option value="GK2">GK2</option>
-          <option value="RB2">RB2</option>
-          <option value="LB2">LB2</option>
-          <option value="CM6">CM6</option>
-          <option value="CM8">CM8</option>
-          <option value="CM10">CM10</option>
-          <option value="WG">WG</option>
-          <option value="ST">ST</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Score* (Current)</label>
-        <select class="form-select" id="f-score">
-          <option value="">—</option>
-          <option value="80-84">80-84</option>
-          <option value="76-79">76-79</option>
-          <option value="72-76">72-76</option>
-          <option value="66-72">66-72</option>
-          <option value="60-65">60-65</option>
-          <option value="55-60">55-60</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Potential*</label>
-        <select class="form-select" id="f-potential">
-          <option value="">—</option>
-          <option value="80-84">80-84</option>
-          <option value="76-79">76-79</option>
-          <option value="72-76">72-76</option>
-          <option value="66-72">66-72</option>
-          <option value="60-65">60-65</option>
-          <option value="55-60">55-60</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Physical Notes</label>
-        <select class="form-select" id="f-physical">
-          <option value="">—</option>
-          <option value="Athletic">Athletic</option>
-          <option value="Physical">Physical</option>
-          <option value="Athletic, Physical">Athletic + Physical</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Nationality</label>
-        <input class="form-input" id="f-nationality" placeholder="e.g. Netherlands">
-      </div>
-    </div>
-
-    <div class="section-divider"><div class="section-divider-label">Financial</div><div class="section-divider-line"></div></div>
-    <div class="form-grid">
-      <div class="form-group">
-        <label class="form-label">Market Value (€)</label>
-        <input class="form-input" id="f-value" placeholder="e.g. 5000000">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Contract Expires</label>
-        <input class="form-input" id="f-contract" placeholder="e.g. 2027">
-      </div>
-    </div>
-
-    <div class="section-divider"><div class="section-divider-label">Stats</div><div class="section-divider-line"></div></div>
-    <div class="form-grid-3">
-      <div class="form-group">
-        <label class="form-label">Games</label>
-        <input class="form-input" id="f-games" type="number" placeholder="0">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Goals</label>
-        <input class="form-input" id="f-goals" type="number" placeholder="0">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Assists</label>
-        <input class="form-input" id="f-assists" type="number" placeholder="0">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Minutes</label>
-        <input class="form-input" id="f-minutes" type="number" placeholder="0">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Goals Conceded</label>
-        <input class="form-input" id="f-ga" type="number" placeholder="0">
-      </div>
-    </div>
-
-    <div class="section-divider"><div class="section-divider-label">Links & Notes</div><div class="section-divider-line"></div></div>
-    <div class="form-grid">
-      <div class="form-group">
-        <label class="form-label">Transfermarkt Link</label>
-        <input class="form-input" id="f-tm" placeholder="https://www.transfermarkt.com/...">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Video Link</label>
-        <input class="form-input" id="f-video" placeholder="https://wyscout.com/...">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Photo URL</label>
-        <input class="form-input" id="f-photo" placeholder="https://images.fotmob.com/...">
-      </div>
-    </div>
-
-    <div class="form-group form-full" style="margin-top:4px">
-      <label class="form-label">Data Profile (PNG)</label>
-      <div style="display:flex;flex-direction:column;gap:6px">
-        <input type="file" id="f-dataprofile-file" accept="image/png,image/jpeg,image/webp" style="display:none" onchange="loadDataProfileFile(this)">
-        <div style="display:flex;gap:8px;align-items:center">
-          <button type="button" onclick="document.getElementById('f-dataprofile-file').click()" style="background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:7px 14px;font-size:11px;color:var(--muted);cursor:pointer;white-space:nowrap">📎 Upload PNG…</button>
-          <span id="f-dataprofile-name" style="font-size:11px;color:var(--muted2);font-style:italic">No file attached</span>
-        </div>
-        <div id="f-dataprofile-preview" style="display:none;position:relative">
-          <img id="f-dataprofile-img" style="width:100%;border-radius:6px;border:1px solid var(--border);max-height:160px;object-fit:contain;background:var(--s2)">
-          <button type="button" onclick="clearDataProfile()" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.7);border:none;border-radius:50%;width:22px;height:22px;font-size:12px;color:#fff;cursor:pointer;line-height:22px;text-align:center">✕</button>
-        </div>
-        <input type="hidden" id="f-dataprofile">
-      </div>
-    </div>
-
-    <div class="form-grid">
-      <div class="form-group">
-        <label class="form-label">Position</label>
-        <select class="form-select" id="f-pos">
-          <option value="CB">CB</option><option value="LCB">LCB</option><option value="RCB">RCB</option>
-          <option value="GK">GK</option><option value="LB">LB</option><option value="RB">RB</option>
-          <option value="LWB">LWB</option><option value="RWB">RWB</option><option value="DMF">DMF</option>
-          <option value="CMF">CMF</option><option value="AMF">AMF</option><option value="LW">LW</option>
-          <option value="RW">RW</option><option value="CF">CF</option><option value="SS">SS</option>
-        </select>
-      </div>
-    </div>
-    <div class="form-group form-full" style="margin-top:4px">
-      <label class="form-label">Extra Key Notes</label>
-      <textarea class="form-textarea" id="f-keynotes" placeholder="e.g. Same agent as..., New contract likely..."></textarea>
-    </div>
-    <div class="form-group form-full">
-      <label class="form-label">Scout Note (added to history)</label>
-      <textarea class="form-textarea" id="f-note" placeholder="Initial scouting observation..."></textarea>
-    </div>
-  </div>
-  <div class="modal-foot">
-    <button class="btn btn-ghost btn-danger-soft" id="delete-btn" onclick="deleteEditing()" style="display:none;color:#f87171;border-color:rgba(248,113,113,0.3)">🗑 Delete</button>
-    <div style="display:flex;gap:8px;margin-left:auto">
-      <button class="btn btn-ghost" onclick="closeAdd()">Cancel</button>
-      <button class="btn btn-primary" onclick="savePlayer()">Save Player</button>
-    </div>
-  </div>
-</div>
-</div>
-
-<!-- DETAIL OVERLAY -->
-<div class="overlay" id="detail-overlay">
-<div class="modal detail-modal" id="detail-modal">
-  <div class="modal-head">
-    <div class="modal-title" id="detail-title">PLAYER PROFILE</div>
-    <div style="display:flex;gap:8px;align-items:center">
-      <button class="btn btn-ghost btn-sm" onclick="editFromDetail()">✏ Edit</button>
-      <button class="modal-x" onclick="closeDetail()">✕</button>
-    </div>
-  </div>
-  <div id="detail-body"></div>
-</div>
-</div>
-
-<!-- TOAST -->
-<div class="toast" id="toast"></div>
-
-<script>
-// ── DATA ──
-const BOARDS_KEY = 'scoutpro_boards';
-const DATA_KEY = 'scoutpro_data';
-const CORRECT_BOARDS = ["GK","CB","RB","LB","CM6","CM8","CM10","WNG","ST"];
-
-let boards = CORRECT_BOARDS.slice();
-let currentView = 'table';
-let allPlayers = {};
-let currentBoard = boards[0] || 'GK';
-let editingId = null;
-let viewingId = null;
-let sortKey = 'priority';
-let sortAsc = false;
-
-// Ensure each board has an array
-CORRECT_BOARDS.forEach(b => { if (!allPlayers[b]) allPlayers[b] = []; });
-
-async function save() {
-  // Save to server if available, always save to localStorage as backup
-  localStorage.setItem(DATA_KEY, JSON.stringify(allPlayers));
-  if (serverOnline) {
-    try {
-      await fetch(SERVER + '/api/boards', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(allPlayers)
-      });
-    } catch(e) { console.warn('Server save failed, localStorage only'); }
-  }
-}
-
-async function loadFromServer() {
-  try {
-    const r = await fetch(SERVER + '/api/boards', {signal: AbortSignal.timeout(5000)});
-    if (r.ok) {
-      const data = await r.json();
-      if (data && typeof data === 'object') {
-        CORRECT_BOARDS.forEach(b => { allPlayers[b] = data[b] || []; });
-        serverOnline = true;
-        return true;
-      }
+# app.py — Advanced Central Midfielder Scouting System (dataset-switch safe)
+
+import os
+import io
+import math
+from pathlib import Path
+import re
+
+import streamlit as st
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.patches import Circle, Wedge
+from photo_utils import get_player_photo_url, load_player_photo_cached, get_player_photo_pil
+
+# ---- Optional sklearn (fallback provided) ----
+try:
+    from sklearn.preprocessing import StandardScaler
+except Exception:
+    class StandardScaler:  # minimal drop-in
+        def __init__(self): self.mean_ = None; self.scale_ = None
+        def fit(self, X):
+            X = np.asarray(X, dtype=float)
+            self.mean_ = X.mean(axis=0)
+            std = X.std(axis=0, ddof=0)
+            std[std == 0] = 1.0
+            self.scale_ = std
+            return self
+        def transform(self, X):
+            X = np.asarray(X, dtype=float)
+            return (X - self.mean_) / self.scale_
+        def fit_transform(self, X):
+            self.fit(X); return self.transform(X)
+
+# ✅ --- Tiny CSV loaders (cached) ---
+@st.cache_data(show_spinner=False)
+def _read_csv_from_path(path_str: str) -> pd.DataFrame:
+    return pd.read_csv(path_str)
+
+@st.cache_data(show_spinner=False)
+def _read_csv_from_bytes(data: bytes) -> pd.DataFrame:
+    return pd.read_csv(io.BytesIO(data))
+
+def load_df(csv_name: str) -> pd.DataFrame:
+    candidates = [
+        Path.cwd() / csv_name,
+        Path(__file__).resolve().parent.parent / csv_name,
+        Path(__file__).resolve().parent / csv_name,
+    ]
+    for p in candidates:
+        if p.exists():
+            return _read_csv_from_path(str(p))
+    up = st.file_uploader(f"Upload {csv_name}", type=["csv"])
+    if up is None:
+        st.stop()
+    return _read_csv_from_bytes(up.getvalue())
+
+# 🔍 Detect all CSVs starting with WORLD*
+csv_files = sorted(Path.cwd().glob("*.csv"), key=lambda f: f.stat().st_mtime, reverse=True)
+csv_files = [f.name for f in csv_files]
+if not csv_files:
+    st.error("No CSV files found in the project folder.")
+    st.stop()
+
+# ----------------- PAGE -----------------
+st.set_page_config(page_title="Advanced Central Midfielder Scouting System", layout="wide")
+st.title("🔎 Advanced Central Midfielder Scouting System")
+st.caption("Use the sidebar to shape your pool. Each section explains what you’re seeing and why.")
+
+selected_file = st.selectbox("Select dataset to load:", csv_files, key="cm_dataset_select")
+df = load_df(selected_file)
+
+# --- Derived features (must run immediately after loading df) ---
+# Pass Ratio = Progressive passes per 90 / Passes per 90
+pp90 = pd.to_numeric(df.get("Progressive passes per 90"), errors="coerce")
+p90  = pd.to_numeric(df.get("Passes per 90"), errors="coerce")
+df["Pass Ratio"] = (pp90 / p90).replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(lower=0)
+
+# If dataset changes, clear dataset-scoped widget state
+if st.session_state.get("_active_dataset_cm") != selected_file:
+    for k in [
+        "cm_leagues_sel",
+        # add more cm-specific keys here if you later create them elsewhere
+    ]:
+        st.session_state.pop(k, None)
+    st.session_state["_active_dataset_cm"] = selected_file
+
+# ----------------- CONFIG -----------------
+INCLUDED_LEAGUES = [
+'England 1.','Spain 1.','Germany 1.','Italy 1.','France 1.',
+'England 2.','Belgium 1.','Brazil 1.','Portugal 1.','Argentina 1.',
+'USA 1.','Denmark 1.','Poland 1.','Turkey 1.','Netherlands 1.',
+'Croatia 1.','Germany 2.','Japan 1.','Switzerland 1.','Spain 2.',
+'Norway 1.','Mexico 1.','Sweden 1.','Colombia 1.','Cyprus 1.',
+'Czech 1.','Ecuador 1.','Greece 1.','Saudi 1.','Italy 2.',
+'Hungary 1.','Austria 1.','Morocco 1.','Korea 1.','Paraguay 1.',
+'France 2.','England 3.','Romania 1.','Scotland 1.','Algeria 1.',
+'Uruguay 1.','Chile 1.','Egypt 1.','Israel 1.','Brazil 2.',
+'Slovenia 1.','Bolivia 1.','Slovakia 1.','Azerbaijan 1.','South Africa 1.',
+'UAE 1.','Costa Rica 1.','Peru 1.','Germany 3.','Ukraine 1.',
+'Spain 3.','Portugal 2.','Bulgaria 1.','Australia 1.','Serbia 1.',
+'Albania 1.','Bosnia 1.','Kosovo 1.','Japan 2.','England 4.',
+'Ireland 1.','Russia 1.','Kazakhstan 1.','Nigeria 1.','France 3.',
+'Tunisia 1.','Venezuela 1.','Belgium 2.','Finland 1.','Armenia 1.',
+'Georgia 1.','Switzerland 2.','Qatar 1.','Uzbekistan 1.','Poland 2.',
+'Iceland 1.','Norway 2.','Sweden 2.','North Macedonia 1.','Turkey 2.',
+'Korea 2.','Czech 2.','Brazil 3.','Lithuania 1.','Netherlands 2.',
+'Malta 1.','Italy 3.','Denmark 2.','Moldova 1.','USA 2.',
+'Latvia 1.','Montenegro 1.','Scotland 2.','Canada 1.','Austria 2.',
+'Israel 2.','England 7.','Germany 4.','Portugal 3.','England 5.',
+'Estonia 1.','England 9.','Northern Ireland 1.','Serbia 2.','Denmark 3.',
+'Sweden 3.','Slovenia 2.','Slovakia 2.','Greece 2.','Wales 1.',
+'USA 3.','Scotland 3.','England 6.','England 8.','England 10.',
+'Estonia 2.', 'China 1.', 'Ireland 2.', 'Faroe Islands 1.', 'Panama 1.', 'Portugal 4.',
+]
+
+PRESET_LEAGUES = {
+    "Top 5 Europe": {'England 1.', 'France 1.', 'Germany 1.', 'Italy 1.', 'Spain 1.'},
+    "Top 20 Europe": {
+        'England 1.','Italy 1.','Spain 1.','Germany 1.','France 1.',
+        'England 2.','Portugal 1.','Belgium 1.','Turkey 1.','Germany 2.','Spain 2.','France 2.',
+        'Netherlands 1.','Austria 1.','Switzerland 1.','Denmark 1.','Croatia 1.','Italy 2.','Czech 1.','Norway 1.'
+    },
+    "EFL (England 2–4)": {'England 2.','England 3.','England 4.'}
+}
+
+FEATURES = ['Defensive duels per 90', 'Defensive duels won, %',
+    'Aerial duels per 90', 'Aerial duels won, %', 'Shots blocked per 90',
+    'PAdj Interceptions', 'Non-penalty goals per 90', 'xG per 90',
+    'Shots per 90', 'Shots on target, %', 'Crosses per 90',
+    'Accurate crosses, %', 'Dribbles per 90', 'Successful dribbles, %',
+    'Offensive duels per 90', 'Offensive duels won, %', 'Touches in box per 90',
+    'Progressive runs per 90', 'Accelerations per 90', 'Passes per 90',
+    'Accurate passes, %', 'Forward passes per 90', 'Accurate forward passes, %',
+    'Long passes per 90', 'Accurate long passes, %', 'xA per 90',
+    'Smart passes per 90', 'Key passes per 90', 'Passes to final third per 90',
+    'Accurate passes to final third, %', 'Passes to penalty area per 90',
+    'Accurate passes to penalty area, %', 'Deep completions per 90',
+    'Progressive passes per 90', 'Accurate progressive passes, %',
+     # ✅ New derived feature:
+    'Pass Ratio',
+]
+
+POLAR_METRICS = [
+    "Defensive duels per 90","Defensive duels won, %","PAdj Interceptions",
+    "Passes per 90","Accurate passes, %","Progressive passes per 90",
+    "Non-penalty goals per 90","Progressive runs per 90","Dribbles per 90",
+    "xA per 90","Passes to penalty area per 90"
+]
+
+# -------- Position filter (central midfielders) --------
+CM_PREFIXES = ('LCMF', 'RCMF', 'LDMF', 'RDMF', 'DMF', 'CMF')
+def position_filter(pos):
+    return str(pos).strip().upper().startswith(CM_PREFIXES)
+# -------------------------------------------
+
+# Role buckets
+ROLES = {
+    "Deep Playmaker CM": {
+        "metrics": {
+            "Passes per 90": 1,
+            "Accurate passes, %": 1,
+            "Forward passes per 90": 2,
+            "Accurate forward passes, %": 1.5,
+            "Progressive passes per 90": 3,
+            "Passes to final third per 90": 2.5,
+            "Accurate long passes, %": 1,
+        }
+    },
+    "Advanced Playmaker CM": {
+        "metrics": {
+            "Deep completions per 90": 1.5,
+            "Smart passes per 90": 2,
+            "xA per 90": 4,
+            "Passes to penalty area per 90": 2,
+        }
+    },
+    "Defensive Midfielder DM": {
+        "metrics": {
+            "Defensive duels per 90": 4,
+            "Defensive duels won, %": 4,
+            "PAdj Interceptions": 3,
+            "Aerial duels per 90": 0.5,
+            "Aerial duels won, %": 1,
+        }
+    },
+    "Goal Threat CM": {
+        "metrics": {
+            "Non-penalty goals per 90": 3,
+            "xG per 90": 3,
+            "Shots per 90": 1.5,
+            "Touches in box per 90": 2,
+        }
+    },
+    "Ball-Carrying CM": {
+        "metrics": {
+            "Dribbles per 90": 4,
+            "Successful dribbles, %": 2,
+            "Progressive runs per 90": 3,
+            "Accelerations per 90": 3,
+        }
+    },
+
+    # ===== NEW ROLES (inserted here) =====
+    "Modern 6": {
+        "metrics": {
+            # Tackler-Carrier
+            "Accurate passes, %": 2,
+            "PAdj Interceptions": 2,
+            "Defensive duels per 90": 2,
+            "Defensive duels won, %": 3,
+            "Dribbles per 90": 3,
+            "Progressive runs per 90": 2,
+            "Aerial duels won, %": 2,
+        }
+    },
+    "Box to Box": {
+        "metrics": {
+            # Two-way runner: carries, coverage, arrivals
+            "Touches in box per 90 per 90": 3,
+            "Defensive duels per 90": 3,
+            "Non-penalty goals per 90": 2,
+        }
+    },
+    "Ball Winner": {
+        "metrics": {
+            # High regain profile
+            "Defensive duels per 90": 2,
+            "Defensive duels won, %": 2,
+        }
+    },
+    "PL Profile": {
+        "metrics": {
+            # Physicality + tempo to suit Premier League intensity
+            "Aerial duels won, %": 1,
+            "Defensive duels per 90": 2,
+            "Defensive duels won, %": 2,
+            "Progressive runs per 90": 2,
+            "Dribbles per 90": 2,
+            "PAdj Interceptions": 1,
+            # ✅ Added: PL 8–6 pass tempo/ambition signal
+            "Pass Ratio": 2,  # Progressive passes per 90 / Passes per 90
+        }
+    },
+    # ===== END NEW ROLES =====
+
+    "All In": {
+        "metrics": {
+            "Progressive passes per 90": 2,
+            "xA per 90": 2,
+            "PAdj Interceptions": 2,
+            "Defensive duels per 90": 2,
+            "Progressive runs per 90": 2,
+            "Defensive duels won, %": 2,
+            "Passes to penalty area per 90": 2,
+            "Non-penalty goals per 90": 2,
+        }
+    },
+}
+
+LEAGUE_STRENGTHS = {
+'England 1.':100.00,'Spain 1.':87.84,'Germany 1.':87.45,'Italy 1.':85.88,'France 1.':83.14,
+'England 2.':75.10,'Belgium 1.':74.51,'Brazil 1.':74.31,'Portugal 1.':72.94,'Argentina 1.':71.37,
+'USA 1.':70,'Denmark 1.':70.78,'Poland 1.':69.61,'Turkey 1.':69.02,'Netherlands 1.':69.02,
+'Croatia 1.':68.43,'Germany 2.':68.04,'Japan 1.':67.84,'Switzerland 1.':67.45,'Spain 2.':67.06,
+'Norway 1.':66.67,'Mexico 1.':66.47,'Sweden 1.':66.27,'Colombia 1.':65.88,'Cyprus 1.':60,
+'Czech 1.':65.29,'Ecuador 1.':65.29,'Greece 1.':64.12,'Saudi 1.':64.12,'Italy 2.':63.53,
+'Hungary 1.':63.53,'Austria 1.':63.33,'Morocco 1.':63.14,'Korea 1.':62.75,'Paraguay 1.':62.55,
+'France 2.':64,'England 3.':61.96,'Romania 1.':61.76,'Scotland 1.':61.76,'Algeria 1.':61.57,
+'Uruguay 1.':60.39,'Chile 1.':59.80,'Egypt 1.':59.22,'Israel 1.':58.43,'Brazil 2.':58.04,
+'Slovenia 1.':57.45,'Bolivia 1.':57.25,'Slovakia 1.':56.47,'Azerbaijan 1.':56.47,'South Africa 1.':56.27,
+'UAE 1.':55.49,'Costa Rica 1.':54.90,'Peru 1.':54.90,'Germany 3.':54.51,'Ukraine 1.':54.31,
+'Spain 3.':54.31,'Portugal 2.':53.14,'Bulgaria 1.':53.14,'Australia 1.':52.75,'Serbia 1.':52.16,
+'Albania 1.':51.96,'Bosnia 1.':51.76,'Kosovo 1.':51.37,'Japan 2.':50.98,'England 4.':50.78,
+'Ireland 1.':50.59,'Russia 1.':62.41,'Kazakhstan 1.':50.39,'Nigeria 1.':50.00,'France 3.':49.61,
+'Tunisia 1.':49.22,'Venezuela 1.':48.63,'Belgium 2.':48.43,'Finland 1.':48.43,'Armenia 1.':47.84,
+'Georgia 1.':47.65,'Switzerland 2.':46.47,'Qatar 1.':46.27,'Uzbekistan 1.':46.27,'Poland 2.':46.27,
+'Iceland 1.':46.08,'Norway 2.':45.88,'Sweden 2.':45.69,'North Macedonia 1.':44.71,'China 1.':44.7,'Turkey 2.':44.51,
+'Korea 2.':43.53,'Czech 2.':43.33,'Brazil 3.':43.14,'Lithuania 1.':42.35,'Netherlands 2.':42.16,
+'Malta 1.':41.96,'Italy 3.':45,'Denmark 2.':40.39,'Moldova 1.':40.39,'USA 2.':40.00,
+'Latvia 1.':40.00,'Montenegro 1.':39.80,'Scotland 2.':38.63,'Canada 1.':38.24,'Austria 2.':38.24,
+'Israel 2.':38.04,'England 7.':37.25,'Germany 4.':35.29,'Portugal 3.':35.29,'England 5.':33.33,
+'Estonia 1.':40,'England 9.':31.37,'Northern Ireland 1.':30.98,'Serbia 2.':30.39,'Denmark 3.':29.41,
+'Sweden 3.':29.41,'Slovenia 2.':28.82,'Slovakia 2.':28.24,'Greece 2.':27.06,'Wales 1.':26.67,
+'USA 3.':22.55,'Scotland 3.':20.00,'England 6.':16.08,'England 8.':15.69,'England 10.':3.92,
+'Estonia 2.':3, 'Ireland 2.':10, 'Faroe Islands 1.':35.02, 'Panama 1.':44.1, 'Portugal 4.':40,
+
+}
+
+# ---- GBE league bands (custom: all UK & Ireland leagues in Band 1) ----
+GBE_LEAGUE_BANDS = {
+    # Band 1 – Top 5 + all England / Scotland / Wales / Ireland / Northern Ireland leagues
+    "England 1.": 1, "England 2.": 1, "England 3.": 1, "England 4.": 1,
+    "England 5.": 1, "England 6.": 1, "England 7.": 1, "England 8.": 1,
+    "England 9.": 1, "England 10.": 1,
+    "Scotland 1.": 1, "Scotland 2.": 1, "Scotland 3.": 1,
+    "Wales 1.": 1,
+    "Ireland 1.": 1,
+    "Northern Ireland 1.": 1,
+
+    "Spain 1.": 1, "Germany 1.": 1, "Italy 1.": 1, "France 1.": 1,
+
+    # Band 2
+    "Portugal 1.": 2, "Netherlands 1.": 2, "Belgium 1.": 2, "Turkey 1.": 2,
+    # You can keep England 2./3. here as well if you want, but they’re already Band 1 above.
+
+    # Band 3
+    "USA 1.": 3, "Brazil 1.": 3, "Argentina 1.": 3, "Mexico 1.": 3,
+
+    # Band 4
+    "Czech 1.": 4, "Croatia 1.": 4, "Switzerland 1.": 4,
+    "Spain 2.": 4, "Germany 2.": 4,
+    "Ukraine 1.": 4, "Greece 1.": 4, "Colombia 1.": 4,
+    "Austria 1.": 4, "Denmark 1.": 4, "France 2.": 4, "Russia 1.": 4,
+
+    # Band 5
+    "Serbia 1.": 5, "Poland 1.": 5, "Slovenia 1.": 5, "Chile 1.": 5, "Uruguay 1.": 5,
+    "Sweden 1.": 5, "Norway 1.": 5, "Italy 2.": 5, "Hungary 1.": 5, "Japan 1.": 5,
+    "Korea 1.": 5, "Australia 1.": 5, 
+
+    # Everything else defaults to Band 6
+}
+
+def gbe_league_band(league_name: str) -> int:
+    """
+    Map 'Country N.' league name to custom GBE band 1–6.
+    Unlisted leagues default to Band 6.
+    """
+    league_name = str(league_name).strip()
+    return int(GBE_LEAGUE_BANDS.get(league_name, 6))
+
+
+
+import re
+
+# --- Youth leagues: excluded by default, optional toggle to include ---
+YOUTH_LEAGUES = {
+    "Brazil 3.",
+    "England 7.",
+    "England 8.",
+    "England 9.",
+    "England 10.",
+    "Portugal 3.",
+    "Denmark 3.",
+    "Germany 4.",
+    "USA 2.",
+    "Ireland 2.",
+    "Estonia 2.",
+}
+
+# --- Country → Region mapping for league-level region filter ---
+COUNTRY_TO_REGION = {
+    # Europe
+    "England": "Europe", "Spain": "Europe", "Germany": "Europe", "Italy": "Europe",
+    "France": "Europe", "Belgium": "Europe", "Portugal": "Europe", "Netherlands": "Europe",
+    "Croatia": "Europe", "Switzerland": "Europe", "Norway": "Europe", "Sweden": "Europe",
+    "Cyprus": "Europe", "Czech": "Europe", "Greece": "Europe", "Austria": "Europe",
+    "Hungary": "Europe", "Romania": "Europe", "Scotland": "Europe", "Slovenia": "Europe",
+    "Slovakia": "Europe", "Ukraine": "Europe", "Bulgaria": "Europe", "Serbia": "Europe",
+    "Albania": "Europe", "Bosnia": "Europe", "Kosovo": "Europe", "Ireland": "Europe",
+    "Finland": "Europe", "Armenia": "Europe", "Georgia": "Europe", "Poland": "Europe",
+    "Iceland": "Europe", "North Macedonia": "Europe", "Latvia": "Europe",
+    "Montenegro": "Europe", "Denmark": "Europe", "Estonia": "Europe",
+    "Northern Ireland": "Europe", "Wales": "Europe", "Russia": "Europe", "Kazakhstan": "Europe",
+    "Lithuania": "Europe", "Malta": "Europe", "Moldova": "Europe", "Israel": "Europe",
+
+    # South America
+    "Brazil": "South America", "Argentina": "South America", "Colombia": "South America",
+    "Ecuador": "South America", "Paraguay": "South America", "Uruguay": "South America",
+    "Chile": "South America", "Bolivia": "South America", "Peru": "South America",
+    "Venezuela": "South America",
+
+    # North America
+    "USA": "North America", "Mexico": "North America", "Costa Rica": "North America",
+    "Canada": "North America",
+
+    # Africa
+    "Morocco": "Africa", "Algeria": "Africa", "Egypt": "Africa", "Nigeria": "Africa",
+    "Tunisia": "Africa", "South Africa": "Africa",
+
+    # Asia (incl. some UEFA/dual countries – choose what fits your model best)
+    "Japan": "Asia", "Korea": "Asia", "Saudi": "Asia",
+    "UAE": "Asia", "Qatar": "Asia", "Uzbekistan": "Asia", "China": "Asia",
+    "Turkey": "Asia", "Azerbaijan": "Asia",
+
+    # Oceania / other (you can change this to "Other" if you prefer)
+    "Australia": "Asia",
+}
+
+def extract_country(league_name: str) -> str:
+    """
+    'South Africa 1.'  -> 'South Africa'
+    'England 2.'       -> 'England'
+    'Costa Rica 1.'    -> 'Costa Rica'
+    """
+    s = str(league_name).strip()
+    s = s.rstrip(".")                      # 'South Africa 1.' -> 'South Africa 1'
+    s = re.sub(r"\s+\d+$", "", s)         # drop trailing ' 1', ' 2', etc.
+    return s
+
+def league_region(league_name: str) -> str:
+    """
+    Map league string to one of the high-level regions.
+    Falls back to 'Other' if unknown.
+    """
+    country = extract_country(league_name)
+    return COUNTRY_TO_REGION.get(country, "Other")
+
+
+REQUIRED_BASE = {"Player","Team","League","Age","Position","Minutes played","Market value","Contract expires","Goals"}
+
+# ----------------- WIDGET SAFETY -----------------
+def multiselect_safe(label, *, options, default=None, key=None, **kwargs):
+    """Clamp defaults to current options to avoid Streamlit crashes after dataset switches."""
+    options = list(options)
+    default = [x for x in (default or []) if x in options]
+    return st.multiselect(label, options=options, default=default, key=key, **kwargs)
+
+# ----------------- SIDEBAR FILTERS -----------------
+with st.sidebar:
+    st.header("Filters")
+
+    # --- Region filter (default = all regions) ---
+    all_regions = ["Europe", "Africa", "Asia", "North America", "South America"]
+    regions_key = f"cm_regions_{selected_file}"
+    if regions_key not in st.session_state:
+        st.session_state[regions_key] = all_regions
+
+    regions_sel = st.multiselect(
+        "Regions",
+        options=all_regions,
+        default=st.session_state[regions_key],
+        key=regions_key,
+    )
+
+    # --- Youth leagues toggle (excluded by default) ---
+    include_youth_key = f"cm_include_youth_{selected_file}"
+    include_youth = st.checkbox(
+        "Include youth leagues",
+        value=False,
+        key=include_youth_key,
+    )
+
+    st.markdown("---")
+
+    # --- League presets ---
+    c1, c2, c3 = st.columns([1, 1, 1])
+    use_top5  = c1.checkbox("Top-5 EU",  value=False, key=f"cm_top5_{selected_file}")
+    use_top20 = c2.checkbox("Top-20 EU", value=False, key=f"cm_top20_{selected_file}")
+    use_efl   = c3.checkbox("EFL",       value=False, key=f"cm_efl_{selected_file}")
+
+    seed = set()
+    if use_top5:
+        seed |= PRESET_LEAGUES["Top 5 Europe"]
+    if use_top20:
+        seed |= PRESET_LEAGUES["Top 20 Europe"]
+    if use_efl:
+        seed |= PRESET_LEAGUES["EFL (England 2–4)"]
+
+
+    # --- GBE Band presets (1–6) ---
+    st.markdown("### GBE Bands")
+
+    b1, b2, b3 = st.columns(3)
+    use_band1 = b1.checkbox("Band 1", value=True,  key=f"cm_band1_{selected_file}")
+    use_band2 = b2.checkbox("Band 2", value=True,  key=f"cm_band2_{selected_file}")
+    use_band3 = b3.checkbox("Band 3", value=True,  key=f"cm_band3_{selected_file}")
+
+    c4, c5, c6 = st.columns(3)
+    use_band4 = c4.checkbox("Band 4", value=True,  key=f"cm_band4_{selected_file}")
+    use_band5 = c5.checkbox("Band 5", value=True,  key=f"cm_band5_{selected_file}")
+    use_band6 = c6.checkbox("Band 6", value=True,  key=f"cm_band6_{selected_file}")
+
+    selected_bands: list[int] = []
+    if use_band1: selected_bands.append(1)
+    if use_band2: selected_bands.append(2)
+    if use_band3: selected_bands.append(3)
+    if use_band4: selected_bands.append(4)
+    if use_band5: selected_bands.append(5)
+    if use_band6: selected_bands.append(6)
+
+    st.session_state[f"cm_gbe_bands_{selected_file}"] = selected_bands
+
+
+    # --- Leagues present in this dataset ---
+    leagues_in_df = sorted(
+        pd.Series(df.get("League", pd.Series(dtype=object)))
+          .dropna()
+          .unique()
+          .tolist()
+    )
+
+    # --- Apply region filter ---
+    if regions_sel:
+        leagues_in_df = [
+            lg for lg in leagues_in_df
+            if league_region(lg) in regions_sel
+        ]
+
+    # --- Apply youth-league filter ---
+    if include_youth:
+        leagues_avail = leagues_in_df
+    else:
+        leagues_avail = [lg for lg in leagues_in_df if lg not in YOUTH_LEAGUES]
+
+    # --- Clamp presets to currently available leagues ---
+    seed = {x for x in seed if x in leagues_avail}
+    default_leagues = sorted(seed) if seed else leagues_avail
+
+    # --- Multiselect with preset + region + youth sensitivity ---
+    ms_key = f"cm_leagues_sel_{selected_file}"
+    preset_sig = (
+        tuple(sorted(regions_sel)),
+        include_youth,
+        use_top5,
+        use_top20,
+        use_efl,
+        selected_file,
+    )
+
+    if ms_key not in st.session_state:
+        st.session_state[ms_key] = default_leagues
+
+    if st.session_state.get("cm_preset_sig") != preset_sig:
+        st.session_state["cm_preset_sig"] = preset_sig
+        st.session_state[ms_key] = default_leagues
+
+    leagues_sel = multiselect_safe(
+        "Leagues (add or prune the presets)",
+        options=leagues_avail,
+        default=st.session_state[ms_key],
+        key=ms_key,
+    )
+
+    # keep a simple alias if the rest of your code expects this
+    st.session_state["cm_leagues_sel"] = leagues_sel
+
+    # numeric coercions
+    df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
+    df["Age"] = pd.to_numeric(df["Age"], errors="coerce")
+
+    min_minutes, max_minutes = st.slider(
+        "Minutes played", 0, 5000, (500, 5000), key=f"cm_minmax_minutes_{selected_file}"
+    )
+
+    age_min_data = int(np.nanmin(df["Age"])) if df["Age"].notna().any() else 14
+    age_max_data = int(np.nanmax(df["Age"])) if df["Age"].notna().any() else 45
+    def_age_lo = max(16, age_min_data)
+    def_age_hi = min(40, age_max_data)
+    if def_age_lo > def_age_hi:  # guard tiny datasets
+        def_age_lo, def_age_hi = age_min_data, age_max_data
+
+    min_age, max_age = st.slider(
+        "Age", age_min_data, age_max_data, (def_age_lo, def_age_hi), key=f"cm_minmax_age_{selected_file}"
+    )
+
+    # (Optional) free text; not used by the hard-coded CM filter but left for UX parity
+    pos_text = st.text_input("Position startswith", "CMF", key=f"cm_pos_text_{selected_file}")
+
+    apply_contract = st.checkbox("Filter by contract expiry", value=False, key=f"cm_apply_contract_{selected_file}")
+    cutoff_year = st.slider("Max contract year (inclusive)", 2025, 2030, 2026, key=f"cm_cutoff_{selected_file}")
+
+    min_strength, max_strength = st.slider(
+        "League quality (strength)", 0, 101, (0, 101), key=f"cm_minmax_strength_{selected_file}"
+    )
+    use_league_weighting = st.checkbox(
+        "Use league weighting in role score", value=False, key=f"cm_use_lw_{selected_file}"
+    )
+    beta = st.slider(
+        "League weighting beta", 0.0, 1.0, 0.40, 0.05,
+        help="0 = ignore league strength; 1 = only league strength",
+        key=f"cm_beta_{selected_file}"
+    )
+
+    # Market value
+    df["Market value"] = pd.to_numeric(df["Market value"], errors="coerce")
+    mv_col = "Market value"
+    mv_max_raw = int(np.nanmax(df[mv_col])) if df[mv_col].notna().any() else 50_000_000
+    mv_cap = int(math.ceil(mv_max_raw / 5_000_000) * 5_000_000)
+    st.markdown("**Market value (€)**")
+    use_m = st.checkbox("Adjust in millions", True, key=f"cm_use_m_{selected_file}")
+    if use_m:
+        max_m = int(mv_cap // 1_000_000)
+        mv_min_m, mv_max_m = st.slider("Range (M€)", 0, max_m, (0, max_m), key=f"cm_mv_range_m_{selected_file}")
+        min_value = mv_min_m * 1_000_000
+        max_value = mv_max_m * 1_000_000
+    else:
+        min_value, max_value = st.slider(
+            "Range (€)", 0, mv_cap, (0, mv_cap), step=100_000, key=f"cm_mv_range_{selected_file}"
+        )
+    value_band_max = st.number_input(
+        "Value band (tab 4 max €)", min_value=0,
+        value=min_value if min_value > 0 else 5_000_000, step=250_000, key=f"cm_value_band_{selected_file}"
+    )
+
+    st.subheader("Minimum performance thresholds")
+    enable_min_perf = st.checkbox(
+        "Require minimum percentile on selected metrics", value=False, key=f"cm_enable_min_perf_{selected_file}"
+    )
+    sel_metrics = st.multiselect(
+        "Metrics to threshold", FEATURES[:],
+        default=(['Non-penalty goals per 90','xG per 90'] if enable_min_perf else []),
+        key=f"cm_sel_metrics_{selected_file}"
+    )
+    min_pct = st.slider("Minimum percentile (0–100)", 0, 100, 60, key=f"cm_min_pct_{selected_file}")
+
+    top_n = st.number_input("Top N per table", 5, 200, 50, 5, key=f"cm_topn_{selected_file}")
+    round_to = st.selectbox("Round output percentiles to", [0, 1], index=0, key=f"cm_round_to_{selected_file}")
+
+# ----------------- VALIDATION -----------------
+missing = [c for c in REQUIRED_BASE if c not in df.columns]
+if missing:
+    st.error(f"Dataset missing required base columns: {missing}")
+    st.stop()
+missing_feats = [c for c in FEATURES if c not in df.columns]
+if missing_feats:
+    st.error(f"Dataset missing required feature columns: {missing_feats}")
+    st.stop()
+
+# ----------------- FILTER POOL -----------------
+df_f = df.copy()
+
+# leagues
+if st.session_state.get("cm_leagues_sel"):
+    df_f = df_f[df_f["League"].isin(st.session_state["cm_leagues_sel"])]
+
+# --- GBE band filter (NO auto-pass) ---
+df_f["GBE Band"] = df_f["League"].apply(gbe_league_band).astype(int)
+
+bands_sel = st.session_state.get(f"cm_gbe_bands_{selected_file}", [1, 2, 3, 4, 5, 6])
+if bands_sel:
+    df_f = df_f[df_f["GBE Band"].isin(bands_sel)]
+
+
+# positions (hard-coded CM prefixes)
+df_f = df_f[df_f["Position"].astype(str).apply(position_filter)]
+
+# numerics
+df_f["Minutes played"] = pd.to_numeric(df_f["Minutes played"], errors="coerce")
+df_f["Age"] = pd.to_numeric(df_f["Age"], errors="coerce")
+min_minutes, max_minutes = st.session_state[f"cm_minmax_minutes_{selected_file}"]
+df_f = df_f[df_f["Minutes played"].between(min_minutes, max_minutes)]
+min_age, max_age = st.session_state[f"cm_minmax_age_{selected_file}"]
+df_f = df_f[df_f["Age"].between(min_age, max_age)]
+
+# contract (optional)
+df_f["Contract expires"] = pd.to_datetime(df_f["Contract expires"], errors="coerce")
+if st.session_state.get(f"cm_apply_contract_{selected_file}", False):
+    cutoff_year = st.session_state[f"cm_cutoff_{selected_file}"]
+    df_f = df_f[df_f["Contract expires"].dt.year <= cutoff_year]
+
+# league strength — default to 50.0 for unknown leagues
+df_f["League Strength"] = df_f["League"].map(LEAGUE_STRENGTHS).fillna(50.0)
+min_strength, max_strength = st.session_state[f"cm_minmax_strength_{selected_file}"]
+df_f = df_f[(df_f["League Strength"] >= float(min_strength)) & (df_f["League Strength"] <= float(max_strength))]
+
+# market value
+df_f["Market value"] = pd.to_numeric(df_f["Market value"], errors="coerce")
+if st.session_state.get(f"cm_use_m_{selected_file}", True):
+    mv_min_m, mv_max_m = st.session_state[f"cm_mv_range_m_{selected_file}"]
+    min_value = mv_min_m * 1_000_000
+    max_value = mv_max_m * 1_000_000
+else:
+    min_value, max_value = st.session_state[f"cm_mv_range_{selected_file}"]
+df_f = df_f[(df_f["Market value"] >= min_value) & (df_f["Market value"] <= max_value)]
+
+# features numeric + dropna
+for c in FEATURES:
+    df_f[c] = pd.to_numeric(df_f[c], errors="coerce")
+df_f = df_f.dropna(subset=FEATURES)
+
+if df_f.empty:
+    st.warning("No players after filters. Loosen filters.")
+    st.stop()
+
+# --- Pass Ratio (Progressive passes / Passes), with league-relative percentile
+if "Progressive passes per 90" in df_f.columns and "Passes per 90" in df_f.columns:
+    df_f["Pass Ratio"] = (
+        df_f["Progressive passes per 90"] / df_f["Passes per 90"]
+    ).replace([np.inf, -np.inf], np.nan).fillna(0).clip(lower=0)
+
+    # Ensure a percentile exists for the Featured stat pill
+    df_f["Pass Ratio Percentile"] = (
+        df_f.groupby("League")["Pass Ratio"]
+            .transform(lambda x: x.rank(pct=True) * 100.0)
+    )
+
+
+
+
+# ----------------- PERCENTILES FOR TABLES (per league) -----------------
+for feat in FEATURES:
+    df_f[f"{feat} Percentile"] = df_f.groupby("League")[feat].transform(lambda x: x.rank(pct=True) * 100.0)
+
+# ===================================================================
+#  CM IMPACT FEATURE BLOCK – METRICS + CRESTS + CIES-STYLE IMAGE
+#  (Pool defined by sidebar; display filters do NOT change pool)
+# ===================================================================
+
+import io
+import re
+import unicodedata
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import requests
+import streamlit as st
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+
+
+# ---------------------------------------------------------
+# 0) REMOTE PNG LOADER (logos + special flags)
+# ---------------------------------------------------------
+
+@st.cache_data(show_spinner=False)
+def cm_load_remote_png(url: str):
+    try:
+        r = requests.get(url, timeout=6)
+        r.raise_for_status()
+        return plt.imread(io.BytesIO(r.content))
+    except Exception:
+        return None
+
+
+def cm_scale_0_100(s: pd.Series, default: float = 50.0) -> pd.Series:
+    s = pd.to_numeric(s, errors="coerce")
+    lo, hi = s.min(), s.max()
+    if pd.notna(lo) and pd.notna(hi) and hi > lo:
+        return 100.0 * (s - lo) / (hi - lo)
+    return pd.Series(default, index=s.index, dtype=float)
+
+
+# ---------------------------------------------------------
+# 1) ENSURE IMPACT / BUCKET SCORES EXIST (+ COMPLETE SCORE)
+# ---------------------------------------------------------
+
+def cm_pct(m: str) -> str:
+    return f"{m} Percentile"
+
+
+def ensure_cm_impact_metrics(df_f: pd.DataFrame, selected_file: str) -> pd.DataFrame:
+    required_cols = [
+        "Impact Score", "Impact Score (no league)",
+        "Aerial Score", "Ground Score", "Retention Score",
+        "Carrying Score", "Playmaking Score", "Chance Creation Score",
+        "Goal Threat",
+        "League Factor",
+        "Raw Impact Score", "Raw Impact No League",
+    ]
+
+    has_all_old = all(c in df_f.columns for c in required_cols)
+    df_f = df_f.copy()
+
+    if not has_all_old:
+        # ----- Sub-scores -----
+        df_f["Aerial Score"] = (
+            0.30 * df_f[cm_pct("Aerial duels per 90")] +
+            0.70 * df_f[cm_pct("Aerial duels won, %")]
+        )
+
+        df_f["Ground Score"] = (
+            0.30 * df_f[cm_pct("Defensive duels per 90")] +
+            0.70 * df_f[cm_pct("Defensive duels won, %")]
+        )
+
+        df_f["Retention Score"] = (
+            0.25 * df_f[cm_pct("Accurate passes, %")] +
+            0.25 * df_f[cm_pct("Accurate forward passes, %")] +
+            0.25 * df_f[cm_pct("Accurate progressive passes, %")] +
+            0.25 * df_f[cm_pct("Accurate long passes, %")]
+        )
+
+        df_f["Carrying Score"] = (
+            0.40 * df_f[cm_pct("Dribbles per 90")] +
+            0.20 * df_f[cm_pct("Successful dribbles, %")] +
+            0.40 * df_f[cm_pct("Progressive runs per 90")]
+        )
+
+        df_f["Playmaking Score"] = (
+            0.50 * df_f[cm_pct("Progressive passes per 90")] +
+            0.25 * df_f[cm_pct("Forward passes per 90")] +
+            0.25 * df_f[cm_pct("Passes to final third per 90")]
+        )
+
+        df_f["Chance Creation Score"] = (
+            0.60 * df_f[cm_pct("xA per 90")] +
+            0.25 * df_f[cm_pct("Passes to penalty area per 90")] +
+            0.15 * df_f[cm_pct("Smart passes per 90")]
+        )
+
+        df_f["Goal Threat"] = (
+            0.50 * df_f[cm_pct("xG per 90")] +
+            0.30 * df_f[cm_pct("Non-penalty goals per 90")] +
+            0.20 * df_f[cm_pct("Touches in box per 90")]
+        )
+
+        sub_scores = [
+            "Aerial Score", "Ground Score", "Retention Score",
+            "Carrying Score", "Playmaking Score", "Chance Creation Score",
+            "Goal Threat",
+        ]
+        df_f["Base CM Score"] = df_f[sub_scores].mean(axis=1)
+
+        # ----- Minutes factor -----
+        minutes_pct = df_f.groupby("League")["Minutes played"].rank(pct=True)
+        df_f["Minutes Factor"] = 0.90 + 0.20 * minutes_pct
+
+        # ----- Team context factor -----
+        league_avg = df_f.groupby("League")["Base CM Score"].transform("mean")
+        team_avg   = df_f.groupby(["League", "Team"])["Base CM Score"].transform("mean")
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            strength_ratio = team_avg / league_avg.replace(0, np.nan)
+
+        raw_team_factor = np.where(strength_ratio > 0, 1.0 / strength_ratio, 1.0)
+        df_f["Team Context Factor"] = np.clip(raw_team_factor, 0.90, 1.10)
+        df_f["Team Context Factor"] = df_f["Team Context Factor"].fillna(1.0)
+
+        # ----- Raw impact (no league) -----
+        df_f["Raw Impact No League"] = (
+            df_f["Base CM Score"] *
+            df_f["Minutes Factor"] *
+            df_f["Team Context Factor"]
+        )
+
+        # ----- League factor -----
+        if "League Strength" not in df_f.columns:
+            df_f["League Strength"] = df_f["League"].map(LEAGUE_STRENGTHS).astype(float)
+
+        ls_norm = df_f["League Strength"].fillna(50.0).astype(float) / 100.0
+        ls_norm = np.clip(ls_norm, 0.30, 1.00)
+
+        beta_league = float(st.session_state.get(f"cm_beta_{selected_file}", 0.40))
+        gamma = 1.0 + 1.5 * beta_league
+
+        df_f["League Factor"] = ls_norm ** gamma
+
+        # ----- Raw impact with league -----
+        df_f["Raw Impact Score"] = df_f["Raw Impact No League"] * df_f["League Factor"]
+
+        # ----- 0–100 scaling of impact (global) -----
+        df_f["Impact Score"]             = cm_scale_0_100(df_f["Raw Impact Score"]).astype(float)
+        df_f["Impact Score (no league)"] = cm_scale_0_100(df_f["Raw Impact No League"]).astype(float)
+
+    # ----- Complete CM Score -----
+    if "Complete Score" not in df_f.columns:
+        df_f["Complete Score"] = (
+            0.10 * df_f[cm_pct("PAdj Interceptions")] +
+            0.10 * df_f[cm_pct("Defensive duels won, %")] +
+            0.10 * df_f[cm_pct("Accurate passes, %")] +
+            0.05 * df_f[cm_pct("Defensive duels per 90")] +
+            0.10 * df_f[cm_pct("Dribbles per 90")] +
+            0.10 * df_f[cm_pct("Progressive runs per 90")] +
+            0.10 * df_f[cm_pct("Progressive passes per 90")] +
+            0.05 * df_f[cm_pct("Passes to final third per 90")] +
+            0.10 * df_f[cm_pct("xA per 90")] +
+            0.10 * df_f[cm_pct("Passes to penalty area per 90")] +
+            0.05 * df_f[cm_pct("Non-penalty goals per 90")] +
+            0.05 * df_f[cm_pct("xG per 90")]
+        )
+
+    return df_f
+
+
+df_f = ensure_cm_impact_metrics(df_f, selected_file)
+
+
+# ---------------------------------------------------------
+# 2) RANKING / DISPLAY CONTROLS
+# ---------------------------------------------------------
+
+rank_mode = st.radio(
+    "Ranking mode (CM)",
+    ["Composite (CM scores)", "Raw metric (any numeric column)"],
+    index=0,
+    horizontal=True,
+    key=f"cm_rank_mode_{selected_file}",
+)
+
+RANK_OPTIONS = {
+    "Impact Score": "Impact Score",
+    "Aerial Score": "Aerial Score",
+    "Ground Score": "Ground Score",
+    "Retention Score": "Retention Score",
+    "Carrying Score": "Carrying Score",
+    "Playmaking Score": "Playmaking Score",
+    "Chance Creation Score": "Chance Creation Score",
+    "Goal Threat": "Goal Threat",
+    "Complete Score": "Complete Score",
+}
+
+BASE_COMPOSITE_COLS = [
+    "Aerial Score",
+    "Ground Score",
+    "Retention Score",
+    "Carrying Score",
+    "Playmaking Score",
+    "Chance Creation Score",
+    "Goal Threat",
+]
+
+
+def cm_raw_metric_candidates(df: pd.DataFrame):
+    bad = {
+        "Impact Score", "Impact Score (no league)",
+        "Aerial Score", "Ground Score", "Retention Score", "Carrying Score",
+        "Playmaking Score", "Chance Creation Score", "Goal Threat",
+        "Base CM Score", "Raw Impact Score", "Raw Impact No League",
+        "Minutes Factor", "Team Context Factor", "League Factor",
+        "Complete Score",
+        "Custom Combo Raw", "_MetricForBars",
     }
-  } catch(e) {}
-  serverOnline = false;
-  return false;
+    numeric_cols = []
+    for c in df.columns:
+        if c in bad:
+            continue
+        if df[c].dtype.kind in ("i", "u", "f"):
+            numeric_cols.append(c)
+    return sorted(numeric_cols)
+
+
+raw_metric_list = cm_raw_metric_candidates(df_f)
+
+use_custom_combo = False
+custom_combo_components: list[str] = []
+
+if rank_mode == "Composite (CM scores)":
+    use_custom_combo = st.checkbox(
+        "Use custom combination of base CM scores (equal weights)",
+        value=False,
+        key=f"cm_use_custom_combo_{selected_file}",
+        help="Combine any of Aerial/Ground/Retention/Carrying/Playmaking/Chance Creation/Goal Threat into a single equal-weight score.",
+    )
+    if use_custom_combo:
+        custom_combo_components = st.multiselect(
+            "Base scores to include in custom combo (CM)",
+            BASE_COMPOSITE_COLS,
+            default=["Ground Score", "Playmaking Score", "Chance Creation Score"],
+            key=f"cm_custom_combo_components_{selected_file}",
+        )
+        rank_label = "Custom Combo"
+    else:
+        rank_label = st.selectbox(
+            "Ranking metric (CM composite)",
+            list(RANK_OPTIONS.keys()),
+            index=0,
+            key=f"cm_rank_metric_{selected_file}",
+        )
+else:
+    default_raw = (
+        "Progressive passes per 90"
+        if "Progressive passes per 90" in raw_metric_list
+        else (raw_metric_list[0] if raw_metric_list else None)
+    )
+    rank_label = st.selectbox(
+        "Ranking metric (raw column, CM)",
+        raw_metric_list,
+        index=(raw_metric_list.index(default_raw) if default_raw in raw_metric_list else 0),
+        key=f"cm_rank_raw_metric_{selected_file}",
+        help="Bars/ranks are scaled vs pool; printed value is also scaled 0–100.",
+    )
+
+display_with_league_strength = st.checkbox(
+    "Display league-strength adjusted (0–100) – CM",
+    value=False,
+    key=f"cm_display_ls_{selected_file}",
+)
+
+all_leagues_in_pool = sorted([x for x in df_f["League"].dropna().unique()])
+selected_display_league = st.selectbox(
+    "Display league (does not change pool, CM)",
+    ["All leagues"] + all_leagues_in_pool,
+    index=0,
+    key=f"cm_display_league_dd_{selected_file}",
+)
+
+selected_display_team = "All teams"
+if selected_display_league != "All leagues":
+    teams_in_league = sorted(
+        df_f.loc[df_f["League"] == selected_display_league, "Team"].dropna().unique().tolist()
+    )
+    selected_display_team = st.selectbox(
+        "Display team (does not change pool, CM)",
+        ["All teams"] + teams_in_league,
+        index=0,
+        key=f"cm_display_team_dd_{selected_file}",
+    )
+
+display_ls_min, display_ls_max = st.slider(
+    "Display league strength range (does not change pool, CM)",
+    min_value=0,
+    max_value=100,
+    value=(0, 100),
+    step=1,
+    key=f"cm_display_ls_range_{selected_file}",
+)
+
+max_rank_age = st.number_input(
+    "Max age in displayed list/image (does not change pool, CM)",
+    min_value=16, max_value=40, value=23, step=1,
+    key=f"cm_display_age_{selected_file}",
+)
+
+show_age_in_image = st.checkbox(
+    "Show age in ranking image (CM)",
+    value=False,
+    key=f"cm_show_age_img_{selected_file}",
+)
+
+show_league_strength_col = st.checkbox(
+    "Show League Strength column in table (CM)",
+    value=True,
+    key=f"cm_show_ls_col_{selected_file}",
+)
+
+image_theme = st.selectbox(
+    "Image theme (CM)",
+    ["Light", "Dark"],
+    index=0,
+    key=f"cm_img_theme_{selected_file}",
+)
+
+enable_highlight_players = st.checkbox(
+    "Highlight players in the ranking image (CM)",
+    value=False,
+    key=f"cm_enable_highlight_{selected_file}",
+)
+highlight_player_names: list[str] = []
+if enable_highlight_players:
+    player_opts = sorted(df_f["Player"].dropna().astype(str).unique().tolist())
+    highlight_player_names = st.multiselect(
+        "Players to highlight (CM)",
+        options=player_opts,
+        default=[],
+        key=f"cm_highlight_players_{selected_file}",
+    )
+
+
+# ---------------------------------------------------------
+# 3) BUILD DISPLAY METRIC COLUMN – ONE NORMALISED COLUMN
+# ---------------------------------------------------------
+
+df_pool = df_f.copy()
+
+if rank_mode == "Composite (CM scores)":
+    if use_custom_combo:
+        if custom_combo_components:
+            valid_components = [c for c in custom_combo_components if c in df_pool.columns]
+        else:
+            valid_components = []
+        if valid_components:
+            df_pool["Custom Combo Raw"] = df_pool[valid_components].mean(axis=1)
+        else:
+            df_pool["Custom Combo Raw"] = df_pool["Base CM Score"]
+
+        base_for_display_raw = df_pool["Custom Combo Raw"]
+
+        if display_with_league_strength:
+            base_for_display_raw = base_for_display_raw * df_pool["League Factor"]
+
+        metric_label_for_image = "Custom Combo"
+
+    else:
+        if rank_label == "Impact Score":
+            if display_with_league_strength:
+                base_for_display_raw = df_pool["Raw Impact Score"]
+            else:
+                base_for_display_raw = df_pool["Raw Impact No League"]
+        else:
+            base_col = RANK_OPTIONS[rank_label]
+            base_for_display_raw = df_pool[base_col]
+            if display_with_league_strength:
+                base_for_display_raw = base_for_display_raw * df_pool["League Factor"]
+
+        metric_label_for_image = rank_label
+
+else:
+    raw_col = rank_label
+    base_for_display_raw = df_pool[raw_col]
+    if display_with_league_strength:
+        base_for_display_raw = base_for_display_raw * df_pool["League Factor"]
+    metric_label_for_image = raw_col
+
+df_pool["_MetricForBars"] = cm_scale_0_100(base_for_display_raw)
+display_metric_col = "_MetricForBars"
+
+# ✅ If raw metric mode, show REAL raw values in the value column
+if rank_mode == "Raw metric (any numeric column)":
+    value_label_col = rank_label
+else:
+    value_label_col = "_MetricForBars"
+
+def fb_format_market_value(v) -> str:
+    """Format MV: 1750000 -> £1.75m, 30000000 -> £30m, etc."""
+    if v is None:
+        return "—"
+    v = pd.to_numeric(v, errors="coerce")
+    if not np.isfinite(v):
+        return "—"
+
+    v = float(v)
+    if v >= 1_000_000:
+        s = f"{v/1_000_000:.2f}".rstrip("0").rstrip(".")
+        return f"£{s}m"
+    if v >= 1_000:
+        return f"£{int(round(v/1_000))}k"
+    return f"£{int(v):,}"
+
+# ----------------- DISPLAY-ONLY MARKET VALUE FILTER (FB) -----------------
+display_mv_mode = st.selectbox(
+    "Display Market Value filter (does not change pool) – FB",
+    ["Off", "Max only", "Range"],
+    index=1,  # default Max only (set 0 if you want Off)
+    key=f"fb_display_mv_mode_{selected_file}",
+)
+
+mv_all = pd.to_numeric(df_f["Market value"], errors="coerce")
+mv_hi = float(np.nanmax(mv_all)) if mv_all.notna().any() else 50_000_000.0
+
+# slider range in MILLIONS
+mv_cap_m = int(math.ceil(mv_hi / 1_000_000.0))
+mv_cap_m = max(1, mv_cap_m)
+
+display_mv_min = None
+display_mv_max = None
+
+if display_mv_mode == "Max only":
+    mv_max_m = st.slider(
+        "Max market value to display (M£) – FB",
+        0, mv_cap_m,
+        min(10, mv_cap_m),
+        step=1,
+        key=f"fb_display_mv_max_m_{selected_file}",
+    )
+    display_mv_max = mv_max_m * 1_000_000
+    st.caption(f"Max MV: **{fb_format_market_value(display_mv_max)}**")
+
+elif display_mv_mode == "Range":
+    mv_min_m, mv_max_m = st.slider(
+        "Market value range to display (M£) – FB",
+        0, mv_cap_m,
+        (0, min(10, mv_cap_m)),
+        step=1,
+        key=f"fb_display_mv_range_m_{selected_file}",
+    )
+    display_mv_min = mv_min_m * 1_000_000
+    display_mv_max = mv_max_m * 1_000_000
+    st.caption(
+        f"MV range: **{fb_format_market_value(display_mv_min)} → {fb_format_market_value(display_mv_max)}**"
+    )
+
+
+
+
+# ---------------------------------------------------------
+# 4) DISPLAY FILTERS (do not change pool scaling)
+# ---------------------------------------------------------
+
+df_display = df_pool.copy()
+df_display = df_display[df_display["Age"] <= max_rank_age]
+df_display = df_display[df_display["League Strength"].between(display_ls_min, display_ls_max)]
+
+# ✅ FB display-only market value filter
+if display_mv_max is not None:
+    df_display = df_display[
+        pd.to_numeric(df_display["Market value"], errors="coerce") <= float(display_mv_max)
+    ]
+
+if display_mv_min is not None:
+    df_display = df_display[
+        pd.to_numeric(df_display["Market value"], errors="coerce") >= float(display_mv_min)
+    ]
+
+
+if selected_display_league != "All leagues":
+    df_display = df_display[df_display["League"] == selected_display_league]
+    if selected_display_team != "All teams":
+        df_display = df_display[df_display["Team"] == selected_display_team]
+
+df_display = df_display.dropna(subset=[display_metric_col]).sort_values(display_metric_col, ascending=False).copy()
+
+top_n_cm = 10
+top_n_fb = 10
+df_table = df_display.copy()
+df_table["Market value"] = pd.to_numeric(df_table["Market value"], errors="coerce").apply(fb_format_market_value)
+st.dataframe(df_table.head(top_n_fb), use_container_width=True)
+
+
+
+# ---------------------------------------------------------
+# 5) FLAGS (Twemoji) + UK HOME NATIONS + RestCountries fallback
+# ---------------------------------------------------------
+
+_CM_CC_MAP = {
+    "england": "FLAG_ENG",
+    "scotland": "FLAG_SCT",
+    "wales": "FLAG_WLS",
+    "northern ireland": "gb",  # ✅ Union Jack
+    "north ireland": "gb",
 }
 
-const JS_GBE_BAND = {
-  'England 1.':1,'Germany 1.':1,'Spain 1.':1,'Italy 1.':1,'France 1.':1,
-  'Portugal 1.':2,'Netherlands 1.':2,'Belgium 1.':2,'Turkey 1.':2,'England 2.':2,
-  'USA 1.':3,'Brazil 1.':3,'Argentina 1.':3,'Mexico 1.':3,'Scotland 1.':3,
-  'Czech 1.':4,'Czech Republic 1.':4,'Croatia 1.':4,'Switzerland 1.':4,'Spain 2.':4,'Germany 2.':4,
-  'Ukraine 1.':4,'Greece 1.':4,'Colombia 1.':4,'Austria 1.':4,'Denmark 1.':4,
-  'France 2.':4,'Russia 1.':4,
-  'Serbia 1.':5,'Poland 1.':5,'Slovenia 1.':5,'Chile 1.':5,'Uruguay 1.':5,
-  'Sweden 1.':5,'Norway 1.':5,'Italy 2.':5,'Hungary 1.':5,'Japan 1.':5,
-  'Korea 1.':5,'Australia 1.':5,'England 3.':5,
-};
-
-const PHOTO_BASE_URL = 'https://raw.githubusercontent.com/Matthewduffy23/scouting-photos/main/photos/';
-
-function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
-function players() { return allPlayers[currentBoard] || []; }
-
-function normPhoto(s) {
-  if (!s) return '';
-  return s
-    .normalize('NFD')                        // decompose accents: ň → n + ̌
-    .replace(/[\u0300-\u036f]/g, '')         // strip combining diacritics
-    .replace(/[łŁ]/g, 'l')                  // ł → l (Polish)
-    .replace(/[øØ]/g, 'o')                  // ø → o (Nordic)
-    .replace(/[ðÐ]/g, 'd')                  // ð → d (Icelandic)
-    .replace(/[þÞ]/g, 'th')                 // þ → th
-    .replace(/[ß]/g, 'ss')                  // ß → ss
-    .replace(/[æÆ]/g, 'ae')                 // æ → ae
-    .replace(/[œŒ]/g, 'oe')                 // œ → oe
-    .replace(/[^a-z0-9 ]/gi, '')            // strip anything else non-ASCII
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, '_');
+_CM_TWEMOJI_SPECIAL = {
+    "FLAG_ENG": "1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
+    "FLAG_SCT": "1f3f4-e0067-e0062-e0073-e0063-e0074-e007f",
+    "FLAG_WLS": "1f3f4-e0067-e0062-e0077-e006c-e0073-e007f",
 }
 
-function getPhotoUrls(name, team) {
-  const pn = normPhoto(name);
-  if (!pn) return [];
+_CM_SPECIAL_FLAG_URLS = {
+    # none needed now; NI uses GB code
+}
 
-  const urls = new Set();
+_CM_COUNTRY_OVERRIDES = {
+    # Key = normalised lower-case name (ASCII); value = ISO2 or None
+    "republic of ireland": "ie",
+    "cote d'ivoire": "ci",
+    "united states": "us",
+    "cote divoire": "ci",
+    "korea republic": "kr",
+    "korea dpr": "kp",
+    "china pr": "cn",
+    "chinese taipei": "tw",
+    "sao tome e principe": "st",
+    "congo dr": "cd",
+    "congo": "cg",
+    "great britain": "gb",
+    "africa": "gb",  # or None if you prefer no flag
+    "curacao": "cw",
+    "british virgin islands": "vg",
+    "cape verde islands": "cv",
+    "st. kitts and nevis": "kn",
+    "st kitts and nevis": "kn",
+    "st. lucia": "lc",
+    "st lucia": "lc",
+    "st. vincent and the grenadines": "vc",
+    "st vincent and the grenadines": "vc",
+    "new caledonia": "nc",
+    "bonaire": "bq",
+    "guadeloupe": "gp",
+    "martinique": "mq",
+    "reunion": "re",
+    "australia": "au",
+}
 
-  function addUrl(t) {
-    const norm = normPhoto(t);
-    if (norm) urls.add(`${PHOTO_BASE_URL}${pn}__${norm}.png`);
-  }
 
-  const t = (team || '').trim();
-  const tl = t.toLowerCase();
+def _cm_norm_country(name: str) -> str:
+    return unicodedata.normalize("NFKD", str(name)).encode("ascii", "ignore").decode("ascii").strip().lower()
 
-  // 1. Full team name as-is
-  addUrl(t);
 
-  // Words in the team name
-  const words = t.split(/[\s\-]+/).filter(w => w.length > 1);
+def _cm_twemoji_code_from_cc(cc: str) -> str:
+    a, b = cc.upper()
+    cp1 = 0x1F1E6 + (ord(a) - ord("A"))
+    cp2 = 0x1F1E6 + (ord(b) - ord("A"))
+    return f"{cp1:x}-{cp2:x}"
 
-  // Common club keywords — if present, try using just them
-  const keywords = ['fc','afc','sc','sk','bk','fk','nk','hnk','ac','as','us','ss',
-                    'cf','cd','ud','rc','rb','psv','vfl','vfb','tsv','sv','bv',
-                    'bsc','msv','fsv','pfc','sporting','athletic','atletico',
-                    'united','city','real','stade','club','dynamo','lokomotiv',
-                    'shakhtar','besiktas','fenerbahce','galatasaray'];
 
-  // 2. Strip leading keyword prefix (e.g. "FC Midtjylland" → "Midtjylland")
-  if (words.length >= 2 && keywords.includes(words[0].toLowerCase())) {
-    const withoutFirst = words.slice(1).join(' ');
-    addUrl(withoutFirst);
-    // Also try stripping second word if it's also a keyword
-    if (words.length >= 3 && keywords.includes(words[1].toLowerCase())) {
-      addUrl(words.slice(2).join(' '));
+@st.cache_data(show_spinner=False)
+def cm_load_twemoji_png_by_code(code: str):
+    try:
+        url = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/{code}.png"
+        r = requests.get(url, timeout=4)
+        r.raise_for_status()
+        return plt.imread(io.BytesIO(r.content))
+    except Exception:
+        return None
+
+
+@st.cache_data(show_spinner=False)
+def cm_country_to_iso2_soft(name: str):
+    n = _cm_norm_country(name)
+    if not n:
+        return None
+
+    if n in _CM_COUNTRY_OVERRIDES:
+        return _CM_COUNTRY_OVERRIDES[n]
+
+    try:
+        r = requests.get(
+            f"https://restcountries.com/v3.1/name/{requests.utils.quote(n)}",
+            params={"fields": "cca2,name"},
+            timeout=4,
+        )
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        if not isinstance(data, list) or not data:
+            return None
+        cca2 = data[0].get("cca2")
+        if isinstance(cca2, str) and len(cca2) == 2:
+            return cca2.lower()
+    except Exception:
+        return None
+    return None
+
+
+def cm_birth_country_flag_image(birth_country):
+    if not birth_country:
+        return None
+    norm = _cm_norm_country(birth_country)
+
+    key = _CM_CC_MAP.get(norm)
+
+    if key is None and norm in _CM_COUNTRY_OVERRIDES:
+        cc = _CM_COUNTRY_OVERRIDES[norm]
+        if cc is None:
+            return None
+        key = cc
+
+    if key is None:
+        iso2 = cm_country_to_iso2_soft(birth_country)
+        if iso2:
+            key = iso2
+
+    if key is None:
+        return None
+
+    if key in _CM_TWEMOJI_SPECIAL:
+        return cm_load_twemoji_png_by_code(_CM_TWEMOJI_SPECIAL[key])
+    if key in _CM_SPECIAL_FLAG_URLS:
+        return cm_load_remote_png(_CM_SPECIAL_FLAG_URLS[key])
+    if isinstance(key, str) and len(key) == 2:
+        return cm_load_twemoji_png_by_code(_cm_twemoji_code_from_cc(key))
+    return None
+
+
+# ---------------------------------------------------------
+# 6) CREST / BADGE PIPELINE
+# ---------------------------------------------------------
+
+CM_BADGE_DIRS = [
+    Path(__file__).resolve().parent / "badges",
+    Path(__file__).resolve().parent / "crests",
+]
+for d in CM_BADGE_DIRS:
+    d.mkdir(exist_ok=True)
+
+
+def _cm_clean_filename(name: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9]+", "_", (name or "").lower()).strip("_")
+
+
+@st.cache_data(show_spinner=False)
+def cm_load_local_badge(team: str):
+    key = _cm_clean_filename(team)
+    if not key:
+        return None
+    for folder in CM_BADGE_DIRS:
+        for ext in (".png", ".jpg", ".jpeg", ".webp"):
+            p = folder / f"{key}{ext}"
+            if p.exists():
+                try:
+                    return plt.imread(str(p))
+                except Exception:
+                    continue
+    return None
+
+
+def cm_get_team_badge(row: pd.Series):
+    team = str(row.get("Team", "")).strip()
+
+    # 1) Local badge first
+    img = cm_load_local_badge(team)
+    if img is not None:
+        return img
+
+    # 2) FotMob crest fallback (team badge)
+    crest = cm_load_fotmob_crest(team)
+    if crest is not None:
+        return crest
+
+    # 3) Optional final fallback: birth-country flag (keep if you want)
+    birth = row.get("Birth country") or row.get("Birth Country") or row.get("Nationality")
+    return cm_birth_country_flag_image(birth)
+
+
+# ---------------------------------------------------------
+# 6B) FotMob crest fallback (same idea as your pro layout)
+# ---------------------------------------------------------
+
+try:
+    from team_fotmob_urls import FOTMOB_TEAM_URLS as _CM_FOTMOB_TEAM_URLS
+except Exception:
+    _CM_FOTMOB_TEAM_URLS = {}
+
+def cm_get_fotmob_url(team: str) -> str:
+    return (_CM_FOTMOB_TEAM_URLS.get(team) or "").strip()
+
+def cm_fotmob_team_id_from_url(team_url: str) -> str:
+    try:
+        m = re.search(r"/teams/(\d+)/", str(team_url or ""))
+        return m.group(1) if m else ""
+    except Exception:
+        return ""
+
+def cm_fotmob_crest_url(team: str) -> str:
+    team_url = cm_get_fotmob_url(team)
+    tid = cm_fotmob_team_id_from_url(team_url)
+    return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png" if tid else ""
+
+@st.cache_data(show_spinner=False)
+def cm_load_fotmob_crest(team: str):
+    url = cm_fotmob_crest_url(team)
+    if not url:
+        return None
+    return cm_load_remote_png(url)
+
+
+# ---------------------------------------------------------
+# 6C) Badge size normaliser (make badges fit like flags)
+# ---------------------------------------------------------
+
+def cm_zoom_to_fit(img, target_px: int = 28) -> float:
+    """
+    Scale any badge/flag image so its largest dimension becomes ~target_px.
+    This stops big club PNGs from blowing up the layout.
+    """
+    try:
+        h, w = img.shape[0], img.shape[1]
+        m = max(h, w)
+        if m <= 0:
+            return 1.0
+        return float(target_px) / float(m)
+    except Exception:
+        return 1.0
+
+
+# ---------------------------------------------------------
+# 7) FOOTER LINES
+# ---------------------------------------------------------
+
+def cm_footer_lines_for_metric(metric_label: str, show_ls: bool):
+    if metric_label == "Impact Score" or metric_label.startswith("Impact Score"):
+        return [
+            "Impact Score (CM): combines Aerial, Ground, Retention, Carrying, Playmaking, Chance Creation and Goal Threat.",
+            "Adjusted for minutes played and team context vs league.",
+            "Displayed 0–100 vs the full selected pool "
+            + ("(league strength applied)." if show_ls else "(no league-strength adjustment)."),
+        ]
+    if metric_label.startswith("Complete Score"):
+        return [
+            "Complete Score (CM): weighted blend of duels, passing, carrying, progression, chance creation and goal threat.",
+            "Displayed 0–100 vs the full selected pool "
+            + ("(league strength applied)." if show_ls else "(no league-strength adjustment)."),
+        ]
+    if metric_label.startswith("Custom Combo"):
+        return [
+            "Custom Combo (CM): equal-weight blend of selected base scores (Aerial/Ground/Retention/Carrying/Playmaking/Chance Creation/Goal Threat).",
+            "Displayed vs the selected pool "
+            + ("(league strength applied)." if show_ls else "(no league-strength adjustment)."),
+        ]
+    return [
+        f"{metric_label} (CM): ranks this metric only.",
+        "Displayed 0–100 vs the full selected pool "
+        + ("(league strength applied)." if show_ls else "(no league-strength adjustment)."),
+    ]
+
+
+# ---------------------------------------------------------
+# 8) RANKING IMAGE (Standard + 1920×1080)
+# ---------------------------------------------------------
+
+def cm_format_value(v):
+    if v is None:
+        return "—"
+    try:
+        v = float(v)
+    except Exception:
+        return str(v)
+    if np.isnan(v):
+        return "—"
+
+    # ✅ raw mode shows 2dp actual value; composite keeps old formatting
+    if rank_mode == "Raw metric (any numeric column)":
+        return f"{v:.2f}"
+
+    av = abs(v)
+    if av >= 100:
+        return f"{v:.0f}"
+    if av >= 10:
+        return f"{v:.1f}"
+    if av >= 1:
+        return f"{v:.2f}"
+    return f"{v:.3f}"
+
+
+def cm_make_ranking_image(
+    df_show: pd.DataFrame,
+    metric_col: str,
+    value_label_col: str,
+    metric_label: str,
+    title_lines,
+    brand_logo_url=None,
+    show_ls: bool = False,
+    show_age: bool = False,
+    highlight_players=None,
+    export_mode: str = "Standard (auto)",
+    theme: str = "Light",
+    custom_footer_text: str = None,
+) -> bytes:
+
+    df_top = df_show.head(10).copy()
+    if df_top.empty:
+        return b""
+
+    hi_set = set()
+    if highlight_players:
+        hi_set = {str(x).strip().lower() for x in highlight_players if str(x).strip()}
+
+    def is_hi(row: pd.Series) -> bool:
+        return str(row.get("Player", "")).strip().lower() in hi_set
+
+    # theme palette
+    if theme == "Dark":
+        BG = "#0a0f1c"
+        ROW_A, ROW_B = "#0f1628", "#0b1222"
+        TXT, SUB, FOOT = "#ffffff", "#b8c0cf", "#9aa6bd"
+        DIV = "#23304a"
+        BAR_BG, BAR_FG = "#1a2540", "#6b7cff"
+        RANK_BG, RANK_EDGE = "#111a2e", "#2b3a5a"
+        HILITE, HILITE_EDGE = "#f6d46b", "#d2a100"
+    else:
+        BG = "#ffffff"
+        ROW_A, ROW_B = "#f7f7f7", "#ffffff"
+        TXT, SUB, FOOT = "#111111", "#777777", "#9b9b9b"
+        DIV = "#e2e2e2"
+        BAR_BG, BAR_FG = "#e1e1e1", "#bfbfbf"
+        RANK_BG, RANK_EDGE = "#f3f3f3", "#c0c0c0"
+        HILITE, HILITE_EDGE = "#f6d46b", "#d2a100"
+
+    scores = pd.to_numeric(df_top[metric_col], errors="coerce")
+    max_score = float(scores.max()) if scores.notna().any() else 1.0
+
+    # Footer lines
+    if custom_footer_text:
+        footer_lines = [ln.strip() for ln in custom_footer_text.split("\n") if ln.strip()]
+    else:
+        footer_lines = cm_footer_lines_for_metric(metric_label, show_ls)
+
+    # --- 1920×1080 banner ---
+    if export_mode == "1920×1080 (banner)":
+        DPI = 100
+        fig = plt.figure(figsize=(1920.0 / DPI, 1080.0 / DPI), dpi=DPI)
+        ax = fig.add_axes([0, 0, 1, 1])
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.axis("off")
+        ax.add_patch(Rectangle((0, 0), 1, 1, color=BG, zorder=0))
+
+        LEFT, RIGHT = 0.045, 0.955
+
+        t1 = title_lines[0].upper() if len(title_lines) > 0 else ""
+        t2 = title_lines[1].upper() if len(title_lines) > 1 else ""
+        t3 = title_lines[2].upper() if len(title_lines) > 2 else ""
+
+        ax.text(LEFT, 0.972, t1, fontsize=48, fontweight="bold", color=TXT, ha="left", va="top")
+        ax.text(LEFT, 0.912, t2, fontsize=34, fontweight="bold", color=TXT, ha="left", va="top")
+        ax.text(LEFT, 0.870, t3, fontsize=20, color=SUB, ha="left", va="top")
+
+        header_div_y = 0.835
+        ax.plot([LEFT, RIGHT], [header_div_y, header_div_y], color=DIV, lw=2.2)
+
+        footer_div_y = 0.040
+        ax.plot([LEFT, RIGHT], [footer_div_y, footer_div_y], color=DIV, lw=2.2)
+
+        for i, line in enumerate(footer_lines):
+            ax.text(
+                LEFT,
+                footer_div_y - 0.018 - i * 0.024,
+                line,
+                fontsize=13,
+                color=FOOT,
+                ha="left",
+                va="top",
+                zorder=10,
+            )
+
+        ROW_TOP = header_div_y - 0.022
+        ROW_BOT = footer_div_y + 0.010
+        row_gap = (ROW_TOP - ROW_BOT) / 10.0
+        row_h   = row_gap * 0.99
+
+        RANK_X  = LEFT + 0.024
+        CREST_X = LEFT + 0.112
+        NAME_X  = LEFT + 0.190
+
+        BAR_L   = LEFT + 0.63
+        BAR_R   = RIGHT - 0.155
+        BAR_W   = BAR_R - BAR_L
+        BAR_H   = row_h * 0.26
+
+        VAL_X   = RIGHT - 0.030
+
+        NAME_FS = 28
+        TEAM_FS = 19
+        NAME_DY = row_h * 0.2
+        TEAM_DY = row_h * 0.26
+
+        for i, (_, row) in enumerate(df_top.iterrows()):
+            y = ROW_TOP - (i + 0.5) * row_gap
+
+            ax.add_patch(Rectangle(
+                (LEFT, y - row_h / 2),
+                RIGHT - LEFT,
+                row_h,
+                color=(ROW_A if i % 2 == 0 else ROW_B),
+                zorder=1,
+            ))
+
+            if is_hi(row):
+                ax.add_patch(Rectangle(
+                    (LEFT, y - row_h / 2),
+                    RIGHT - LEFT,
+                    row_h,
+                    color=HILITE,
+                    alpha=0.22,
+                    zorder=2,
+                ))
+                ax.add_patch(Rectangle(
+                    (LEFT, y - row_h / 2),
+                    RIGHT - LEFT,
+                    row_h,
+                    fill=False,
+                    edgecolor=HILITE_EDGE,
+                    lw=2.2,
+                    zorder=3,
+                ))
+
+            ax.scatter(
+                [RANK_X], [y],
+                s=1320,
+                facecolor=RANK_BG,
+                edgecolor=(HILITE_EDGE if is_hi(row) else RANK_EDGE),
+                linewidths=2.2,
+                zorder=4,
+            )
+            ax.text(
+                RANK_X, y, str(i + 1),
+                fontsize=16, fontweight="bold", color=TXT,
+                ha="center", va="center", zorder=5
+            )
+
+            badge = cm_get_team_badge(row)
+            if badge is not None:
+                z = cm_zoom_to_fit(badge, target_px=52)
+                ax.add_artist(AnnotationBbox(
+                    OffsetImage(badge, zoom=z),
+                    (CREST_X, y),
+                    frameon=False,
+                    zorder=5,
+                ))
+
+            player = str(row.get("Player", "")).upper()
+            team   = str(row.get("Team", ""))
+            league = str(row.get("League", ""))
+
+            ax.text(
+                NAME_X, y + NAME_DY, player,
+                fontsize=NAME_FS, fontweight="bold", color=TXT,
+                ha="left", va="center", zorder=6
+            )
+            ax.text(
+                NAME_X, y - TEAM_DY, f"{team} ({league})",
+                fontsize=TEAM_FS, color=SUB,
+                ha="left", va="center", zorder=6
+            )
+
+            v_bar = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
+            frac  = (v_bar / max_score) if max_score else 0.0
+            frac  = max(0.0, min(1.0, frac))
+
+            ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W, BAR_H, color=BAR_BG, zorder=2))
+            ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W * frac, BAR_H, color=BAR_FG, zorder=3))
+
+            v_lab = row.get(value_label_col)
+            ax.text(
+                VAL_X, y, cm_format_value(v_lab),
+                fontsize=29, fontweight="bold", color=TXT,
+                ha="right", va="center", zorder=6
+            )
+
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=DPI, facecolor=BG)
+        plt.close(fig)
+        buf.seek(0)
+        return buf.getvalue()
+
+    # --- Standard (auto height) ---
+    N        = len(df_top)
+    ROW_H    = 0.82
+    HEADER_H = 1.70
+    FOOT_H   = 0.70
+    TOTAL_H  = HEADER_H + N * ROW_H + FOOT_H
+
+    fig = plt.figure(figsize=(8.3, TOTAL_H), dpi=220)
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_xlim(0, 1.0)
+    ax.set_ylim(0, TOTAL_H)
+    ax.axis("off")
+    ax.add_patch(Rectangle((0, 0), 1.0, TOTAL_H, color=BG, zorder=0))
+
+    t1 = title_lines[0].upper() if len(title_lines) > 0 else ""
+    t2 = title_lines[1].upper() if len(title_lines) > 1 else ""
+    t3 = title_lines[2].upper() if len(title_lines) > 2 else ""
+    title_y = TOTAL_H - 0.25
+    ax.text(0.04, title_y,        t1, fontsize=19, fontweight="bold", color=TXT, ha="left", va="top")
+    ax.text(0.04, title_y - 0.34, t2, fontsize=14, fontweight="bold", color=TXT, ha="left", va="top")
+    ax.text(0.04, title_y - 0.62, t3, fontsize=11, color=SUB, ha="left", va="top")
+
+    base_y = TOTAL_H - HEADER_H
+    ax.plot([0.04, 0.96], [base_y + ROW_H/2 + 0.02]*2, color=DIV, lw=1.1, zorder=2)
+
+    LEFT, RIGHT = 0.04, 0.96
+    BAR_L, BAR_R = 0.66, 0.82
+    BAR_W = BAR_R - BAR_L
+    BAR_H = 0.14
+    VAL_X = 0.94
+    crest_x = 0.14
+
+    for i, (_, row) in enumerate(df_top.iterrows()):
+        y = base_y - i * ROW_H
+
+        ax.add_patch(Rectangle((LEFT, y - ROW_H/2), RIGHT - LEFT, ROW_H,
+                               color=(ROW_A if i % 2 == 0 else ROW_B), zorder=1))
+
+        if is_hi(row):
+            ax.add_patch(Rectangle((LEFT, y - ROW_H/2), RIGHT - LEFT, ROW_H,
+                                   color=HILITE, alpha=0.25, zorder=2))
+            ax.add_patch(Rectangle((LEFT, y - ROW_H/2), RIGHT - LEFT, ROW_H,
+                                   fill=False, edgecolor=HILITE_EDGE, lw=1.3, zorder=3))
+
+        ax.scatter([0.07], [y], s=520, facecolor=RANK_BG,
+                   edgecolor=(HILITE_EDGE if is_hi(row) else RANK_EDGE),
+                   linewidths=1.2, zorder=4)
+        ax.text(0.07, y, str(i+1), fontsize=10, fontweight="bold",
+                color=TXT, ha="center", va="center", zorder=5)
+
+        badge = cm_get_team_badge(row)
+        if badge is not None:
+            z = cm_zoom_to_fit(badge, target_px=40)
+            ax.add_artist(AnnotationBbox(OffsetImage(badge, zoom=z),
+                                         (crest_x, y), frameon=False, zorder=5))
+
+        ax.text(0.21, y + 0.12, str(row.get("Player", "")).upper(),
+                fontsize=16, fontweight="bold", color=TXT, ha="left", va="center", zorder=5)
+
+        team = str(row.get("Team", ""))
+        league = str(row.get("League", ""))
+        ax.text(0.21, y - 0.10, f"{team} ({league})",
+                fontsize=12, color=SUB, ha="left", va="center", zorder=5)
+
+        v_bar = float(row[metric_col]) if pd.notna(row[metric_col]) else 0.0
+        frac = (v_bar / max_score) if max_score else 0.0
+        frac = max(0.0, min(1.0, frac))
+
+        ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W, BAR_H, color=BAR_BG, zorder=2))
+        ax.add_patch(Rectangle((BAR_L, y - BAR_H/2), BAR_W * frac, BAR_H, color=BAR_FG, zorder=3))
+
+        v_lab = row.get(value_label_col)
+        ax.text(VAL_X, y, cm_format_value(v_lab),
+                fontsize=16, fontweight="bold", color=TXT, ha="right", va="center", zorder=6)
+
+    ax.plot([LEFT, RIGHT], [0.82]*2, color=DIV, lw=0.9, zorder=2)
+    for j, line in enumerate(footer_lines):
+        ax.text(LEFT, 0.62 - j*0.18, line, fontsize=9.5, color=FOOT, ha="left", va="top", zorder=4)
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=220, facecolor=BG)
+    plt.close(fig)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------
+# 9) STREAMLIT OUTPUT – IMAGE
+# ---------------------------------------------------------
+
+st.subheader("🖼 Exportable CIES-style ranking image – Central Midfielders")
+
+default_t1_cm = "TOP CENTRAL MIDFIELDERS"
+default_t2_cm = str(metric_label_for_image).upper()
+default_t3_cm = "PERFORMANCE INDEX  |  Wyscout"
+
+t1_cm = st.text_input("Title line 1 (CM)", default_t1_cm, key=f"cm_title1_{selected_file}")
+t2_cm = st.text_input("Title line 2 (CM)", default_t2_cm, key=f"cm_title2_{selected_file}")
+t3_cm = st.text_input("Title line 3 (CM)", default_t3_cm, key=f"cm_title3_{selected_file}")
+
+use_custom_footer_cm = st.checkbox(
+    "Custom footer text (CM)",
+    value=False,
+    key=f"cm_use_custom_footer_{selected_file}",
+    help="Override the default footer description for this image.",
+)
+
+custom_footer_text_cm = ""
+if use_custom_footer_cm:
+    custom_footer_text_cm = st.text_area(
+        "Footer text (multi-line, optional) – CM",
+        value="",
+        key=f"cm_footer_text_{selected_file}",
+        help="Each line here will appear as a separate footer line under the graphic.",
+    )
+
+export_mode_cm = st.selectbox(
+    "Export format (CM)",
+    ["Standard (auto)", "1920×1080 (banner)"],
+    index=0,
+    key=f"cm_export_mode_{selected_file}",
+)
+
+cm_brand_logo_url = "https://image.pitchbook.com/1xOUzrEhnsKrJbNbN8Asf3LND2u1605464042293_200x200"
+
+img_bytes_cm = cm_make_ranking_image(
+    df_show=df_display,
+    metric_col=display_metric_col,
+    value_label_col=value_label_col,
+    metric_label=str(metric_label_for_image),
+    title_lines=[t1_cm, t2_cm, t3_cm],
+    brand_logo_url=cm_brand_logo_url,
+    show_ls=display_with_league_strength,
+    show_age=show_age_in_image,
+    highlight_players=(highlight_player_names if enable_highlight_players else None),
+    export_mode=export_mode_cm,
+    theme=image_theme,
+    custom_footer_text=custom_footer_text_cm if use_custom_footer_cm else None,
+)
+
+if img_bytes_cm:
+    st.image(img_bytes_cm, use_column_width=True)
+    st.download_button("Download PNG (CM)", data=img_bytes_cm, file_name="cm_ranking.png", mime="image/png")
+else:
+    st.info("No data to generate image for central midfielders.")
+
+# ----------------- ROLE SCORING (tables) -----------------
+def compute_weighted_role_score(df_in: pd.DataFrame, metrics: dict, beta: float, league_weighting: bool) -> pd.Series:
+    total_w = sum(metrics.values()) if metrics else 1.0
+    wsum = np.zeros(len(df_in))
+    for m, w in metrics.items():
+        col = f"{m} Percentile"
+        if col in df_in.columns:
+            wsum += df_in[col].values * w
+    player_score = wsum / total_w  # 0..100
+    if league_weighting:
+        league_scaled = df_in["League Strength"].fillna(50.0)  # already 0..100
+        return (1 - beta) * player_score + beta * league_scaled.values
+    return player_score
+
+use_league_weighting = st.session_state[f"cm_use_lw_{selected_file}"]
+beta = st.session_state[f"cm_beta_{selected_file}"]
+
+for role_name, role_def in ROLES.items():
+    df_f[f"{role_name} Score"] = compute_weighted_role_score(
+        df_f, role_def["metrics"], beta=beta, league_weighting=use_league_weighting
+    )
+
+# ----------------- THRESHOLDS -----------------
+enable_min_perf = st.session_state[f"cm_enable_min_perf_{selected_file}"]
+sel_metrics = st.session_state[f"cm_sel_metrics_{selected_file}"]
+min_pct = st.session_state[f"cm_min_pct_{selected_file}"]
+
+if enable_min_perf and sel_metrics:
+    keep_mask = np.ones(len(df_f), dtype=bool)
+    for m in sel_metrics:
+        pct_col = f"{m} Percentile"
+        if pct_col in df_f.columns:
+            keep_mask &= (df_f[pct_col] >= min_pct)
+    df_f = df_f[keep_mask]
+    if df_f.empty:
+        st.warning("No players meet the minimum performance thresholds. Loosen thresholds.")
+        st.stop()
+
+# ----------------- ARCHETYPE FILTERS -----------------
+ARCHETYPES = {
+    "Destroyer": {
+        "desc": "Dominant in defensive duels and aerial battles, high interception volume.",
+        "conditions": [
+            {
+                "Aerial duels won, % Percentile": ("min", 70),
+                "Defensive duels won, % Percentile": ("min", 70),
+                "Defensive duels per 90 Percentile": ("min", 70),
+                "PAdj Interceptions Percentile": ("min", 70),
+            },
+        ],
+    },
+    "Vertical Playmaker": {
+        "desc": "Low pass volume but highly progressive — drives play forward via passes to final third and forward passes.",
+        "conditions": [
+            {
+                "Passes per 90 Percentile": ("max", 55),
+                "Progressive passes per 90 Percentile": ("min", 70),
+                "Passes to final third per 90 Percentile": ("min", 65),
+                "Forward passes per 90 Percentile": ("min", 65),
+            },
+        ],
+    },
+    "Vertical Carrier": {
+        "desc": "Low pass volume, carries forward — progressive runner and dribbler, defensively active.",
+        "conditions": [
+            {
+                "Passes per 90 Percentile": ("max", 50),
+                "Dribbles per 90 Percentile": ("min", 70),
+                "Progressive runs per 90 Percentile": ("min", 70),
+                "Defensive duels per 90 Percentile": ("min", 70),
+            },
+        ],
+    },
+}
+
+def player_matches_archetype(row: pd.Series, archetype_def: dict) -> bool:
+    for condition_set in archetype_def["conditions"]:
+        set_met = True
+        for col, (direction, threshold) in condition_set.items():
+            val = pd.to_numeric(row.get(col, np.nan), errors="coerce")
+            if pd.isna(val):
+                set_met = False
+                break
+            if direction == "min" and val < threshold:
+                set_met = False
+                break
+            if direction == "max" and val > threshold:
+                set_met = False
+                break
+        if set_met:
+            return True
+    return False
+
+with st.sidebar:
+    st.markdown("---")
+    st.subheader("Archetype Filters")
+    st.caption("Players must match at least one selected archetype.")
+
+    enable_archetypes = st.checkbox(
+        "Enable archetype filtering",
+        value=False,
+        key=f"cm_enable_archetypes_{selected_file}"
+    )
+
+    if st.session_state.get(f"cm_enable_archetypes_{selected_file}", False):
+        for arch_name, arch_def in ARCHETYPES.items():
+            st.checkbox(
+                arch_name,
+                value=False,
+                key=f"cm_arch_{arch_name}_{selected_file}",
+                help=arch_def["desc"],
+            )
+
+# Apply the filter to df_f — read everything from session state
+enable_archetypes = st.session_state.get(f"cm_enable_archetypes_{selected_file}", False)
+selected_archetypes = [
+    arch_name for arch_name in ARCHETYPES
+    if st.session_state.get(f"cm_arch_{arch_name}_{selected_file}", False)
+]
+
+if enable_archetypes and selected_archetypes:
+    arch_masks = []
+    for arch_name in selected_archetypes:
+        mask = df_f.apply(
+            lambda row: player_matches_archetype(row, ARCHETYPES[arch_name]), axis=1
+        )
+        arch_masks.append(mask)
+
+    combined_mask = arch_masks[0]
+    for m in arch_masks[1:]:
+        combined_mask = combined_mask | m
+
+    before = len(df_f)
+    df_f = df_f[combined_mask]
+    after = len(df_f)
+
+    if df_f.empty:
+        st.warning("No players match the selected archetypes. Loosen filters.")
+        st.stop()
+    else:
+        st.caption(f"Archetype filter: {before} → {after} players remaining.")
+
+# ----------------- HELPERS -----------------
+
+# ----------------- HELPERS -----------------
+round_to = st.session_state[f"cm_round_to_{selected_file}"]
+
+def fmt_cols(df_in: pd.DataFrame, score_col: str) -> pd.DataFrame:
+    out = df_in.copy()
+    out[score_col] = out[score_col].round(round_to).astype(int if round_to == 0 else float)
+    cols = ["Player","Team","League","Position","Age","Contract expires","League Strength", score_col]
+    return out[cols]
+
+def top_table(df_in: pd.DataFrame, role: str, head_n: int) -> pd.DataFrame:
+    col = f"{role} Score"
+    ranked = df_in.dropna(subset=[col]).sort_values(col, ascending=False)
+    ranked = fmt_cols(ranked, col).head(head_n).reset_index(drop=True)
+    ranked.index = np.arange(1, len(ranked)+1)
+    return ranked
+
+def filtered_view(df_in: pd.DataFrame, *, age_max=None, contract_year=None, value_max=None):
+    t = df_in.copy()
+    if age_max is not None:
+        t = t[t["Age"] <= age_max]
+    if contract_year is not None:
+        years = pd.to_datetime(t["Contract expires"], errors="coerce").dt.year
+        t = t[years <= contract_year]
+    if value_max is not None:
+        t = t[t["Market value"] <= value_max]
+    return t
+
+# ----------------- TABS (tables) -----------------
+top_n = int(st.session_state[f"cm_topn_{selected_file}"])
+value_band_max = st.session_state[f"cm_value_band_{selected_file}"]
+
+tabs = st.tabs([
+    "Overall Top N", "U23 Top N", "Expiring Contracts",
+    "Value Band (≤ max €)", "Pro Layout" ])  # 👈 new tab
+for role, role_def in ROLES.items():
+    with tabs[0]:
+        st.subheader(f"{role} — Overall Top {top_n}")
+        st.caption(role_def.get("desc", ""))
+        st.dataframe(top_table(df_f, role, top_n), use_container_width=True)
+        st.divider()
+    with tabs[1]:
+        u23_cutoff = st.number_input(
+            f"{role} — U23 cutoff", min_value=16, max_value=30, value=23, step=1, key=f"cm_u23_{role}_{selected_file}"
+        )
+        st.subheader(f"{role} — U{u23_cutoff} Top {top_n}")
+        st.caption(role_def.get("desc", ""))
+        st.dataframe(top_table(filtered_view(df_f, age_max=u23_cutoff), role, top_n), use_container_width=True)
+        st.divider()
+    with tabs[2]:
+        exp_year = st.number_input(
+            f"{role} — Expiring by year", min_value=2024, max_value=2030,
+            value=st.session_state[f"cm_cutoff_{selected_file}"], step=1,
+            key=f"cm_exp_{role}_{selected_file}"
+        )
+        st.subheader(f"{role} — Contracts expiring ≤ {exp_year}")
+        st.caption(role_def.get("desc", ""))
+        st.dataframe(top_table(filtered_view(df_f, contract_year=exp_year), role, top_n), use_container_width=True)
+        st.divider()
+    with tabs[3]:
+        v_max = st.number_input(
+            f"{role} — Max value (€)", min_value=0, value=value_band_max, step=100_000,
+            key=f"cm_val_{role}_{selected_file}"
+        )
+        st.subheader(f"{role} — Value band ≤ €{v_max:,.0f}")
+        st.caption(role_def.get("desc", ""))
+        st.dataframe(top_table(filtered_view(df_f, value_max=v_max), role, top_n), use_container_width=True)
+        st.divider()
+
+## ----------------- PRO LAYOUT TAB (tiles) — CENTRAL MIDFIELDERS -----------------
+import re as _re
+import unicodedata
+import pandas as pd
+import numpy as np
+import streamlit as st
+import io
+import os
+import base64
+import requests
+
+from photo_utils import get_player_photo_url, load_player_photo_cached, get_player_photo_pil
+
+# ----------------- helpers -----------------
+def _pro_rating_color(v: float) -> str:
+    v = float(v)
+    COLORS = [
+        (85, "#2E6114"),
+        (75, "#5C9E2E"),
+        (66, "#7FBC41"),
+        (55, "#A7D763"),
+        (41, "#F6D645"),
+        (25, "#D77A2E"),
+        (0,  "#C63733"),
+    ]
+    for threshold, color in COLORS:
+        if v >= threshold:
+            return color
+    return COLORS[-1][1]
+
+def _pro_show99(x) -> int:
+    try:
+        return max(0, min(99, int(float(x))))
+    except Exception:
+        return 0
+
+def _fmt2(n: int) -> str:
+    try:
+        return f"{int(n):02d}"
+    except Exception:
+        return "00"
+
+_POS_COLORS = {
+    "CF":"#6EA8FF","LWF":"#6EA8FF","LW":"#6EA8FF","LAMF":"#6EA8FF","RW":"#6EA8FF","RWF":"#6EA8FF","RAMF":"#6EA8FF",
+    "AMF":"#7FE28A","LCMF":"#5FD37A","RCMF":"#5FD37A","RDMF":"#31B56B","LDMF":"#31B56B","DMF":"#31B56B",
+    "LWB":"#FFD34D","RWB":"#FFD34D","LB":"#FF9A3C","RB":"#FF9A3C","RCB":"#D1763A","CB":"#D1763A","LCB":"#D1763A",
+}
+
+def _pro_chip_color(p: str) -> str:
+    return _POS_COLORS.get(str(p).strip().upper(), "#2d3550")
+
+TWEMOJI_SPECIAL = {
+    "eng":"1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",
+    "sct":"1f3f4-e0067-e0062-e0073-e0063-e0074-e007f",
+    "wls":"1f3f4-e0067-e0062-e0077-e006c-e0073-e007f",
+}
+
+COUNTRY_TO_CC = {
+    "united kingdom":"gb","great britain":"gb","northern ireland":"nir","england":"eng","scotland":"sct","wales":"wls",
+    "ireland":"ie","republic of ireland":"ie","spain":"es","france":"fr","germany":"de","italy":"it","portugal":"pt",
+    "netherlands":"nl","belgium":"be","austria":"at","switzerland":"ch","denmark":"dk","sweden":"se","norway":"no",
+    "finland":"fi","iceland":"is","poland":"pl","czech republic":"cz","czechia":"cz","slovakia":"sk","slovenia":"si",
+    "croatia":"hr","serbia":"rs","bosnia and herzegovina":"ba","bosnia":"ba","montenegro":"me","kosovo":"xk","albania":"al",
+    "greece":"gr","hungary":"hu","romania":"ro","bulgaria":"bg","russia":"ru","ukraine":"ua","georgia":"ge",
+    "kazakhstan":"kz","azerbaijan":"az","armenia":"am","turkey":"tr","cyprus":"cy","luxembourg":"lu","andorra":"ad",
+    "monaco":"mc","san marino":"sm","malta":"mt","moldova":"md","north macedonia":"mk","macedonia":"mk","estonia":"ee",
+    "latvia":"lv","lithuania":"lt",
+    "qatar":"qa","saudi arabia":"sa","uae":"ae","united arab emirates":"ae","israel":"il","japan":"jp","korea":"kr",
+    "south korea":"kr","korea republic":"kr","china":"cn",
+    "algeria":"dz","angola":"ao","benin":"bj","botswana":"bw","burkina faso":"bf","burundi":"bi","cabo verde":"cv",
+    "cape verde":"cv","cameroon":"cm","central african republic":"cf","car":"cf","chad":"td","comoros":"km",
+    "congo":"cg","republic of the congo":"cg","congo brazzaville":"cg",
+    "dr congo":"cd","drc":"cd","democratic republic of the congo":"cd","congo kinshasa":"cd",
+    "djibouti":"dj","egypt":"eg","equatorial guinea":"gq","eritrea":"er","eswatini":"sz","swaziland":"sz",
+    "ethiopia":"et","gabon":"ga","gambia":"gm","ghana":"gh","guinea":"gn","guinea-bissau":"gw","guinea bissau":"gw",
+    "ivory coast":"ci","cote d'ivoire":"ci","cote divoire":"ci","cote d ivoire":"ci","côte d'ivoire":"ci","côte d'ivoire":"ci",
+    "kenya":"ke","lesotho":"ls","liberia":"lr","libya":"ly","madagascar":"mg","malawi":"mw","mali":"ml","mauritania":"mr",
+    "mauritius":"mu","morocco":"ma","mozambique":"mz","namibia":"na","niger":"ne","nigeria":"ng","rwanda":"rw",
+    "sao tome and principe":"st","sao tome":"st","são tomé and príncipe":"st","são tomé":"st","sao tome & principe":"st",
+    "senegal":"sn","seychelles":"sc","sierra leone":"sl","somalia":"so","south africa":"za","south sudan":"ss","sudan":"sd",
+    "tanzania":"tz","united republic of tanzania":"tz","togo":"tg","tunisia":"tn","uganda":"ug","zambia":"zm","zimbabwe":"zw",
+    "western sahara":"eh","réunion":"re","reunion":"re","mayotte":"yt",
+    "maroc":"ma","algerie":"dz","tunis":"tn","egypte":"eg","cameroun":"cm","cote d'ivoire":"ci","cote-d-ivoire":"ci",
+    "somaliland":"so","ethiopie":"et",
+    "eswatini (swaziland)":"sz","swaziland (eswatini)":"sz",
+    "congo-brazzaville":"cg","congo-kinshasa":"cd","gbissau":"gw",
+    "brazil":"br","argentina":"ar","uruguay":"uy","chile":"cl","colombia":"co","peru":"pe","ecuador":"ec","paraguay":"py",
+    "bolivia":"bo","mexico":"mx","canada":"ca","united states":"us","usa":"us",
+    "australia":"au","new zealand":"nz",
+    "palestine":"ps","state of palestine":"ps",
+    "hong kong":"hk","macau":"mo","macao":"mo",
+    "curacao":"cw","curaçao":"cw","cape verde islands":"cv",
+}
+
+def _norm(s: str) -> str:
+    if not s:
+        return ""
+    return unicodedata.normalize("NFKD", str(s)).encode("ascii","ignore").decode("ascii").strip().lower()
+
+def _cc_to_twemoji(cc: str) -> str | None:
+    if not cc or len(cc) != 2:
+        return None
+    a, b = cc.upper()
+    cp1 = 0x1F1E6 + (ord(a) - ord('A'))
+    cp2 = 0x1F1E6 + (ord(b) - ord('A'))
+    return f"{cp1:04x}-{cp2:04x}"
+
+def _flag_html(country_name: str) -> str:
+    if not country_name:
+        return "<span class='chip'>—</span>"
+    n = _norm(country_name)
+    cc = COUNTRY_TO_CC.get(n, "")
+    if not cc:
+        return "<span class='chip'>—</span>"
+    if cc in TWEMOJI_SPECIAL:
+        code = TWEMOJI_SPECIAL[cc]
+        src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
+        return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
+    code = _cc_to_twemoji(cc) if len(cc) == 2 else None
+    if code:
+        src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
+        return f"<span class='flagchip'><img src='{src}' alt='{country_name}'></span>"
+    return f"<span class='chip'>{cc.upper()}</span>"
+
+def _get_foot(row) -> str:
+    for col in ("Foot", "Preferred foot", "Preferred Foot"):
+        if col in row.index:
+            val = row[col]
+            try:
+                import pandas as _pd
+                if _pd.isna(val):
+                    continue
+            except Exception:
+                pass
+            if isinstance(val, str):
+                s = val.strip()
+                if s and s.lower() not in {"nan", "none", "null"}:
+                    return s
+            else:
+                s = str(val).strip()
+                if s and s.lower() not in {"nan", "none", "null"}:
+                    return s
+    return ""
+
+# ==========================================================
+# ✅ Photo system — uses GitHub photo repo via photo_utils
+# ==========================================================
+PLAYER_PHOTO_OVERRIDES_JSON = "player_photo_overrides.json"
+
+def load_local_photo_overrides(path: str) -> dict:
+    try:
+        import json
+        if not path or not os.path.exists(path):
+            return {}
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f) or {}
+    except Exception:
+        return {}
+
+try:
+    from team_fotmob_urls import FOTMOB_TEAM_URLS
+except Exception:
+    FOTMOB_TEAM_URLS = {}
+
+def get_fotmob_url(team: str) -> str:
+    return (FOTMOB_TEAM_URLS.get(team) or "").strip()
+
+def _fotmob_team_id_from_url(team_url: str) -> str:
+    m = _re.search(r"/teams/(\d+)/", str(team_url or ""))
+    return m.group(1) if m else ""
+
+def _fotmob_crest_url(team_url: str) -> str:
+    tid = _fotmob_team_id_from_url(team_url)
+    return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png" if tid else ""
+
+def resolve_player_photo(player: str,
+                         team: str,
+                         league: str,
+                         key_id: str,
+                         session_photo_map: dict,
+                         global_overrides: dict) -> str:
+    if session_photo_map.get(key_id):
+        return session_photo_map[key_id]
+    if global_overrides.get(key_id):
+        return global_overrides[key_id]
+    return get_player_photo_url(player, team)
+
+def _available_metric_pairs(df_view: pd.DataFrame, pairs: list[tuple[str, str]]):
+    cols = set(df_view.columns)
+    out = []
+    for lab, met in pairs:
+        if met in cols or f"{met} Percentile" in cols:
+            out.append((lab, met))
+    return out
+
+def _metric_pct(row: pd.Series, met: str):
+    col = f"{met} Percentile"
+    if col in row.index and not pd.isna(row[col]):
+        try:
+            return float(row[col])
+        except Exception:
+            return np.nan
+    return np.nan
+
+def _metric_val(row: pd.Series, met: str):
+    if met in row.index and not pd.isna(row[met]):
+        try:
+            return float(row[met])
+        except Exception:
+            return row[met]
+    return np.nan
+
+_CM_ROLE_MAP = [
+    ("Deep Playmaker CM Score", "Deep Playmaker"),
+    ("Advanced Playmaker CM Score", "Advanced Playmaker"),
+    ("Defensive Midfielder DM Score", "Defensive Midfielder"),
+    ("Goal Threat CM Score", "Goal Threat"),
+    ("Ball-Carrying CM Score", "Ball-Carrying"),
+    ("Modern 6 Score", "Modern 6"),
+    ("Box to Box Score", "Box to Box"),
+    ("Ball Winner Score", "Ball Winner"),
+    ("PL Profile Score", "PL Profile"),
+]
+
+_def_cols = [c for c,_ in _CM_ROLE_MAP]
+
+def _fmt_mv_gbp(v) -> str:
+    try:
+        x = float(v)
+    except Exception:
+        return "—"
+    try:
+        if np.isnan(x) or x <= 0:
+            return "—"
+    except Exception:
+        if x <= 0:
+            return "—"
+    if x < 1_000:
+        x *= 1_000_000
+    if x >= 1_000_000_000:
+        return f"£{x/1_000_000_000:.1f}bn".replace(".0", "")
+    if x >= 1_000_000:
+        return f"£{x/1_000_000:.1f}m".replace(".0", "")
+    if x >= 1_000:
+        return f"£{x/1_000:.0f}k"
+    return f"£{x:.0f}"
+
+
+def render_pro_layout_cm(df_view: pd.DataFrame, top_n:int=20):
+    st.markdown("""
+    <style>
+    html, body, .block-container *{
+      -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; text-rendering:optimizeLegibility;
+      font-feature-settings:"liga","kern","tnum"; font-variant-numeric:tabular-nums;
     }
-  }
+    :root { --bg:#0c0e13; --card:#141823; --soft:#1e2533; }
 
-  // 3. Strip trailing keyword suffix (e.g. "Borussia Dortmund FC" → "Borussia Dortmund")
-  if (words.length >= 2 && keywords.includes(words[words.length-1].toLowerCase())) {
-    addUrl(words.slice(0, -1).join(' '));
-  }
-
-  // 4. Try every word individually if 2-word team (e.g. "Khor Fakkan" → "fakkan")
-  if (words.length === 2) {
-    words.forEach(w => addUrl(w));
-  }
-
-  // 5. Strip hyphens → spaces
-  if (tl.includes('-')) {
-    addUrl(t.replace(/-/g, ' '));
-  }
-
-  // 6. Strip dots and apostrophes
-  const nodots = t.replace(/['.]/g, '').replace(/\s+/g, ' ').trim();
-  if (nodots !== t) addUrl(nodots);
-
-  // 7. Numbers: "1. FC Köln" → try "koln", "fc koln", "1 fc koln"
-  const nonum = t.replace(/^\d+\.\s*/, '').trim();
-  if (nonum !== t) {
-    addUrl(nonum);
-    if (words.length >= 3 && keywords.includes(words[1]?.toLowerCase())) {
-      addUrl(t.replace(/^\d+\.\s*/, '').replace(/^[a-z]+\s+/i, '').trim());
+    .pro-wrap{ display:flex; justify-content:center; }
+    .pro-card{
+      position:relative; width:min(420px,96%); display:grid; grid-template-columns:96px 1fr 48px; gap:12px; align-items:start;
+      background:var(--card); border:1px solid rgba(255,255,255,.06); border-radius:20px; padding:16px; margin-bottom:12px;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.03), 0 6px 24px rgba(0,0,0,.35);
     }
-  }
 
-  return [...urls].filter((v,i,a) => a.indexOf(v) === i);
-}
+    .pro-avatar{ width:96px; height:96px; border-radius:12px; border:1px solid #2a3145; overflow:hidden; background:#0b0d12; }
+    .pro-avatar img{ width:100%; height:100%; object-fit:cover; image-rendering:auto; transform:translateZ(0); }
 
-// Photo URL cache — avoids re-fetching on re-renders
-const _photoCache = {};
+    .flagchip{ display:inline-flex; align-items:center; gap:6px; background:transparent; border:none; padding:0; height:auto;}
+    .flagchip img{ width:26px; height:18px; border-radius:2px; display:block; }
 
-function loadTablePhotos(list) {
-  if (!list.length) return;
+    .chip{ background:transparent; color:#a6a6a6; border:none; padding:0; border-radius:0; font-size:15px; line-height:18px; opacity:.92; }
+    .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:2px 0; }
+    .leftrow1{ margin-top:6px; } .leftrow-foot{ margin-top:2px; } .leftrow-contract{ margin-top:10px; }
 
-  // Apply cache immediately
-  list.filter(p => _photoCache[p.id]).forEach(p => {
-    const el = document.getElementById(`avatar-${p.id}`);
-    if (el && el.tagName !== 'IMG') replaceWithPhoto(el, _photoCache[p.id]);
-  });
+    .pill{ padding:2px 6px; min-width:36px; border-radius:6px; font-weight:700; font-size:18px; line-height:1; color:#0b0d12; text-align:center; display:inline-block; box-shadow:none; }
 
-  const uncached = list.filter(p => !_photoCache[p.id]);
-  if (!uncached.length) return;
+    .name{ font-weight:800; font-size:22px; color:#e8ecff; margin-bottom:6px; letter-spacing:.2px; line-height:1.15; }
+    .sub{ color:#a8b3cf; font-size:15px; opacity:.9; }
 
-  if (serverOnline) {
-    fetch(`${SERVER}/api/photos/batch`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(uncached.map(p => ({id:p.id, name:p.name||'', team:p.team||'', league:p.league||''})))
-    })
-    .then(r => r.json())
-    .then(urlMap => {
-      // Try server-returned URLs
-      Object.entries(urlMap).forEach(([pid, urls]) => {
-        if (urls?.length) tryPhotoUrls(urls, pid, `avatar-${pid}`);
-      });
-      // After a delay, fall back to direct for anything still not loaded
-      setTimeout(() => {
-        const stillMissing = uncached.filter(p => !_photoCache[p.id]);
-        if (stillMissing.length) loadTablePhotosDirect(stillMissing, false);
-      }, 1500);
-    })
-    .catch(() => loadTablePhotosDirect(uncached, false));
-  } else {
-    loadTablePhotosDirect(uncached, false);
-  }
-}
+    .posrow{ margin-top:13.5px; }
+    .postext{ font-weight:600; font-size:14.5px; letter-spacing:.2px; margin-right:11px; }
 
-function loadLeaguePhotos(list) {
-  if (!list.length) return;
+    .rank{ position:absolute; top:10.5px; right:14px; color:#b7bfe1; font-weight:800; font-size:18px; text-align:right; pointer-events:none; }
 
-  list.filter(p => _photoCache[p.id]).forEach(p => {
-    const el = document.getElementById(`avatar-lg-${p.id}`);
-    if (el && el.tagName !== 'IMG') replaceWithPhoto(el, _photoCache[p.id]);
-  });
+    .teamline{ color:#dbe3ff; font-size:14px; font-weight:600; margin-top:6.5px; letter-spacing:.05px; opacity:.95; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .tl-wrap{ position:relative; }
+    .tl-has-crest{ padding-left:24px; }
+    .crest-icon{ height:1.35em; width:auto; object-fit:contain; image-rendering:auto; }
+    .crest-abs{ position:absolute; left:0; top:50%; transform:translateY(-50%); pointer-events:none; }
 
-  const uncached = list.filter(p => !_photoCache[p.id]);
-  if (!uncached.length) return;
+    .m-sec{ background:#121621; border:1px solid #242b3b; border-radius:16px; padding:10px 12px; }
+    .m-title{ color:#e8ecff; font-weight:800; letter-spacing:.02em; margin:4px 0 10px 0; }
 
-  if (serverOnline) {
-    fetch(`${SERVER}/api/photos/batch`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(uncached.map(p => ({id:p.id, name:p.name||'', team:p.team||'', league:p.league||''})))
-    })
-    .then(r => r.json())
-    .then(urlMap => {
-      Object.entries(urlMap).forEach(([pid, urls]) => {
-        if (urls?.length) tryPhotoUrls(urls, pid, `avatar-lg-${pid}`);
-      });
-      setTimeout(() => {
-        const stillMissing = uncached.filter(p => !_photoCache[p.id]);
-        if (stillMissing.length) loadTablePhotosDirect(stillMissing, true);
-      }, 1500);
-    })
-    .catch(() => loadTablePhotosDirect(uncached, true));
-  } else {
-    loadTablePhotosDirect(uncached, true);
-  }
-}
+    .m-row{ display:flex; align-items:center; gap:10px; padding:8px 8px; border-radius:10px; }
+    .m-label{ color:#c9d3f2; font-size:15.5px; letter-spacing:.1px; flex:1 1 0%; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .m-right{ display:flex; align-items:center; gap:10px; flex:0 0 auto; }
+    .m-val{ color:#a8b3cf; font-size:13px; opacity:.9; min-width:54px; text-align:right; }
+    .m-badge{ flex:0 0 auto; min-width:44px; text-align:center; padding:2px 10px; border-radius:8px;
+              font-weight:800; font-size:18.5px; color:#0b0d12; border:1px solid rgba(0,0,0,.15); box-shadow:none; }
 
-function tryPhotoUrls(urls, pid, elementId) {
-  let idx = 0;
-  function next() {
-    if (idx >= urls.length) return;
-    const url = urls[idx++];
-    const img = new Image();
-    img.onload = () => {
-      _photoCache[pid] = url;
-      const el = document.getElementById(elementId);
-      if (el && el.tagName !== 'IMG') replaceWithPhoto(el, url);
-    };
-    img.onerror = next;
-    img.src = url;
-  }
-  next();
-}
+    .metrics-grid{ display:grid; grid-template-columns:1fr; gap:12px; }
+    @media (min-width: 720px){ .metrics-grid{ grid-template-columns:repeat(3,1fr);} }
 
-function replaceWithPhoto(el, url) {
-  const imgEl = document.createElement('img');
-  imgEl.src = url;
-  imgEl.className = 'player-avatar';
-  imgEl.style.cssText = 'width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0';
-  el.replaceWith(imgEl);
-}
+    .filter-label{ color:#cbd3ef; font-weight:700; font-size:13px; letter-spacing:.02em; margin-bottom:4px; }
 
-function loadTablePhotosDirect(list, league) {
-  // Fallback: direct URL guess in batches
-  const BATCH = 10;
-  let i = 0;
-  const prefix = league ? 'avatar-lg-' : 'avatar-';
-  function nextBatch() {
-    const batch = list.slice(i, i + BATCH);
-    if (!batch.length) return;
-    i += BATCH;
-    batch.forEach(p => {
-      if (_photoCache[p.id]) {
-        const el = document.getElementById(`${prefix}${p.id}`);
-        if (el && el.tagName !== 'IMG') replaceWithPhoto(el, _photoCache[p.id]);
-        return;
-      }
-      tryPhotoUrls(getPhotoUrls(p.name, p.team), p.id, `${prefix}${p.id}`);
-    });
-    setTimeout(nextBatch, 80);
-  }
-  nextBatch();
-}
-
-function loadPhoto(name, team, elementId, league) {
-  function tryUrls(urls) {
-    let idx = 0;
-    function next() {
-      if (idx >= urls.length) return;
-      const url = urls[idx++];
-      const img = new Image();
-      img.onload = () => {
-        const el = document.getElementById(elementId);
-        if (el) el.innerHTML = `<img class="detail-photo" src="${url}">`;
-      };
-      img.onerror = next;
-      img.src = url;
+    .role-row{
+      display:flex;
+      align-items:center;
+      flex-wrap:nowrap;
+      width:100%;
+      justify-content:flex-start;
     }
-    next();
-  }
-  // Use server for best URL match, fall back to local
-  if (serverOnline) {
-    fetch(`${SERVER}/api/player/photo?player=${encodeURIComponent(name||'')}&team=${encodeURIComponent(team||'')}&league=${encodeURIComponent(league||'')}`)
-      .then(r => r.json())
-      .then(data => tryUrls(data.urls || getPhotoUrls(name, team)))
-      .catch(() => tryUrls(getPhotoUrls(name, team)));
-  } else {
-    tryUrls(getPhotoUrls(name, team));
-  }
-}
-
-function toggleMobileView() {
-  const isMobile = document.body.classList.toggle('mobile-view');
-  const btn = document.getElementById('mobile-btn');
-  if (btn) btn.textContent = isMobile ? '🖥 Desktop' : '📱 Mobile';
-  localStorage.setItem('scoutpro_mobile', isMobile ? '1' : '0');
-  if (isMobile) renderMobileCards();
-}
-
-function renderMobileCards() {
-  const container = document.getElementById('mobile-cards');
-  if (!container) return;
-  const list = getFiltered();
-  if (!list.length) {
-    container.innerHTML = '<div class="empty"><div class="empty-icon">📋</div><div>No players found</div></div>';
-    return;
-  }
-  container.innerHTML = list.map(p => {
-    const photoId = `mc-${p.id}`;
-    return `<div class="mobile-card" onclick="openDetail('${p.id}')">
-      <div class="mobile-card-top">
-        <div class="mobile-card-photo" id="${photoId}">👤</div>
-        <div style="flex:1;min-width:0">
-          <div class="mobile-card-name">${p.name||'—'}</div>
-          <div class="mobile-card-sub">${p.team||'—'} · ${p.league||'—'}</div>
-        </div>
-        <div style="text-align:right;flex-shrink:0">
-          ${p.score ? `<span class="score-band ${scoreCls(p.score)}" style="font-size:12px">${p.score}</span>` : ''}
-          <div style="font-size:10px;color:var(--muted2);margin-top:2px">${p.age ? p.age+'y' : ''}</div>
-        </div>
-      </div>
-      <div class="mobile-card-chips">
-        ${p.window ? `<span class="${windowCls(p.window)}" style="font-size:10px">${p.window}</span>` : ''}
-        ${p.target ? `<span class="${targetCls(p.target)}" style="font-size:10px">${p.target}</span>` : ''}
-        ${p.status ? `<span class="${statusCls(p.status)}" style="font-size:10px">${p.status}</span>` : ''}
-        ${p.priority ? `<span style="font-size:12px">${stars(p.priority)}</span>` : ''}
-      </div>
-      <div class="mobile-card-stats">
-        <div class="mobile-card-stat"><div class="v">${fmtMV(p.marketValue)}</div><div class="l">Value</div></div>
-        <div class="mobile-card-stat"><div class="v">${p.games||'—'}</div><div class="l">Games</div></div>
-        <div class="mobile-card-stat"><div class="v">${p.goals||'—'}</div><div class="l">Goals</div></div>
-        <div class="mobile-card-stat"><div class="v">${p.minutes||'—'}</div><div class="l">Mins</div></div>
-      </div>
-    </div>`;
-  }).join('');
-  // Load photos
-  setTimeout(() => list.forEach(p => {
-    tryPhotoUrls(getPhotoUrls(p.name, p.team), p.id, `mc-${p.id}`);
-  }), 50);
-}
-
-// Apply saved mobile view on load
-if (localStorage.getItem('scoutpro_mobile') === '1') {
-  document.body.classList.add('mobile-view');
-  const btn = document.getElementById('mobile-btn');
-  if (btn) btn.textContent = '🖥 Desktop';
-}
-
-function toggleLightMode() {
-  document.body.classList.toggle('light-mode');
-  const isLight = document.body.classList.contains('light-mode');
-  document.getElementById('theme-btn').textContent = isLight ? '🌙 Dark' : '☀️ Light';
-  localStorage.setItem('scoutpro_theme', isLight ? 'light' : 'dark');
-}
-
-// Apply saved theme on load — default is LIGHT
-const savedTheme = localStorage.getItem('scoutpro_theme');
-if (savedTheme === 'dark') {
-  document.body.classList.remove('light-mode');
-  document.getElementById('theme-btn').textContent = '☀️ Light';
-} else {
-  // Default to light
-  document.body.classList.add('light-mode');
-  document.getElementById('theme-btn').textContent = '🌙 Dark';
-}
-
-const LEAGUE_FLAGS = {
-  'England':'ENG','Scotland':'SCO','Wales':'WAL','Spain':'ESP','Germany':'GER',
-  'Italy':'ITA','France':'FRA','Portugal':'POR','Netherlands':'NED','Belgium':'BEL',
-  'Turkey':'TUR','Brazil':'BRA','Argentina':'ARG','USA':'USA','Mexico':'MEX',
-  'Japan':'JPN','Korea':'KOR','Denmark':'DEN','Sweden':'SWE','Norway':'NOR',
-  'Switzerland':'SUI','Austria':'AUT','Poland':'POL','Czech':'CZE','Croatia':'CRO',
-  'Serbia':'SRB','Greece':'GRE','Ukraine':'UKR','Russia':'RUS','Romania':'ROU',
-  'Hungary':'HUN','Bulgaria':'BUL','Slovakia':'SVK','Slovenia':'SVN','Israel':'ISR',
-  'Ireland':'IRL','Northern Ireland':'NIR','Saudi':'KSA','UAE':'UAE','Qatar':'QAT',
-  'Morocco':'MAR','Algeria':'ALG','Egypt':'EGY','South Africa':'RSA','Nigeria':'NGA',
-  'Colombia':'COL','Chile':'CHI','Uruguay':'URU','Ecuador':'ECU','Peru':'PER',
-  'Bolivia':'BOL','Paraguay':'PAR','Venezuela':'VEN','Costa Rica':'CRC','Australia':'AUS',
-  'China':'CHN','Canada':'CAN','Finland':'FIN','Bosnia':'BIH','Albania':'ALB',
-  'Kosovo':'KOS','Montenegro':'MNE','North Macedonia':'MKD','Moldova':'MDA',
-  'Georgia':'GEO','Armenia':'ARM','Kazakhstan':'KAZ','Faroe Islands':'FRO',
-  'Estonia':'EST','Latvia':'LAT','Lithuania':'LTU','Malta':'MLT','Cyprus':'CYP',
-  'Iceland':'ISL','Tunisia':'TUN','Azerbaijan':'AZE','Belarus':'BLR',
-  'United Arab Emirates':'UAE','Panama':'PAN','Luxembourg':'LUX',
-};
-
-// Real flag image URLs via flagcdn
-const FLAG_URLS = {
-  'England':'https://flagcdn.com/w20/gb-eng.png',
-  'Scotland':'https://flagcdn.com/w20/gb-sct.png',
-  'Wales':'https://flagcdn.com/w20/gb-wls.png',
-  'Northern Ireland':'https://flagcdn.com/w20/gb-nir.png',
-  'Spain':'https://flagcdn.com/w20/es.png',
-  'Germany':'https://flagcdn.com/w20/de.png',
-  'Italy':'https://flagcdn.com/w20/it.png',
-  'France':'https://flagcdn.com/w20/fr.png',
-  'Portugal':'https://flagcdn.com/w20/pt.png',
-  'Netherlands':'https://flagcdn.com/w20/nl.png',
-  'Belgium':'https://flagcdn.com/w20/be.png',
-  'Turkey':'https://flagcdn.com/w20/tr.png',
-  'Brazil':'https://flagcdn.com/w20/br.png',
-  'Argentina':'https://flagcdn.com/w20/ar.png',
-  'USA':'https://flagcdn.com/w20/us.png',
-  'Mexico':'https://flagcdn.com/w20/mx.png',
-  'Japan':'https://flagcdn.com/w20/jp.png',
-  'Korea':'https://flagcdn.com/w20/kr.png',
-  'Denmark':'https://flagcdn.com/w20/dk.png',
-  'Sweden':'https://flagcdn.com/w20/se.png',
-  'Norway':'https://flagcdn.com/w20/no.png',
-  'Switzerland':'https://flagcdn.com/w20/ch.png',
-  'Austria':'https://flagcdn.com/w20/at.png',
-  'Poland':'https://flagcdn.com/w20/pl.png',
-  'Czech':'https://flagcdn.com/w20/cz.png',
-  'Croatia':'https://flagcdn.com/w20/hr.png',
-  'Serbia':'https://flagcdn.com/w20/rs.png',
-  'Greece':'https://flagcdn.com/w20/gr.png',
-  'Ukraine':'https://flagcdn.com/w20/ua.png',
-  'Russia':'https://flagcdn.com/w20/ru.png',
-  'Romania':'https://flagcdn.com/w20/ro.png',
-  'Hungary':'https://flagcdn.com/w20/hu.png',
-  'Bulgaria':'https://flagcdn.com/w20/bg.png',
-  'Slovakia':'https://flagcdn.com/w20/sk.png',
-  'Slovenia':'https://flagcdn.com/w20/si.png',
-  'Israel':'https://flagcdn.com/w20/il.png',
-  'Ireland':'https://flagcdn.com/w20/ie.png',
-  'Saudi':'https://flagcdn.com/w20/sa.png',
-  'Morocco':'https://flagcdn.com/w20/ma.png',
-  'Algeria':'https://flagcdn.com/w20/dz.png',
-  'Egypt':'https://flagcdn.com/w20/eg.png',
-  'South Africa':'https://flagcdn.com/w20/za.png',
-  'Nigeria':'https://flagcdn.com/w20/ng.png',
-  'Colombia':'https://flagcdn.com/w20/co.png',
-  'Chile':'https://flagcdn.com/w20/cl.png',
-  'Uruguay':'https://flagcdn.com/w20/uy.png',
-  'Ecuador':'https://flagcdn.com/w20/ec.png',
-  'Peru':'https://flagcdn.com/w20/pe.png',
-  'Bolivia':'https://flagcdn.com/w20/bo.png',
-  'Paraguay':'https://flagcdn.com/w20/py.png',
-  'Venezuela':'https://flagcdn.com/w20/ve.png',
-  'Costa Rica':'https://flagcdn.com/w20/cr.png',
-  'Australia':'https://flagcdn.com/w20/au.png',
-  'China':'https://flagcdn.com/w20/cn.png',
-  'Canada':'https://flagcdn.com/w20/ca.png',
-  'Finland':'https://flagcdn.com/w20/fi.png',
-  'Bosnia':'https://flagcdn.com/w20/ba.png',
-  'Albania':'https://flagcdn.com/w20/al.png',
-  'Kosovo':'https://flagcdn.com/w20/xk.png',
-  'Montenegro':'https://flagcdn.com/w20/me.png',
-  'North Macedonia':'https://flagcdn.com/w20/mk.png',
-  'Moldova':'https://flagcdn.com/w20/md.png',
-  'Georgia':'https://flagcdn.com/w20/ge.png',
-  'Armenia':'https://flagcdn.com/w20/am.png',
-  'Kazakhstan':'https://flagcdn.com/w20/kz.png',
-  'Faroe Islands':'https://flagcdn.com/w20/fo.png',
-  'Estonia':'https://flagcdn.com/w20/ee.png',
-  'Latvia':'https://flagcdn.com/w20/lv.png',
-  'Lithuania':'https://flagcdn.com/w20/lt.png',
-  'Malta':'https://flagcdn.com/w20/mt.png',
-  'Cyprus':'https://flagcdn.com/w20/cy.png',
-  'Iceland':'https://flagcdn.com/w20/is.png',
-  'Tunisia':'https://flagcdn.com/w20/tn.png',
-  'Azerbaijan':'https://flagcdn.com/w20/az.png',
-  'Belarus':'https://flagcdn.com/w20/by.png',
-  'Qatar':'https://flagcdn.com/w20/qa.png',
-  'UAE':'https://flagcdn.com/w20/ae.png',
-  'Panama':'https://flagcdn.com/w20/pa.png',
-  'Luxembourg':'https://flagcdn.com/w20/lu.png',
-};
-
-// FotMob league logo URLs
-const LEAGUE_LOGOS = {
-  'England 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/47.png',
-  'England 2.':'https://images.fotmob.com/image_resources/logo/leaguelogo/48.png',
-  'England 3.':'https://images.fotmob.com/image_resources/logo/leaguelogo/108.png',
-  'England 4.':'https://images.fotmob.com/image_resources/logo/leaguelogo/109.png',
-  'Spain 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/87.png',
-  'Spain 2.':'https://images.fotmob.com/image_resources/logo/leaguelogo/140.png',
-  'Germany 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/54.png',
-  'Germany 2.':'https://images.fotmob.com/image_resources/logo/leaguelogo/146.png',
-  'Germany 3.':'https://images.fotmob.com/image_resources/logo/leaguelogo/208.png',
-  'Italy 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/55.png',
-  'Italy 2.':'https://images.fotmob.com/image_resources/logo/leaguelogo/86.png',
-  'France 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/53.png',
-  'France 2.':'https://images.fotmob.com/image_resources/logo/leaguelogo/110.png',
-  'Portugal 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/61.png',
-  'Portugal 2.':'https://images.fotmob.com/image_resources/logo/leaguelogo/185.png',
-  'Netherlands 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/57.png',
-  'Netherlands 2.':'https://images.fotmob.com/image_resources/logo/leaguelogo/111.png',
-  'Belgium 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/40.png',
-  'Turkey 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/71.png',
-  'Turkey 2.':'https://images.fotmob.com/image_resources/logo/leaguelogo/165.png',
-  'Scotland 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/64.png',
-  'Scotland 2.':'https://images.fotmob.com/image_resources/logo/leaguelogo/123.png',
-  'Brazil 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/268.png',
-  'Brazil 2.':'https://images.fotmob.com/image_resources/logo/leaguelogo/8814.png',
-  'Argentina 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/112.png',
-  'USA 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/130.png',
-  'Mexico 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/230.png',
-  'Denmark 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/46.png',
-  'Denmark 2.':'https://images.fotmob.com/image_resources/logo/leaguelogo/85.png',
-  'Sweden 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/67.png',
-  'Norway 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/59.png',
-  'Switzerland 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/69.png',
-  'Austria 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/38.png',
-  'Poland 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/196.png',
-  'Czech 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/122.png',
-  'Croatia 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/252.png',
-  'Serbia 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/182.png',
-  'Greece 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/135.png',
-  'Ukraine 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/441.png',
-  'Russia 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/63.png',
-  'Romania 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/189.png',
-  'Japan 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/223.png',
-  'Korea 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/9080.png',
-  'Saudi 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/536.png',
-  'Morocco 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/530.png',
-  'Ireland 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/185.png',
-  'Colombia 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/274.png',
-  'Chile 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/273.png',
-  'Hungary 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/212.png',
-  'Israel 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/127.png',
-  'Finland 1.':'https://images.fotmob.com/image_resources/logo/leaguelogo/51.png',
-  'Norway 2.':'https://images.fotmob.com/image_resources/logo/leaguelogo/203.png',
-  'Sweden 2.':'https://images.fotmob.com/image_resources/logo/leaguelogo/168.png',
-};
-
-// Regional colour coding for league headers
-function leagueRegionColor(league) {
-  if (!league) return 'var(--accent)';
-  const l = league.toLowerCase();
-  if (l.startsWith('england') || l.startsWith('scotland') || l.startsWith('wales') || l.startsWith('northern ireland') || l.startsWith('ireland')) return '#3b82f6';
-  if (l.startsWith('spain') || l.startsWith('portugal')) return '#f59e0b';
-  if (l.startsWith('germany') || l.startsWith('austria') || l.startsWith('switzerland')) return '#ef4444';
-  if (l.startsWith('italy')) return '#10b981';
-  if (l.startsWith('france')) return '#8b5cf6';
-  if (l.startsWith('netherlands') || l.startsWith('belgium')) return '#f97316';
-  if (l.startsWith('turkey')) return '#dc2626';
-  if (l.startsWith('brazil') || l.startsWith('argentina') || l.startsWith('colombia') || l.startsWith('chile') || l.startsWith('uruguay') || l.startsWith('ecuador') || l.startsWith('peru') || l.startsWith('bolivia') || l.startsWith('paraguay') || l.startsWith('venezuela')) return '#22c55e';
-  if (l.startsWith('usa') || l.startsWith('mexico') || l.startsWith('canada') || l.startsWith('costa rica')) return '#06b6d4';
-  if (l.startsWith('japan') || l.startsWith('korea') || l.startsWith('china') || l.startsWith('australia')) return '#ec4899';
-  if (l.startsWith('saudi') || l.startsWith('qatar') || l.startsWith('uae') || l.startsWith('morocco') || l.startsWith('egypt') || l.startsWith('algeria') || l.startsWith('nigeria') || l.startsWith('south africa') || l.startsWith('tunisia')) return '#d97706';
-  return '#94a3b8';
-}
-
-function countryFlagHtml(country) {
-  const CC = {
-    'england':'gb-eng','scotland':'gb-sct','wales':'gb-wls','northern ireland':'gb-nir',
-    'ireland':'ie','republic of ireland':'ie','spain':'es','germany':'de','italy':'it',
-    'france':'fr','belgium':'be','denmark':'dk','poland':'pl','turkey':'tr',
-    'netherlands':'nl','croatia':'hr','switzerland':'ch','norway':'no','sweden':'se',
-    'czech republic':'cz','czech':'cz','greece':'gr','austria':'at','romania':'ro',
-    'serbia':'rs','portugal':'pt','hungary':'hu','ukraine':'ua','slovakia':'sk',
-    'slovenia':'si','bulgaria':'bg','finland':'fi','albania':'al','armenia':'am',
-    'georgia':'ge','iceland':'is','north macedonia':'mk','lithuania':'lt','latvia':'lv',
-    'estonia':'ee','montenegro':'me','moldova':'md','kosovo':'xk','bosnia':'ba',
-    'brazil':'br','argentina':'ar','mexico':'mx','colombia':'co','uruguay':'uy',
-    'chile':'cl','ecuador':'ec','peru':'pe','venezuela':'ve','paraguay':'py',
-    'usa':'us','united states':'us','canada':'ca','costa rica':'cr',
-    'australia':'au','japan':'jp','korea':'kr','south korea':'kr','china':'cn',
-    'saudi arabia':'sa','uae':'ae','united arab emirates':'ae','qatar':'qa',
-    'morocco':'ma','algeria':'dz','egypt':'eg','nigeria':'ng','senegal':'sn',
-    'cameroon':'cm','ghana':'gh','ivory coast':'ci','mali':'ml','tunisia':'tn',
-    'south africa':'za','russia':'ru','kazakhstan':'kz','israel':'il',
-    'uzbekistan':'uz','azerbaijan':'az','sweden':'se',
-  };
-  const key = (country||'').toLowerCase().trim();
-  const cc = CC[key];
-  if (!cc) return '';
-  // Special subdivision tags
-  const SPECIAL = {'gb-eng':'1f3f4-e0067-e0062-e0065-e006e-e0067-e007f','gb-sct':'1f3f4-e0067-e0062-e0073-e0063-e0074-e007f','gb-wls':'1f3f4-e0067-e0062-e006c-e0073-e007f','gb-nir':'1f3f4-e0067-e0062-e006e-e0069-e0072-e007f'};
-  let code;
-  if (SPECIAL[cc]) {
-    code = SPECIAL[cc];
-  } else {
-    const base = 0x1F1E6;
-    const upper = cc.toUpperCase();
-    const c1 = (base + upper.charCodeAt(0) - 65).toString(16);
-    const c2 = (base + upper.charCodeAt(1) - 65).toString(16);
-    code = c1 + '-' + c2;
-  }
-  return '<img src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/' + code + '.svg" style="height:13px;vertical-align:middle;margin-right:2px" />';
-}
-
-function getFlagUrl(league) {
-  if (!league) return '';
-  for (const [country, url] of Object.entries(FLAG_URLS)) {
-    if (league.startsWith(country)) return url;
-  }
-  return '';
-}
-
-function leagueFlag(league) {
-  if (!league) return '';
-  const flagUrl = getFlagUrl(league);
-  const code = Object.entries(LEAGUE_FLAGS).find(([c]) => league.startsWith(c))?.[1] || '';
-  if (flagUrl) {
-    return `<img src="${flagUrl}" style="width:18px;height:13px;border-radius:2px;object-fit:cover;flex-shrink:0;border:1px solid rgba(255,255,255,0.1)" onerror="this.outerHTML='<span style=\'font-size:9px;font-weight:800;color:var(--accent);background:rgba(0,200,240,0.1);border:1px solid rgba(0,200,240,0.2);padding:2px 5px;border-radius:3px\'>${code}</span>'" />`;
-  }
-  if (code) return `<span style="font-size:9px;font-weight:800;color:var(--accent);background:rgba(0,200,240,0.1);border:1px solid rgba(0,200,240,0.2);padding:2px 5px;border-radius:3px;letter-spacing:0.5px;flex-shrink:0">${code}</span>`;
-  return '';
-}
-
-function leagueLogo(league) {
-  const url = LEAGUE_LOGOS[league];
-  if (!url) return '';
-  return `<img src="${url}" style="width:22px;height:22px;object-fit:contain;flex-shrink:0;opacity:0.9" onerror="this.style.display='none'" />`;
-}
-
-// ── FORMAT ──
-function fmtMV(v) {
-  if (!v && v !== 0) return '—';
-  const s = String(v).replace(/[£€m,k\s]/gi, '');
-  const raw = String(v).toLowerCase();
-  const n = parseFloat(s);
-  if (isNaN(n)) return v || '—';
-  // Handle already-abbreviated values like "4m" or "£4m"
-  if (raw.includes('m')) return '€' + (n % 1 === 0 ? n : n.toFixed(1)) + 'm';
-  if (raw.includes('k')) return '€' + Math.round(n) + 'k';
-  // Raw number
-  if (n >= 1000000) return '€' + (n/1000000).toFixed(n % 1000000 === 0 ? 0 : 1) + 'm';
-  if (n >= 1000) return '€' + Math.round(n/1000) + 'k';
-  return '€' + n;
-}
-
-// Returns market value in millions (for filtering)
-function parseMV(v) {
-  if (!v && v !== 0) return 0;
-  const s = String(v).replace(/[£€,\s]/g,'').toLowerCase();
-  const n = parseFloat(s);
-  if (isNaN(n)) return 0;
-  if (s.includes('m')) return n;
-  if (s.includes('k')) return n / 1000;
-  if (n >= 1000000) return n / 1000000;
-  if (n >= 1000) return n / 1000;
-  return n;
-}
-
-function scoreCls(s) {
-  if (!s) return '';
-  if (s.startsWith('80')) return 'sb-80';
-  if (s.startsWith('76')) return 'sb-76';
-  if (s.startsWith('72')) return 'sb-72';
-  if (s.startsWith('66')) return 'sb-66';
-  if (s.startsWith('60')) return 'sb-60';
-  return 'sb-55';
-}
-
-function windowCls(w) {
-  const m = { Summer:'summer', Monitor:'monitor', January:'january', Signed:'signed', Rejected:'rejected' };
-  return 'pill pill-' + (m[w] || 'monitor');
-}
-
-function targetCls(t) {
-  const m = {
-    'Premier League':'pl','Championship':'champ','Europe Band 1':'eb1',
-    'Europe Band 1-2':'eb12','Europe Band 2-3':'eb23',
-    'PL Monitor':'plmon','CH Monitor':'chmon','TBC':'tbc'
-  };
-  return 'pill pill-' + (m[t] || 'tbc');
-}
-
-function statusCls(s) {
-  const m = {'No Progress':'noprog','Relationship':'relationship','Agency Link':'agency','Contact Made':'contact'};
-  return 'pill pill-' + (m[s] || 'noprog');
-}
-
-function agencyCls(a) {
-  const m = { Small:'small', Medium:'medium', Big:'big' };
-  return 'pill pill-' + (m[a] || 'small');
-}
-
-function moveCls(m) { return m === 'Yes' ? 'pill pill-yes' : m === 'No' ? 'pill pill-no' : ''; }
-
-function stars(n, total=5) {
-  const r = parseInt(n)||0;
-  return '<span class="stars">' + '★'.repeat(r) + '</span><span class="stars-empty">' + '★'.repeat(total-r) + '</span>';
-}
-
-function photoEl(url, size=28) {
-  if (url) return `<img class="player-avatar" src="${url}" style="width:${size}px;height:${size}px" onerror="this.parentNode.innerHTML='<div class=player-avatar-ph style=width:${size}px;height:${size}px>👤</div>'">`;
-  return `<div class="player-avatar-ph" style="width:${size}px;height:${size}px">👤</div>`;
-}
-
-// ── TABS ──
-function renderTabs() {
-  const bar = document.getElementById('tabs-bar');
-  const add = bar.querySelector('.tab-add');
-  bar.querySelectorAll('.tab').forEach(t => t.remove());
-  CORRECT_BOARDS.forEach(b => {
-    const t = document.createElement('div');
-    t.className = 'tab' + (b === currentBoard ? ' active' : '');
-    t.textContent = b;
-    t.onclick = () => { currentBoard = b; document.getElementById('board-title').textContent = b; renderTabs(); renderAll(); };
-    t.ondblclick = () => renameTab(b, t);
-    bar.insertBefore(t, add);
-  });
-}
-
-function addTab() {
-  const name = prompt('Board name:');
-  if (!name) return;
-  boards.push(name);
-  allPlayers[name] = [];
-  save();
-  currentBoard = name;
-  document.getElementById('board-title').textContent = name;
-  renderTabs();
-  renderAll();
-}
-
-function renameTab(old, el) {
-  const name = prompt('Rename board:', old);
-  if (!name || name === old) return;
-  allPlayers[name] = allPlayers[old];
-  delete allPlayers[old];
-  boards = boards.map(b => b === old ? name : b);
-  if (currentBoard === old) currentBoard = name;
-  save();
-  renderTabs();
-}
-
-// ── FILTER + RENDER ──
-function getFiltered() {
-  const q = document.getElementById('searchInput').value.toLowerCase();
-  const wf = document.getElementById('windowFilter').value;
-  const tf = document.getElementById('targetFilter').value;
-  const sf = document.getElementById('statusFilter').value;
-  const af = document.getElementById('agencyFilter').value;
-  const footF     = document.getElementById('footFilter')?.value || '';
-  const styleF    = document.getElementById('styleFilter')?.value || '';
-  const valueF    = parseFloat(document.getElementById('valueFilter')?.value) || 0;
-  const contractF = parseInt(document.getElementById('contractFilter')?.value) || 0;
-
-  let list = [...players()];
-
-  if (q) list = list.filter(p =>
-    (p.name||'').toLowerCase().includes(q) ||
-    (p.fullname||'').toLowerCase().includes(q) ||
-    (p.team||'').toLowerCase().includes(q) ||
-    (p.league||'').toLowerCase().includes(q) ||
-    (p.nationality||'').toLowerCase().includes(q)
-  );
-  if (wf) list = list.filter(p => p.window === wf);
-  if (tf) list = list.filter(p => p.target === tf);
-  if (sf) list = list.filter(p => p.status === sf);
-  if (af) list = list.filter(p => p.agency === af);
-  if (footF)  list = list.filter(p => (p.foot||'').toLowerCase() === footF.toLowerCase());
-  if (styleF) list = list.filter(p => (p.style||'') === styleF);
-  if (valueF) list = list.filter(p => {
-    const mv = parseMV(p.marketValue);
-    return mv > 0 && mv <= valueF;
-  });
-  if (contractF) list = list.filter(p => {
-    const yr = parseInt((p.contract||'').toString().slice(0,4));
-    return yr > 0 && yr <= contractF;
-  });
-
-  const gbeBands = getSelectedGBEBands();
-  if (gbeBands) {
-    list = list.filter(p => {
-      const band = JS_GBE_BAND[p.league] || 6;
-      return gbeBands.includes(band);
-    });
-  }
-
-  // Sort
-  list.sort((a,b) => {
-    let av = a[sortKey]||'', bv = b[sortKey]||'';
-    if (['age','priority','games','goals','assists','minutes'].includes(sortKey)) {
-      av = parseFloat(av)||0; bv = parseFloat(bv)||0;
-      return sortAsc ? av-bv : bv-av;
+    .role-row .pill{ flex:0 0 auto; }
+    .role-row .sub{
+      flex:1 1 auto;
+      margin-left:8px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
     }
-    return sortAsc ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
-  });
 
-  return list;
-}
+    @media (max-width: 480px){
+      .role-row .sub{ font-size:13px; }
+      .role-row .pill{ min-width:32px; font-size:16px; }
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-function setView(v) {
-  currentView = v;
-  document.getElementById('table-area').classList.toggle('hidden', v !== 'table');
-  document.getElementById('league-area').classList.toggle('hidden', v !== 'league');
-  document.getElementById('perf-area').classList.toggle('hidden', v !== 'perf');
-  document.getElementById('vbtn-table').classList.toggle('active', v === 'table');
-  document.getElementById('vbtn-league').classList.toggle('active', v === 'league');
-  document.getElementById('vbtn-perf').classList.toggle('active', v === 'perf');
-  renderAll();
-}
+    global_photo_overrides = load_local_photo_overrides(PLAYER_PHOTO_OVERRIDES_JSON)
+    st.session_state.setdefault("photo_map", {})
+    st.session_state.setdefault("crest_map", {})
 
-function renderAll() {
-  if (document.body.classList.contains('mobile-view')) {
-    renderMobileCards();
-    return;
-  }
-  if (currentView === 'table') renderTable();
-  else if (currentView === 'league') renderLeague();
-  else if (currentView === 'perf') renderPerformance();
-}
+    c1, c2 = st.columns([1, 2])
+    with c1:
+        age_choice = st.selectbox(
+            "Age",
+            ["All","U18","U20","U21","U22","U23","U25","U30","30+","32+","35+"],
+            index=0,
+            key="pro_age_filter_cm",
+            label_visibility="visible"
+        )
+    with c2:
+        search_q = st.text_input("Search player (name contains)", "", key="cm_player_search")
+        team_search_q = st.text_input("Search team (name contains)", "", key="cm_team_search")
 
-function renderPerformance() {
-  const list = getFiltered();
-  const area = document.getElementById('perf-area');
-  if (list.length === 0) {
-    area.innerHTML = '<div class="empty"><div class="empty-icon">📊</div><div>No players found</div></div>';
-    return;
-  }
+    available = [(col, label) for col, label in _CM_ROLE_MAP if col in df_view.columns]
+    if not available:
+        st.info("No CM role score columns found in the dataframe.")
+        return
+    labels = [label for _,label in available]
+    label_to_col = {label: col for col,label in available}
 
-  area.innerHTML = `
-    <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between">
-      <div>
-        <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted2);margin-bottom:4px">📊 Performance Rankings</div>
-        <div style="font-size:12px;color:var(--muted2)">Complete Score — weighted metric blend vs league peers. Role bars show fit scores.</div>
-      </div>
-      <div id="perf-progress" style="font-size:11px;color:var(--muted2)">Loading 0/${list.length}...</div>
-    </div>
-    <div id="perf-content" style="display:grid;gap:6px"></div>`;
+    default_labels = ["Deep Playmaker","Advanced Playmaker","Defensive Midfielder"]
+    default_labels = [lbl for lbl in default_labels if lbl in labels]
+    for lbl in labels:
+        if len(default_labels) >= 3:
+            break
+        if lbl not in default_labels:
+            default_labels.append(lbl)
 
-  if (!serverOnline) {
-    document.getElementById('perf-progress').textContent = 'Server offline';
-    return;
-  }
+    selected_labels = st.multiselect(
+        "Displayed role pills (pick 3)",
+        options=labels,
+        default=default_labels[:3],
+        key="cm_pill_select"
+    )
+    if len(selected_labels) != 3:
+        st.warning("Please select exactly 3 pills — showing the first three available.")
+        selected_labels = (selected_labels + [lbl for lbl in labels if lbl not in selected_labels])[:3]
 
-  // Helper: map 0-100 to red→amber→green like the Scouting Hub
-  function perfColor(v) {
-    if (v == null || isNaN(v)) return '#6b7280';
-    v = Math.max(0, Math.min(100, v));
-    if (v >= 80) return '#10b981';
-    if (v >= 65) return '#22c55e';
-    if (v >= 50) return '#f59e0b';
-    if (v >= 35) return '#f97316';
-    return '#ef4444';
-  }
+    df_filtered = df_view.copy()
 
-  // Stagger fetches to avoid hammering server — 5 at a time
-  const results = new Array(list.length).fill(null);
-  let completed = 0;
-  const CONCURRENCY = 5;
-  let nextIndex = 0;
+    show_mv_next_to_contract = st.checkbox(
+        "Show Market Value next to contract",
+        value=False,
+        key="pro_show_mv_next_contract_cm"
+    )
 
-  function fetchNext() {
-    if (nextIndex >= list.length) return;
-    const i = nextIndex++;
-    const p = list[i];
-    fetch(`${SERVER}/api/player/profile?player=${encodeURIComponent(p.name||'')}&team=${encodeURIComponent(p.team||'')}&league=${encodeURIComponent(p.league||'')}&pos=${encodeURIComponent(currentBoard||'')}`)
-      .then(r => r.json())
-      .then(data => { results[i] = { player: p, roles: data.roles || {}, complete: data.complete_score ?? null }; })
-      .catch(() => { results[i] = { player: p, roles: {}, complete: null }; })
-      .finally(() => {
-        completed++;
-        document.getElementById('perf-progress').textContent = `Loading ${completed}/${list.length}...`;
-        if (completed === list.length) renderPerfResults();
-        else fetchNext();
-      });
-  }
+    mv_mode = st.selectbox(
+        "Market Value filter (display-only)",
+        ["Off", "Max only", "Range"],
+        index=0,
+        key="pro_mv_mode_cm"
+    )
 
-  // Start initial batch
-  for (let i = 0; i < Math.min(CONCURRENCY, list.length); i++) fetchNext();
+    df_filtered["__mv"] = pd.to_numeric(df_filtered.get("Market value"), errors="coerce")
+    mv_mask = df_filtered["__mv"] < 1_000
+    df_filtered.loc[mv_mask, "__mv"] = df_filtered.loc[mv_mask, "__mv"] * 1_000_000
 
-  function renderPerfResults() {
-    document.getElementById('perf-progress').textContent = `${list.length} players`;
+    mv_min = None
+    mv_max = None
 
-    // Sort by Complete Score descending, fall back to best role score
-    const sorted = [...results].sort((a, b) => {
-      const aScore = a.complete ?? (Object.values(a.roles).length ? Math.max(...Object.values(a.roles)) : 0);
-      const bScore = b.complete ?? (Object.values(b.roles).length ? Math.max(...Object.values(b.roles)) : 0);
-      return bScore - aScore;
-    });
+    if mv_mode == "Max only":
+        mv_max_m = st.slider("Max Market Value (millions)", 0.0, 400.0, 30.0, step=0.5, key="pro_mv_max_m_cm")
+        mv_max = mv_max_m * 1_000_000
+    elif mv_mode == "Range":
+        mv_min_m, mv_max_m = st.slider("Market Value Range (millions)", 0.0, 400.0, (0.0, 30.0), step=0.5, key="pro_mv_range_m_cm")
+        mv_min = mv_min_m * 1_000_000
+        mv_max = mv_max_m * 1_000_000
 
-    const content = document.getElementById('perf-content');
-    if (!content) return;
+    if mv_max is not None:
+        df_filtered = df_filtered[df_filtered["__mv"] <= mv_max]
+    if mv_min is not None:
+        df_filtered = df_filtered[df_filtered["__mv"] >= mv_min]
 
-    content.innerHTML = sorted.map((r, i) => {
-      const p = r.player;
-      const completeScore = r.complete != null ? Math.round(r.complete) : null;
-      const roleScores = r.roles;
+    if search_q:
+        s = str(search_q).strip().lower()
+        if "Player" in df_filtered.columns:
+            df_filtered = df_filtered[df_filtered["Player"].astype(str).str.lower().str.contains(s, na=False)]
 
-      // Display score: prefer Complete Score
-      const displayScore = completeScore ?? (Object.values(roleScores).length ? Math.round(Math.max(...Object.values(roleScores))) : null);
-      const scoreColor = displayScore != null ? perfColor(displayScore) : '#6b7280';
+    if team_search_q:
+        t = str(team_search_q).strip().lower()
+        if "Team" in df_filtered.columns:
+            df_filtered = df_filtered[df_filtered["Team"].astype(str).str.lower().str.contains(t, na=False)]
 
-      const roleHtml = Object.entries(roleScores)
-        .sort((a,b) => b[1]-a[1])
-        .slice(0,3)
-        .map(([role, score]) => {
-          const s = Math.round(score);
-          const c = perfColor(s);
-          return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
-            <div style="font-size:11px;color:var(--muted2);width:120px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${role}</div>
-            <div style="flex:1;height:5px;background:var(--s3);border-radius:3px;overflow:hidden;min-width:60px">
-              <div style="height:100%;width:${s}%;background:${c};border-radius:3px;transition:width 0.4s ease"></div>
+    if "Age" in df_filtered.columns and age_choice != "All":
+        try:
+            df_filtered["Age_num"] = pd.to_numeric(df_filtered["Age"], errors="coerce")
+            if   age_choice == "U18": df_filtered = df_filtered[df_filtered["Age_num"] <= 18]
+            elif age_choice == "U20": df_filtered = df_filtered[df_filtered["Age_num"] <= 20]
+            elif age_choice == "U21": df_filtered = df_filtered[df_filtered["Age_num"] <= 21]
+            elif age_choice == "U22": df_filtered = df_filtered[df_filtered["Age_num"] <= 22]
+            elif age_choice == "U23": df_filtered = df_filtered[df_filtered["Age_num"] <= 23]
+            elif age_choice == "U25": df_filtered = df_filtered[df_filtered["Age_num"] <= 25]
+            elif age_choice == "U30": df_filtered = df_filtered[df_filtered["Age_num"] <= 30]
+            elif age_choice == "30+": df_filtered = df_filtered[df_filtered["Age_num"] >= 30]
+            elif age_choice == "25+": df_filtered = df_filtered[df_filtered["Age_num"] >= 25]
+            elif age_choice == "28+": df_filtered = df_filtered[df_filtered["Age_num"] >= 28]
+        except Exception:
+            pass
+
+    if "Contract expires" in df_filtered.columns:
+        contract_choice = st.selectbox(
+            "Contract expires (max year)",
+            ["Any", "2024", "2025", "2026", "2027", "2028"],
+            index=0,
+            key="pro_contract_filter_cm",
+            label_visibility="visible"
+        )
+        if contract_choice != "Any":
+            try:
+                max_year = int(contract_choice)
+                df_filtered["_contract_year"] = pd.to_datetime(df_filtered["Contract expires"], errors="coerce").dt.year
+                df_filtered = df_filtered[df_filtered["_contract_year"] <= max_year]
+            except Exception:
+                pass
+
+    if "Birth country" in df_filtered.columns:
+        country_vals = df_filtered["Birth country"].dropna().astype(str).str.strip()
+        country_vals = sorted({c for c in country_vals if c and c.lower() not in {"nan","none","null"}})
+        selected_countries = st.multiselect("Birth country", options=country_vals, default=[], key="pro_birth_country_filter_cm")
+        if selected_countries:
+            df_filtered = df_filtered[df_filtered["Birth country"].isin(selected_countries)]
+
+    df_filtered["__foot"] = df_filtered.apply(_get_foot, axis=1)
+    foot_vals = df_filtered["__foot"].dropna().astype(str).str.strip()
+    foot_vals = sorted({f for f in foot_vals if f and f.lower() not in {"nan","none","null"}})
+    if foot_vals:
+        selected_feet = st.multiselect("Foot", options=foot_vals, default=[], key="pro_foot_filter_cm")
+        if selected_feet:
+            df_filtered = df_filtered[df_filtered["__foot"].isin(selected_feet)]
+
+    ROLE_SCORE_COLS_FILTER = [col for col, _ in _CM_ROLE_MAP if col in df_filtered.columns]
+    use_role_filters = st.checkbox("Filter by minimum role score(s)", value=False, key="cm_role_filter_toggle")
+
+    if use_role_filters and ROLE_SCORE_COLS_FILTER:
+        st.write("Set minimum scores (0–99). Any slider > 0 will filter that role.")
+        minima = {}
+        for col in ROLE_SCORE_COLS_FILTER:
+            pretty = col.replace("Score", "").strip()
+            minima[col] = st.slider(f"Min {pretty}", 0, 99, 0, 1, key=f"cm_min_{_norm(col)}")
+        for col, thr in minima.items():
+            if thr > 0:
+                df_filtered[col] = pd.to_numeric(df_filtered[col], errors="coerce")
+                df_filtered = df_filtered[df_filtered[col] >= thr]
+
+    all_col = "All In Score"
+    if all_col not in df_view.columns:
+        st.info("Pro Layout needs the role scores. Make sure the table section above ran first.")
+        return
+    if df_filtered.empty:
+        st.info("No players match the selected filters.")
+        return
+
+    ROLE_SCORE_COLS = [col for col,_ in _CM_ROLE_MAP if col in df_view.columns]
+    sort_candidates = [all_col] + ROLE_SCORE_COLS
+
+    sort_by = st.selectbox("Order by", options=sort_candidates, index=0, key="pro_sort_by_cm", label_visibility="visible")
+    sort_dir_label = st.radio("Direction", options=["High → Low", "Low → High"], index=0, key="pro_sort_dir_cm", horizontal=True)
+    asc = (sort_dir_label == "Low → High")
+
+    _sort_col = "__sort_val"
+    df_filtered[_sort_col] = pd.to_numeric(df_filtered.get(sort_by, pd.Series(index=df_filtered.index)), errors="coerce")
+    ranked = (
+        df_filtered
+        .sort_values([_sort_col, all_col], ascending=[asc, False], na_position="last")
+        .drop(columns=[_sort_col])
+        .head(top_n)
+        .reset_index(drop=True)
+    )
+
+    for i, row in ranked.iterrows():
+        player = str(row.get("Player","")) or ""
+        team = str(row.get("Team","")) or ""
+        league = str(row.get("League","")) or ""
+        pos = str(row.get("Position","")) or ""
+
+        try:
+            age_val = int(row.get("Age")) if not pd.isna(row.get("Age", None)) else int(row.get("Age_num", 0))
+        except Exception:
+            age_val = 0
+        age_txt = f"{age_val}y.o." if age_val > 0 else "—"
+
+        cy = pd.to_datetime(row.get("Contract expires"), errors="coerce")
+        cyr = int(cy.year) if pd.notna(cy) else 0
+        contract_txt = f"{cyr}" if cyr > 0 else "—"
+
+        birth = row.get("Birth country", "") if "Birth country" in row else ""
+        foot = _get_foot(row) or "—"
+
+        mv_txt = _fmt_mv_gbp(row.get("Market value")) if "Market value" in ranked.columns else "—"
+        if show_mv_next_to_contract and mv_txt != "—":
+            contract_txt = f"{contract_txt} · {mv_txt}" if contract_txt != "—" else mv_txt
+
+        pill_triplet = []
+        for lbl in selected_labels:
+            col = label_to_col.get(lbl, "")
+            val = _pro_show99(row.get(col, 0))
+            pill_triplet.append((lbl, val, _fmt2(val)))
+
+        raw = (pos or "").strip().upper()
+        codes = [c for c in _re.split(r"[,\s/;]+", raw) if c]
+        seen = set()
+        ordered = []
+        for c in codes:
+            if c not in seen:
+                seen.add(c)
+                ordered.append(c)
+        pos_html = "".join(
+            f"<span class='postext' style='color:{_pro_chip_color(c)}'>{c}</span>"
+            for c in ordered
+        )
+
+        flag = _flag_html(birth)
+
+        key_id = f"{_norm(player)}|{_norm(team)}"
+        avatar_url = resolve_player_photo(
+            player=player,
+            team=team,
+            league=league,
+            key_id=key_id,
+            session_photo_map=st.session_state["photo_map"],
+            global_overrides=global_photo_overrides,
+        )
+
+        crest_store_key = f"{_norm(team)}|{_norm(league)}"
+        crest_url = st.session_state.get("crest_map", {}).get(crest_store_key, "")
+        if not crest_url:
+            team_url = get_fotmob_url(team)
+            crest_url = _fotmob_crest_url(team_url) if team_url else ""
+
+        if crest_url:
+            teamline_html = (
+                f"<div class='teamline tl-wrap tl-has-crest'>"
+                f"<img class='crest-icon crest-abs' src='{crest_url}' alt=''>"
+                f"<span class='teamtext'>{team} · {league}</span>"
+                f"</div>"
+            )
+        else:
+            teamline_html = f"<div class='teamline'>{team} · {league}</div>"
+
+        _subtitle_map = {
+            "Deep Playmaker":"Deep Playmaker",
+            "Advanced Playmaker":"Advanced Playmaker",
+            "Defensive Midfielder":"Defensive Midfielder",
+            "Goal Threat":"Goal Threat",
+            "Ball-Carrying":"Ball-Carrying",
+            "Modern 6":"Modern 6",
+            "Box to Box":"Box to Box",
+            "Ball Winner":"Ball Winner",
+            "PL Profile":"PL Profile",
+        }
+
+        while len(pill_triplet) < 3:
+            pill_triplet.append(("—", 0, "00"))
+        pill_triplet = pill_triplet[:3]
+        (l1,v1,t1),(l2,v2,t2),(l3,v3,t3) = pill_triplet
+
+        st.markdown(f"""
+        <div class='pro-wrap'>
+          <div class='pro-card'>
+            <div class='leftcol'>
+              <div class='pro-avatar'>
+                <img src="{avatar_url}" alt="{player}" loading="lazy" />
+              </div>
+              <div class='row leftrow1'>{flag}<span class='chip'>{age_txt}</span></div>
+              <div class='row leftrow-foot'><span class='chip'>{foot}</span></div>
+              <div class='row leftrow-contract'><span class='chip'>{contract_txt}</span></div>
             </div>
-            <div style="font-size:11px;font-weight:700;color:${c};width:26px;text-align:right;flex-shrink:0">${s}</div>
-          </div>`;
-        }).join('');
-
-      // Use cached photo if available
-      const cachedPhoto = _photoCache[p.id];
-      const photoHtml = cachedPhoto
-        ? `<img src="${cachedPhoto}" style="width:100%;height:100%;object-fit:cover;border-radius:8px">`
-        : '👤';
-
-      return `
-        <div style="background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:12px 16px;display:grid;grid-template-columns:28px 56px 1fr auto;gap:14px;align-items:center;cursor:pointer;transition:background 0.15s" onclick="openDetail('${p.id}')" onmouseenter="this.style.background='var(--s3)'" onmouseleave="this.style.background='var(--s2)'">
-          <div style="font-size:16px;font-weight:900;color:var(--muted2);text-align:center">${i+1}</div>
-          <div id="perf-photo-${p.id}" style="width:56px;height:56px;border-radius:8px;overflow:hidden;background:var(--s3);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">${photoHtml}</div>
-          <div style="min-width:0">
-            <div style="font-weight:700;font-size:13px;margin-bottom:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.name||'—'}</div>
-            <div style="font-size:11px;color:var(--muted2);margin-bottom:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.team||'—'} · ${p.league||'—'}</div>
-            ${roleHtml || '<div style="font-size:11px;color:var(--muted2)">No data</div>'}
-          </div>
-          ${displayScore != null ? `
-            <div style="text-align:center;flex-shrink:0;min-width:52px">
-              <div style="font-size:26px;font-weight:900;color:${scoreColor};line-height:1">${displayScore}</div>
-              <div style="font-size:8px;color:var(--muted2);letter-spacing:0.5px;text-transform:uppercase;margin-top:2px">${completeScore != null ? 'complete' : 'role fit'}</div>
-            </div>` : '<div></div>'}
-        </div>`;
-    }).join('');
-
-    // Load photos for perf cards using batch endpoint
-    const uncachedPerf = sorted.filter(r => !_photoCache[r.player.id]);
-    if (uncachedPerf.length > 0 && serverOnline) {
-      fetch(`${SERVER}/api/photos/batch`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(uncachedPerf.map(r => ({id:r.player.id, name:r.player.name||'', team:r.player.team||'', league:r.player.league||''})))
-      })
-      .then(res => res.json())
-      .then(urlMap => {
-        Object.entries(urlMap).forEach(([pid, urls]) => {
-          if (!urls?.length) return;
-          let idx = 0;
-          function tryNext() {
-            if (idx >= urls.length) return;
-            const url = urls[idx++];
-            const img = new Image();
-            img.onload = () => {
-              _photoCache[pid] = url;
-              const el = document.getElementById(`perf-photo-${pid}`);
-              if (el) el.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:cover;border-radius:8px">`;
-            };
-            img.onerror = tryNext;
-            img.src = url;
-          }
-          tryNext();
-        });
-      })
-      .catch(() => {
-        // Fallback to direct URL
-        sorted.forEach(r => {
-          if (_photoCache[r.player.id]) return;
-          tryPhotoUrls(getPhotoUrls(r.player.name, r.player.team), r.player.id, `perf-photo-${r.player.id}`);
-        });
-      });
-    }
-  }
-}
-
-function renderLeague() {
-  const list = getFiltered();
-  document.getElementById('rec-count').textContent = list.length + ' player' + (list.length !== 1 ? 's' : '');
-  const area = document.getElementById('league-area');
-
-  if (list.length === 0) {
-    area.innerHTML = '<div class="empty"><div class="empty-icon">📋</div><div>No players found</div><div style="font-size:13px;color:var(--muted2);margin-top:6px">Add your first player or adjust filters</div></div>';
-    return;
-  }
-
-  // Group by league, sort by league strength then name
-  const groups = {};
-  list.forEach(p => {
-    const lg = p.league || 'Unknown';
-    if (!groups[lg]) groups[lg] = [];
-    groups[lg].push(p);
-  });
-
-  const sorted = Object.keys(groups).sort();
-
-  const COLS = [
-    {k:'name',        l:'Player'},
-    {k:'team',        l:'Team'},
-    {k:'age',         l:'Age'},
-    {k:'marketValue', l:'Value'},
-    {k:'contract',    l:'Contract'},
-    {k:'style',       l:'Style'},
-    {k:'foot',        l:'Foot'},
-    {k:'score',       l:'Score*'},
-    {k:'potential',   l:'Potential*'},
-    {k:'games',       l:'Games'},
-    {k:'goals',       l:'Goals'},
-    {k:'assists',     l:'Assists'},
-    {k:'minutes',     l:'Mins'},
-  ];
-
-  const theadHtml = `<tr>
-    ${COLS.map(c => `<th onclick="setSort('${c.k}')" style="cursor:pointer" class="${sortKey===c.k?(sortAsc?'sort-asc':'sort-desc'):''}">${c.l}</th>`).join('')}
-  </tr>`;
-
-  area.innerHTML = sorted.map(lg => {
-    const rows = groups[lg];
-    const totalGames   = rows.reduce((s,p) => s+(parseFloat(p.games)||0), 0);
-    const totalGoals   = rows.reduce((s,p) => s+(parseFloat(p.goals)||0), 0);
-    const totalAssists = rows.reduce((s,p) => s+(parseFloat(p.assists)||0), 0);
-    const flag = leagueFlag(lg);
-
-    const bodyRows = rows.map(p => `
-      <tr onclick="openDetail('${p.id}')">
-        <td>
-          <div class="td-player" style="min-width:160px">
-            <div id="avatar-lg-${p.id}" class="player-avatar-ph" style="width:28px;height:28px;font-size:12px">👤</div>
             <div>
-              <div class="player-name">${p.name||'—'}</div>
-              ${p.nationality ? `<div style="font-size:10px;color:var(--muted2)">${p.nationality}</div>` : ''}
+              <div class='name'>{player}</div>
+              <div class='row role-row'>
+                <span class='pill' style='background:{_pro_rating_color(v1)}'>{t1}</span>
+                <span class='sub'>{_subtitle_map.get(l1,l1)}</span>
+              </div>
+              <div class='row role-row'>
+                <span class='pill' style='background:{_pro_rating_color(v2)}'>{t2}</span>
+                <span class='sub'>{_subtitle_map.get(l2,l2)}</span>
+              </div>
+              <div class='row role-row'>
+                <span class='pill' style='background:{_pro_rating_color(v3)}'>{t3}</span>
+                <span class='sub'>{_subtitle_map.get(l3,l3)}</span>
+              </div>
+              <div class='row posrow'>{pos_html}</div>
+              {teamline_html}
             </div>
-            ${p.pos ? `<span class="player-pos-tag">${p.pos}</span>` : ''}
-          </div>
-        </td>
-        <td style="color:var(--muted)">${p.team||'—'}</td>
-        <td class="mono" style="text-align:center">${p.age||'—'}</td>
-        <td class="mono val-green">${fmtMV(p.marketValue)}</td>
-        <td class="mono">${p.contract||'—'}</td>
-        <td>${p.style ? `<span class="style-tag">${p.style}</span>` : '—'}</td>
-        <td style="color:var(--muted);font-style:italic">${p.foot||'—'}</td>
-        <td>${p.score ? `<span class="score-band ${scoreCls(p.score)}">${p.score}</span>` : '—'}</td>
-        <td>${p.potential ? `<span class="score-band ${scoreCls(p.potential)}">${p.potential}</span>` : '—'}</td>
-        <td class="mono" style="text-align:right">${p.games||'—'}</td>
-        <td class="mono" style="text-align:right">${p.goals||'—'}</td>
-        <td class="mono" style="text-align:right">${p.assists||'—'}</td>
-        <td class="mono" style="text-align:right">${p.minutes||'—'}</td>
-      </tr>`).join('');
-
-    const gid = 'lg-' + lg.replace(/[^a-z0-9]/gi,'_');
-    const regionColor = leagueRegionColor(lg);
-    return `
-      <div class="league-group">
-        <div class="lg-header" onclick="toggleLg('${gid}')" style="border-left:4px solid ${regionColor}">
-          <span style="color:var(--muted2);font-size:11px;width:14px">▼</span>
-          ${leagueFlag(lg)}
-          ${leagueLogo(lg)}
-          <div class="lg-name" style="color:${regionColor}">${lg}</div>
-          <div class="lg-count">${rows.length}</div>
-          <div class="lg-stats">
-            <span>⚽ ${totalGoals}G</span>
-            <span>🅰 ${totalAssists}A</span>
-            <span>🎮 ${totalGames} apps</span>
+            <div class='rank'>#{_fmt2(i+1)}</div>
           </div>
         </div>
-        <div class="lg-body" id="${gid}" style="max-height:${rows.length * 52 + 44}px">
-          <div style="overflow-x:auto">
-            <table class="lg-table" style="min-width:900px">
-              <thead>${theadHtml}</thead>
-              <tbody>${bodyRows}</tbody>
-            </table>
-          </div>
-        </div>
-      </div>`;
-  }).join('');
+        """, unsafe_allow_html=True)
 
-  // Load photos for league view rows
-  setTimeout(() => loadLeaguePhotos(list), 50);
+        with st.expander("Individual Metrics", expanded=False):
+
+            ATT=[("Crosses","Crosses per 90"),
+                 ("Crossing Accuracy %","Accurate crosses, %"),
+                 ("Goals: Non-Penalty","Non-penalty goals per 90"),
+                 ("xG","xG per 90"),
+                 ("Expected Assists","xA per 90"),
+                 ("Offensive Duels","Offensive duels per 90"),
+                 ("Offensive Duel Success %","Offensive duels won, %"),
+                 ("Progressive Runs","Progressive runs per 90"),
+                 ("Shots","Shots per 90"),
+                 ("Touches in Opposition Box","Touches in box per 90")]
+
+            DEF=[("Aerial Duels","Aerial duels per 90"),
+                 ("Aerial Duel Success %","Aerial duels won, %"),
+                 ("Defensive Duels","Defensive duels per 90"),
+                 ("Defensive Duel Success %","Defensive duels won, %"),
+                 ("Shots Blocked","Shots blocked per 90"),
+                 ("PAdj. Interceptions","PAdj Interceptions")]
+
+            POS=[("Deep Completions","Deep completions per 90"),
+                 ("Dribbles","Dribbles per 90"),
+                 ("Dribbling Success %","Successful dribbles, %"),
+                 ("Forward Passes","Forward passes per 90"),
+                 ("Forward Passing %","Accurate forward passes, %"),
+                 ("Key passes","Key passes per 90"),
+                 ("Long Passes","Long passes per 90"),
+                 ("Long Passing %","Accurate long passes, %"),
+                 ("Passes","Passes per 90"),
+                 ("Passing %","Accurate passes, %"),
+                 ("Passes to Final 3rd","Passes to final third per 90"),
+                 ("Passes to Final 3rd %","Accurate passes to final third, %"),
+                 ("Passes to Penalty Area","Passes to penalty area per 90"),
+                 ("Pass to Penalty Area %","Accurate passes to penalty area, %"),
+                 ("Progessive Passes","Progressive passes per 90"),
+                 ("Progessive Passing %","Accurate progressive passes, %"),
+                 ("Smart Passes","Smart passes per 90")]
+
+            def _sec_html(title, pairs):
+                pairs = _available_metric_pairs(df_view, pairs)
+                rows=[]
+                for lab, met in pairs:
+                    pct = _metric_pct(row, met)
+                    p = _pro_show99(pct if not pd.isna(pct) else 0.0)
+                    ptxt = _fmt2(p)
+                    rawv = _metric_val(row, met)
+                    raw_txt = "—" if pd.isna(rawv) else f"{rawv:.2f}".rstrip("0").rstrip(".")
+                    rows.append(
+                        "<div class='m-row'>"
+                        f"<div class='m-label'>{lab}</div>"
+                        "<div class='m-right'>"
+                        f"<div class='m-val'>{raw_txt}</div>"
+                        f"<div class='m-badge' style='background:{_pro_rating_color(p)}'>{ptxt}</div>"
+                        "</div></div>"
+                    )
+                return f"<div class='m-sec'><div class='m-title'>{title}</div>{''.join(rows)}</div>"
+
+            st.markdown(
+                "<div class='metrics-grid'>"
+                + _sec_html("ATTACKING", ATT)
+                + _sec_html("DEFENSIVE", DEF)
+                + _sec_html("POSSESSION", POS)
+                + "</div>",
+                unsafe_allow_html=True
+            )
+
+            img_key = f"imgurl_{i}_{key_id}"
+            default_url = st.session_state.get("photo_map", {}).get(key_id, "")
+            uploaded_file = st.file_uploader("Upload player image (PNG/JPG)", type=["png","jpg","jpeg"], key=f"upload_{i}_{key_id}")
+            _ = st.text_input(
+                "Custom image URL (override avatar — e.g., https://images.fotmob.com/image_resources/playerimages/1199383.png)",
+                value=default_url, key=img_key
+            )
+
+            col_a, col_b = st.columns([1, 3])
+            with col_a:
+                if st.button("Apply to this player", key=f"apply_{i}_{key_id}"):
+                    if uploaded_file is not None:
+                        try:
+                            data = uploaded_file.getvalue()
+                            try:
+                                from PIL import Image
+                                Image.open(io.BytesIO(data))
+                            except Exception:
+                                pass
+                            mime = getattr(uploaded_file, "type", "") or ""
+                            if not mime.startswith("image/"):
+                                ext = os.path.splitext(uploaded_file.name or "")[1].lower()
+                                if ext == ".svg": mime = "image/svg+xml"
+                                elif ext == ".png": mime = "image/png"
+                                elif ext in (".jpg", ".jpeg"): mime = "image/jpeg"
+                                else: mime = "image/png"
+                            b64 = base64.b64encode(data).decode("ascii")
+                            st.session_state.setdefault("photo_map", {})[key_id] = f"data:{mime};base64,{b64}"
+                            st.success("Uploaded image saved!")
+                            try: st.rerun()
+                            except Exception: st.experimental_rerun()
+                        except Exception as e:
+                            st.error(f"Couldn't process the uploaded image: {e}")
+                    else:
+                        val = (st.session_state.get(img_key, "") or "").strip()
+                        if not val:
+                            st.error("Please upload an image or paste an image URL.")
+                        elif not (val.startswith("http://") or val.startswith("https://") or val.startswith("data:image/")):
+                            st.error("Image URL must start with http://, https://, or data:image/…")
+                        else:
+                            st.session_state.setdefault("photo_map", {})[key_id] = val
+                            st.success("Saved!")
+                            try: st.rerun()
+                            except Exception: st.experimental_rerun()
+            with col_b:
+                if st.button("Clear override", key=f"clear_{i}_{key_id}"):
+                    st.session_state.setdefault("photo_map", {}).pop(key_id, None)
+                    st.info("Cleared.")
+                    try: st.rerun()
+                    except Exception: st.experimental_rerun()
+
+            crest_widget_ns = f"{crest_store_key}|{key_id}|{i}"
+            crest_default = st.session_state.get("crest_map", {}).get(crest_store_key, "")
+            crest_upload = st.file_uploader("Upload club crest (SVG/PNG/JPG)", type=["svg","png","jpg","jpeg"], key=f"crest_upload_{crest_widget_ns}")
+            _ = st.text_input("Custom crest URL (e.g., https://…/club.svg or .png)", value=crest_default, key=f"crest_url_{crest_widget_ns}")
+
+            col_c, col_d = st.columns([1, 3])
+            with col_c:
+                if st.button("Apply crest", key=f"apply_crest_{crest_widget_ns}"):
+                    if crest_upload is not None:
+                        try:
+                            data = crest_upload.getvalue()
+                            mime = crest_upload.type or ""
+                            if not mime.startswith("image/"):
+                                ext = os.path.splitext(crest_upload.name or "")[1].lower()
+                                if ext == ".svg": mime = "image/svg+xml"
+                                elif ext == ".png": mime = "image/png"
+                                elif ext in (".jpg",".jpeg"): mime = "image/jpeg"
+                                else: mime = "image/png"
+                            b64 = base64.b64encode(data).decode("ascii")
+                            st.session_state.setdefault("crest_map", {})[crest_store_key] = f"data:{mime};base64,{b64}"
+                            st.success("Crest saved!")
+                            try: st.rerun()
+                            except Exception: st.experimental_rerun()
+                        except Exception as e:
+                            st.error(f"Couldn't process crest: {e}")
+                    else:
+                        val = (st.session_state.get(f"crest_url_{crest_widget_ns}", "") or "").strip()
+                        if not val:
+                            st.error("Upload a crest or paste a crest URL.")
+                        elif not (val.startswith("http://") or val.startswith("https://") or val.startswith("data:image/")):
+                            st.error("Crest URL must start with http://, https://, or data:image/…")
+                        else:
+                            st.session_state.setdefault("crest_map", {})[crest_store_key] = val
+                            st.success("Crest URL saved!")
+                            try: st.rerun()
+                            except Exception: st.experimental_rerun()
+            with col_d:
+                if st.button("Clear crest", key=f"clear_crest_{crest_widget_ns}"):
+                    st.session_state.setdefault("crest_map", {}).pop(crest_store_key, None)
+                    st.info("Crest cleared.")
+                    try: st.rerun()
+                    except Exception: st.experimental_rerun()
+
+# ---- TAB HOOK ----
+with tabs[4]:
+    st.subheader("Pro Layout — Top Central Midfielders (Tiles)")
+    render_pro_layout_cm(df_f, top_n=top_n)
+## ----------------- END PRO LAYOUT TAB — CENTRAL MIDFIELDERS -----------------
+
+
+
+
+# ----------------- END CENTRAL MIDFIELDER BLOCK -----------------
+
+# ----------------- METRIC LEADERBOARD — themed + palettes + custom title + highlights (UPDATED) -----------------
+import re, numpy as np, matplotlib.pyplot as plt
+from matplotlib.ticker import FuncFormatter
+from matplotlib import rcParams, font_manager as fm
+import pandas as pd
+import streamlit as st
+
+# --- Rendering crispness & font setup
+rcParams.update({
+    "figure.dpi": 300,
+    "savefig.dpi": 300,
+    "text.antialiased": True,
+    "font.family": "sans-serif",
+    "font.sans-serif": ["Inter","Roboto","SF Pro Text","Segoe UI","Helvetica Neue","Arial"],
+})
+for p in ["./fonts/Inter-Variable.ttf","./fonts/Inter-Regular.ttf"]:
+    try: fm.fontManager.addfont(p)
+    except: pass
+
+st.markdown("---")
+
+with st.expander("Leaderboard settings", expanded=False):
+    # Basic controls
+    default_metric = "Progressive passes per 90" if "Progressive passes per 90" in FEATURES else FEATURES[0]
+    metric_pick   = st.selectbox("Metric", FEATURES, index=FEATURES.index(default_metric))
+    top_n         = st.slider("Top N", 5, 40, 20, 5)
+
+    # Theme (backgrounds must be identical for page & plot)
+    theme = st.radio("Theme", ["Light", "Dark"], index=0, horizontal=True, key="lb_theme")
+    if theme == "Light":
+        PAGE_BG = "#ebebeb"
+        PLOT_BG = "#ebebeb"  # same as page per request
+        GRID_MAJ = "#d7d7d7"
+        TXT      = "#111111"
+        TICK_NUM = "#111111"  # axis numbers (ticks)
+        SPINE    = "#c8c8c8"
+    else:
+        PAGE_BG = "#0a0f1c"
+        PLOT_BG = "#0a0f1c"  # same as page per request
+        GRID_MAJ = "#3a4050"
+        TXT      = "#f5f5f5"
+        TICK_NUM = "#ffffff"  # axis numbers (ticks)
+        SPINE    = "#6b7280"
+
+    # Palette options (same set as scatterplot + new uniform red/blue/green)
+    palette_options = [
+        "Red–Gold–Green (diverging)",
+        "Light-grey → Black",
+        "Light-Red → Dark-Red",
+        "Light-Blue → Dark-Blue",
+        "Light-Green → Dark-Green",
+        "Purple ↔ Gold (diverging)",
+        "All White",
+        "All Black",
+        "All Red",    # NEW
+        "All Blue",   # NEW
+        "All Green",  # NEW
+    ]
+    palette_choice = st.selectbox("Palette", palette_options, index=palette_options.index("All Black"), key="lb_palette")
+    reverse_scale  = st.checkbox("Reverse colours", value=False, key="lb_reverse")
+
+    # Labels
+    show_team_names = st.checkbox("Show team names", value=True, key="lb_show_team")  # NEW
+
+    # Custom title
+    show_title   = st.checkbox("Show custom title", value=False, key="lb_show_title")
+    custom_title = st.text_input("Custom title", "Top N – Metric", key="lb_title")
+
+# --- Data
+val_col = metric_pick
+plot_df = df_f[["Player","Team",val_col]].dropna(subset=[val_col]).copy()
+plot_df[val_col] = pd.to_numeric(plot_df[val_col], errors="coerce")
+plot_df = plot_df.dropna(subset=[val_col])
+plot_df = plot_df.sort_values(val_col, ascending=False).head(int(top_n)).reset_index(drop=True)
+
+# Option: highlight a single player (from current Top N)
+highlight_player = st.selectbox(
+    "Highlight single player (from Top N)", ["(None)"] + plot_df["Player"].astype(str).tolist(),
+    index=0, key="lb_highlight_player"
+)
+
+# --- Label helpers
+def abbrev_name(player):
+    tokens = re.split(r"\s+", str(player).strip())
+    if tokens and tokens[0]:
+        initial = tokens[0][0]
+        last = re.sub(r"[^\w\-’']", "", tokens[-1])
+        return f"{initial}.{last}"
+    return str(player)
+
+p_abbr = [abbrev_name(p) for p in plot_df["Player"]]
+teams  = plot_df["Team"].astype(str).tolist()
+vals   = plot_df[val_col].astype(float).values if len(plot_df) else np.array([0.0])
+
+# --- Colour mapping (same logic as scatterplot, plus uniform colours)
+def interp(a, b, u):
+    a = np.array(a, dtype=float); b = np.array(b, dtype=float)
+    return (a + (b - a) * np.clip(u, 0, 1)) / 255.0
+
+def color_mapper(palette, t):
+    if palette == "Red–Gold–Green (diverging)":
+        red, gold, green = [199,54,60], [240,197,106], [61,166,91]
+        return interp(red, gold, t/0.5) if t <= 0.5 else interp(gold, green, (t-0.5)/0.5)
+    if palette == "Light-grey → Black":
+        return interp([210,214,220], [20,23,31], t)
+    if palette == "Light-Red → Dark-Red":
+        return interp([252,190,190], [139,0,0], t)
+    if palette == "Light-Blue → Dark-Blue":
+        return interp([191,210,255], [10,42,102], t)
+    if palette == "Light-Green → Dark-Green":
+        return interp([196,235,203], [12,92,48], t)
+    if palette == "Purple ↔ Gold (diverging)":
+        purple, mid, gold = [96,55,140], [180,150,210], [240,197,106]
+        return interp(purple, mid, t/0.5) if t <= 0.5 else interp(mid, gold, (t-0.5)/0.5)
+    if palette == "All White":
+        return np.array([255,255,255])/255.0
+    if palette == "All Black":
+        return np.array([0,0,0])/255.0
+    if palette == "All Red":
+        return np.array([197, 30, 30])/255.0
+    if palette == "All Blue":
+        return np.array([15, 70, 180])/255.0
+    if palette == "All Green":
+        return np.array([20, 120, 60])/255.0
+    return np.array([0,0,0])/255.0
+
+if len(vals) > 1:
+    vmin, vmax = float(vals.min()), float(vals.max())
+    if vmin == vmax: vmax = vmin + 1e-6
+    ts = (vals - vmin) / (vmax - vmin)
+else:
+    ts = np.zeros_like(vals)
+
+if reverse_scale:
+    ts = 1.0 - ts
+# Build colors (handles both gradients and uniform)
+bar_colors = [tuple(color_mapper(palette_choice, float(t))) for t in ts]
+
+# --- Figure
+fig, ax = plt.subplots(figsize=(11.5, 6.2))
+fig.patch.set_facecolor(PAGE_BG)
+ax.set_facecolor(PLOT_BG)
+
+# Title (reduce by 4 pts → 26)
+default_title = f"Top {len(plot_df)} – {metric_pick}"
+title_text = custom_title.strip() if (show_title and custom_title.strip()) else default_title
+fig.suptitle(title_text, fontsize=26, fontweight="bold", color=TXT, y=0.985)
+
+# Layout
+plt.subplots_adjust(top=0.90, left=0.30, right=0.965, bottom=0.14)
+
+# Bars
+ypos = np.arange(len(vals))
+bars = ax.barh(ypos, vals, color=bar_colors, edgecolor="none", zorder=2)
+
+# Highlight a single player
+if highlight_player and highlight_player != "(None)":
+    mask = plot_df["Player"].astype(str) == highlight_player
+    if mask.any():
+        idxs = np.where(mask.values)[0]
+        for i in idxs:
+            bars[i].set_color("#f59e0b")
+            bars[i].set_edgecolor("white")
+            bars[i].set_linewidth(1.6)
+            bars[i].set_zorder(5)
+
+# Axis & labels
+ax.invert_yaxis()
+ax.set_yticks(ypos)
+if show_team_names:
+    yticklabels_math = [rf'$\bf{{{p}}}$, {t}' for p, t in zip(p_abbr, teams)]
+else:
+    yticklabels_math = [rf'$\bf{{{p}}}$' for p in p_abbr]
+ax.set_yticklabels(yticklabels_math, fontsize=10.5, color=TXT)
+ax.set_ylabel("")
+ax.set_xlabel(val_col, color=TXT, labelpad=6, fontsize=10.5, fontweight="semibold")
+
+# Gridlines
+ax.grid(axis="x", color=GRID_MAJ, linewidth=0.8, zorder=1)
+
+# Spines & ticks
+for side in ["top","right","left"]:
+    ax.spines[side].set_visible(False)
+ax.spines["bottom"].set_color(SPINE)
+ax.tick_params(axis="y", length=0)
+
+# X ticks formatting + themed colour + medium weight
+def fmt(x, _): return f"{x:,.0f}" if float(x).is_integer() else f"{x:,.2f}"
+ax.xaxis.set_major_formatter(FuncFormatter(fmt))
+for tick in ax.get_xticklabels():
+    tick.set_fontweight("medium")
+    tick.set_color(TICK_NUM)  # black on light, white on dark
+
+# Range & padding
+xmax = float(vals.max()) if len(vals) else 1.0
+ax.set_xlim(0, xmax * 1.1)
+
+# Value labels (8.5 pt beside bars)
+pad = (ax.get_xlim()[1] - ax.get_xlim()[0]) * 0.012
+for rect, v in zip(bars, vals):
+    ax.text(rect.get_width() + pad,
+            rect.get_y() + rect.get_height()/2,
+            fmt(v, None),
+            va="center", ha="left", fontsize=8.5, color=TXT)
+
+st.pyplot(fig, use_container_width=True)
+# ----------------- END -----------------
+
+
+
+
+
+# ----------------- SINGLE PLAYER ROLE PROFILE (REPLACED) -----------------
+# ================= TOP OF INDIVIDUAL PLAYER PROFILE =================
+# Assumes df_f exists and has at least columns: Player, Position, League
+
+st.subheader("🎯 Single Player Role Profile")
+
+# 1) Player picker (from df_f) + persist to session state
+player_name = st.selectbox("Choose player", sorted(df_f["Player"].dropna().unique()))
+st.session_state["selected_player"] = player_name  # <-- critical for downstream defaults
+
+# 2) Pull the player's row and safe defaults used by other blocks
+player_row = df_f[df_f["Player"] == player_name].head(1)
+
+# robust default position prefix & default league for pools
+if not player_row.empty:
+    _pos = str(player_row.iloc[0].get("Position", ""))
+    default_pos_prefix = (_pos[:2] if len(_pos) >= 2 else _pos) or "CF"
+    default_league_for_pool = [player_row.iloc[0].get("League")]
+else:
+    default_pos_prefix = "CF"
+    default_league_for_pool = []
+
+# (Optional) small helper to fetch the current selected name downstream
+def _selected_name() -> str:
+    return st.session_state.get("selected_player", player_name)
+# ================= END TOP OF INDIVIDUAL PLAYER PROFILE =============
+
+
+# derive defaults from selected player (to propagate)
+default_pos_prefix = str(player_row["Position"].iloc[0])[:2] if not player_row.empty else "CF"
+default_league_for_pool = [player_row["League"].iloc[0]] if not player_row.empty else []
+
+# Pool controls (for chart + notes only; NOT used for role scores)
+st.caption("Percentiles & chart computed against the pool below (defaults to the player's league).")
+with st.container():
+    c1, c2, c3 = st.columns([2,1,1])
+    leagues_pool = c1.multiselect("Comparison leagues", sorted(df["League"].dropna().unique()), default=default_league_for_pool)
+    min_minutes_pool, max_minutes_pool = c2.slider("Pool minutes", 0, 5000, (500, 5000))
+    age_min_pool, age_max_pool = c3.slider("Pool age", 14, 45, (16, 40))  # default 16–40
+    same_pos = st.checkbox("Limit pool to current position prefix", value=True)
+
+def build_pool_df():
+    if not leagues_pool:
+        return pd.DataFrame([], columns=df.columns)
+    pool = df[df["League"].isin(leagues_pool)].copy()
+    pool["Minutes played"] = pd.to_numeric(pool["Minutes played"], errors="coerce")
+    pool["Age"] = pd.to_numeric(pool["Age"], errors="coerce")
+    pool = pool[pool["Minutes played"].between(min_minutes_pool, max_minutes_pool)]
+    pool = pool[pool["Age"].between(age_min_pool, age_max_pool)]
+    if same_pos and not player_row.empty:
+        pool = pool[pool["Position"].astype(str).apply(position_filter)]
+    pool = pool.dropna(subset=POLAR_METRICS)
+    return pool
+
+def clean_attacker_label(s: str) -> str:
+    s = s.replace("Non-penalty goals per 90", "Non-Pen Goals")
+    s = s.replace("xA per 90", "xA")
+    s = s.replace("Defensive duels won, %", "Defensive Duel %")
+    s = s.replace("Passes per 90", "Passes")
+    s = s.replace("Dribbles per 90", "Dribbles")
+    s = s.replace("Defensive duels per 90", "Defensive duels")
+    s = s.replace("Touches in box per 90", "Touches in box")
+    s = s.replace("Progressive passes per 90", "Progressive Passes")
+    s = s.replace("Progressive runs per 90", "Progressive runs")
+    s = s.replace("Passes to penalty area per 90", "Passes to Pen area")
+    s = s.replace("Accurate passes, %", "Pass %")
+    return s
+
+def percentiles_for_player_in_pool(pool_df: pd.DataFrame, ply_row: pd.Series) -> dict:
+    if pool_df.empty:
+        return {}
+    pct_map = {}
+    for m in POLAR_METRICS:
+        if m not in pool_df.columns or pd.isna(ply_row[m]): 
+            continue
+        series = pd.to_numeric(pool_df[m], errors="coerce").dropna()
+        if series.empty: 
+            continue
+        rank = (series < float(ply_row[m])).mean() * 100.0
+        eq_share = (series == float(ply_row[m])).mean() * 100.0
+        pct_map[m] = min(100.0, rank + 0.5 * eq_share)
+    return pct_map
+
+# Polar chart for attacker metrics
+def plot_attacker_polar_chart(labels, vals):
+    N = len(labels)
+    color_scale = ["#be2a3e", "#e25f48", "#f88f4d", "#f4d166", "#90b960", "#4b9b5f", "#22763f"]
+    cmap = LinearSegmentedColormap.from_list("custom_scale", color_scale)
+    bar_colors = [cmap(v/100.0) for v in vals]
+
+    angles = np.linspace(0, 2*np.pi, N, endpoint=False)[::-1]
+    rotation_shift = np.deg2rad(75) - angles[0]
+    ang = (angles + rotation_shift) % (2*np.pi)
+    width = 2*np.pi / N
+
+    fig = plt.figure(figsize=(8.2, 6.6), dpi=180)
+    fig.patch.set_facecolor('#f3f4f6')
+    ax = fig.add_axes([0.06, 0.08, 0.88, 0.74], polar=True)
+    ax.set_facecolor('#f3f4f6')
+    ax.set_rlim(0, 100)
+
+    for i in range(N):
+        ax.bar(ang[i], vals[i], width=width, color=bar_colors[i], edgecolor='black', linewidth=1.0, zorder=3)
+        label_pos = max(12, vals[i] * 0.75)
+        ax.text(ang[i], label_pos, f"{int(round(vals[i]))}", ha='center', va='center',
+                fontsize=9, weight='bold', color='white', zorder=4)
+
+    outer = plt.Circle((0, 0), 100, transform=ax.transData._b, color='black', fill=False, linewidth=2.2, zorder=5)
+    ax.add_artist(outer)
+    for i in range(N):
+        sep_angle = (ang[i] - width/2) % (2*np.pi)
+        is_cross = any(np.isclose(sep_angle, a, atol=0.01) for a in [0, np.pi/2, np.pi, 3*np.pi/2])
+        ax.plot([sep_angle, sep_angle], [0, 100], color='black' if is_cross else '#b0b0b0',
+                linewidth=1.6 if is_cross else 1.0, zorder=2)
+
+    label_r = 120
+    for i, lab in enumerate(labels):
+        ax.text(ang[i], label_r, lab, ha='center', va='center', fontsize=8.5, weight='bold', color='#111827', zorder=6)
+
+    ax.set_xticks([]); ax.set_yticks([])
+    ax.spines['polar'].set_visible(False); ax.grid(False)
+    return fig
+
+# ---- render section ----
+if player_row.empty:
+    st.info("Pick a player above.")
+else:
+    ply = player_row.iloc[0]
+    meta = player_row[["Team","League","Age","Contract expires","League Strength","Market value"]].iloc[0]
+
+    # --- New: pull extra stats ---
+    matches  = int(ply["Matches played"]) if "Matches played" in ply else "—"
+    minutes  = int(ply["Minutes played"]) if "Minutes played" in ply else "—"
+    goals    = int(ply["Goals"]) if "Goals" in ply else "—"
+    assists  = int(ply["Assists"]) if "Assists" in ply else "—"
+
+    # --- Caption with extra info ---
+    st.caption(
+        f"**{player_name}** — {meta['Team']} • {meta['League']} • "
+        f"Age {int(meta['Age']) if pd.notna(meta['Age']) else 'N/A'} • "
+        f"Apps: {matches}, {minutes} mins • G/A: {goals}/{assists} • "
+        f"Contract: {pd.to_datetime(meta['Contract expires']).date() if pd.notna(meta['Contract expires']) else 'N/A'} • "
+        f"League Strength {meta['League Strength']:.1f} • "
+        f"Value €{meta['Market value']:,.0f}"
+    )
+
+    # Build pool & compute player percentiles within that pool
+    pool_df = build_pool_df()
+    if pool_df.empty:
+        st.warning("Comparison pool is empty. Add at least one league.")
+        pct_map = {}
+    else:
+        pct_map = percentiles_for_player_in_pool(pool_df, ply)
+
+    # ---------- 1) PERFORMANCE CHART FIRST ----------
+    labels = [clean_attacker_label(m) for m in POLAR_METRICS if m in pct_map]
+    vals   = [pct_map[m] for m in POLAR_METRICS if m in pct_map]
+    if vals:
+        fig = plot_attacker_polar_chart(labels, vals)
+        team = str(ply["Team"]); league = str(ply["League"])
+
+# Minutes → 90s; goals/assists already parsed above
+minutes_safe = minutes if isinstance(minutes, (int, float)) else 0
+nineties = round(minutes_safe / 90.0, 1)
+goals_safe = goals if isinstance(goals, (int, float)) else 0
+assists_safe = assists if isinstance(assists, (int, float)) else 0
+
+fig.text(0.06, 0.94, f"{player_name} — Performance Chart",
+         fontsize=16, weight='bold', ha='left', color='#111827')
+fig.text(0.06, 0.915, f"{team} • {league} • {nineties} 90's • Goals: {int(goals_safe)} • Assists: {int(assists_safe)}",
+         fontsize=9, ha='left', color='#6b7280')
+
+st.pyplot(fig, use_container_width=True)
+
+   # ---------- 2) NOTES: Style / Strengths / Weaknesses ----------
+
+EXTRA_METRICS = [
+    'Defensive duels per 90', 'Defensive duels won, %',
+    'Aerial duels per 90', 'Aerial duels won, %', 'Shots blocked per 90',
+    'PAdj Interceptions', 'Non-penalty goals per 90', 'xG per 90', 
+    'Shots per 90', 'Shots on target, %', 'Crosses per 90',
+    'Accurate crosses, %', 'Dribbles per 90', 'Successful dribbles, %',
+    'Offensive duels per 90', 'Offensive duels won, %', 'Touches in box per 90',
+    'Progressive runs per 90', 'Accelerations per 90', 'Passes per 90',
+    'Accurate passes, %', 'Forward passes per 90', 'Accurate forward passes, %',
+    'Long passes per 90', 'Accurate long passes, %', 'xA per 90',
+    'Smart passes per 90', 'Key passes per 90', 'Passes to final third per 90',
+    'Accurate passes to final third, %', 'Passes to penalty area per 90',
+    'Accurate passes to penalty area, %', 'Deep completions per 90',
+    'Progressive passes per 90', 'Accurate progressive passes, %' 
+]
+STYLE_MAP = {
+    'Defensive duels per 90': {
+        'style': 'Ball Winner',
+        'sw': 'Defensive Duel Attempts',
+    },
+    'Aerial duels won, %': {
+        'style': None,
+        'sw': 'Aerial Duels',
+    },
+    'Defensive duels won, %': {
+        'style': None,
+        'sw': 'Tackling %',
+    },
+    'Long Passes per 90': {
+        'style': 'Long Passer',
+        'sw': None,
+    },
+    'Non-penalty goals per 90': {
+        'style': None,
+        'sw': 'Scoring Goals',
+    },
+    'xG per 90': {
+        'style': 'Box-Crasher',
+        'sw': 'Goal Threat',
+    },
+    'Shots per 90': {
+        'style': 'Takes many shots',
+        'sw': None,
+    },
+    'PAdj Interceptions': {
+        'style': 'Cuts out opposition attacks',
+        'sw': 'Defensive positioning',
+    },
+    'Accurate forward passes, %': {
+        'style': None,
+        'sw': 'Forward Passing Accuracy',
+    },
+    'Dribbles per 90': {
+        'style': 'Dribbler',
+        'sw': 'Dribble Volume',
+    },
+    'Successful dribbles, %': {
+        'style': None,
+        'sw': 'Dribbling Efficiency',
+    },
+    'Touches in box per 90': {
+        'style': 'Busy in the penalty box',
+        'sw': 'Penalty-box Coverage',
+    },
+    'Progressive runs per 90': {
+        'style': 'Gets team up the pitch via carries',
+        'sw': 'Progressive Runs',
+    },
+    'Passes per 90': {
+        'style': 'Involved in build-up',
+        'sw': 'Passing Involvement',
+    },
+    'Accurate passes, %': {
+        'style': 'Controller',
+        'sw': 'Passing Retention',
+    },
+    'xA per 90': {
+        'style': 'Creates goal scoring chances',
+        'sw': 'Creativity',
+    },
+    'Passes to penalty area per 90': {
+        'style': 'Advanced Playmaker',
+        'sw': 'Passes to Penalty Area',
+    },
+    'Deep completions per 90': {
+        'style': 'Gets ball into the box',
+        'sw': None,
+    },
+    'Progressive passes per 90': {
+        'style': 'Deep Playmaker',
+        'sw': 'Ball progression via passes',
+    },
+    'Smart passes per 90': {
+        'style': 'Attempts through balls',
+        'sw': None,
+    },
 }
 
-
-function toggleLg(id) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.classList.toggle('collapsed');
-  const arrow = el.previousElementSibling.querySelector('span');
-  if (arrow) arrow.textContent = el.classList.contains('collapsed') ? '▶' : '▼';
-}
-
-
-function renderTable() {
-  const list = getFiltered();
-  document.getElementById('rec-count').textContent = list.length + ' player' + (list.length !== 1 ? 's' : '');
-
-  const thead = document.getElementById('thead');
-  const cols = TABLE_COLS.filter(c => c.always || visibleCols.has(c.k));
-
-  thead.innerHTML = '<tr>' + cols.map(c => {
-    const sc = sortKey === c.k ? (sortAsc ? 'sort-asc' : 'sort-desc') : '';
-    return `<th class="${c.cls||''} ${sc}" onclick="${c.k ? `setSort('${c.k}')` : ''}">${c.l}</th>`;
-  }).join('') + '</tr>';
-
-  const tbody = document.getElementById('tbody');
-
-  if (list.length === 0) {
-    tbody.innerHTML = '';
-    document.getElementById('empty-state').classList.remove('hidden');
-    document.getElementById('main-table').classList.add('hidden');
-    return;
-  }
-  document.getElementById('empty-state').classList.add('hidden');
-  document.getElementById('main-table').classList.remove('hidden');
-
-  const show = k => visibleCols.has(k);
-  tbody.innerHTML = list.map((p,i) => {
-    const cells = [];
-    // Always: checkbox
-    cells.push(`<td onclick="event.stopPropagation()" class="cb-wrap"><input type="checkbox" class="table-checkbox"></td>`);
-    // Always: player
-    cells.push(`<td><div class="td-player"><div id="avatar-${p.id}" class="player-avatar-ph" style="width:28px;height:28px;font-size:12px">👤</div><div><div class="player-name">${p.name||'—'}</div>${p.nationality?`<div style="font-size:10px;color:var(--muted2)">${p.nationality}</div>`:''}</div>${p.pos?`<span class="player-pos-tag">${p.pos}</span>`:''}</div></td>`);
-    if (show('team'))        cells.push(`<td>${p.team||'—'}</td>`);
-    if (show('league'))      cells.push(`<td style="color:var(--muted)">${p.league||'—'}</td>`);
-    if (show('age'))         cells.push(`<td class="mono" style="text-align:center">${p.age||'—'}</td>`);
-    if (show('window'))      cells.push(`<td>${p.window?`<span class="${windowCls(p.window)}">${p.window}</span>`:'—'}</td>`);
-    if (show('target'))      cells.push(`<td>${p.target?`<span class="${targetCls(p.target)}">${p.target}</span>`:'—'}</td>`);
-    if (show('tm'))          cells.push(`<td onclick="event.stopPropagation()">${p.tm?`<a class="tm-link" href="${p.tm}" target="_blank">🔗 TM Link</a>`:'<span style="color:var(--muted2);font-size:11px">—</span>'}</td>`);
-    if (show('style'))       cells.push(`<td>${p.style?`<span class="style-tag">${p.style}</span>`:'—'}</td>`);
-    if (show('role1'))       cells.push(`<td>${p.role1?`<span class="role-badge">${p.role1}</span>`:'—'}</td>`);
-    if (show('priority'))    cells.push(`<td style="text-align:center">${p.priority?stars(p.priority):'—'}</td>`);
-    if (show('status'))      cells.push(`<td>${p.status?`<span class="${statusCls(p.status)}">${p.status}</span>`:'—'}</td>`);
-    if (show('agency'))      cells.push(`<td>${p.agency?`<span class="${agencyCls(p.agency)}">${p.agency}</span>`:'—'}</td>`);
-    if (show('recentmove'))  cells.push(`<td>${p.recentmove?`<span class="${moveCls(p.recentmove)}">${p.recentmove}</span>`:'—'}</td>`);
-    if (show('marketValue')) cells.push(`<td class="mono val-green">${fmtMV(p.marketValue)}</td>`);
-    if (show('contract'))    cells.push(`<td class="mono">${p.contract||'—'}</td>`);
-    if (show('foot'))        cells.push(`<td style="color:var(--muted);font-style:italic">${p.foot||'—'}</td>`);
-    if (show('score'))       cells.push(`<td>${p.score?`<span class="score-band ${scoreCls(p.score)}">${p.score}</span>`:'—'}</td>`);
-    if (show('potential'))   cells.push(`<td>${p.potential?`<span class="score-band ${scoreCls(p.potential)}">${p.potential}</span>`:'—'}</td>`);
-    if (show('physical'))    cells.push(`<td>${p.physical?`<span class="phys-tag">${p.physical}</span>`:'—'}</td>`);
-    if (show('keynotes'))    cells.push(`<td><div class="notes-text">${p.keynotes||'—'}</div></td>`);
-    if (show('games'))       cells.push(`<td class="mono text-right">${p.games||'—'}</td>`);
-    if (show('goals'))       cells.push(`<td class="mono text-right">${p.goals||'—'}</td>`);
-    if (show('assists'))     cells.push(`<td class="mono text-right">${p.assists||'—'}</td>`);
-    if (show('minutes'))     cells.push(`<td class="mono text-right">${p.minutes||'—'}</td>`);
-    return `<tr onclick="openDetail('${p.id}')" style="animation-delay:${i*0.02}s">${cells.join('')}</tr>`;
-  }).join('');
-
-  // Load photos for visible rows
-  setTimeout(() => loadTablePhotos(list), 50);
-}
-
-
-// ── COLUMN PICKER ──
-const TABLE_COLS = [
-  {k:null,  l:'',              cls:'th-check', always:true},
-  {k:'name',l:'Player',        cls:'th-player', always:true},
-  {k:'team',       l:'Team'},
-  {k:'league',     l:'League'},
-  {k:'age',        l:'Age'},
-  {k:'window',     l:'Window'},
-  {k:'target',     l:'Target Move'},
-  {k:'tm',         l:'Transfermarkt'},
-  {k:'style',      l:'Style'},
-  {k:'role1',      l:'Roles'},
-  {k:'priority',   l:'Priority'},
-  {k:'status',     l:'Status'},
-  {k:'agency',     l:'Agency'},
-  {k:'recentmove', l:'Recent Move'},
-  {k:'marketValue',l:'Value'},
-  {k:'contract',   l:'Contract'},
-  {k:'foot',       l:'Foot'},
-  {k:'score',      l:'Score*'},
-  {k:'potential',  l:'Potential*'},
-  {k:'physical',   l:'Physical'},
-  {k:'keynotes',   l:'Key Notes'},
-  {k:'games',      l:'Games'},
-  {k:'goals',      l:'Goals'},
-  {k:'assists',    l:'Assists'},
-  {k:'minutes',    l:'Mins'},
-];
-
-const DEFAULT_VISIBLE = new Set(['team','league','age','window','target','tm','style','role1','priority','status','agency','recentmove','marketValue','contract','foot','score','potential','physical','keynotes','games','goals','assists','minutes']);
-let visibleCols = new Set(DEFAULT_VISIBLE);
-
-function toggleColPicker() {
-  const el = document.getElementById('col-picker');
-  const open = el.style.display !== 'none';
-  if (open) { el.style.display = 'none'; return; }
-  // Build list
-  const list = document.getElementById('col-picker-list');
-  list.innerHTML = TABLE_COLS.filter(c => !c.always).map(c => `
-    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:3px 4px;border-radius:5px;transition:background .15s" onmouseover="this.style.background='var(--s3)'" onmouseout="this.style.background=''">
-      <input type="checkbox" ${visibleCols.has(c.k) ? 'checked' : ''} onchange="toggleCol('${c.k}',this.checked)" style="accent-color:var(--accent);width:14px;height:14px;cursor:pointer">
-      <span style="font-size:12px;color:var(--fg)">${c.l}</span>
-    </label>`).join('');
-  el.style.display = 'block';
-  // Close on outside click
-  setTimeout(() => document.addEventListener('click', colPickerOutside, {once:true}), 0);
-}
-function colPickerOutside(e) {
-  if (!document.getElementById('col-picker').contains(e.target)) {
-    document.getElementById('col-picker').style.display = 'none';
-  } else {
-    setTimeout(() => document.addEventListener('click', colPickerOutside, {once:true}), 0);
-  }
-}
-function toggleCol(k, on) {
-  if (on) visibleCols.add(k); else visibleCols.delete(k);
-  renderTable();
-}
-function colPickerAll(on) {
-  TABLE_COLS.filter(c => !c.always && c.k).forEach(c => on ? visibleCols.add(c.k) : visibleCols.delete(c.k));
-  document.getElementById('col-picker').style.display = 'none';
-  renderTable();
-}
-function colPickerReset() {
-  visibleCols = new Set(DEFAULT_VISIBLE);
-  document.getElementById('col-picker').style.display = 'none';
-  renderTable();
-}
-
-function toggleExtraFilters() {
-  const el = document.getElementById('extra-filters');
-  const btn = document.getElementById('extra-filter-btn');
-  const open = el.style.display === 'flex';
-  el.style.display = open ? 'none' : 'flex';
-  btn.style.color = open ? 'var(--muted)' : 'var(--accent)';
-  btn.style.borderColor = open ? 'var(--border)' : 'var(--accent)';
-}
-
-function clearExtraFilters() {
-  ['footFilter','styleFilter','valueFilter','contractFilter'].forEach(id => {
-    document.getElementById(id).value = '';
-  });
-  setAllGBEBands(true);
-  renderAll();
-}
-
-function toggleGBEBandPicker() {
-  const el = document.getElementById('gbe-band-picker');
-  const open = el.style.display !== 'none';
-  el.style.display = open ? 'none' : 'block';
-  if (!open) setTimeout(() => document.addEventListener('click', gbePickerOutside, {once:true}), 0);
-}
-function gbePickerOutside(e) {
-  const picker = document.getElementById('gbe-band-picker');
-  const btn = document.getElementById('gbe-band-btn');
-  if (!picker?.contains(e.target) && e.target !== btn) {
-    picker.style.display = 'none';
-  } else {
-    setTimeout(() => document.addEventListener('click', gbePickerOutside, {once:true}), 0);
-  }
-}
-function setAllGBEBands(on) {
-  document.querySelectorAll('.gbe-band-cb').forEach(cb => cb.checked = on);
-  applyGBEBandFilter();
-}
-function applyGBEBandFilter() {
-  const checked = [...document.querySelectorAll('.gbe-band-cb:checked')].map(cb => cb.value);
-  const btn = document.getElementById('gbe-band-btn');
-  if (btn) btn.textContent = checked.length === 6 ? 'All Bands ▾' : `Band ${checked.join(',')} ▾`;
-  renderAll();
-}
-function getSelectedGBEBands() {
-  const cbs = [...document.querySelectorAll('.gbe-band-cb')];
-  if (!cbs.length) return null; // picker not open yet — no filter
-  const checked = cbs.filter(cb => cb.checked).map(cb => parseInt(cb.value));
-  if (checked.length === 0 || checked.length === cbs.length) return null; // all or none = no filter
-  return checked;
-}
-
-function setSort(k) {
-  if (sortKey === k) sortAsc = !sortAsc;
-  else { sortKey = k; sortAsc = true; }
-  renderAll();
-}
-
-// ── ADD / EDIT ──
-function openAdd() {
-  editingId = null;
-  document.getElementById('add-title').textContent = 'NEW PLAYER';
-  document.getElementById('delete-btn').style.display = 'none';
-  const fields = ['name','fullname','team','league','age','foot','window','target','status','agency',
-    'recentmove','priority','style','role1','score','potential','physical','nationality',
-    'value','contract','games','goals','assists','minutes','ga','tm','video','photo','pos','keynotes','note'];
-  fields.forEach(f => {
-    const el = document.getElementById('f-'+f);
-    if (!el) return;
-    if (el.tagName === 'SELECT') el.selectedIndex = 0;
-    else el.value = '';
-  });
-  document.getElementById('f-priority').value = '3';
-  document.getElementById('f-dataprofile').value = '';
-  document.getElementById('f-dataprofile-preview').style.display = 'none';
-  document.getElementById('f-dataprofile-img').src = '';
-  document.getElementById('add-overlay').classList.add('open');
-}
-
-function openEdit(id) {
-  const p = players().find(x => x.id === id);
-  if (!p) return;
-  editingId = id;
-  document.getElementById('add-title').textContent = 'EDIT PLAYER';
-  document.getElementById('delete-btn').style.display = 'block';
-
-  const map = {
-    'f-name':'name','f-fullname':'fullname','f-team':'team','f-league':'league',
-    'f-age':'age','f-foot':'foot','f-window':'window','f-target':'target',
-    'f-status':'status','f-agency':'agency','f-recentmove':'recentmove',
-    'f-priority':'priority','f-style':'style','f-role1':'role1',
-    'f-score':'score','f-potential':'potential','f-physical':'physical',
-    'f-nationality':'nationality','f-value':'marketValue','f-contract':'contract',
-    'f-games':'games','f-goals':'goals','f-assists':'assists','f-minutes':'minutes',
-    'f-ga':'goalsAgainst','f-tm':'tm','f-video':'video','f-photo':'photo',
-    'f-pos':'pos','f-keynotes':'keynotes'
-  };
-  Object.entries(map).forEach(([fid, pk]) => {
-    const el = document.getElementById(fid);
-    if (el) el.value = p[pk] || '';
-  });
-  document.getElementById('f-note').value = '';
-
-  // Repopulate data profile preview
-  const dp = document.getElementById('f-dataprofile');
-  const dpPreview = document.getElementById('f-dataprofile-preview');
-  const dpImg = document.getElementById('f-dataprofile-img');
-  if (p.dataProfile) {
-    dp.value = p.dataProfile;
-    dpImg.src = p.dataProfile;
-    dpPreview.style.display = 'block';
-    document.getElementById('f-dataprofile-name').textContent = 'Profile attached';
-  } else {
-    dp.value = '';
-    dpPreview.style.display = 'none';
-    dpImg.src = '';
-    document.getElementById('f-dataprofile-name').textContent = 'No file attached';
-  }
-
-  document.getElementById('add-overlay').classList.add('open');
-}
-
-function closeAdd() { document.getElementById('add-overlay').classList.remove('open'); }
-
-function loadDataProfileFile(input) {
-  const file = input.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    const b64 = e.target.result;
-    document.getElementById('f-dataprofile').value = b64;
-    document.getElementById('f-dataprofile-img').src = b64;
-    document.getElementById('f-dataprofile-preview').style.display = 'block';
-    document.getElementById('f-dataprofile-name').textContent = file.name;
-  };
-  reader.readAsDataURL(file);
-  input.value = '';
-}
-
-function clearDataProfile() {
-  document.getElementById('f-dataprofile').value = '';
-  document.getElementById('f-dataprofile-img').src = '';
-  document.getElementById('f-dataprofile-preview').style.display = 'none';
-  document.getElementById('f-dataprofile-name').textContent = 'No file attached';
-}
-
-function savePlayer() {
-  const name = document.getElementById('f-name').value.trim();
-  if (!name) { showToast('❌ Player name required'); return; }
-
-  const noteText = document.getElementById('f-note').value.trim();
-  const noteEntry = noteText ? [{ text: noteText, date: new Date().toLocaleString('en-GB', {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) }] : [];
-
-  const data = {
-    name, fullname: document.getElementById('f-fullname').value.trim(),
-    team: document.getElementById('f-team').value.trim(),
-    league: document.getElementById('f-league').value.trim(),
-    age: document.getElementById('f-age').value,
-    foot: document.getElementById('f-foot').value,
-    pos: document.getElementById('f-pos').value,
-    window: document.getElementById('f-window').value,
-    target: document.getElementById('f-target').value,
-    status: document.getElementById('f-status').value,
-    agency: document.getElementById('f-agency').value,
-    recentmove: document.getElementById('f-recentmove').value,
-    priority: document.getElementById('f-priority').value,
-    style: document.getElementById('f-style').value,
-    role1: document.getElementById('f-role1').value,
-    score: document.getElementById('f-score').value,
-    potential: document.getElementById('f-potential').value,
-    physical: document.getElementById('f-physical').value,
-    nationality: document.getElementById('f-nationality').value.trim(),
-    marketValue: document.getElementById('f-value').value,
-    contract: document.getElementById('f-contract').value.trim(),
-    games: document.getElementById('f-games').value,
-    goals: document.getElementById('f-goals').value,
-    assists: document.getElementById('f-assists').value,
-    minutes: document.getElementById('f-minutes').value,
-    goalsAgainst: document.getElementById('f-ga').value,
-    tm: document.getElementById('f-tm').value.trim(),
-    video: document.getElementById('f-video').value.trim(),
-    photo: document.getElementById('f-photo').value.trim(),
-    dataProfile: document.getElementById('f-dataprofile').value || undefined,
-    keynotes: document.getElementById('f-keynotes').value.trim(),
-    updatedAt: new Date().toISOString()
-  };
-
-  if (editingId) {
-    const idx = allPlayers[currentBoard].findIndex(p => p.id === editingId);
-    if (idx !== -1) {
-      const existing = allPlayers[currentBoard][idx];
-      allPlayers[currentBoard][idx] = { ...existing, ...data, notes: [...(existing.notes||[]), ...noteEntry] };
-      showToast('✅ Player updated');
-    }
-  } else {
-    allPlayers[currentBoard].push({ id: uid(), ...data, notes: noteEntry, createdAt: new Date().toISOString() });
-    showToast('✅ Player added to ' + currentBoard);
-  }
-
-  save();
-  closeAdd();
-  renderAll();
-}
-
-function deleteEditing() {
-  if (!editingId) return;
-  if (!confirm('Delete this player?')) return;
-  allPlayers[currentBoard] = allPlayers[currentBoard].filter(p => p.id !== editingId);
-  save();
-  closeAdd();
-  renderAll();
-  showToast('🗑 Player deleted');
-}
-
-// FotMob team IDs for badge images
-const TEAM_FOTMOB_IDS = {
-  'Liverpool':8650,'Arsenal':9825,'Manchester City':8456,'Manchester United':10260,
-  'Chelsea':8455,'Tottenham Hotspur':8586,'Newcastle United':10261,'Aston Villa':10252,
-  'Brighton':10204,'West Ham United':8654,'Fulham':9879,'Brentford':9937,
-  'Crystal Palace':9826,'Everton':8668,'Nottingham Forest':10203,'Wolverhampton Wanderers':8602,
-  'Bournemouth':8678,'Ipswich Town':9902,'Leicester City':8197,'Southampton':8466,
-  'Leeds United':8463,'Sunderland':8472,'Derby County':10170,'Burnley':8191,
-  'Sheffield United':8657,'Luton Town':8346,'Middlesbrough':8549,'Norwich City':9850,
-  'Swansea City':10003,'Watford':9817,'Coventry City':8669,'Cardiff City':8344,
-  'Real Madrid':8633,'Barcelona':8634,'Atletico Madrid':9906,'Sevilla':8302,
-  'Real Betis':8603,'Villarreal':10205,'Real Sociedad':8560,'Athletic Club':8315,
-  'Valencia':10267,'Osasuna':8371,'Celta de Vigo':9910,'Getafe':8305,
-  'Rayo Vallecano':8370,'Mallorca':8661,'Las Palmas':8306,'Girona':7732,
-  'Espanyol':8558,'Deportivo Alaves':9866,'Bayern München':9823,'Borussia Dortmund':9789,
-  'RB Leipzig':178475,'Bayer Leverkusen':8178,'Eintracht Frankfurt':9810,
-  'Freiburg':8358,'Wolfsburg':8721,'Hoffenheim':8226,'Borussia M\'gladbach':9788,
-  'Union Berlin':8149,'Augsburg':8406,'Mainz 05':9905,'Werder Bremen':8697,
-  'Stuttgart':10269,'St. Pauli':8152,'Heidenheim':94937,'Holstein Kiel':8150,
-  'Hamburger SV':9790,'Schalke 04':10189,'Hannover 96':9904,'Kaiserslautern':8350,
-  'PSG':9847,'Olympique Marseille':8592,'Olympique Lyonnais':9748,'Monaco':9829,
-  'Lille':8639,'Nice':9831,'Rennes':9851,'Lens':8588,'Strasbourg':9848,
-  'Brest':8521,'Nantes':9830,'Toulouse':9941,'Reims':9837,'Angers SCO':8121,
-  'Le Havre':9746,'Saint-Etienne':9853,'Montpellier':10249,'Metz':8550,
-  'Lorient':8689,'Juventus':9885,'Inter':8636,'Milan':8564,'Napoli':9875,
-  'Roma':8686,'Lazio':8543,'Atalanta':8524,'Fiorentina':8535,'Torino':9804,
-  'Bologna':9857,'Udinese':8600,'Genoa':10233,'Cagliari':8529,'Lecce':9888,
-  'Hellas Verona':9876,'Como':10171,'Parma':10167,'Empoli':8534,'Venezia':7881,
-  'Monza':6504,'Sassuolo':7943,'Benfica':9772,'Porto':9773,'Sporting CP':9768,
-  'Braga':10264,'Vitoria Guimaraes':7844,'Rio Ave':7841,'Gil Vicente':9764,
-  'Famalicao':1634,'Estoril':7842,'Arouca':158085,'Casa Pia AC':212821,
-  'Ajax':8593,'PSV':8640,'Feyenoord':10235,'AZ':10229,'Twente':8611,
-  'Utrecht':9908,'Heerenveen':10228,'NEC':8464,'Go Ahead Eagles':6433,
-  'Celtic':9925,'Rangers':8548,'Hearts':9860,'Hibernian':10251,'Aberdeen':8485,
-  'Dundee':8284,'Motherwell':9927,'St. Mirren':9800,'Ross County':8649,
-  'Club Brugge':8342,'Anderlecht':8635,'Gent':9991,'Genk':9987,'Antwerp':9988,
-  'Galatasaray':8637,'Fenerbahce':8695,'Besiktas':10188,'Trabzonspor':9752,
-  'Flamengo':9770,'Palmeiras':10283,'Atletico Mineiro':10272,'Fluminense':9863,
-  'Internacional':8702,'Cruzeiro':9781,'Botafogo':8517,'Sao Paulo':10277,
-  'Corinthians':9808,'Fortaleza':8287,'Bahia':7877,'Atletico GO':165545,
-  'Vasco da Gama':10276,'Gremio':9769,'RB Leipzig':178475,
-  'Zrinjski':10107,'UD Las Palmas':8306,'Mönchengladbach':9788,
-};
-
-function getTeamFotmobId(teamName) {
-  if (!teamName) return null;
-  // Direct match
-  if (TEAM_FOTMOB_IDS[teamName]) return TEAM_FOTMOB_IDS[teamName];
-  // Partial match
-  for (const [name, id] of Object.entries(TEAM_FOTMOB_IDS)) {
-    if (teamName.toLowerCase().includes(name.toLowerCase()) || name.toLowerCase().includes(teamName.toLowerCase())) {
-      return id;
-    }
-  }
-  return null;
-}
-const SERVER = window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin;
-// On Railway the server IS the app — always online. Only false for local without server.py
-let serverOnline = window.location.hostname !== 'localhost';
-
-async function checkServer() {
-  try {
-    const r = await fetch(SERVER + '/api/health', {signal: AbortSignal.timeout(5000)});
-    serverOnline = r.ok;
-  } catch {
-    serverOnline = window.location.hostname !== 'localhost';
-  }
-  return serverOnline;
-}
-checkServer();
-
-function roleScoreColor(v) {
-  if (v == null) return '#1a2235';
-  if (v >= 75) return '#065f46';
-  if (v >= 60) return '#166534';
-  if (v >= 50) return '#854d0e';
-  if (v >= 35) return '#7f1d1d';
-  return '#1f2937';
-}
-
-function roleScoreTextColor(v) {
-  if (v == null) return '#6b82a0';
-  if (v >= 60) return '#6ee7b7';
-  if (v >= 50) return '#fde68a';
-  return '#fca5a5';
-}
-
-function pctColor(v) {
-  if (v == null) return '#3f5270';
-  if (v >= 80) return '#6ee7b7';
-  if (v >= 65) return '#86efac';
-  if (v >= 50) return '#fde68a';
-  if (v >= 35) return '#fdba74';
-  return '#fca5a5';
-}
-
-function renderRadarSVG(scores) {
-  const keys = Object.keys(scores);
-  if (keys.length < 3) return '';
-  const n = keys.length;
-  const cx = 150, cy = 150, r = 85;
-  const isDark = !document.body.classList.contains('light-mode');
-  const angles = keys.map((_, i) => (i / n) * 2 * Math.PI - Math.PI / 2);
-
-  const gridStroke  = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const gridOuter   = isDark ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.18)';
-  const spokeStroke = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.10)';
-  const labelColor  = isDark ? '#94a3b8' : '#64748b';
-
-  function pt(pct, angle) {
-    const rad = (pct / 100) * r;
-    return [cx + rad * Math.cos(angle), cy + rad * Math.sin(angle)];
-  }
-
-  // Grid rings
-  const rings = [25,50,75,100].map(pct => {
-    const pts = angles.map(a => pt(pct, a).join(',')).join(' ');
-    const isOuter = pct === 100;
-    return `<polygon points="${pts}" fill="none" stroke="${isOuter?gridOuter:gridStroke}" stroke-width="${isOuter?1.5:0.7}" stroke-dasharray="${pct===50?'4,3':'none'}"/>`;
-  }).join('');
-
-  // Spokes
-  const spokes = angles.map(a => {
-    const [x,y] = pt(100, a);
-    return `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="${spokeStroke}" stroke-width="1"/>`;
-  }).join('');
-
-  // Fotmob-style: each sector is a filled wedge from centre to the data value
-  // Colour of each wedge depends on score: green ≥70, amber 45-69, red <45
-  function sectorColor(score, alpha) {
-    if (score >= 70) return isDark ? `rgba(74,222,128,${alpha})` : `rgba(22,163,74,${alpha})`;
-    if (score >= 45) return isDark ? `rgba(251,191,36,${alpha})` : `rgba(180,83,9,${alpha})`;
-    return isDark ? `rgba(248,113,113,${alpha})` : `rgba(220,38,38,${alpha})`;
-  }
-
-  // Each sector: triangle from centre → spoke i data point → spoke i+1 data point
-  const sectors = keys.map((k, i) => {
-    const score = scores[k] ?? 0;
-    const a1 = angles[i];
-    const a2 = angles[(i + 1) % n];
-    const [x1, y1] = pt(score, a1);
-    const [x2, y2] = pt(score, a2);
-    // Arc through intermediate angles for curved sector edge
-    const steps = 8;
-    let arcPts = [];
-    for (let s = 0; s <= steps; s++) {
-      const a = a1 + (a2 - a1) * (s / steps);
-      arcPts.push(pt(score, a).join(','));
-    }
-    const pts = `${cx},${cy} ${arcPts.join(' ')}`;
-    return `<polygon points="${pts}" fill="${sectorColor(score, isDark?0.28:0.22)}" stroke="${sectorColor(score, isDark?0.70:0.65)}" stroke-width="0.5" stroke-linejoin="round"/>`;
-  }).join('');
-
-  // Outer boundary line connecting all data points (smooth)
-  const boundaryPts = [];
-  keys.forEach((k, i) => {
-    const score = scores[k] ?? 0;
-    const a1 = angles[i];
-    const a2 = angles[(i + 1) % n];
-    const steps = 8;
-    for (let s = 0; s <= steps; s++) {
-      const a = a1 + (a2 - a1) * (s / steps);
-      boundaryPts.push(pt(score, a).join(','));
-    }
-  });
-
-  // Labels at bisector between spokes, outside the ring
-  const labels = keys.map((k, i) => {
-    const a1 = angles[i];
-    const a2 = angles[(i + 1) % n];
-    let diff = a2 - a1;
-    if (diff < 0) diff += 2 * Math.PI;
-    const bisect = a1 + diff / 2;
-    const labelR = r + 42;
-    const lx = cx + labelR * Math.cos(bisect);
-    const ly = cy + labelR * Math.sin(bisect);
-    const anchor = lx < cx - 10 ? 'end' : lx > cx + 10 ? 'start' : 'middle';
-    const score = scores[k] ?? 0;
-    const sColor = sectorColor(score, 1.0).replace(/[\d.]+\)$/, '1)');
-
-    return `<text x="${lx.toFixed(1)}" y="${(ly-6).toFixed(1)}" text-anchor="${anchor}" dominant-baseline="middle" font-size="8.5" font-weight="600" fill="${labelColor}" font-family="DM Sans,sans-serif">${k}</text>
-<text x="${lx.toFixed(1)}" y="${(ly+7).toFixed(1)}" text-anchor="${anchor}" dominant-baseline="middle" font-size="10" font-weight="700" fill="${sColor}" font-family="DM Mono,monospace">${score}%</text>`;
-  }).join('');
-
-  return `<svg viewBox="0 0 300 300" width="240" height="240" style="flex-shrink:0;overflow:visible">
-    ${rings}${spokes}${sectors}
-    <polyline points="${boundaryPts.join(' ')}" fill="none" stroke="${isDark?'rgba(255,255,255,0.25)':'rgba(0,0,0,0.18)'}" stroke-width="1" stroke-linejoin="round"/>
-    ${labels}
-  </svg>`;
-}
-
-function renderDetailStatic(p) {
-  const scoreVal = p.score ? parseInt(p.score.split('-')[0]) : 0;
-  const potVal = p.potential ? parseInt(p.potential.split('-')[0]) : 0;
-  const flagUrl = getFlagUrl(p.league || '');
-  const flagHtml = flagUrl ? `<img src="${flagUrl}" style="width:16px;height:11px;border-radius:2px;object-fit:cover;border:1px solid rgba(255,255,255,0.15);vertical-align:middle;margin-right:4px" />` : '';
-  return `
-    <div class="detail-hero">
-      <div id="detail-photo-wrap"><div class="detail-photo-ph">👤</div></div>
-      <div class="detail-info">
-        <div class="detail-name">${p.name||'—'}</div>
-        <div class="detail-meta">
-          ${p.team ? '<div class="detail-meta-chip" style="display:flex;align-items:center;gap:6px"><img id="detail-team-badge" src="" style="width:18px;height:18px;object-fit:contain;display:none" /><span id="detail-team-emoji">🏟</span> ' + p.team + '</div>' : ''}
-          ${p.league ? '<div class="detail-meta-chip">' + flagHtml + p.league + '</div>' : ''}
-          ${p.pos ? '<div class="detail-meta-chip">📍 ' + p.pos + '</div>' : ''}
-          ${p.age ? '<div class="detail-meta-chip">🎂 ' + p.age + 'y</div>' : ''}
-          ${p.foot ? '<div class="detail-meta-chip">🦶 ' + p.foot + '</div>' : ''}
-          <div id="detail-height-chip"></div>
-          ${p.nationality ? '<div class="detail-meta-chip" id="detail-nat-chip">🏳 ' + p.nationality + '</div>' : '<div id="detail-nat-chip"></div>'}
-        </div>
-        <div class="detail-tags">
-          ${p.window ? `<span class="${windowCls(p.window)}">${p.window}</span>` : ''}
-          ${p.target ? `<span class="${targetCls(p.target)}">${p.target}</span>` : ''}
-          ${p.status ? `<span class="${statusCls(p.status)}">${p.status}</span>` : ''}
-          ${p.agency ? `<span class="${agencyCls(p.agency)}">${p.agency}</span>` : ''}
-          ${p.recentmove ? '<span class="' + moveCls(p.recentmove) + '">Recent Move: ' + p.recentmove + '</span>' : ''}
-          ${p.role1 ? `<span class="role-badge">${p.role1}</span>` : ''}
-          ${p.style ? `<span class="style-tag">${p.style}</span>` : ''}
-          ${p.priority ? `<span style="font-size:13px">${stars(p.priority)}</span>` : ''}
-        </div>
-        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
-          ${p.tm ? `<a class="tm-link" href="${p.tm}" target="_blank">🔗 Transfermarkt</a>` : ''}
-          ${p.video ? `<a class="tm-link" href="${p.video}" target="_blank">🎬 Video</a>` : ''}
-          ${p.tm ? `<button class="btn btn-ghost btn-sm" onclick="tmUpdate('${p.id}')">🔄 TM Sync</button>` : ''}
-        </div>
-      </div>
-    </div>
-    <div class="detail-stats-grid">
-      <div class="detail-stat"><span class="ds-val val-green">${fmtMV(p.marketValue)}</span><div class="ds-lbl">Value</div></div>
-      <div class="detail-stat"><span class="ds-val">${p.contract||'—'}</span><div class="ds-lbl">Contract</div></div>
-      <div class="detail-stat"><span class="${'score-band '+scoreCls(p.score)}" style="font-size:15px">${p.score||'—'}</span><div class="ds-lbl" style="margin-top:6px">Score*</div></div>
-      <div class="detail-stat"><span class="${'score-band '+scoreCls(p.potential)}" style="font-size:15px">${p.potential||'—'}</span><div class="ds-lbl" style="margin-top:6px">Potential*</div></div>
-      <div class="detail-stat"><span class="ds-val">${p.physical||'—'}</span><div class="ds-lbl">Physical</div></div>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--border)">
-      ${[['Games',p.games],['Goals',p.goals],['Assists',p.assists],['Minutes',p.minutes]].map(([l,v])=>
-        '<div class="detail-stat" style="border-right:1px solid var(--border)">'
-        + '<span class="ds-val mono">' + (v??'—') + '</span><div class="ds-lbl">' + l + '</div>'
-        + '</div>').join('')}
-    </div>
-
-    <!-- DATA PROFILE SECTION -->
-    <div id="data-profile-section" style="padding:18px 22px;border-bottom:1px solid var(--border)">
-      <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted2);margin-bottom:14px">
-        📊 Data Profile
-        ${!serverOnline ? '<span style="color:var(--muted2);font-size:10px;font-weight:400;margin-left:8px">(Start server.py for live data)</span>' : ''}
-      </div>
-      <div id="profile-loading" style="color:var(--muted2);font-size:12px">${serverOnline ? '⏳ Loading...' : '—'}</div>
-    </div>
-
-    ${p.keynotes ? `<div style="padding:14px 22px;border-bottom:1px solid var(--border);background:var(--s2)">
-      <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted2);margin-bottom:6px">Key Notes</div>
-      <div style="font-size:13px;color:var(--text)">${p.keynotes}</div>
-    </div>` : ''}
-
-    <!-- SIMILAR PLAYERS + GBE SECTION -->
-    <!-- SIMILAR PLAYERS + GBE SECTION -->
-    <div id="similar-gbe-section" style="border-bottom:1px solid var(--border)">
-    <div id="similar-gbe-section" style="border-bottom:1px solid var(--border)">
-
-      <!-- Similar Players -->
-      <div style="padding:16px 22px 0">
-        <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted2);margin-bottom:12px">🔍 Similar Players</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-          <div>
-            <div style="font-size:10px;font-weight:600;color:var(--muted);margin-bottom:6px;letter-spacing:.04em">GLOBAL</div>
-            <div id="similar-global" style="color:var(--muted2);font-size:11px">⏳ Loading...</div>
-          </div>
-          <div>
-            <div style="font-size:10px;font-weight:600;color:var(--muted);margin-bottom:6px;letter-spacing:.04em">UK (ENG 1-3 · SCO 1)</div>
-            <div id="similar-uk" style="color:var(--muted2);font-size:11px">⏳ Loading...</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- GBE Calculator -->
-      <div style="padding:16px 22px">
-        <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted2);margin-bottom:10px">🧮 GBE Points (FA 2025/26)</div>
-        <div id="gbe-display" style="color:var(--muted2);font-size:11px">⏳ Loading...</div>
-
-        <details style="margin-top:10px">
-          <summary style="font-size:11px;color:var(--muted);cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px">
-            <span style="background:var(--s3);border:1px solid var(--border);border-radius:5px;padding:3px 10px;font-size:10px">⚙ Adjust inputs</span>
-          </summary>
-          <div style="margin-top:10px;display:flex;flex-direction:column;gap:10px">
-
-            <!-- Domestic -->
-            <div style="font-size:10px;font-weight:700;color:var(--muted2);text-transform:uppercase;letter-spacing:.06em">Domestic</div>
-            <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer">
-              <input type="checkbox" id="gbe-is-youth" onchange="refreshGBE()" style="accent-color:var(--accent)"> Youth Player (U21)
-            </label>
-            <label id="gbe-debut-wrap" style="font-size:11px;color:var(--muted);display:none;align-items:center;gap:6px;cursor:pointer">
-              <input type="checkbox" id="gbe-youth-debut" onchange="refreshGBE()" style="accent-color:var(--accent)"> Made first senior debut this period
-            </label>
-
-            <!-- International -->
-            <div style="font-size:10px;font-weight:700;color:var(--muted2);text-transform:uppercase;letter-spacing:.06em;margin-top:4px">International (Table 1)</div>
-            <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer">
-              <input type="checkbox" id="gbe-use-intl" onchange="refreshGBE()" style="accent-color:var(--accent)"> Include senior international appearances
-            </label>
-            <div id="gbe-intl-inputs" style="display:none;grid-template-columns:1fr 1fr;gap:8px">
-              <div>
-                <div style="font-size:10px;color:var(--muted2);margin-bottom:3px">FIFA Ranking</div>
-                <input type="number" id="gbe-intl-rank" value="50" min="1" max="200" onchange="refreshGBE()" class="form-input" style="font-size:11px;padding:4px 8px;height:28px">
-              </div>
-              <div>
-                <div style="font-size:10px;color:var(--muted2);margin-bottom:3px">Apps %</div>
-                <input type="number" id="gbe-intl-pct" value="0" min="0" max="100" step="5" onchange="refreshGBE()" class="form-input" style="font-size:11px;padding:4px 8px;height:28px">
-              </div>
-            </div>
-
-            <!-- Continental mins -->
-            <div style="font-size:10px;font-weight:700;color:var(--muted2);text-transform:uppercase;letter-spacing:.06em;margin-top:4px">Continental Minutes (Table 3)</div>
-            <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer">
-              <input type="checkbox" id="gbe-use-cont" onchange="refreshGBE()" style="accent-color:var(--accent)"> Add continental minutes
-            </label>
-            <div id="gbe-cont-inputs" style="display:none;grid-template-columns:1fr 1fr;gap:8px">
-              <div>
-                <div style="font-size:10px;color:var(--muted2);margin-bottom:3px">Competition Band</div>
-                <select id="gbe-cont-band" onchange="refreshGBE()" class="filter-sel" style="font-size:11px">
-                  <option value="1">Band 1 (UCL/CL)</option>
-                  <option value="2">Band 2 (UEL/CWC)</option>
-                  <option value="3">Band 3 (Other)</option>
-                </select>
-              </div>
-              <div>
-                <div style="font-size:10px;color:var(--muted2);margin-bottom:3px">Minutes %</div>
-                <input type="number" id="gbe-cont-pct" value="0" min="0" max="100" step="5" onchange="refreshGBE()" class="form-input" style="font-size:11px;padding:4px 8px;height:28px">
-              </div>
-            </div>
-
-            <!-- League position -->
-            <div style="font-size:10px;font-weight:700;color:var(--muted2);text-transform:uppercase;letter-spacing:.06em;margin-top:4px">Final League Position (Table 4)</div>
-            <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer">
-              <input type="checkbox" id="gbe-use-finish" onchange="refreshGBE()" style="accent-color:var(--accent)"> Add final position points
-            </label>
-            <div id="gbe-finish-inputs" style="display:none">
-              <select id="gbe-finish-cat" onchange="refreshGBE()" class="filter-sel" style="font-size:11px;width:100%">
-                <option>Title winner</option><option>Band1 group / conf winner</option>
-                <option>Band1 qualifiers</option><option>Band2 group</option>
-                <option>Band2 qualifiers</option><option selected>Mid-table</option>
-                <option>Relegation</option><option>Promotion</option>
-              </select>
-            </div>
-
-            <!-- Continental progression -->
-            <div style="font-size:10px;font-weight:700;color:var(--muted2);text-transform:uppercase;letter-spacing:.06em;margin-top:4px">Continental Progression (Table 5)</div>
-            <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer">
-              <input type="checkbox" id="gbe-use-cprog" onchange="refreshGBE()" style="accent-color:var(--accent)"> Add continental progression
-            </label>
-            <div id="gbe-cprog-inputs" style="display:none;grid-template-columns:1fr 1fr;gap:8px">
-              <div>
-                <div style="font-size:10px;color:var(--muted2);margin-bottom:3px">Competition Band</div>
-                <select id="gbe-cprog-band" onchange="refreshGBE()" class="filter-sel" style="font-size:11px">
-                  <option value="1">Band 1</option><option value="2">Band 2</option><option value="3">Band 3</option>
-                </select>
-              </div>
-              <div>
-                <div style="font-size:10px;color:var(--muted2);margin-bottom:3px">Stage reached</div>
-                <select id="gbe-cprog-stage" onchange="refreshGBE()" class="filter-sel" style="font-size:11px">
-                  <option>Final</option><option>Semi-final</option><option>Quarter-final</option>
-                  <option>Round of 16</option><option>Round of 32 / KO PO</option>
-                  <option>Group / league phase</option><option>Other</option>
-                </select>
-              </div>
-            </div>
-
-            <!-- League quality -->
-            <div style="font-size:10px;font-weight:700;color:var(--muted2);text-transform:uppercase;letter-spacing:.06em;margin-top:4px">League Quality (Table 6)</div>
-            <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer">
-              <input type="checkbox" id="gbe-use-lq" checked onchange="refreshGBE()" style="accent-color:var(--accent)"> Include league quality points
-            </label>
-
-            <!-- ESC criteria -->
-            <div id="gbe-esc-section" style="margin-top:4px">
-              <div style="font-size:10px;font-weight:700;color:var(--muted2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">ESC Criteria</div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
-                ${[['esc_youth_top50','Youth intl (Top-50)'],['esc_youth_outside','Youth intl (outside Top-50)'],
-                   ['esc_youth_cont','Youth continental'],['esc_youth_dom','Domestic youth matches'],
-                   ['esc_senior_top50','Senior intl (Top-50)'],['esc_senior_outside','Senior intl (outside Top-50)'],
-                   ['esc_senior_cont','Senior continental'],['esc_senior_dom','Domestic senior (Band 1-5)']]
-                  .map(([id,lbl]) => '<label style="font-size:10px;color:var(--muted);display:flex;align-items:center;gap:5px;cursor:pointer">'
-                    + '<input type="checkbox" id="gbe-' + id + '" onchange="refreshGBE()" style="accent-color:var(--accent)"> ' + lbl + '</label>').join('')}
-              </div>
-            </div>
-
-          </div>
-        </details>
-      </div>
-
-    </div>
-
-    <div class="notes-area">
-      <div class="notes-header">
-        <div class="notes-title">Scout Notes</div>
-        <div style="font-size:11px;color:var(--muted2)">${(p.notes||[]).length} notes</div>
-      </div>
-      <div id="notes-list-${p.id}">
-        ${(p.notes||[]).length === 0 ? `<div style="color:var(--muted2);font-size:12px;padding:8px 0">No notes yet.</div>` :
-          (p.notes||[]).map(n => '<div class="note-item"><div class="note-text">' + n.text + '</div><div class="note-date">' + n.date + '</div></div>').join('')}
-      </div>
-      <div class="note-input-row">
-        <input class="form-input" id="note-input-${p.id}" placeholder="Add scouting note..." onkeydown="if(event.key==='Enter')addNote('${p.id}')">
-        <button class="btn btn-primary btn-sm" onclick="addNote('${p.id}')">Add</button>
-      </div>
-    </div>
-
-    ${p.dataProfile ? `
-    <div style="padding:10px 22px 14px;border-top:1px solid var(--border)">
-      <button onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.textContent=this.textContent.includes('View')?'▲ Hide Data Profile':'📋 View Data Profile'" style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:7px 14px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;width:100%;text-align:left">📋 View Data Profile</button>
-      <div style="display:none;margin-top:10px">
-        <img src="${p.dataProfile}" style="width:100%;border-radius:8px;border:1px solid var(--border)" />
-        <div style="font-size:10px;color:var(--muted2);margin-top:6px;text-align:right"><a href="${p.dataProfile}" download="${(p.name||'player').replace(/ /g,'_')}_profile.png" style="color:var(--accent);text-decoration:none">⬇ Download</a></div>
-      </div>
-    </div>` : ''}
-
-    <div style="padding:12px 22px 16px;display:flex;align-items:center;gap:10px;border-top:1px solid var(--border);flex-wrap:wrap">
-      <span style="font-size:10px;color:var(--muted2)">Status:</span>
-      <select class="filter-sel" style="font-size:11px" onchange="quickStatus('${p.id}',this.value)">
-        ${['No Progress','Relationship','Agency Link','Contact Made'].map(s=>'<option value="' + s + '" ' + (s===(p.status||'')?'selected':'') + '>' + s + '</option>').join('')}
-      </select>
-      <select class="filter-sel" style="font-size:11px" onchange="quickWindow('${p.id}',this.value)">
-        ${['Monitor','Summer','January','Signed'].map(w=>'<option value="' + w + '" ' + (w===(p.window||'')?'selected':'') + '>' + w + '</option>').join('')}
-      </select>
-      <span style="font-size:10px;color:var(--muted2);margin-left:auto">Added: ${p.createdAt ? new Date(p.createdAt).toLocaleDateString('en-GB') : '—'}</span>
-    </div>
-  `;
-}
-
-function buildCompositeScores(groups) {
-  const pct = (group, label) => {
-    const g = groups[group] || {};
-    const d = g[label];
-    return (d && d.pct != null) ? d.pct : null;
-  };
-  const out = {};
-
-  // Detect if FB groups (has xA, Crosses) or CB groups
-  const isFB = pct('ATT','xA') != null || pct('ATT','Crosses') != null;
-
-  if (isFB) {
-    // FB composite scores — Aerial, Ground, Carrying, Playmaking, Chance Creation, Retention
-    const a1 = pct('DEF','Aerial Duels'), a2 = pct('DEF','Aerial Duel %');
-    if (a1!=null && a2!=null) out['Aerial'] = Math.round(a1*0.30 + a2*0.70);
-
-    const g1 = pct('DEF','Defensive Duels'), g2 = pct('DEF','Defensive Duel %');
-    if (g1!=null && g2!=null) out['Ground'] = Math.round(g1*0.30 + g2*0.70);
-
-    const c1 = pct('POS','Dribbles'), c2 = pct('POS','Dribbling %'), c3 = pct('POS','Progressive Runs') ?? pct('ATT','Progressive Runs');
-    if (c1!=null && c2!=null && c3!=null) out['Carrying'] = Math.round(c1*0.40 + c2*0.20 + c3*0.40);
-
-    const pm1 = pct('POS','Progressive Passes'), pm2 = pct('POS','Forward Passes'), pm3 = pct('POS','Passes to Final 3rd');
-    if (pm1!=null && pm2!=null && pm3!=null) out['Playmaking'] = Math.round(pm1*0.50 + pm2*0.25 + pm3*0.25);
-
-    const cc1 = pct('ATT','xA'), cc2 = pct('ATT','Crosses'), cc3 = pct('ATT','Touches in Box');
-    if (cc1!=null && cc2!=null) out['Chance Creation'] = Math.round(
-      (cc1!=null?cc1*0.60:0) + (cc2!=null?cc2*0.20:0) + (cc3!=null?cc3*0.20:0)
-    );
-
-    const r1 = pct('POS','Passing %'), r2 = pct('POS','Forward Pass %'), r3 = pct('POS','Prog Pass %');
-    if (r1!=null && r2!=null && r3!=null) out['Retention'] = Math.round(r1*0.34 + r2*0.33 + r3*0.33);
-  } else {
-    // CB composite scores
-    const a1 = pct('DEF','Aerial Duels'), a2 = pct('DEF','Aerial Duel Success %');
-    if (a1!=null && a2!=null) out['Aerial'] = Math.round(a1*0.30 + a2*0.70);
-    const g1 = pct('DEF','Defensive Duels'), g2 = pct('DEF','Defensive Duel Success %');
-    if (g1!=null && g2!=null) out['Ground'] = Math.round(g1*0.30 + g2*0.70);
-    const pos1 = pct('DEF','PAdj Interceptions'), pos2 = pct('DEF','Shots Blocked');
-    if (pos1!=null && pos2!=null) out['Positioning'] = Math.round(pos1*0.70 + pos2*0.30);
-    const c1 = pct('POS','Dribbles'), c2 = pct('POS','Dribbling %'), c3 = pct('POS','Progressive Runs');
-    if (c1!=null && c2!=null && c3!=null) out['Carrying'] = Math.round(c1*0.40 + c2*0.20 + c3*0.40);
-    const pm1 = pct('POS','Progressive Passes'), pm2 = pct('POS','Forward Passes'), pm3 = pct('POS','Passes to Final 3rd');
-    if (pm1!=null && pm2!=null && pm3!=null) out['Playmaking'] = Math.round(pm1*0.50 + pm2*0.25 + pm3*0.25);
-    const r1 = pct('POS','Passing Accuracy %'), r2 = pct('POS','Forward Passing %'), r3 = pct('POS','Progressive Passing %'), r4 = pct('POS','Long Passing %');
-    if (r1!=null && r2!=null && r3!=null && r4!=null) out['Retention'] = Math.round(r1*0.25 + r2*0.25 + r3*0.25 + r4*0.25);
-  }
-  return out;
-}
-
-function renderDataProfile(data) {
-  const { percentile_groups, roles, tags, raw } = data;
-
-  // Inject height chip from server raw data
-  if (raw?.height && raw.height !== 'nan' && raw.height !== '') {
-    const hEl = document.getElementById('detail-height-chip');
-    if (hEl) hEl.outerHTML = '<div class="detail-meta-chip">📏 ' + raw.height + ' cm</div>';
-  }
-
-  // Inject nationality from server — show flags, merge if same country
-  if (raw?.birth_country || raw?.passport_country) {
-    const bc = (raw.birth_country || '').trim();
-    const pc = (raw.passport_country || '').trim();
-    const natEl = document.getElementById('detail-nat-chip');
-    if (natEl) {
-      let html = '';
-      if (bc && pc && bc.toLowerCase() === pc.toLowerCase()) {
-        // Same — show once with flag
-        html = '<div class="detail-meta-chip">' + countryFlagHtml(bc) + ' ' + bc + '</div>';
-      } else {
-        if (bc) html += '<div class="detail-meta-chip">' + countryFlagHtml(bc) + ' ' + bc + '</div>';
-        if (pc && pc !== bc) html += '<div class="detail-meta-chip">🛂 ' + countryFlagHtml(pc) + ' ' + pc + '</div>';
-      }
-      natEl.outerHTML = html;
-    }
-  }
-  const el = document.getElementById('profile-loading');
-  if (!el) return;
-  const groups = percentile_groups || {};
-  const hasMetrics = Object.keys(groups).some(g => Object.keys(groups[g]||{}).length > 0);
-  const hasRoles = roles && Object.keys(roles).length > 0;
-  if (!hasRoles && !hasMetrics) {
-    el.innerHTML = `<div style="color:var(--muted2);font-size:12px">Player not found in CSV — add data manually.</div>`;
-    return;
-  }
-  let html = `<div style="display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap">`;
-  // Composite radar
-  const composites = buildCompositeScores(groups);
-  if (Object.keys(composites).length >= 3) {
-    html += `<div style="display:flex;flex-direction:column;align-items:center;gap:4px">
-      ${renderRadarSVG(composites)}
-      <div style="font-size:9px;color:var(--muted2);letter-spacing:.04em">vs CB peers · same league · 500+ mins</div>
-    </div>`;
-  }
-  // Role scores + tags
-  html += `<div style="flex:1;min-width:180px">`;
-  if (hasRoles) {
-    html += `<div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted2);margin-bottom:10px">Role Scores</div>`;
-    Object.entries(roles).forEach(([role, score]) => {
-      const tc = roleScoreTextColor(score);
-      const w = score != null ? score : 0;
-      html += `<div style="margin-bottom:8px">
-        <div style="display:flex;justify-content:space-between;margin-bottom:3px">
-          <span style="font-size:11px;color:var(--muted)">${role}</span>
-          <span style="font-family:'DM Mono',monospace;font-size:11px;color:${tc};font-weight:600">${score!=null?score.toFixed(1):'—'}</span>
-        </div>
-        <div style="height:5px;background:var(--s4);border-radius:3px;overflow:hidden">
-          <div style="height:100%;width:${w}%;background:${tc};border-radius:3px;transition:width 0.6s ease"></div>
-        </div>
-      </div>`;
-    });
-  }
-  if (tags) {
-    if (tags.styles?.length) {
-      html += `<div style="margin-top:12px;margin-bottom:4px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted2)">Style</div>`;
-      html += tags.styles.map(t=>`<span style="display:inline-block;background:rgba(99,179,237,0.15);color:#63b3ed;border:1px solid rgba(99,179,237,0.3);padding:3px 8px;border-radius:4px;font-size:11px;margin:2px">${t}</span>`).join('');
-    }
-    if (tags.strengths?.length) {
-      html += `<div style="margin-top:8px;margin-bottom:4px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted2)">Strengths</div>`;
-      html += tags.strengths.map(t=>`<span style="display:inline-block;background:rgba(52,211,153,0.15);color:#34d399;border:1px solid rgba(52,211,153,0.3);padding:3px 8px;border-radius:4px;font-size:11px;margin:2px">${t}</span>`).join('');
-    }
-    if (tags.weaknesses?.length) {
-      html += `<div style="margin-top:8px;margin-bottom:4px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted2)">Weaknesses</div>`;
-      html += tags.weaknesses.map(t=>`<span style="display:inline-block;background:rgba(252,165,165,0.15);color:#fca5a5;border:1px solid rgba(252,165,165,0.3);padding:3px 8px;border-radius:4px;font-size:11px;margin:2px">${t}</span>`).join('');
-    }
-  }
-  html += `</div></div>`;
-
-  // Percentile bars — paired order, position-aware
-  const isFBBoard = currentBoard === 'RB' || currentBoard === 'LB';
-  const ORDERED = isFBBoard ? [
-    { group:'ATT', label:'⚡ Attacking', color:'#f97316', keys:[
-      'Crosses', 'Crossing %',
-      'Goals', 'Shots',
-      'xA', 'xG',
-      'Offensive Duels', 'Offensive Duel %',
-      'Progressive Runs', 'Accelerations',
-      'Touches in Box',
-    ]},
-    { group:'DEF', label:'🛡 Defensive', color:'#60a5fa', keys:[
-      'Aerial Duels', 'Aerial Duel %',
-      'Defensive Duels', 'Defensive Duel %',
-      'PAdj Interceptions', 'Shots Blocked',
-    ]},
-    { group:'POS', label:'🎯 Possession', color:'#34d399', keys:[
-      'Dribbles', 'Dribbling %',
-      'Forward Passes', 'Forward Pass %',
-      'Long Passes', 'Long Pass %',
-      'Passes', 'Passing %',
-      'Passes to Final 3rd', 'Passes to Final 3rd %',
-      'Passes to Pen Area', 'Passes to Pen Area %',
-      'Progressive Passes', 'Prog Pass %',
-      'Smart Passes', 'Deep Completions',
-    ]},
-  ] : [
-    { group:'ATT', label:'⚡ Attacking', color:'#f97316', keys:[
-      'xG', 'Goals: Non-Penalty',
-      'Offensive Duels', 'Offensive Duel Success %',
-      'Progressive Runs', 'Accelerations'
-    ]},
-    { group:'DEF', label:'🛡 Defensive', color:'#60a5fa', keys:[
-      'Aerial Duels', 'Aerial Duel Success %',
-      'Defensive Duels', 'Defensive Duel Success %',
-      'PAdj Interceptions', 'Shots Blocked'
-    ]},
-    { group:'POS', label:'🎯 Possession', color:'#34d399', keys:[
-      'Dribbles', 'Dribbling %',
-      'Forward Passes', 'Forward Passing %',
-      'Long Passes', 'Long Passing %',
-      'Passes', 'Passing Accuracy %',
-      'Passes to Final 3rd', 'Passes to Final 3rd %',
-      'Progressive Passes', 'Progressive Passing %',
-    ]},
-  ];
-
-  if (hasMetrics) {
-    html += `<div style="margin-top:18px;border-top:1px solid var(--border);padding-top:16px">`;
-    ORDERED.forEach(({ group, label, color, keys }) => {
-      const grp = groups[group] || {};
-      const entries = keys.map(k => [k, grp[k]]).filter(([,d]) => d && d.pct != null);
-      if (!entries.length) return;
-      html += `<div style="margin-bottom:18px">
-        <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${color};margin-bottom:8px">${label}</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 28px">`;
-      entries.forEach(([lbl, d]) => {
-        const col = pctColor(d.pct);
-        html += `<div style="display:flex;align-items:center;gap:6px">
-          <div style="width:126px;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0" title="${lbl}">${lbl}</div>
-          <div style="flex:1;height:4px;background:var(--s4);border-radius:2px;overflow:hidden">
-            <div style="height:100%;width:${d.pct}%;background:${col};border-radius:2px"></div>
-          </div>
-          <div style="font-family:'DM Mono',monospace;font-size:10px;color:${col};width:26px;text-align:right;flex-shrink:0">${Math.round(d.pct)}</div>
-        </div>`;
-      });
-      html += `</div></div>`;
-    });
-    html += `</div>`;
-  }
-  el.innerHTML = html;
-}
-
-
-async function loadPlayerProfile(p) {
-  if (!serverOnline) { serverOnline = await checkServer(); }
-  if (!serverOnline) {
-    const el = document.getElementById('profile-loading');
-    if (el) el.innerHTML = '<span style="color:var(--muted2);font-size:11px">Server offline — run server.py</span>';
-    return;
-  }
-  try {
-    const url = `${SERVER}/api/player/profile?player=${encodeURIComponent(p.name||'')}&team=${encodeURIComponent(p.team||'')}&league=${encodeURIComponent(p.league||'')}&pos=${encodeURIComponent(currentBoard||'')}`;
-    const r = await fetch(url);
-    if (r.ok) renderDataProfile(await r.json());
-  } catch(e) {
-    const el = document.getElementById('profile-loading');
-    if (el) el.innerHTML = '<span style="color:var(--muted2);font-size:11px">Server offline — run server.py</span>';
-  }
-  loadSimilar(p);
-  loadGBE(p);
-}
-
-// Store current player for GBE refresh
-let _gbePlayer = null;
-
-async function loadSimilar(p) {
-  const elG = document.getElementById('similar-global');
-  const elUK = document.getElementById('similar-uk');
-  if (!elG || !elUK) return;
-  const base = `${SERVER}/api/similar?player=${encodeURIComponent(p.name||'')}&team=${encodeURIComponent(p.team||'')}&league=${encodeURIComponent(p.league||'')}&pos=${encodeURIComponent(currentBoard||'')}`;
-  try {
-    const [rG, rUK] = await Promise.all([fetch(base), fetch(base + '&uk=1')]);
-    const [dG, dUK] = await Promise.all([rG.json(), rUK.json()]);
-    elG.innerHTML  = renderSimilarList(dG.results  || []);
-    elUK.innerHTML = renderSimilarList(dUK.results || []);
-  } catch(e) {
-    elG.innerHTML = elUK.innerHTML = '<span style="color:var(--muted2)">—</span>';
-  }
-}
-
-function renderSimilarList(results) {
-  if (!results.length) return '<span style="color:var(--muted2);font-size:11px">No matches found</span>';
-  return results.map((r, i) => {
-    const simColor = r.similarity >= 80 ? '#34d399' : r.similarity >= 65 ? '#fbbf24' : '#6b7280';
-    return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;${i<results.length-1?'border-bottom:1px solid var(--border)':''}">
-      <span style="font-size:10px;font-weight:700;color:var(--muted2);width:14px">${i+1}</span>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.name}</div>
-        <div style="font-size:10px;color:var(--muted2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.team} · ${r.league}</div>
-      </div>
-      <div style="font-family:'DM Mono',monospace;font-size:11px;font-weight:700;color:${simColor};flex-shrink:0">${r.similarity.toFixed(0)}%</div>
-    </div>`;
-  }).join('');
-}
-
-async function loadGBE(p) {
-  _gbePlayer = p;
-  const el = document.getElementById('gbe-display');
-  if (!el) return;
-  const g = id => document.getElementById(id);
-  const chk = id => g(id)?.checked ? '1' : '0';
-  const val = id => g(id)?.value || '0';
-
-  const params = new URLSearchParams({
-    player: p.name||'', team: p.team||'', league: p.league||'', pos: currentBoard||'',
-    use_intl:    chk('gbe-use-intl'),
-    intl_rank:   val('gbe-intl-rank') || '200',
-    intl_pct:    val('gbe-intl-pct')  || '0',
-    use_cont:    chk('gbe-use-cont'),
-    cont_band:   val('gbe-cont-band') || '1',
-    cont_pct:    val('gbe-cont-pct')  || '0',
-    use_finish:  chk('gbe-use-finish'),
-    finish_cat:  val('gbe-finish-cat') || 'Mid-table',
-    use_cprog:   chk('gbe-use-cprog'),
-    cprog_band:  val('gbe-cprog-band') || '1',
-    cprog_stage: val('gbe-cprog-stage') || 'Other',
-    is_youth:    chk('gbe-is-youth'),
-    youth_debut: chk('gbe-youth-debut'),
-    use_lq:      chk('gbe-use-lq') || '1',
-    esc_youth_top50:    chk('gbe-esc_youth_top50'),
-    esc_youth_outside:  chk('gbe-esc_youth_outside'),
-    esc_youth_cont:     chk('gbe-esc_youth_cont'),
-    esc_youth_dom:      chk('gbe-esc_youth_dom'),
-    esc_senior_top50:   chk('gbe-esc_senior_top50'),
-    esc_senior_outside: chk('gbe-esc_senior_outside'),
-    esc_senior_cont:    chk('gbe-esc_senior_cont'),
-    esc_senior_dom:     chk('gbe-esc_senior_dom'),
-  });
-  try {
-    const r = await fetch(`${SERVER}/api/gbe?${params}`);
-    const d = await r.json();
-    if (d.error) { el.innerHTML = `<span style="color:#fca5a5;font-size:11px">GBE error: ${d.error}</span>`; return; }
-    const b = d.breakdown;
-    const escHtml = d.esc_eligible && d.esc_reasons?.length
-      ? `<div style="margin-top:5px;font-size:10px;color:#fbbf24">ESC: ${d.esc_reasons.join(' · ')}</div>` : '';
-    el.innerHTML = `
-      <div style="background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:12px 16px">
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
-          <div>
-            <div style="font-size:2rem;font-weight:800;line-height:1;color:var(--text)">${d.total}</div>
-            <div style="font-size:9px;color:var(--muted2);margin-top:2px">Est. points</div>
-          </div>
-          <div style="padding:5px 12px;border-radius:999px;background:${d.status_color};color:#fff;font-weight:700;font-size:12px;white-space:nowrap">${d.status}</div>
-          <div style="margin-left:auto;text-align:right">
-            <div style="font-size:11px;color:var(--muted)">Band ${d.band}</div>
-            <div style="font-size:10px;color:var(--muted2)">${d.domestic_pct}% mins</div>
-          </div>
-        </div>
-        <div style="height:1px;background:var(--border);margin:6px 0"></div>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px">
-          ${[['Domestic',b.domestic],['Intl',b.international],['Continental',b.continental],
-             ['League Pos',b.league_position],['Cont. Prog',b.cont_progression],['League Qual',b.league_quality]]
-            .map(([l,v])=>`<div style="font-size:10px;color:var(--muted2)">${l}: <span style="color:var(--text);font-weight:600">${v}</span></div>`).join('')}
-        </div>
-        <div style="margin-top:5px;font-size:9px;color:var(--muted2)">0–9 Fail · 10–14 Exceptions Panel · 15+ Pass</div>
-        ${escHtml}
-      </div>`;
-  } catch(e) {
-    el.innerHTML = '<span style="color:var(--muted2)">Could not load GBE data</span>';
-  }
-}
-
-function refreshGBE() {
-  if (!_gbePlayer) return;
-  // Show/hide conditional inputs
-  const show = (id, visible) => { const el = document.getElementById(id); if(el) el.style.display = visible ? 'grid' : 'none'; };
-  const showB = (id, visible) => { const el = document.getElementById(id); if(el) el.style.display = visible ? 'block' : 'none'; };
-  show('gbe-intl-inputs',  document.getElementById('gbe-use-intl')?.checked);
-  show('gbe-cont-inputs',  document.getElementById('gbe-use-cont')?.checked);
-  showB('gbe-finish-inputs', document.getElementById('gbe-use-finish')?.checked);
-  show('gbe-cprog-inputs', document.getElementById('gbe-use-cprog')?.checked);
-  const isYouth = document.getElementById('gbe-is-youth')?.checked;
-  const debutWrap = document.getElementById('gbe-debut-wrap');
-  if (debutWrap) debutWrap.style.display = isYouth ? 'flex' : 'none';
-  loadGBE(_gbePlayer);
-}
-
-async function tmUpdate(id) {
-  const p = players().find(x => x.id === id);
-  if (!p || !p.tm) return;
-  showToast('🔄 Syncing from Transfermarkt...');
-  try {
-    const r = await fetch(`${SERVER}/api/player/tm_update?url=${encodeURIComponent(p.tm)}`);
-    const data = await r.json();
-    if (data.error) { showToast('❌ ' + data.error); return; }
-    const idx = allPlayers[currentBoard].findIndex(x => x.id === id);
-    if (idx !== -1) {
-      if (data.team)        allPlayers[currentBoard][idx].team = data.team;
-      if (data.age)         allPlayers[currentBoard][idx].age = data.age;
-      if (data.value)       allPlayers[currentBoard][idx].marketValue = data.value;
-      if (data.contract)    allPlayers[currentBoard][idx].contract = data.contract;
-      if (data.recentmove)  allPlayers[currentBoard][idx].recentmove = data.recentmove;
-      if (data.league)      allPlayers[currentBoard][idx].league = data.league;
-      if (data.games)       allPlayers[currentBoard][idx].games = data.games;
-      if (data.goals)       allPlayers[currentBoard][idx].goals = data.goals;
-      if (data.assists)     allPlayers[currentBoard][idx].assists = data.assists;
-      if (data.minutes)     allPlayers[currentBoard][idx].minutes = data.minutes;
-      allPlayers[currentBoard][idx].updatedAt = new Date().toISOString();
-      save();
-      renderAll();
-      showToast('✅ TM sync complete');
-      openDetail(id);
-    }
-  } catch(e) {
-    showToast('❌ Server offline — run server.py');
-  }
-}
-
-function openDetail(id) {
-  viewingId = id;
-  const p = players().find(x => x.id === id);
-  if (!p) return;
-  document.getElementById('detail-title').textContent = (p.fullname || p.name || 'PLAYER').toUpperCase();
-  document.getElementById('detail-body').innerHTML = renderDetailStatic(p);
-  document.getElementById('detail-overlay').classList.add('open');
-  loadPhoto(p.name, p.team, 'detail-photo-wrap', p.league);
-  // Load team badge from FotMob
-  if (p.team) {
-    const teamId = getTeamFotmobId(p.team);
-    if (teamId) {
-      const badgeEl = document.getElementById('detail-team-badge');
-      if (badgeEl) {
-        badgeEl.src = `https://images.fotmob.com/image_resources/logo/teamlogo/${teamId}.png`;
-        badgeEl.onload = () => {
-          badgeEl.style.display = 'block';
-          const emoji = document.getElementById('detail-team-emoji');
-          if (emoji) emoji.style.display = 'none';
-        };
-        badgeEl.onerror = () => { badgeEl.style.display = 'none'; };
-      }
-    }
-  }
-  checkServer().then(() => loadPlayerProfile(p));
-}
-
-function closeDetail() { document.getElementById('detail-overlay').classList.remove('open'); viewingId = null; }
-
-function editFromDetail() {
-  const id = viewingId;
-  closeDetail();
-  if (id) setTimeout(() => openEdit(id), 150);
-}
-
-function addNote(id) {
-  const el = document.getElementById('note-input-'+id);
-  const text = el.value.trim();
-  if (!text) return;
-  const p = allPlayers[currentBoard].find(x => x.id === id);
-  if (!p) return;
-  const note = { text, date: new Date().toLocaleString('en-GB', {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) };
-  p.notes = [...(p.notes||[]), note];
-  p.updatedAt = new Date().toISOString();
-  save();
-  el.value = '';
-  const nl = document.getElementById('notes-list-'+id);
-  if (nl) nl.innerHTML = p.notes.map(n=>`<div class="note-item"><div class="note-text">${n.text}</div><div class="note-date">${n.date}</div></div>`).join('');
-  showToast('📝 Note added');
-}
-
-function quickStatus(id, val) {
-  const p = allPlayers[currentBoard].find(x => x.id === id);
-  if (!p) return;
-  p.status = val;
-  p.updatedAt = new Date().toISOString();
-  save();
-  renderAll();
-  showToast('✅ Status → ' + val);
-}
-
-function quickWindow(id, val) {
-  const p = allPlayers[currentBoard].find(x => x.id === id);
-  if (!p) return;
-  p.window = val;
-  p.updatedAt = new Date().toISOString();
-  save();
-  renderAll();
-  showToast('✅ Window → ' + val);
-}
-
-// ── EXPORT ──
-function exportCSV() {
-  const cols = ['name','fullname','team','league','pos','age','foot','nationality',
-    'window','target','status','agency','recentmove','priority',
-    'style','role1','score','potential','physical',
-    'marketValue','contract','games','goals','assists','minutes','goalsAgainst',
-    'tm','video','keynotes','createdAt'];
-  const rows = [cols.join(',')];
-  players().forEach(p => {
-    rows.push(cols.map(c => `"${(p[c]||'').toString().replace(/"/g,'""')}"`).join(','));
-  });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([rows.join('\n')], {type:'text/csv'}));
-  a.download = currentBoard.replace(/ /g,'_') + '_' + new Date().toISOString().slice(0,10) + '.csv';
-  a.click();
-  showToast('📊 Exported: ' + currentBoard);
-}
-
-// ── IMPORT ──
-function openImport() {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = '.csv,.xlsx,.xls';
-  input.onchange = e => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-      importExcel(file);
-    } else {
-      importCSV(file);
-    }
-  };
-  input.click();
-}
-
-function parseMondayRow(row) {
-  // Extract TM link from Monday's "TM Link - https://..." format
-  function extractTM(val) {
-    if (!val) return '';
-    const m = String(val).match(/https?:\/\/[^\s,]+transfermarkt[^\s,]*/i);
-    return m ? m[0] : '';
-  }
-
-  // Clean value
-  function clean(val) {
-    if (val === null || val === undefined) return '';
-    return String(val).trim();
-  }
-
-  // Extract numeric market value — keep as raw number
-  function parseMV(val) {
-    if (!val) return '';
-    const s = String(val).replace(/[€£$\s]/g,'').toLowerCase();
-    const n = parseFloat(s);
-    if (isNaN(n)) return '';
-    if (s.includes('m')) return Math.round(n * 1000000);
-    if (s.includes('k')) return Math.round(n * 1000);
-    return n;
-  }
-
-  // Map Monday column names → ScoutBoard field names
-  const name = clean(row['Name'] || row['name']);
-  if (!name) return null;
-
-  return {
-    id: uid(),
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    notes: [],
-    name,
-    team:        clean(row['Team'] || row['team']),
-    league:      clean(row['League'] || row['league']),
-    age:         clean(row['Age'] || row['age']),
-    window:      clean(row['Window'] || row['window']),
-    target:      clean(row['Target Move'] || row['target']),
-    tm:          extractTM(row['Transfermarkt'] || row['tm']),
-    style:       clean(row['Style'] || row['style']),
-    role1:       clean(row['Roles'] || row['role1']),
-    priority:    clean(row['Priority'] || row['priority']),
-    status:      clean(row['Status'] || row['status']),
-    agency:      clean(row['Agency'] || row['agency']),
-    recentmove:  clean(row['Recent Move'] || row['recentmove']),
-    marketValue: parseMV(row['Value'] || row['marketValue']),
-    contract:    clean(row['Contract'] || row['contract']),
-    foot:        clean(row['Foot'] || row['foot']),
-    score:       clean(row['Score*'] || row['score']),
-    potential:   clean(row['Potential*'] || row['potential']),
-    physical:    clean(row['Physical Notes'] || row['physical']),
-    video:       clean(row['Video'] || row['video']),
-    keynotes:    clean(row['Extra Key Notes'] || row['keynotes']),
-    games:       clean(row['Games'] || row['games']),
-    goals:       clean(row['Goals'] || row['goals']),
-    assists:     clean(row['Assists'] || row['assists']),
-    minutes:     clean(row['Minutes'] || row['minutes']),
-  };
-}
-
-async function importExcel(file) {
-  showToast('📥 Reading Excel file...');
-  // Use SheetJS to parse xlsx
-  const script = document.createElement('script');
-  script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-  script.onload = () => {
-    const reader = new FileReader();
-    reader.onload = ev => {
-      try {
-        const wb = XLSX.read(ev.target.result, {type:'array'});
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const raw = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
-
-        // Find header row (look for 'Name' column)
-        let headerIdx = -1;
-        for (let i = 0; i < Math.min(raw.length, 10); i++) {
-          if (raw[i].includes('Name')) { headerIdx = i; break; }
+HI, LO, STYLE_T = 70, 30, 65
+
+def percentile_in_series(value, series: pd.Series) -> float:
+    s = pd.to_numeric(series, errors="coerce").dropna()
+    if len(s) == 0 or pd.isna(value): 
+        return np.nan
+    rank = (s < float(value)).mean() * 100.0
+    eq_share = (s == float(value)).mean() * 100.0
+    return min(100.0, rank + 0.5 * eq_share)
+
+def chips(items, color):
+    if not items: return "_None identified._"
+    spans = [
+        f"<span style='background:{color};color:#111;padding:2px 6px;border-radius:10px;margin:0 6px 6px 0;display:inline-block'>{txt}</span>"
+        for txt in items[:10]
+    ]
+    return " ".join(spans)
+
+# Build pool-based percentiles for EXTRA_METRICS; fallback to league-table percentiles on the player row
+pct_extra = {}
+if isinstance(pool_df, pd.DataFrame) and not pool_df.empty:
+    for m in EXTRA_METRICS:
+        if m in df.columns and m in pool_df.columns and pd.notna(ply.get(m)):
+            pct_extra[m] = percentile_in_series(ply[m], pool_df[m])
+for m in EXTRA_METRICS:
+    if m not in pct_extra or pd.isna(pct_extra[m]):
+        col = f"{m} Percentile"
+        if col in player_row.columns and pd.notna(player_row[col].iloc[0]):
+            pct_extra[m] = float(player_row[col].iloc[0])
+
+# Enforce style-only vs. strength/weakness-only via STYLE_MAP:
+# - If 'sw' is None -> do NOT score strengths/weaknesses
+# - If 'style' is None -> do NOT flag style
+strengths, weaknesses, styles = [], [], []
+for m, v in pct_extra.items():
+    if pd.isna(v): 
+        continue
+    cfg = STYLE_MAP.get(m, {})
+    sw_label = cfg.get('sw')          # keep None if absent
+    style_tag = cfg.get('style')      # keep None if absent
+
+    # Strengths/Weaknesses only if an sw label exists
+    if sw_label:
+        if v >= HI:
+            strengths.append((sw_label, v))
+        elif v <= LO:
+            weaknesses.append((sw_label, v))
+
+    # Style flag only if a style phrase exists
+    if style_tag and v >= STYLE_T:
+        styles.append((style_tag, v))
+
+# De-dupe & sort nicely
+if strengths:
+    strength_best = {name: max(p for n,p in strengths if n==name) for name,_ in strengths}
+    strengths = [name for name,_ in sorted(strength_best.items(), key=lambda kv: -kv[1])]
+if weaknesses:
+    weakness_worst = {name: min(p for n,p in weaknesses if n==name) for name,_ in weaknesses}
+    weaknesses = [name for name,_ in sorted(weakness_worst.items(), key=lambda kv: kv[1])]
+if styles:
+    style_best = {name: max(p for n,p in styles if n==name) for name,_ in styles}
+    styles = [name for name,_ in sorted(style_best.items(), key=lambda kv: -kv[1])]
+
+# Summary + chips
+st.markdown(
+    f"**Profile:** {player_name} — {ply.get('Team','?')} ({ply.get('League','?')}), "
+    f"age {int(ply['Age']) if pd.notna(ply.get('Age')) else '—'}, "
+    f"minutes {int(ply['Minutes played']) if pd.notna(ply['Minutes played']) else '—'}."
+)
+st.markdown("**Style:**")
+st.markdown(chips(styles, "#bfdbfe"), unsafe_allow_html=True)   # light blue
+st.markdown("**Strengths:**")
+st.markdown(chips(strengths, "#a7f3d0"), unsafe_allow_html=True)  # light green
+st.markdown("**Weaknesses:**")
+st.markdown(chips(weaknesses, "#fecaca"), unsafe_allow_html=True) # light red
+
+# ---------- 3) ROLE SCORES (MATCH TABLES EXACTLY) ----------
+def table_style_role_scores_from_row(row):
+    """Use per-league percentiles from df_f (already computed) + sidebar league weighting."""
+    rs = {}
+    for role, rd in ROLES.items():
+        total_w = sum(rd["metrics"].values()) or 1.0
+        metric_score = 0.0
+        for m, w in rd["metrics"].items():
+            pct_col = f"{m} Percentile"
+            if pct_col in row.index and pd.notna(row[pct_col]):
+                metric_score += float(row[pct_col]) * w
+        metric_score /= total_w
+        if use_league_weighting:
+            league_scaled = float(row.get("League Strength", 50.0))  # 0..100
+            metric_score = (1 - beta) * metric_score + beta * league_scaled
+        rs[role] = metric_score
+    return rs
+
+role_scores = table_style_role_scores_from_row(player_row.iloc[0])
+
+# Best role line — choose ONLY among the first three roles in ROLES
+if role_scores:
+    role_list = list(ROLES.keys())[:3]
+    candidates = [(r, role_scores.get(r, np.nan)) for r in role_list]
+    candidates = [(r, v) for r, v in candidates if pd.notna(v)]
+    if candidates:
+        best_role = max(candidates, key=lambda kv: kv[1])[0]
+        st.markdown(f"**Best role:** {best_role}.")
+
+# Role table with gradient colors (show all roles)
+def score_to_color(v: float) -> str:
+    if pd.isna(v): return "background-color: #ffffff"
+    if v <= 50:
+        r1,g1,b1 = (190,42,62); r2,g2,b2 = (244,209,102); t = v/50
+    else:
+        r1,g1,b1 = (244,209,102); r2,g2,b2 = (34,197,94); t = (v-50)/50
+    r = int(r1 + (r2-r1)*t); g = int(g1 + (g2-g1)*t); b = int(b1 + (b2-b1)*t)
+    return f"background-color: rgb({r},{g},{b})"
+
+rows = [{"Role": r, "Percentile": role_scores.get(r, np.nan)} for r in ROLES.keys()]
+role_df = pd.DataFrame(rows).set_index("Role")
+styled = (
+    role_df.style
+    .map(lambda x: score_to_color(float(x)) if pd.notna(x) else "background-color:#fff", subset=["Percentile"])
+    .format({"Percentile": lambda x: f"{int(round(x))}" if pd.notna(x) else "—"})
+)
+st.dataframe(styled, use_container_width=True)
+# ----------------- END SINGLE PLAYER ROLE PROFILE -----------------
+
+
+# =====================================================================
+# ============== BELOW THE NOTES: 3 EXTRA FEATURE BLOCKS ==============
+# =====================================================================
+
+# ============================ (E) ONE-PAGER — WIDER PANELS, SMALLER CENTER GAP, EXTRA TOP-LEFT PADDING ============================
+
+from io import BytesIO
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+
+st.markdown("---")
+
+if player_row.empty:
+    st.info("Pick a player above.")
+else:
+    # --------- palette / tokens ---------
+    PAGE_BG   = "#0a0f1c"
+    PANEL_BG  = "#11161C"
+    TRACK_BG  = "#222c3d"
+    TEXT      = "#E5E7EB"
+    ROLE_GREY = "#737373"
+
+    CHIP_G_BG = "#22C55E"; CHIP_R_BG = "#EF4444"; CHIP_B_BG = "#60A5FA"
+
+    # --------- layout / padding knobs ---------
+    NAME_X   = 0.055   # more breathing room on the left
+    META_X   = 0.055
+    CHIP_X0  = 0.055   # chips/roles start x
+    GUTTER_PAD  = 0.006
+
+    # ----------------- helpers -----------------
+    def div_color_tuple(v: float):
+        if pd.isna(v): return (0.6,0.63,0.66)
+        v = float(v)
+        if v <= 50:
+            t = v/50.0;  c1, c2 = np.array([239,68,68]),  np.array([234,179,8])
+        else:
+            t = (v-50)/50.0; c1, c2 = np.array([234,179,8]), np.array([34,197,94])
+        return tuple(((c1 + (c2-c1)*t)/255.0).astype(float))
+
+    def _text_width_frac(fig, s, *, fontsize=8, weight="normal"):
+        t = fig.text(0, 0, s, fontsize=fontsize, fontweight=weight, transform=fig.transFigure, alpha=0)
+        fig.canvas.draw(); r = fig.canvas.get_renderer()
+        w_px = t.get_window_extent(renderer=r).width; t.remove()
+        return w_px / fig.bbox.width
+
+    def _text_height_frac(fig, s, *, fontsize=8, weight="normal"):
+        t = fig.text(0, 0, s, fontsize=fontsize, fontweight=weight, transform=fig.transFigure, alpha=0)
+        fig.canvas.draw(); r = fig.canvas.get_renderer()
+        h_px = t.get_window_extent(renderer=r).height; t.remove()
+        return h_px / fig.bbox.height
+
+    # chips — max_per_row + slightly tighter spacing
+    def chip_row_exact(fig, items, y, bg, *, fs=10.1, weight="900", max_rows=2, gap_x=0.006, max_per_row=None):
+        if not items: return y
+        x0 = x = CHIP_X0
+        row_gap = 0.026
+        pad_x = 0.004
+        pad_y = 0.002
+        h = _text_height_frac(fig, "Hg", fontsize=fs, weight=weight) + pad_y*2
+        per_row = 0
+        for s in items[:60]:
+            w = _text_width_frac(fig, s, fontsize=fs, weight=weight) + pad_x*2
+            need_wrap = (x + w > 0.965) or (max_per_row and per_row >= max_per_row)
+            if need_wrap:
+                max_rows -= 1
+                if max_rows <= 0: break
+                x = x0; y -= row_gap; per_row = 0
+            fig.patches.append(
+                mpatches.FancyBboxPatch((x, y - h*0.74), w, h,
+                    boxstyle=f"round,pad=0.001,rounding_size={h*0.45}",
+                    transform=fig.transFigure, facecolor=bg, edgecolor="none")
+            )
+            fig.text(x + pad_x, y - h*0.33, s, fontsize=fs, color="#FFFFFF",
+                     va="center", ha="left", fontweight=weight)
+            x += w + gap_x
+            per_row += 1
+        return y - row_gap
+
+    # roles row — slightly squarer corners (now with hide/filter options)
+    def roles_row_tight(fig, rs: dict, y, *, fs=10.6, max_roles=6, min_score=0, hidden_roles=None):
+        if not isinstance(rs, dict) or not rs:
+            return y
+
+        hidden = {h.strip().lower() for h in (hidden_roles or set())}
+
+        # drop All In, enforce score floor, and exclude hidden roles
+        rs = {
+            k: v for k, v in rs.items()
+            if k.strip().lower() != "all in"
+            and (k.strip().lower() not in hidden)
+            and pd.notna(v) and float(v) >= float(min_score)
         }
-        if (headerIdx === -1) { showToast('❌ Could not find header row'); return; }
+        if not rs:
+            return y
 
-        const headers = raw[headerIdx];
-        const imported = [];
-        for (let i = headerIdx + 1; i < raw.length; i++) {
-          const rowArr = raw[i];
-          if (!rowArr || !rowArr[0]) continue;
-          const row = {};
-          headers.forEach((h, j) => { row[h] = rowArr[j]; });
-          const p = parseMondayRow(row);
-          if (p) imported.push(p);
+        x0 = x = CHIP_X0
+        row_gap = 0.041
+        gap = 0.003
+        pad_x = 0.006
+        pad_y = 0.003
+
+        for r, v in sorted(rs.items(), key=lambda kv: -kv[1])[:int(max_roles)]:
+            text_w = _text_width_frac(fig, r, fontsize=fs, weight="800")
+            text_h = _text_height_frac(fig, "Hg", fontsize=fs, weight="800")
+            role_w = text_w + pad_x*2
+            role_h = text_h + pad_y*2
+
+            num_text = f"{int(round(v))}"
+            num_wt = _text_width_frac(fig, num_text, fontsize=fs-0.6, weight="900")
+            num_ht = _text_height_frac(fig, "Hg", fontsize=fs-0.6, weight="900")
+            num_w  = num_wt + pad_x*2 * 0.9
+            num_h  = num_ht + pad_y*2 * 0.9
+
+            total = role_w + gap + num_w
+            if x + total > 0.965:
+                x = x0; y -= row_gap
+
+            fig.patches.append(mpatches.FancyBboxPatch((x, y - role_h*0.78), role_w, role_h,
+                              boxstyle=f"round,pad=0.001,rounding_size={role_h*0.25}",
+                              transform=fig.transFigure, facecolor=ROLE_GREY, edgecolor="none"))
+            fig.text(x + pad_x, y - role_h*0.33, r, fontsize=fs, color="#FFFFFF",
+                     va="center", ha="left", fontweight="800")
+
+            R,G,B = [int(255*c) for c in div_color_tuple(v)]
+            bx = x + role_w + gap
+            fig.patches.append(mpatches.FancyBboxPatch((bx, y - num_h*0.78), num_w, num_h,
+                              boxstyle=f"round,pad=0.001,rounding_size={num_h*0.25}",
+                              transform=fig.transFigure, facecolor=f"#{R:02x}{G:02x}{B:02x}", edgecolor="none"))
+            fig.text(bx + num_w/2, y - num_h*0.33, num_text, fontsize=fs-0.6, color="#FFFFFF",
+                     va="center", ha="center", fontweight="900")
+
+            x = bx + num_w + 0.010
+        return y - row_gap
+
+    # percentiles + actuals
+    def pct_of(metric: str) -> float:
+        if isinstance(pct_extra, dict) and metric in pct_extra and pd.notna(pct_extra[metric]):
+            return float(pct_extra[metric])
+        col = f"{metric} Percentile"
+        if col in player_row.columns and pd.notna(player_row[col].iloc[0]):
+            return float(player_row[col].iloc[0])
+        return np.nan
+
+    def val_of(metric: str):
+        ply = player_row.iloc[0]
+        if metric not in ply.index or pd.isna(ply[metric]): return np.nan, "—"
+        v = float(ply[metric]); m = metric.lower()
+        if "%" in metric or "percent" in m: return v, f"{int(round(v))}%"
+        if "per 90" in m or "xg" in m or "xa" in m: return v, f"{v:.2f}"
+        return v, f"{v:.2f}"
+
+    # -------- exact same pixel bar height & gap; panel height flexes with row count --------
+    BAR_PX = 24
+    GAP_PX = 6
+    SEP_PX = 2
+    STEP_PX = BAR_PX + GAP_PX
+
+    LABEL_FS    = 10.6
+    VALUE_FS    = 8.5
+    TITLE_FS    = 20
+
+    def bar_panel(fig, left, top, width, n_rows, title, triples):
+        """Panel with left gutter (labels + title share the same left start)."""
+        fig.canvas.draw()
+        fig_px_h = fig.bbox.height
+
+        # panel height in fig fraction
+        ax_h_frac = (n_rows * STEP_PX) / fig_px_h
+        bottom = top - ax_h_frac
+
+        # Compute max label width to size the gutter
+        labels = [t[0] for t in triples]
+        max_label_w_frac = max(_text_width_frac(fig, s, fontsize=LABEL_FS, weight="bold") for s in labels) if labels else 0
+        gutter_w = max_label_w_frac + GUTTER_PAD
+
+        # Panel background (full width)
+        ax_panel = fig.add_axes([left, bottom, width, ax_h_frac])
+        ax_panel.set_facecolor(PANEL_BG)
+        ax_panel.set_xticks([]); ax_panel.set_yticks([])
+        for sp in ax_panel.spines.values(): sp.set_visible(False)
+
+        # Bars axis (to the right of the gutter)
+        bar_left  = left + gutter_w
+        bar_width = max(0.001, width - gutter_w - 0.004)  # tiny right margin
+        ax = fig.add_axes([bar_left, bottom, bar_width, ax_h_frac])
+        ax.set_facecolor(PANEL_BG)
+
+        pcts  = [float(np.nan_to_num(t[1], nan=0.0)) for t in triples]
+        texts = [t[2] for t in triples]
+        n = len(labels)
+
+        bar_du = BAR_PX / STEP_PX
+        gap_du = GAP_PX / STEP_PX
+        sep_du = SEP_PX / STEP_PX
+
+        ax.set_xlim(0, 100)
+        ax.set_ylim(-0.5, n - 0.5)
+        y_idx = np.arange(n)[::-1]
+
+        # tracks
+        track_h = bar_du + gap_du - sep_du
+        for yi in y_idx:
+            ax.add_patch(mpatches.Rectangle((0, yi - track_h/2), 100, track_h,
+                                            facecolor=TRACK_BG, edgecolor='none'))
+
+        # bars + value labels
+        for yi, v, t in zip(y_idx, pcts, texts):
+            ax.add_patch(mpatches.Rectangle((0, yi - bar_du/2), v, bar_du,
+                                            facecolor=div_color_tuple(v), edgecolor='none'))
+            ax.text(1.0, yi, t, va="center", ha="left", color="#0B0B0B", fontsize=VALUE_FS + 0.5, weight="700")
+
+        # clean axis
+        for sp in ax.spines.values(): sp.set_visible(False)
+        ax.tick_params(axis="both", length=0, labelsize=0)
+        ax.grid(False)
+
+        # midline
+        ax.axvline(50, color="#94A3B8", linestyle=":", linewidth=1.2, zorder=2)
+
+        # metric labels in gutter (left-aligned)
+        for yi, lab in zip(y_idx, labels):
+            y_fig = bottom + ax_h_frac * ((yi + 0.5) / max(1, n))
+            fig.text(left + GUTTER_PAD/2, y_fig, lab,
+                     color=TEXT, fontsize=LABEL_FS, fontweight="bold",
+                     va="center", ha="left")
+
+        # title aligned to the same gutter start
+        title_y = bottom + ax_h_frac + 0.008
+        fig.text(left + GUTTER_PAD/2, title_y, title,
+                 color=TEXT, fontsize=TITLE_FS, fontweight="900", ha="left", va="bottom")
+        ax.plot([0, 1], [1, 1], transform=ax.transAxes, color="#94A3B8", linewidth=0.8, alpha=0.35)
+
+        return bottom
+
+    # ----------------- figure & header -----------------
+    W, H = 1500, 1080
+    fig = plt.figure(figsize=(W/100, H/100), dpi=100)
+    fig.patch.set_facecolor(PAGE_BG)
+
+    ply = player_row.iloc[0]
+    team   = str(ply.get("Team","?"))
+    league = str(ply.get("League","?"))
+    pos    = str(ply.get("Position","?"))
+    age    = int(ply["Age"]) if pd.notna(ply.get("Age")) else None
+    mins   = int(ply.get("Minutes played", np.nan)) if pd.notna(ply.get("Minutes played")) else None
+    matches= int(ply.get("Matches played", np.nan)) if pd.notna(ply.get("Matches played")) else None
+    goals  = int(ply.get("Goals", np.nan)) if pd.notna(ply.get("Goals")) else 0
+
+    if "xG" in ply.index and pd.notna(ply["xG"]):
+        xg_total = float(ply["xG"])
+    else:
+        xg_per90 = float(ply.get("xG per 90", np.nan)) if pd.notna(ply.get("xG per 90")) else np.nan
+        xg_total = float(xg_per90) * (float(mins) / 90.0) if (pd.notna(xg_per90) and mins) else np.nan
+    xg_total_str = f"{xg_total:.2f}" if pd.notna(xg_total) else "—"
+    assists= int(ply.get("Assists", np.nan)) if pd.notna(ply.get("Assists")) else 0
+
+    # Name + league-adjusted badge
+    name_fs = 28
+    name_text = fig.text(NAME_X, 0.962, f"{player_name}", color="#FFFFFF",
+                         fontsize=name_fs, fontweight="900", va="top", ha="left")
+    fig.canvas.draw(); r = fig.canvas.get_renderer()
+    name_bbox = name_text.get_window_extent(renderer=r)
+    name_w_frac = name_bbox.width / fig.bbox.width
+    name_h_frac = name_bbox.height / fig.bbox.height
+    badge_x = NAME_X + name_w_frac + 0.010
+
+    if isinstance(role_scores, dict) and role_scores:
+        _, best_val_raw = max(role_scores.items(), key=lambda kv: kv[1])
+        _ls_map = globals().get("LEAGUE_STRENGTHS", {})
+        league_strength = float(_ls_map.get(league, 50.0))
+        BETA_BADGE = 0.40
+        best_val_adj = (1.0 - BETA_BADGE) * float(best_val_raw) + BETA_BADGE * league_strength
+
+        R, G, B = [int(255*c) for c in div_color_tuple(best_val_adj)]
+        bh = name_h_frac; bw = bh; by = 0.962 - bh
+        fig.patches.append(mpatches.FancyBboxPatch(
+            (badge_x, by), bw, bh,
+            boxstyle="round,pad=0.001,rounding_size=0.011",
+            transform=fig.transFigure,
+            facecolor=f"#{R:02x}{G:02x}{B:02x}", edgecolor="none"
+        ))
+        fig.text(badge_x + bw/2, by + bh/2 - 0.0005, f"{int(round(best_val_adj))}",
+                 fontsize=18.6, color="#FFFFFF", va="center", ha="center", fontweight="900")
+
+    # Meta row (more left padding)
+    x_meta = META_X; y_meta = 0.905; gap = 0.004
+    runs = [
+        (f"{pos} — ", "normal"),
+        (team, "bold"),
+        (" — ", "normal"),
+        (league, "bold"),
+        (f" — Age {age if age else '—'} — Minutes {mins if mins else '—'} — "
+         f"Matches {matches if matches else '—'} — Goals {goals} — xG {xg_total_str} — Assists {assists}", "normal")
+    ]
+    for txt, weight in runs:
+        fig.text(x_meta, y_meta, txt, color="#FFFFFF", fontsize=13,
+                 fontweight=("900" if weight == "bold" else "normal"), ha="left", va="center")
+        x_meta += _text_width_frac(fig, txt, fontsize=13.5,
+                                   weight=("900" if weight == "bold" else "normal")) + (gap if txt.strip() else 0)
+
+    # ----------------- chips + roles -----------------
+    y = 0.868  # a touch lower to create more breathing room under meta
+    y = chip_row_exact(fig, strengths or [],  y, CHIP_G_BG, fs=10.1, max_per_row=5)
+    y = chip_row_exact(fig, weaknesses or [], y, CHIP_R_BG, fs=10.1, max_per_row=5)
+    y = chip_row_exact(fig, styles or [],     y, CHIP_B_BG, fs=10.1, max_per_row=5)
+    y -= 0.015
+    y = roles_row_tight(
+        fig,
+        role_scores if isinstance(role_scores, dict) else {},
+        y,
+        fs=10.6,
+        max_roles=6,                   # keep at most 6 visible
+        min_score=0,                   # floor if you want it
+        hidden_roles={"Modern 6", "Ball Winner", "PL Profile", "Box to Box"}  # << hidden
+    )
+
+    # ----------------- metric groups -----------------
+    ATTACKING = []
+    for lab, met in [
+        ("Crosses", "Crosses per 90"),
+        ("Crossing %", "Accurate crosses, %"),
+        ("Goals: Non-Penalty", "Non-penalty goals per 90"),
+        ("xG", "xG per 90"),
+        ("Expected Assists", "xA per 90"),
+        ("Offensive Duels", "Offensive duels per 90"),
+        ("Offensive Duel %", "Offensive duels won, %"),
+        ("Shots", "Shots per 90"),
+        ("Shooting %", "Shots on target, %"),
+        ("Touches in box", "Touches in box per 90"),
+    ]: ATTACKING.append((lab, pct_of(met), val_of(met)[1]))
+
+    DEFENSIVE = []
+    for lab, met in [
+        ("Aerial Duels", "Aerial duels per 90"),
+        ("Aerial Win %", "Aerial duels won, %"),
+        ("Defensive Duels", "Defensive duels per 90"),
+        ("Defensive Duel %", "Defensive duels won, %"),
+        ("PAdj Interceptions", "PAdj Interceptions"),
+        ("Shots blocked", "Shots blocked per 90"),
+    ]: DEFENSIVE.append((lab, pct_of(met), val_of(met)[1]))
+
+    POSSESSION = []
+    for lab, met in [
+        ("Accelerations", "Accelerations per 90"),
+        ("Deep completions", "Deep completions per 90"),
+        ("Dribbles", "Dribbles per 90"),
+        ("Dribbling %", "Successful dribbles, %"),
+        ("Forward Passes", "Forward passes per 90"),
+        ("Forward Pass %", "Accurate forward passes, %"),
+        ("Key passes", "Key passes per 90"),
+        ("Long Passes", "Long passes per 90"),
+        ("Long Pass %", "Accurate long passes, %"),
+        ("Passes", "Passes per 90"),
+        ("Passing %", "Accurate passes, %"),
+        ("Passes to F3rd", "Passes to final third per 90"),
+        ("Passes F3rd %", "Accurate passes to final third, %"),
+        ("Passes Pen-Area", "Passes to penalty area per 90"),
+        ("Pass Pen-Area %", "Accurate passes to penalty area, %"),
+        ("Progessive Passes", "Progressive passes per 90"),
+        ("Prog Pass %", "Accurate progressive passes, %"),
+        ("Progressive Runs", "Progressive runs per 90"),
+        ("Smart Passes", "Smart passes per 90"),
+    ]: POSSESSION.append((lab, pct_of(met), val_of(met)[1]))
+
+    # ----------------- layout (wider cards, smaller middle gap) -----------------
+    LEFT = 0.050
+    WIDTH_L = 0.41
+    MID_GAP = 0.040
+    RIGHT = LEFT + WIDTH_L + MID_GAP
+    WIDTH_R = 0.41
+
+    TOP = 0.66
+    V_GAP_FRAC = 0.050
+
+    # Left column
+    att_bottom = bar_panel(fig, LEFT, TOP, WIDTH_L, len(ATTACKING), "Attacking",  ATTACKING)
+    def_bottom = bar_panel(fig, LEFT, att_bottom - V_GAP_FRAC, WIDTH_L, len(DEFENSIVE), "Defensive", DEFENSIVE)
+
+    # Right column
+    _ = bar_panel(fig, RIGHT, TOP, WIDTH_R, len(POSSESSION), "Possession", POSSESSION)
+
+    # ----------------- render + download -----------------
+    st.pyplot(fig, use_container_width=True)
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=170, bbox_inches="tight", facecolor=fig.get_facecolor())
+    st.download_button("⬇️ Download one-pager (PNG)",
+                       data=buf.getvalue(),
+                       file_name=f"{str(player_name).replace(' ','_')}_onepager.png",
+                       mime="image/png")
+
+# ============================ END — WIDER PANELS, SMALLER CENTER GAP, EXTRA TOP-LEFT PADDING ============================
+
+
+# ============================ (F) THREE-PANEL PERCENTILE BOARD — Uniform rows + visible gridlines (numbers centered; custom % at 0/100) ============================
+from io import BytesIO
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.transforms import ScaledTranslation  # pixel-like offsets
+
+st.markdown("---")
+st.header("📋 Feature F — Percentile Board (uniform rows)")
+
+# --- NEW: footer label controls ---
+_footer_default = "Percentile Rank"
+_edit_footer = st.toggle("Edit footer label", value=False)
+if _edit_footer:
+    footer_label = st.text_input("Footer label", value=_footer_default)
+else:
+    footer_label = _footer_default
+# --- END NEW ---
+
+if player_row.empty:
+    st.info("Pick a player above.")
+else:
+    # ----- assemble sections from your existing calcs -----
+    ATTACKING = []
+    for lab, met in [
+        ("Crosses", "Crosses per 90"),
+        ("Crossing Accuracy %", "Accurate crosses, %"),
+        ("Goals: Non-Penalty", "Non-penalty goals per 90"),
+        ("xG", "xG per 90"),
+        ("Expected Assists", "xA per 90"),
+        ("Offensive Duels", "Offensive duels per 90"),
+        ("Offensive Duel Success %", "Offensive duels won, %"),
+        ("Progressive Runs", "Progressive runs per 90"),
+        ("Shots", "Shots per 90"),
+        ("Shooting Accuracy %", "Shots on target, %"),
+        ("Touches in Opposition Box", "Touches in box per 90"),
+    ]:
+        ATTACKING.append((lab, float(np.nan_to_num(pct_of(met), nan=0.0)), val_of(met)[1]))
+
+    DEFENSIVE = []
+    for lab, met in [
+        ("Aerial Duels", "Aerial duels per 90"),
+        ("Aerial Duel Success %", "Aerial duels won, %"),
+        ("Defensive Duels", "Defensive duels per 90"),
+        ("Defensive Duel Success %", "Defensive duels won, %"),
+        ("PAdj. Interceptions", "PAdj Interceptions"),
+    ]:
+        DEFENSIVE.append((lab, float(np.nan_to_num(pct_of(met), nan=0.0)), val_of(met)[1]))
+
+    POSSESSION = []
+    for lab, met in [
+        ("Deep Completions", "Deep completions per 90"),
+        ("Dribbles", "Dribbles per 90"),
+        ("Dribbling Success %", "Successful dribbles, %"),
+        ("Forward Passes", "Forward passes per 90"),
+        ("Forward Passing %", "Accurate forward passes, %"),
+        ("Key passes", "Key passes per 90"),
+        ("Long Passes", "Long passes per 90"),
+        ("Long Passing %", "Accurate long passes, %"),
+        ("Passes", "Passes per 90"),
+        ("Passing %", "Accurate passes, %"),
+        ("Passes to Final 3rd", "Passes to final third per 90"),
+        ("Passes to Final 3rd %", "Accurate passes to final third, %"),
+        ("Passes to Penalty Area", "Passes to penalty area per 90"),
+        ("Pass to Penalty Area %", "Accurate passes to penalty area, %"),
+        ("Progessive Passes", "Progressive passes per 90"),
+        ("Progessive Passing %", "Accurate progressive passes, %"),
+        ("Smart Passes", "Smart passes per 90"),
+    ]:
+        POSSESSION.append((lab, float(np.nan_to_num(pct_of(met), nan=0.0)), val_of(met)[1]))
+
+    sections = [("Attacking", ATTACKING), ("Defensive", DEFENSIVE), ("Possession", POSSESSION)]
+    sections = [(t, lst) for t, lst in sections if lst]
+
+    # ----- styling (dark Tableau-ish canvas) -----
+    PAGE_BG = "#0a0f1c"
+    AX_BG   = "#0f151f"
+    TRACK   = "#1b2636"
+    TITLE   = "#f3f5f7"
+    LABEL   = "#e8eef8"
+    DIVIDER = "#ffffff"
+
+    # Tableau-like diverging ramp (0→red, 50→gold, 100→green)
+    TAB_RED   = np.array([199, 54, 60], dtype=float)    # #C7363C
+    TAB_GOLD  = np.array([240, 197, 106], dtype=float)  # #F0C56A
+    TAB_GREEN = np.array([61, 166, 91], dtype=float)    # #3DA65B
+
+    def _blend(c1, c2, t):
+        c = c1 + (c2 - c1) * np.clip(t, 0.0, 1.0)
+        return f"#{int(c[0]):02x}{int(c[1]):02x}{int(c[2]):02x}"
+
+    def pct_to_rgb(v):
+        v = float(np.clip(v, 0, 100))
+        return _blend(TAB_RED, TAB_GOLD, v/50.0) if v <= 50 else _blend(TAB_GOLD, TAB_GREEN, (v-50.0)/50.0)
+
+    # ----- layout: identical bar height across all sections -----
+    total_rows = sum(len(lst) for _, lst in sections)
+    fig = plt.figure(figsize=(10, 8), dpi=100)  # 1000x800 px
+    fig.patch.set_facecolor(PAGE_BG)
+
+    left_margin  = 0.035
+    right_margin = 0.020
+    top_margin   = 0.035
+    bot_margin   = 0.095
+    header_h     = 0.06
+    gap_between  = 0.020
+
+    rows_space_total = 1 - (top_margin + bot_margin) - header_h * len(sections) - gap_between * (len(sections) - 1)
+    row_slot = rows_space_total / max(total_rows, 1)
+    BAR_FRAC = 0.85
+
+    # label gutter width
+    probe = fig.text(0, 0, "Successful Defensive Actions", fontsize=11, fontweight="bold", color=LABEL, alpha=0)
+    fig.canvas.draw()
+    lab_w = probe.get_window_extent(renderer=fig.canvas.get_renderer()).width / fig.bbox.width
+    probe.remove()
+    gutter = 0.215
+
+
+    ticks = np.arange(0, 101, 10)  # 0,10,...,100
+
+    # visual center for footer text
+    x_center_plot = (left_margin + gutter + (1 - right_margin)) / 2.0
+
+    def draw_panel(panel_top, title, tuples, *, show_xticks=False, draw_bottom_divider=True):
+        n = len(tuples)
+        panel_h = header_h + n * row_slot
+
+        # Section title
+        fig.text(left_margin, panel_top - 0.012, title, ha="left", va="top",
+                 fontsize=20, fontweight="900", color=TITLE)
+
+        # Bars axis
+        ax = fig.add_axes([
+            left_margin + gutter,
+            panel_top - header_h - n*row_slot,
+            1 - left_margin - right_margin - gutter,
+            n * row_slot
+        ])
+        ax.set_facecolor(AX_BG)
+        ax.set_xlim(0, 100)
+        ax.set_ylim(-0.5, n - 0.5)
+
+        # Hide default spines/ticks; draw custom
+        for s in ax.spines.values():
+            s.set_visible(False)
+        ax.tick_params(axis="x", bottom=False, labelbottom=False, length=0)
+
+        # ---- Tracks ----
+        for i in range(n):
+            y = i
+            ax.add_patch(plt.Rectangle((0, y - (BAR_FRAC/2)), 100, BAR_FRAC,
+                                       color=TRACK, ec="none", zorder=0.5))
+
+        # ---- Vertical gridlines at each 10% ----
+        for gx in ticks:
+            ax.vlines(gx, -0.5, n - 0.5, colors=(1, 1, 1, 0.16), linewidth=0.8, zorder=0.75)
+
+        # ---- Bars + value labels ----
+        for i, (lab, pct, val_str) in enumerate(tuples[::-1]):  # reverse for top-first
+            y = i
+            bar_w = max(0.0, min(100.0, float(pct)))
+            ax.add_patch(plt.Rectangle((0, y - (BAR_FRAC/2)), bar_w, BAR_FRAC,
+                                       color=pct_to_rgb(bar_w), ec="none", zorder=1.0))
+            ax.text(1.0, y, val_str, ha="left", va="center",
+                    fontsize=8, fontweight="400", color="#0B0B0B", zorder=2.0)
+
+        # ---- Dotted 50% reference line (over bars) ----
+        ax.axvline(50, color="#FFFFFF", ls=(0, (4, 4)), lw=1.5, alpha=0.85, zorder=3.5)
+
+        # Metric labels in left gutter
+        for i, (lab, _, _) in enumerate(tuples[::-1]):
+            y_fig = (panel_top - header_h - n*row_slot) + ((i + 0.5) * row_slot)
+            fig.text(left_margin, y_fig, lab, ha="left", va="center",
+                     fontsize=10, fontweight="bold", color=LABEL)
+
+        # ---- Manually centered bottom ticks ONLY on last panel ----
+        if show_xticks:
+            trans = ax.get_xaxis_transform()  # x in data, y in axis coords
+
+            # Adjustable offsets in points (pt) → convert to inches via /72
+            INNER_PCT_OFFSET_PT    = 7   # offset for the "%" on inner ticks (keeps digits visually centered)
+            EDGE_PCT_OFFSET_0_PT   = 4   # offset for "%" at 0  (push right)
+            EDGE_PCT_OFFSET_100_PT = 10   # offset for "%" at 100 (push right)
+
+            offset_inner = ScaledTranslation(INNER_PCT_OFFSET_PT/72, 0, fig.dpi_scale_trans)
+            offset_pct_0 = ScaledTranslation(EDGE_PCT_OFFSET_0_PT/72, 0, fig.dpi_scale_trans)
+            offset_pct_100 = ScaledTranslation(EDGE_PCT_OFFSET_100_PT/72, 0, fig.dpi_scale_trans)
+
+            y_label = -0.075
+
+            for gx in ticks:
+                # tiny tick mark
+                ax.plot([gx, gx], [-0.03, 0.0], transform=trans,
+                        color=(1, 1, 1, 0.6), lw=1.1, clip_on=False, zorder=4)
+                # number centered on gridline
+                ax.text(gx, y_label, f"{int(gx)}", transform=trans,
+                        ha="center", va="top", fontsize=10, fontweight="700",
+                        color="#FFFFFF", zorder=4, clip_on=False)
+                # percent sign with custom offsets
+                if gx == 0:
+                    ax.text(gx, y_label, "%", transform=trans + offset_pct_0,
+                            ha="left", va="top", fontsize=10, fontweight="700",
+                            color="#FFFFFF", zorder=4, clip_on=False)
+                elif gx == 100:
+                    ax.text(gx, y_label, "%", transform=trans + offset_pct_100,
+                            ha="left", va="top", fontsize=10, fontweight="700",
+                            color="#FFFFFF", zorder=4, clip_on=False)
+                else:
+                    ax.text(gx, y_label, "%", transform=trans + offset_inner,
+                            ha="left", va="top", fontsize=10, fontweight="700",
+                            color="#FFFFFF", zorder=4, clip_on=False)
+
+        # Section divider
+        if draw_bottom_divider:
+            y0 = panel_top - panel_h - 0.008
+            fig.lines.append(plt.Line2D([left_margin, 1 - right_margin], [y0, y0],
+                                        transform=fig.transFigure, color=DIVIDER, lw=1.2, alpha=0.95))
+        return panel_top - panel_h - gap_between
+
+    # Render panels; only the last shows tick labels
+    y_top = 1 - top_margin
+    for idx, (title, data) in enumerate(sections):
+        is_last = (idx == len(sections) - 1)
+        y_top = draw_panel(y_top, title, data, show_xticks=is_last, draw_bottom_divider=not is_last)
+
+    # Bottom caption — slightly lower
+    fig.text(x_center_plot, bot_margin * 0.38, footer_label,
+             ha="center", va="center", fontsize=11, fontweight="bold", color=LABEL)
+
+    st.pyplot(fig, use_container_width=True)
+
+    # download
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=130, bbox_inches="tight", facecolor=fig.get_facecolor())
+    st.download_button("⬇️ Download Feature F (PNG)",
+                       data=buf.getvalue(),
+                       file_name=f"{str(player_name).replace(' ','_')}_featureF.png",
+                       mime="image/png")
+# ============================ END — Feature F ============================
+
+# ============================ (Z) THREE-PANEL PERCENTILE BOARD — safe headroom + tight, even badges ============================
+from io import BytesIO
+import uuid, numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.transforms import ScaledTranslation
+from matplotlib import font_manager as fm
+from matplotlib.font_manager import FontProperties
+from PIL import Image
+import streamlit as st
+
+import io
+import re
+import unicodedata
+from difflib import SequenceMatcher
+from pathlib import Path
+import requests
+
+from photo_utils import get_player_photo_pil
+
+try:
+    from league_logo_urls import get_league_logo_url
+except Exception:
+    def get_league_logo_url(_league: str) -> str:
+        return ""
+
+try:
+    from team_fotmob_urls import FOTMOB_TEAM_URLS as _FZ_FOTMOB_TEAM_URLS
+except Exception:
+    _FZ_FOTMOB_TEAM_URLS = {}
+
+try:
+    from team_fotmob_urls import get_fotmob_url as _external_get_fotmob_url
+except Exception:
+    _external_get_fotmob_url = None
+
+
+st.markdown("---")
+st.header("📋 Feature Z — White Percentile Board")
+
+with st.expander("Feature Z options", expanded=False):
+    enable_images = st.checkbox("Add header images", value=True)
+    show_height   = st.checkbox("Show height in info row", value=True)
+    name_override_on = st.checkbox("Edit player display name", value=False)
+    name_override    = st.text_input("Display name", "", disabled=not name_override_on)
+
+    default_height = ""
+    try:
+        if not player_row.empty:
+            for col in ["Height","Height (ft)","Height ft","Height (cm)"]:
+                if col in player_row.columns and str(player_row.iloc[0][col]).strip():
+                    default_height = str(player_row.iloc[0][col]).strip(); break
+    except Exception: pass
+    height_text = st.text_input("Height value (e.g., 6'2\")", default_height)
+
+    _CAPTION_DEFAULT = "Percentile Rank"
+    _edit_footer = st.toggle("Edit footer caption", value=False, key="fz_edit_footer")
+    footer_caption_text = st.text_input("Footer caption", _CAPTION_DEFAULT, disabled=not _edit_footer, key="fz_footer_text")
+
+    default_foot = ""
+    try:
+        if not player_row.empty:
+            for col in ["Foot","Preferred Foot"]:
+                if col in player_row.columns and str(player_row.iloc[0][col]).strip():
+                    default_foot = str(player_row.iloc[0][col]).strip(); break
+    except Exception: pass
+    foot_override_on = st.checkbox("Edit foot in info row", value=False, key="fz_foot_edit")
+    foot_override_text = st.text_input("Foot value (e.g., Left)", default_foot, disabled=not foot_override_on, key="fz_foot_text")
+
+    if enable_images:
+        auto_images = st.checkbox(
+            "Auto header images (league logo / team badge / player photo) if not uploaded",
+            value=True,
+            key="fz_auto_images_toggle"
+        )
+        hide_player_photo = st.checkbox("Hide player photo (left badge)", value=False, key="fz_hide_player_photo")
+        st.caption("Upload up to three header images (PNG recommended). Rightmost is the anchor.")
+        up_img1 = st.file_uploader("Image 1 (rightmost)", type=["png","jpg","jpeg","webp"], key="fz_img1")
+        up_img2 = st.file_uploader("Image 2 (middle)",   type=["png","jpg","jpeg","webp"], key="fz_img2")
+        up_img3 = st.file_uploader("Image 3 (leftmost)", type=["png","jpg","jpeg","webp"], key="fz_img3")
+        spacing_preset = st.selectbox(
+            "Badge spacing",
+            ["Tight (default)", "Tight +", "Medium", "Wide"],
+            index=0,
+            help="Keeps equal gaps; each step is a little wider than the previous."
+        )
+        st.caption("Fine-tune each image's horizontal position (− left, + right).")
+        img1_dx = st.slider("Shift Image 1 (rightmost)", min_value=-0.05, max_value=0.05, value=0.00, step=0.001, key="fz_dx_img1")
+        img2_dx = st.slider("Shift Image 2 (middle)",    min_value=-0.05, max_value=0.05, value=0.00, step=0.001, key="fz_dx_img2")
+        img3_dx = st.slider("Shift Image 3 (leftmost)",  min_value=-0.05, max_value=0.05, value=0.00, step=0.001, key="fz_dx_img3")
+    else:
+        up_img1 = up_img2 = up_img3 = None
+        spacing_preset = "Tight (default)"
+        img1_dx = img2_dx = img3_dx = 0.0
+        auto_images = False
+        hide_player_photo = False
+
+
+def _safe_get(df_or_series, key, default="—"):
+    try:
+        if hasattr(df_or_series, "iloc"): v = df_or_series.iloc[0].get(key, default)
+        else:                              v = df_or_series.get(key, default)
+        s = "" if v is None else str(v)
+        return default if s.strip() == "" else s
+    except Exception:
+        return default
+
+def _font_name_or_fallback(pref, fallback="DejaVu Sans"):
+    installed = {f.name for f in fm.fontManager.ttflist}
+    for n in pref:
+        if n in installed: return n
+    return fallback
+
+FONT_TITLE_FAMILY = _font_name_or_fallback(["Tableau Bold","Tableau Sans Bold","Tableau"])
+FONT_BOOK_FAMILY  = _font_name_or_fallback(["Tableau Book","Tableau Sans","Tableau"])
+TITLE_FP     = FontProperties(family=FONT_TITLE_FAMILY, weight='bold',     size=24)
+H2_FP        = FontProperties(family=FONT_TITLE_FAMILY, weight='semibold', size=20)
+LABEL_FP     = FontProperties(family=FONT_BOOK_FAMILY,  weight='medium',   size=10)
+INFO_LABEL_FP= FontProperties(family=FONT_BOOK_FAMILY,  weight='bold',     size=10)
+INFO_VALUE_FP= FontProperties(family=FONT_BOOK_FAMILY,  weight='regular',  size=10)
+BAR_VALUE_FP = FontProperties(family=FONT_BOOK_FAMILY,  weight='regular',  size=8)
+TICK_FP      = FontProperties(family=FONT_BOOK_FAMILY,  weight='medium',   size=10)
+FOOTER_FP    = FontProperties(family=FONT_BOOK_FAMILY,  weight='medium', size=10)
+
+
+def _try_load_img(url: str):
+    if not url or not (str(url).startswith("http://") or str(url).startswith("https://")):
+        return None
+    try:
+        r = requests.get(str(url), timeout=12, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200 or not r.content:
+            return None
+        try:
+            return plt.imread(io.BytesIO(r.content))
+        except Exception:
+            pass
+        try:
+            im = Image.open(io.BytesIO(r.content)).convert("RGB")
+            return np.array(im)
+        except Exception:
+            return None
+    except Exception:
+        return None
+
+def _npimg_to_pil_rgba(arr):
+    if arr is None:
+        return None
+    try:
+        a = np.asarray(arr)
+        if a.ndim == 2:
+            a = np.stack([a, a, a], axis=-1)
+        if a.shape[-1] == 4:
+            if a.dtype != np.uint8:
+                a = np.clip(a * 255.0, 0, 255).astype(np.uint8)
+            return Image.fromarray(a, "RGBA")
+        if a.dtype != np.uint8:
+            a = np.clip(a * 255.0, 0, 255).astype(np.uint8)
+        return Image.fromarray(a, "RGB").convert("RGBA")
+    except Exception:
+        return None
+
+BADGE_DIRS = [Path.cwd() / "badges", Path.cwd() / "crests"]
+for d in BADGE_DIRS:
+    try: d.mkdir(exist_ok=True)
+    except Exception: pass
+
+def _clean_filename(name: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9]+", "_", (name or "").lower()).strip("_")
+
+@st.cache_data(show_spinner=False)
+def load_local_badge(team: str):
+    key = _clean_filename(team)
+    if not key:
+        return None
+    for folder in BADGE_DIRS:
+        for ext in (".png", ".jpg", ".jpeg", ".webp"):
+            p = folder / f"{key}{ext}"
+            if p.exists():
+                try:
+                    return plt.imread(str(p))
+                except Exception:
+                    continue
+    return None
+
+def _norm(s: str) -> str:
+    if not s: return ""
+    return unicodedata.normalize("NFKD", str(s)).encode("ascii","ignore").decode("ascii").strip().lower()
+
+def get_fotmob_url(team: str) -> str:
+    t = _norm(team)
+    for k, v in (_FZ_FOTMOB_TEAM_URLS or {}).items():
+        if _norm(k) == t and str(v).strip():
+            return str(v).strip()
+    if _external_get_fotmob_url is not None:
+        try:
+            u = _external_get_fotmob_url(team) or ""
+            return str(u).strip()
+        except Exception:
+            pass
+    return ""
+
+def _fotmob_team_id_from_url(team_url: str) -> str:
+    m = re.search(r"/teams/(\d+)/", str(team_url or ""))
+    return m.group(1) if m else ""
+
+def _fotmob_crest_url_from_team_url(team_url: str) -> str:
+    tid = _fotmob_team_id_from_url(team_url)
+    return f"https://images.fotmob.com/image_resources/logo/teamlogo/{tid}.png" if tid else ""
+
+def _fotmob_crest_url(team: str) -> str:
+    team_url = get_fotmob_url(team)
+    return _fotmob_crest_url_from_team_url(team_url) if team_url else ""
+
+def load_fotmob_crest(team: str):
+    url = _fotmob_crest_url(team)
+    if not url:
+        return None
+    return _try_load_img(url)
+
+def _auto_team_badge(player_row_like):
+    team = _safe_get(player_row_like, "Team", "").strip()
+    if not team:
+        return None
+    img = load_local_badge(team)
+    if img is not None:
+        return img
+    crest = load_fotmob_crest(team)
+    if crest is not None:
+        return crest
+    return None
+
+def _auto_league_logo(player_row_like):
+    league = _safe_get(player_row_like, "League", "").strip()
+    url = (get_league_logo_url(league) or "").strip()
+    if not url:
+        return None
+    return _try_load_img(url)
+
+
+if player_row.empty:
+    st.info("Pick a player above.")
+else:
+    pos   = _safe_get(player_row, "Position", "CM/DM/RW")
+    name_ = _safe_get(player_row, "Player", _safe_get(player_row, "Name", "Kadeem Harris"))
+    if name_override_on and name_override.strip(): name_ = name_override.strip()
+    team  = _safe_get(player_row, "Team", "Carlisle United")
+    age_raw = _safe_get(player_row, "Age", "31.0")
+    try: age = f"{float(age_raw):.0f}"
+    except Exception: age = age_raw
+    games   = _safe_get(player_row, "Matches played", _safe_get(player_row, "Games", _safe_get(player_row, "Apps", "—")))
+    minutes = _safe_get(player_row, "Minutes", _safe_get(player_row, "Minutes played", "—"))
+    goals   = _safe_get(player_row, "Goals", "—")
+    assists = _safe_get(player_row, "Assists", "—")
+    foot    = _safe_get(player_row, "Foot", _safe_get(player_row, "Preferred Foot", "—"))
+
+    foot_display = (foot_override_text.strip() if (foot_override_on and foot_override_text and foot_override_text.strip()) else foot)
+
+    ATTACKING = []
+    for lab, met in [
+        ("Crosses", "Crosses per 90"),
+        ("Crossing Accuracy %", "Accurate crosses, %"),
+        ("Goals: Non-Penalty", "Non-penalty goals per 90"),
+        ("xG", "xG per 90"),
+        ("Expected Assists", "xA per 90"),
+        ("Offensive Duels", "Offensive duels per 90"),
+        ("Offensive Duel Success %", "Offensive duels won, %"),
+        ("Progressive Runs", "Progressive runs per 90"),
+        ("Shots", "Shots per 90"),
+        ("Shooting Accuracy %", "Shots on target, %"),
+        ("Touches in Opposition Box", "Touches in box per 90"),
+    ]:
+        ATTACKING.append((lab, float(np.nan_to_num(pct_of(met), nan=0.0)), val_of(met)[1]))
+
+    DEFENSIVE = []
+    for lab, met in [
+        ("Aerial Duels", "Aerial duels per 90"),
+        ("Aerial Duel Success %", "Aerial duels won, %"),
+        ("Defensive Duels", "Defensive duels per 90"),
+        ("Defensive Duel Success %", "Defensive duels won, %"),
+        ("PAdj. Interceptions", "PAdj Interceptions"),
+    ]:
+        DEFENSIVE.append((lab, float(np.nan_to_num(pct_of(met), nan=0.0)), val_of(met)[1]))
+
+    POSSESSION = []
+    for lab, met in [
+        ("Deep Completions", "Deep completions per 90"),
+        ("Dribbles", "Dribbles per 90"),
+        ("Dribbling Success %", "Successful dribbles, %"),
+        ("Forward Passes", "Forward passes per 90"),
+        ("Forward Passing %", "Accurate forward passes, %"),
+        ("Key passes", "Key passes per 90"),
+        ("Long Passes", "Long passes per 90"),
+        ("Long Passing %", "Accurate long passes, %"),
+        ("Passes", "Passes per 90"),
+        ("Passing %", "Accurate passes, %"),
+        ("Passes to Final 3rd", "Passes to final third per 90"),
+        ("Passes to Final 3rd %", "Accurate passes to final third, %"),
+        ("Passes to Penalty Area", "Passes to penalty area per 90"),
+        ("Pass to Penalty Area %", "Accurate passes to penalty area, %"),
+        ("Progessive Passes", "Progressive passes per 90"),
+        ("Progessive Passing %", "Accurate progressive passes, %"),
+        ("Smart Passes", "Smart passes per 90"),
+    ]:
+        POSSESSION.append((lab, float(np.nan_to_num(pct_of(met), nan=0.0)), val_of(met)[1]))
+
+    sections = [("Attacking",ATTACKING),("Defensive",DEFENSIVE),("Possession",POSSESSION)]
+    sections = [(t,lst) for t,lst in sections if lst]
+
+    PAGE_BG = "#ebebeb"; AX_BG = "#f3f3f3"; TRACK="#d6d6d6"
+    TITLE_C="#111111"; LABEL_C="#222222"; DIVIDER="#000000"
+    TAB_RED=np.array([199,54,60]); TAB_GOLD=np.array([240,197,106]); TAB_GREEN=np.array([61,166,91])
+    def _blend(c1,c2,t): c=c1+(c2-c1)*np.clip(t,0,1); return f"#{int(c[0]):02x}{int(c[1]):02x}{int(c[2]):02x}"
+    def pct_to_rgb(v): v=float(np.clip(v,0,100)); return _blend(TAB_RED,TAB_GOLD,v/50) if v<=50 else _blend(TAB_GOLD,TAB_GREEN,(v-50)/50)
+
+    if not enable_images:
+        fig_size   = (10, 8); dpi = 100
+        title_row_h = 0.075
+        header_block_h = title_row_h + 0.020
+        img_box_w = img_box_h = 0.09; img_gap = 0.012
+    else:
+        fig_size   = (11.8, 9.6); dpi = 120
+        title_row_h = 0.125
+        header_block_h = title_row_h + 0.055
+        img_box_w = img_box_h = 0.16
+        preset_map = {
+            "Tight (default)": {"img_gap": 0.0001, "s0": 0.02, "s1": 0.050},
+            "Tight +":         {"img_gap": 0.0030, "s0": 0.02, "s1": 0.047},
+            "Medium":          {"img_gap": 0.0060, "s0": 0.02, "s1": 0.044},
+            "Wide":            {"img_gap": 0.0100, "s0": 0.02, "s1": 0.040},
         }
+        _p = preset_map.get(spacing_preset, preset_map["Tight (default)"])
+        img_gap = _p["img_gap"]
+        _s0, _s1, _s2 = _p["s0"], _p["s1"], 2 * _p["s1"]
 
-        if (imported.length === 0) { showToast('❌ No players found'); return; }
+    GLOBAL_LEFT_PAD = 0.02
+    BASE_LEFT, RIGHT = 0.035, 0.020
+    LEFT = BASE_LEFT + GLOBAL_LEFT_PAD
+    TITLE_LEFT_NUDGE = -0.001
+    TOP, BOT = 0.035, 0.07
+    header_h, GAP = 0.045, 0.020
 
-        // Ask user: replace or merge?
-        const replace = confirm(`Import ${imported.length} players.\n\nOK = Replace current ${currentBoard} list\nCancel = Merge with existing`);
-        if (replace) {
-          allPlayers[currentBoard] = imported;
-        } else {
-          // Merge — skip duplicates by name+team
-          const existing = new Set(allPlayers[currentBoard].map(p => p.name+'|'+p.team));
-          const newOnes = imported.filter(p => !existing.has(p.name+'|'+p.team));
-          allPlayers[currentBoard] = [...allPlayers[currentBoard], ...newOnes];
-        }
-        save();
-        renderAll();
-        showToast(`✅ Imported ${imported.length} players to ${currentBoard}`);
-      } catch(err) {
-        showToast('❌ Error reading file: ' + err.message);
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  };
-  script.onerror = () => showToast('❌ Could not load Excel reader');
-  if (!window.XLSX) {
-    document.head.appendChild(script);
-  } else {
-    script.onload();
-  }
-}
+    total_rows = sum(len(lst) for _, lst in sections)
+    fig = plt.figure(figsize=fig_size, dpi=dpi); fig.patch.set_facecolor(PAGE_BG)
 
-function importCSV(file) {
-  const reader = new FileReader();
-  reader.onload = ev => {
-    try {
-      const text = ev.target.result;
-      const lines = text.split('\n').filter(l => l.trim());
+    rows_space_total = 1 - (TOP + BOT) - header_block_h - header_h*len(sections) - GAP*(len(sections)-1)
+    row_slot = rows_space_total / max(total_rows,1)
+    BAR_FRAC = 0.92
+    gutter = 0.215
+    ticks = np.arange(0,101,10)
 
-      // Find header row
-      let headerIdx = 0;
-      for (let i = 0; i < Math.min(lines.length, 5); i++) {
-        if (lines[i].includes('Name')) { headerIdx = i; break; }
-      }
+    fig.text(LEFT + TITLE_LEFT_NUDGE, 1 - TOP - 0.010, f"{name_}\u2009|\u2009{team}",
+             ha="left", va="top", color=TITLE_C, fontproperties=TITLE_FP)
 
-      function parseCSVLine(line) {
-        const result = [];
-        let cur = '', inQ = false;
-        for (let c of line) {
-          if (c === '"') inQ = !inQ;
-          else if (c === ',' && !inQ) { result.push(cur); cur = ''; }
-          else cur += c;
-        }
-        result.push(cur);
-        return result;
-      }
+    def draw_pairs_line(pairs_line, y):
+        x = LEFT; renderer = fig.canvas.get_renderer()
+        for i,(lab,val) in enumerate(pairs_line):
+            t1 = fig.text(x, y, lab, ha="left", va="top", color=LABEL_C, fontproperties=INFO_LABEL_FP)
+            fig.canvas.draw(); x += t1.get_window_extent(renderer).width / fig.bbox.width
+            t2 = fig.text(x, y, str(val), ha="left", va="top", color=LABEL_C, fontproperties=INFO_VALUE_FP)
+            fig.canvas.draw(); x += t2.get_window_extent(renderer).width / fig.bbox.width
+            if i != len(pairs_line)-1:
+                t3 = fig.text(x, y, "  |  ", ha="left", va="top", color="#555555", fontproperties=INFO_VALUE_FP)
+                fig.canvas.draw(); x += t3.get_window_extent(renderer).width / fig.bbox.width
 
-      const headers = parseCSVLine(lines[headerIdx]).map(h => h.trim().replace(/^"|"$/g,''));
-      const imported = [];
-      for (let i = headerIdx + 1; i < lines.length; i++) {
-        const vals = parseCSVLine(lines[i]);
-        const row = {};
-        headers.forEach((h, j) => { row[h] = (vals[j]||'').replace(/^"|"$/g,'').trim(); });
-        const p = parseMondayRow(row);
-        if (p) imported.push(p);
-      }
+    if not enable_images:
+        pairs = [("Position: ",pos), ("Age: ",age)]
+        if show_height and height_text.strip(): pairs.append(("Height: ",height_text.strip()))
+        pairs += [("Foot: ",foot_display), ("Games: ",games), ("Minutes: ",minutes), ("Goals: ",goals), ("Assists: ",assists)]
+        draw_pairs_line(pairs, 1 - TOP - title_row_h + 0.010)
+    else:
+        row1 = [("Position: ",pos), ("Age: ",age), ("Height: ", (height_text.strip() if (show_height and height_text.strip()) else "—"))]
+        row2 = [("Games: ",games), ("Goals: ",goals), ("Assists: ",assists)]
+        row3 = [("Minutes: ",minutes), ("Foot: ",foot_display)]
+        title_y = 1 - TOP - 0.010
+        y1 = title_y - 0.055
+        y2 = y1 - 0.039
+        y3 = y2 - 0.039
+        draw_pairs_line(row1, y1)
+        draw_pairs_line(row2, y2)
+        draw_pairs_line(row3, y3)
 
-      if (imported.length === 0) { showToast('❌ No players found'); return; }
+    def _open_upload(u):
+        if u is None: return None
+        try: return Image.open(u).convert("RGBA")
+        except Exception: return None
 
-      const replace = confirm(`Import ${imported.length} players.\n\nOK = Replace current ${currentBoard} list\nCancel = Merge with existing`);
-      if (replace) {
-        allPlayers[currentBoard] = imported;
-      } else {
-        const existing = new Set(allPlayers[currentBoard].map(p => p.name+'|'+p.team));
-        const newOnes = imported.filter(p => !existing.has(p.name+'|'+p.team));
-        allPlayers[currentBoard] = [...allPlayers[currentBoard], ...newOnes];
-      }
-      save();
-      renderAll();
-      showToast(`✅ Imported ${imported.length} players to ${currentBoard}`);
-    } catch(err) {
-      showToast('❌ Error: ' + err.message);
+    if enable_images:
+        auto_pil_right = auto_pil_mid = auto_pil_left = None
+        if auto_images:
+            auto_pil_right = _npimg_to_pil_rgba(_auto_league_logo(player_row))
+            auto_pil_mid   = _npimg_to_pil_rgba(_auto_team_badge(player_row))
+            if not hide_player_photo:
+                _pname = _safe_get(player_row, "Player", "").strip()
+                _tname = _safe_get(player_row, "Team", "").strip()
+                auto_pil_left = get_player_photo_pil(_pname, _tname)
+
+        def add_header_image(pil_img, right_index=0):
+            if pil_img is None: return
+            x_right_edge = 1 - RIGHT
+            x = x_right_edge - (right_index + 1) * img_box_w - right_index * img_gap
+            per_image_shift = {
+                0: _s0 + img1_dx,
+                1: _s1 + img2_dx,
+                2: _s2 + img3_dx
+            }
+            x += per_image_shift.get(right_index, 0.0)
+            y_top_band = 1 - TOP - 0.006
+            y = y_top_band - img_box_h
+            ax_img = fig.add_axes([x, y, img_box_w, img_box_h])
+            ax_img.imshow(pil_img); ax_img.axis("off")
+
+        pil_right = _open_upload(up_img1) or auto_pil_right
+        pil_mid   = _open_upload(up_img2) or auto_pil_mid
+        pil_left  = None if hide_player_photo else (_open_upload(up_img3) or auto_pil_left)
+
+        add_header_image(pil_right, right_index=0)
+        add_header_image(pil_mid,   right_index=1)
+        add_header_image(pil_left,  right_index=2)
+
+    fig.lines.append(plt.Line2D([LEFT, 1 - RIGHT],
+                                [1 - TOP - header_block_h + 0.004]*2,
+                                transform=fig.transFigure, color=DIVIDER, lw=0.8, alpha=0.35))
+
+    def draw_panel(panel_top, title, tuples, *, show_xticks=False, draw_bottom_divider=True):
+        n = len(tuples); panel_h = header_h + n*row_slot
+        fig.text(LEFT, panel_top - 0.012, title, ha="left", va="top", color=TITLE_C, fontproperties=H2_FP)
+        ax = fig.add_axes([LEFT + gutter, panel_top - header_h - n*row_slot, 1 - LEFT - RIGHT - gutter, n*row_slot])
+        ax.set_facecolor(AX_BG); ax.set_xlim(0,100); ax.set_ylim(-0.5,n-0.5)
+        for s in ax.spines.values(): s.set_visible(False)
+        ax.tick_params(axis="x", bottom=False, labelbottom=False, length=0)
+        ax.tick_params(axis="y", left=False,  labelleft=False,  length=0)
+        ax.set_yticks([]); ax.get_yaxis().set_visible(False)
+        for i in range(n):
+            ax.add_patch(plt.Rectangle((0, i-(BAR_FRAC/2)), 100, BAR_FRAC, color=TRACK, ec="none", zorder=0.5))
+        for gx in ticks:
+            ax.vlines(gx, -0.5, n-0.5, colors=(0,0,0,0.16), linewidth=0.8, zorder=0.75)
+        for i,(lab,pct,val_str) in enumerate(tuples[::-1]):
+            y = i; bar_w = float(np.clip(pct,0,100))
+            ax.add_patch(plt.Rectangle((0, y-(BAR_FRAC/2)), bar_w, BAR_FRAC, color=pct_to_rgb(bar_w), ec="none", zorder=1.0))
+            x_text = 1.0 if bar_w >= 3 else min(100.0, bar_w + 0.8)
+            ax.text(x_text, y, val_str, ha="left", va="center", color="#0B0B0B", fontproperties=BAR_VALUE_FP, zorder=2.0, clip_on=False)
+        ax.axvline(50, color="#000000", ls=(0,(4,4)), lw=1.5, alpha=0.7, zorder=3.5)
+        for i,(lab,_,_) in enumerate(tuples[::-1]):
+            y_fig = (panel_top - header_h - n*row_slot) + ((i + 0.5) * row_slot)
+            fig.text(LEFT, y_fig, lab, ha="left", va="center", color=LABEL_C, fontproperties=LABEL_FP)
+        if show_xticks:
+            trans = ax.get_xaxis_transform()
+            offset_inner   = ScaledTranslation(7/72,0,fig.dpi_scale_trans)
+            offset_pct_0   = ScaledTranslation(4/72,0,fig.dpi_scale_trans)
+            offset_pct_100 = ScaledTranslation(10/72,0,fig.dpi_scale_trans)
+            y_label = -0.075
+            for gx in ticks:
+                ax.plot([gx,gx],[-0.03,0.0], transform=trans, color=(0,0,0,0.6), lw=1.1, clip_on=False, zorder=4)
+                ax.text(gx, y_label, f"{int(gx)}", transform=trans, ha="center", va="top", color="#000", fontproperties=TICK_FP, zorder=4, clip_on=False)
+                if gx==0:   ax.text(gx, y_label, "%", transform=trans+offset_pct_0,   ha="left", va="top", color="#000", fontproperties=TICK_FP)
+                elif gx==100: ax.text(gx, y_label, "%", transform=trans+offset_pct_100, ha="left", va="top", color="#000", fontproperties=TICK_FP)
+                else:       ax.text(gx, y_label, "%", transform=trans+offset_inner,   ha="left", va="top", color="#000", fontproperties=TICK_FP)
+        if draw_bottom_divider:
+            y0 = panel_top - panel_h - 0.008
+            fig.lines.append(plt.Line2D([LEFT, 1 - RIGHT], [y0, y0], transform=fig.transFigure, color=DIVIDER, lw=1.2, alpha=0.35))
+        return panel_top - panel_h - GAP
+
+    y_top = 1 - TOP - header_block_h
+    for idx,(title,data) in enumerate(sections):
+        is_last = idx == len(sections)-1
+        y_top = draw_panel(y_top, title, data, show_xticks=is_last, draw_bottom_divider=not is_last)
+
+    fig.text((LEFT + gutter + (1 - RIGHT))/2.0, BOT * 0.1, footer_caption_text,
+             ha="center", va="center", color=LABEL_C, fontproperties=FOOTER_FP)
+
+    st.pyplot(fig, use_container_width=True)
+
+    buf = BytesIO(); fig.savefig(buf, format="png", dpi=(150 if enable_images else 130),
+                                 bbox_inches="tight", facecolor=fig.get_facecolor())
+    buf.seek(0)
+    st.download_button(
+        "⬇️ Download Feature Z (PNG)",
+        data=buf.getvalue(),
+        file_name=f"{str(name_).replace(' ','_')}_featureZ.png",
+        mime="image/png",
+        key=f"download_feature_z_{uuid.uuid4().hex}"
+    )
+    plt.close(fig)
+# ============================ END — Feature Z ============================# ============================== SCATTERPLOT — FIXED layout + smart non-overlap labels ==============================
+st.markdown("---")
+st.header("📈 Scatterplot")
+
+from matplotlib.ticker import MultipleLocator, FormatStrFormatter
+
+with st.expander("Scatter settings", expanded=False):
+    numeric_cols = df.select_dtypes(include="number").columns.tolist()
+
+    x_default, y_default = "Progressive runs per 90", "Progressive passes per 90"
+    x_metric = st.selectbox(
+        "X-axis",
+        [c for c in FEATURES if c in numeric_cols],
+        index=(FEATURES.index(x_default) if x_default in FEATURES else 0),
+        key="sc_x",
+    )
+    y_metric = st.selectbox(
+        "Y-axis",
+        [c for c in FEATURES if c in numeric_cols],
+        index=(FEATURES.index(y_default) if y_default in FEATURES else 1),
+        key="sc_y",
+    )
+
+    # Pool controls
+    leagues_available_sc = sorted(df["League"].dropna().unique().tolist())
+    player_league = player_row.iloc[0]["League"] if not player_row.empty else None
+    preset_sc = st.selectbox(
+        "League preset",
+        ["Player's league", "Top 5 Europe", "Top 20 Europe", "EFL (England 2–4)", "Custom"],
+        index=0,
+        key="sc_preset",
+    )
+    preset_map_sc = {
+        "Player's league": {player_league} if player_league else set(),
+        "Top 5 Europe": set(PRESET_LEAGUES.get("Top 5 Europe", [])),
+        "Top 20 Europe": set(PRESET_LEAGUES.get("Top 20 Europe", [])),
+        "EFL (England 2–4)": set(PRESET_LEAGUES.get("EFL (England 2–4)", [])),
+        "Custom": set(),
     }
-  };
-  reader.readAsText(file);
+    add_leagues_sc = st.multiselect("Add leagues", leagues_available_sc, default=[], key="sc_add_leagues")
+    leagues_scatter = sorted(preset_map_sc.get(preset_sc, set()) | set(add_leagues_sc))
+    if not leagues_scatter and player_league:
+        leagues_scatter = [player_league]
+
+    same_pos_scatter = st.checkbox("Limit pool to current position prefix", value=True, key="sc_pos")
+
+    # Filters
+    df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
+    df["Age"] = pd.to_numeric(df["Age"], errors="coerce")
+
+    min_minutes_s, max_minutes_s = st.slider("Minutes filter", 0, 5000, (500, 5000), key="sc_min")
+    age_min_bound = int(np.nanmin(df["Age"])) if df["Age"].notna().any() else 14
+    age_max_bound = int(np.nanmax(df["Age"])) if df["Age"].notna().any() else 45
+    min_age_s, max_age_s = st.slider("Age filter", age_min_bound, age_max_bound, (16, 40), key="sc_age")
+    min_strength_s, max_strength_s = st.slider("League quality (strength)", 0, 101, (0, 101), key="sc_ls")
+
+    # Selected player & labels
+    include_selected = st.toggle("Include selected player", value=True, key="sc_include")
+    show_labels = st.toggle("Show player labels", value=True, key="sc_labels_all")
+    show_sel_label = st.toggle("Always label selected player", value=True, key="sc_sel_label")
+    label_only_u23 = st.checkbox("Label only U23 players", value=False, key="sc_lbl_u23")
+    allow_overlap = st.toggle("Allow overlapping labels (not recommended)", value=False, key="sc_overlap")
+    label_size = st.slider("Label size", 8, 20, 13, 1, key="sc_lbl_sz")
+
+    # Visual aids
+    show_medians = st.checkbox("Show median reference lines", value=True, key="sc_medians")
+    shade_iqr = st.checkbox("Shade interquartile range (25–75%)", value=True, key="sc_iqr")
+
+    # Points
+    point_alpha = st.slider("Point opacity", 0.2, 1.0, 0.92, 0.02, key="sc_alpha")
+    point_size = st.slider("Point size", 24, 300, 250, 2, key="sc_pts")
+    marker = st.selectbox("Marker", ["o", "s", "^", "D"], index=0, key="sc_marker")
+
+    # Team highlight
+    teams_available_hl = sorted(df[df["League"].isin(leagues_scatter)]["Team"].dropna().unique().tolist())
+    team_highlight = st.selectbox(
+        "Highlight team (within selected leagues)", ["(None)"] + teams_available_hl, index=0, key="sc_team_hl"
+    )
+
+    # Ticks
+    tick_mode = st.selectbox(
+        "Tick spacing", ["Auto (recommended)", "0.05", "0.1", "0.2", "0.5", "1.0"], index=0, key="sc_tick_mode"
+    )
+
+    # Theme
+    theme = st.radio("Theme", ["Light", "Dark"], index=0, horizontal=True, key="sc_theme")
+    PAGE_BG = "#ebebeb" if theme == "Light" else "#0a0f1c"
+    PLOT_BG = "#f3f3f3" if theme == "Light" else "#0f151f"
+    GRID_MAJ = "#d7d7d7" if theme == "Light" else "#3a4050"
+    txt_col = "#111111" if theme == "Light" else "#f5f5f5"
+
+    # Colour mapping
+    palette_options = [
+        "Red–Gold–Green (diverging)",
+        "Light-grey → Black",
+        "Light-Red → Dark-Red",
+        "Light-Blue → Dark-Blue",
+        "Light-Green → Dark-Green",
+        "Purple ↔ Gold (diverging)",
+        "All White",
+        "All Black",
+    ]
+    default_palette_index = palette_options.index("All Black")
+    colour_metric = st.selectbox(
+        "Colour dots by metric (scaled within pool)",
+        [c for c in FEATURES if c in numeric_cols],
+        index=(FEATURES.index(x_default) if x_default in FEATURES else 0),
+        key="sc_colour_metric",
+    )
+    palette_choice = st.selectbox("Palette", palette_options, index=default_palette_index, key="sc_palette")
+    reverse_scale = st.checkbox("Reverse colours", value=False, key="sc_reverse")
+
+    # Canvas & top gap & title
+    canvas_preset = st.selectbox("Canvas size (px)", ["1280×720", "1600×900", "1920×820", "1920×1080"], index=1)
+    w_px, h_px = map(int, canvas_preset.replace("×", "x").replace(" ", "").split("x"))
+
+    show_title = st.checkbox("Show custom title", value=False, key="sc_show_title")
+    custom_title = st.text_input("Custom title", "xG per 90 vs Non-penalty goals per 90", key="sc_title")
+
+    top_gap_px = st.slider("Top blank gap (px)", 0, 240, 100, 5, key="sc_topgap_slider")
+    if show_title:
+        top_gap_px = 75  # keep your behaviour
+
+    render_exact = st.checkbox("Render exact pixels (PNG)", value=True)
+
+    # ---- Build pool ----
+    try:
+        pool_sc = df[df["League"].isin(leagues_scatter)].copy()
+        if same_pos_scatter and not player_row.empty:
+            pool_sc = pool_sc[pool_sc["Position"].astype(str).apply(position_filter)]
+
+        pool_sc["Minutes played"] = pd.to_numeric(pool_sc["Minutes played"], errors="coerce")
+        pool_sc["Age"] = pd.to_numeric(pool_sc["Age"], errors="coerce")
+        pool_sc = pool_sc[pool_sc["Minutes played"].between(min_minutes_s, max_minutes_s)]
+        pool_sc = pool_sc[pool_sc["Age"].between(min_age_s, max_age_s)]
+        pool_sc["League Strength"] = pool_sc["League"].map(LEAGUE_STRENGTHS).fillna(0.0)
+        pool_sc = pool_sc[
+            (pool_sc["League Strength"] >= float(min_strength_s)) & (pool_sc["League Strength"] <= float(max_strength_s))
+        ]
+
+        if x_metric not in pool_sc.columns or y_metric not in pool_sc.columns or colour_metric not in pool_sc.columns:
+            st.info("Selected axis/colour metrics are missing from the dataset.")
+        else:
+            for m in [x_metric, y_metric, colour_metric]:
+                pool_sc[m] = pd.to_numeric(pool_sc[m], errors="coerce")
+            pool_sc = pool_sc.dropna(subset=[x_metric, y_metric, colour_metric, "Player", "Team", "League"])
+
+            selected_player_name = player_row.iloc[0]["Player"] if not player_row.empty else None
+            if not include_selected and selected_player_name is not None:
+                pool_sc = pool_sc[pool_sc["Player"] != selected_player_name]
+            elif include_selected and selected_player_name is not None and not (pool_sc["Player"] == selected_player_name).any():
+                ins = df[df["Player"] == selected_player_name].head(1).copy()
+                for m in [x_metric, y_metric, colour_metric]:
+                    ins[m] = pd.to_numeric(ins[m], errors="coerce")
+                ins["League Strength"] = ins["League"].map(LEAGUE_STRENGTHS).fillna(0.0)
+                pool_sc = pd.concat([pool_sc, ins], ignore_index=True, sort=False)
+
+            import matplotlib as mpl, numpy as np, pandas as pd
+            import matplotlib.pyplot as plt
+            from matplotlib import patheffects as pe
+
+            if pool_sc.empty:
+                st.info("No players in scatter pool after filters.")
+            else:
+                mpl.rcParams.update({
+                    "figure.dpi": 100,
+                    "savefig.dpi": 100,  # IMPORTANT: keep exact pixel export stable
+                    "font.size": 12,
+                    "axes.labelsize": 12,
+                    "xtick.labelsize": 11,
+                    "ytick.labelsize": 11,
+                    "axes.spines.right": False,
+                    "axes.spines.top": False,
+                    "text.antialiased": True,
+                })
+
+                # =================== helpers (FIX) ===================
+                import math
+
+                def nice_step(vmin, vmax, target_ticks=6):
+                    span = abs(vmax - vmin)
+                    if span <= 0 or not math.isfinite(span):
+                        return 1.0
+                    raw = span / max(target_ticks, 2)
+                    power = 10 ** math.floor(math.log10(raw))
+                    mult = raw / power
+                    if mult <= 1:
+                        k = 1
+                    elif mult <= 2:
+                        k = 2
+                    elif mult <= 2.5:
+                        k = 2.5
+                    elif mult <= 5:
+                        k = 5
+                    else:
+                        k = 10
+                    return k * power
+
+                def padded_limits(arr, pad_frac=0.06, headroom=0.03):
+                    a_min, a_max = float(np.nanmin(arr)), float(np.nanmax(arr))
+                    if a_min == a_max:
+                        a_min -= 1e-6
+                        a_max += 1e-6
+                    span = (a_max - a_min)
+                    pad = span * pad_frac
+                    return a_min - pad, a_max + pad + span * headroom
+
+                def interp(a, b, u):
+                    a = np.array(a, dtype=float); b = np.array(b, dtype=float)
+                    return (a + (b - a) * np.clip(u, 0, 1)) / 255.0
+
+                def map_colour_values(cvals, palette_choice, reverse_scale):
+                    cmin, cmax = float(np.nanmin(cvals)), float(np.nanmax(cvals))
+                    if cmin == cmax:
+                        cmax = cmin + 1e-6
+                    t = (cvals - cmin) / (cmax - cmin)
+                    if reverse_scale:
+                        t = 1.0 - t
+
+                    if palette_choice == "Red–Gold–Green (diverging)":
+                        def map_col(v):
+                            red, gold, green = [199, 54, 60], [240, 197, 106], [61, 166, 91]
+                            return interp(red, gold, v/0.5) if v <= 0.5 else interp(gold, green, (v-0.5)/0.5)
+                    elif palette_choice == "Light-grey → Black":
+                        def map_col(v): return interp([210, 214, 220], [20, 23, 31], v)
+                    elif palette_choice == "Light-Red → Dark-Red":
+                        def map_col(v): return interp([252, 190, 190], [139, 0, 0], v)
+                    elif palette_choice == "Light-Blue → Dark-Blue":
+                        def map_col(v): return interp([191, 210, 255], [10, 42, 102], v)
+                    elif palette_choice == "Light-Green → Dark-Green":
+                        def map_col(v): return interp([196, 235, 203], [12, 92, 48], v)
+                    elif palette_choice == "Purple ↔ Gold (diverging)":
+                        def map_col(v):
+                            purple, mid, gold = [96, 55, 140], [180, 150, 210], [240, 197, 106]
+                            return interp(purple, mid, v/0.5) if v <= 0.5 else interp(mid, gold, (v-0.5)/0.5)
+                    elif palette_choice == "All White":
+                        def map_col(v): return np.array([255, 255, 255]) / 255.0
+                    else:  # All Black
+                        def map_col(v): return np.array([0, 0, 0]) / 255.0
+
+                    cols = np.vstack([map_col(v) for v in t])
+                    return [tuple(c) for c in cols]
+
+                # Smart non-overlap labeler in DISPLAY coords (prevents layout/format changes)
+                def place_labels_nonoverlap(
+                    fig, ax, df_points, xcol, ycol,
+                    txt_color, label_size,
+                    stroke_color, allow_overlap=False,
+                    max_labels=60,
+                    always_label_names=None,
+                ):
+                    """
+                    Places as many labels as possible without overlap using pixel-space bbox checks.
+                    Does NOT change axis limits or figure bbox, so formatting stays stable.
+                    """
+                    if df_points.empty:
+                        return
+
+                    always_label_names = set(always_label_names or [])
+
+                    # Candidate priority: extremes + outliers tend to be most informative.
+                    x = df_points[xcol].to_numpy(float)
+                    y = df_points[ycol].to_numpy(float)
+                    xz = (x - np.nanmean(x)) / (np.nanstd(x) + 1e-9)
+                    yz = (y - np.nanmean(y)) / (np.nanstd(y) + 1e-9)
+                    prio = (np.abs(xz) + np.abs(yz))  # simple, stable
+
+                    cand = df_points.copy()
+                    cand["_prio"] = prio
+                    # force always-labels to top
+                    cand["_force"] = cand["Player"].astype(str).isin(always_label_names).astype(int)
+                    cand = cand.sort_values(["_force", "_prio"], ascending=[False, False])
+
+                    # Offsets to try (in points)
+                    offsets = [(10, 12), (10, -14), (-10, 12), (-10, -14), (14, 0), (-14, 0), (0, 14), (0, -14)]
+
+                    placed_bboxes = []
+                    placed = 0
+
+                    # Need a renderer for accurate bboxes
+                    fig.canvas.draw()
+                    renderer = fig.canvas.get_renderer()
+                    ax_bbox = ax.get_window_extent(renderer=renderer)
+
+                    for _, r in cand.iterrows():
+                        if not allow_overlap and placed >= max_labels and r["_force"] == 0:
+                            continue  # hard cap but still allow forced labels
+
+                        px, py = float(r[xcol]), float(r[ycol])
+                        name = str(r["Player"])
+
+                        # Try multiple offsets; pick first that fits
+                        best_artist = None
+                        for dx, dy in offsets:
+                            artist = ax.annotate(
+                                name,
+                                (px, py),
+                                xytext=(dx, dy),
+                                textcoords="offset points",
+                                fontsize=label_size,
+                                fontweight="semibold",
+                                color=txt_color,
+                                ha="left" if dx >= 0 else "right",
+                                va="bottom" if dy >= 0 else "top",
+                                zorder=6,
+                            )
+                            artist.set_path_effects([
+                                pe.withStroke(linewidth=2.0, foreground=stroke_color, alpha=0.9)
+                            ])
+
+                            fig.canvas.draw()
+                            bb = artist.get_window_extent(renderer=renderer).expanded(1.02, 1.10)
+
+                            # Keep labels inside axes area (or mostly inside)
+                            if not ax_bbox.contains(bb.x0, bb.y0) or not ax_bbox.contains(bb.x1, bb.y1):
+                                artist.remove()
+                                continue
+
+                            # Overlap check
+                            if (not allow_overlap) and any(bb.overlaps(pbb) for pbb in placed_bboxes):
+                                artist.remove()
+                                continue
+
+                            best_artist = artist
+                            placed_bboxes.append(bb)
+                            placed += 1
+                            break
+
+                        # If we couldn't place it and it's forced, allow overlap as last resort
+                        if best_artist is None and r["_force"] == 1:
+                            dx, dy = offsets[0]
+                            artist = ax.annotate(
+                                name, (px, py),
+                                xytext=(dx, dy), textcoords="offset points",
+                                fontsize=label_size, fontweight="semibold",
+                                color=txt_color, ha="left", va="bottom", zorder=6
+                            )
+                            artist.set_path_effects([
+                                pe.withStroke(linewidth=2.0, foreground=stroke_color, alpha=0.9)
+                            ])
+                            fig.canvas.draw()
+                            bb = artist.get_window_extent(renderer=renderer).expanded(1.02, 1.10)
+                            placed_bboxes.append(bb)
+                            placed += 1
+
+                # =================== Figure ===================
+                fig, ax = plt.subplots(figsize=(w_px / 100, h_px / 100), dpi=100)
+                fig.patch.set_facecolor(PAGE_BG)
+                ax.set_facecolor(PLOT_BG)
+
+                x_vals = pool_sc[x_metric].to_numpy(float)
+                y_vals = pool_sc[y_metric].to_numpy(float)
+
+                xlim = padded_limits(x_vals)
+                ylim = padded_limits(y_vals)
+                ax.set_xlim(*xlim)
+                ax.set_ylim(*ylim)
+
+                # ---- Colour mapping ----
+                cvals = pool_sc[colour_metric].to_numpy(float)
+                cols = map_colour_values(cvals, palette_choice, reverse_scale)
+                color_series = pd.Series(cols, index=pool_sc.index)
+
+                # Split selected
+                sel_name = player_row.iloc[0]["Player"] if (include_selected and not player_row.empty) else None
+                if sel_name:
+                    others = pool_sc[pool_sc["Player"] != sel_name]
+                    sel = pool_sc[pool_sc["Player"] == sel_name]
+                else:
+                    others = pool_sc
+                    sel = pool_sc.iloc[0:0]
+
+                # ---------- Points ----------
+                ax.scatter(
+                    others[x_metric], others[y_metric],
+                    s=point_size,
+                    c=list(color_series.loc[others.index]),
+                    alpha=float(point_alpha),
+                    edgecolors="none",
+                    linewidths=0.0,
+                    marker=marker,
+                    zorder=2
+                )
+
+                if not sel.empty:
+                    ax.scatter(
+                        sel[x_metric], sel[y_metric],
+                        s=point_size,
+                        c="#C81E1E",
+                        edgecolors="white",
+                        linewidths=1.8,
+                        marker=marker,
+                        zorder=4
+                    )
+
+                # Highlight team overlay
+                if team_highlight != "(None)":
+                    hl = pool_sc[pool_sc["Team"] == team_highlight]
+                    if not hl.empty:
+                        ax.scatter(
+                            hl[x_metric], hl[y_metric],
+                            s=point_size,
+                            c="#f59e0b",
+                            alpha=1.0,
+                            edgecolors="white",
+                            linewidths=1.6,
+                            marker=marker,
+                            zorder=5
+                        )
+
+                # IQR & medians
+                if shade_iqr:
+                    x_q1, x_q3 = np.nanpercentile(x_vals, [25, 75])
+                    y_q1, y_q3 = np.nanpercentile(y_vals, [25, 75])
+                    ax.axvspan(x_q1, x_q3, color="#cfd3da" if theme == "Light" else "#9aa4b1", alpha=0.25, zorder=1)
+                    ax.axhspan(y_q1, y_q3, color="#cfd3da" if theme == "Light" else "#9aa4b1", alpha=0.25, zorder=1)
+
+                if show_medians:
+                    med_x = float(np.nanmedian(x_vals))
+                    med_y = float(np.nanmedian(y_vals))
+                    med_col = "#000000" if theme == "Light" else "#ffffff"
+                    ax.axvline(med_x, color=med_col, ls=(0, (4, 4)), lw=2.2, zorder=3)
+                    ax.axhline(med_y, color=med_col, ls=(0, (4, 4)), lw=2.2, zorder=3)
+
+                # ---------- Axes & grid ----------
+                ax.set_xlabel(x_metric, fontsize=14, fontweight="semibold", color=txt_col)
+                ax.set_ylabel(y_metric, fontsize=14, fontweight="semibold", color=txt_col)
+
+                # Denser auto ticks (≈2×)
+                if tick_mode.startswith("Auto"):
+                    step_x = nice_step(*xlim, target_ticks=12)
+                    step_y = nice_step(*ylim, target_ticks=12)
+                else:
+                    step_x = step_y = float(tick_mode)
+
+                ax.xaxis.set_major_locator(MultipleLocator(base=step_x))
+                ax.yaxis.set_major_locator(MultipleLocator(base=step_y))
+
+                def decimals(step):
+                    if step >= 1: return 0
+                    if step >= 0.1: return 1
+                    if step >= 0.01: return 2
+                    return 3
+
+                ax.xaxis.set_major_formatter(FormatStrFormatter(f"%.{decimals(step_x)}f"))
+                ax.yaxis.set_major_formatter(FormatStrFormatter(f"%.{decimals(step_y)}f"))
+                ax.minorticks_off()
+
+                for tick in ax.get_xticklabels() + ax.get_yticklabels():
+                    tick.set_fontweight("semibold")
+                    tick.set_color(txt_col)
+
+                ax.grid(True, which="major", linewidth=0.9, color=GRID_MAJ)
+                for s in ax.spines.values():
+                    s.set_linewidth(0.9)
+                    s.set_color("#9ca3af" if theme == "Light" else "#6b7280")
+
+                # ===== fixed top gap (layout stays identical regardless of labels) =====
+                top_frac = 1.0 - (top_gap_px / float(h_px))
+                fig.subplots_adjust(left=0.075, right=0.985, bottom=0.105, top=top_frac)
+
+                # Optional title in the gap (doesn't affect bbox/export size)
+                if show_title and custom_title.strip():
+                    title_col = "#111111" if theme == "Light" else "#f5f5f5"
+                    y_gap_pos = top_frac + (1 - top_frac) * 0.44
+                    fig.text(
+                        0.5, y_gap_pos, custom_title.strip(),
+                        ha="center", va="center",
+                        color=title_col, fontsize=26, fontweight="semibold"
+                    )
+
+                # ---------- Labels ----------
+                stroke = "#ffffff" if theme == "Light" else "#1e293b"
+
+                # (A) Selected player label (even when show_labels is OFF)
+                if show_sel_label and (not sel.empty) and sel_name:
+                    sx = float(sel.iloc[0][x_metric])
+                    sy = float(sel.iloc[0][y_metric])
+
+                    tsel = ax.annotate(
+                        str(sel_name),
+                        (sx, sy),
+                        xytext=(10, 12),
+                        textcoords="offset points",
+                        fontsize=label_size,
+                        fontweight="semibold",
+                        color=txt_col,
+                        ha="left",
+                        va="bottom",
+                        zorder=7,
+                    )
+                    tsel.set_path_effects([pe.withStroke(linewidth=2.0, foreground=stroke, alpha=0.9)])
+
+                # (B) Pool labels only when show_labels is ON
+                if show_labels:
+                    candidates = others.copy()
+                    if label_only_u23:
+                        candidates = candidates[pd.to_numeric(candidates["Age"], errors="coerce") < 23]
+
+                    # Dynamic cap based on canvas size
+                    approx_cap = int((w_px * h_px) / 45000)
+                    approx_cap = max(18, min(90, approx_cap))
+
+                    force_names = []
+                    # If you want selected player to be forced when pool labels are on too:
+                    if (not sel.empty) and sel_name:
+                        force_names.append(str(sel_name))
+
+                    # Force-highlighted team (optional)
+                    if team_highlight != "(None)":
+                        force_names += candidates[candidates["Team"] == team_highlight]["Player"].astype(str).tolist()
+
+                    # IMPORTANT: exclude selected from candidates to avoid double-label
+                    cand_all = candidates.copy()
+
+                    place_labels_nonoverlap(
+                        fig, ax,
+                        cand_all,
+                        x_metric, y_metric,
+                        txt_color=txt_col,
+                        label_size=label_size,
+                        stroke_color=stroke,
+                        allow_overlap=allow_overlap,
+                        max_labels=approx_cap,
+                        always_label_names=force_names,
+                    )
+
+
+                # ---------- Render ----------
+                if render_exact:
+                    # CRITICAL FIX: DO NOT use bbox_inches="tight" (it changes formatting when many labels exist)
+                    from io import BytesIO
+                    buf = BytesIO()
+                    fig.savefig(
+                        buf,
+                        format="png",
+                        dpi=100,
+                        facecolor=fig.get_facecolor(),
+                        bbox_inches=None,
+                        pad_inches=0
+                    )
+                    buf.seek(0)
+                    st.image(buf, width=w_px)
+                else:
+                    st.pyplot(fig, use_container_width=False)
+
+    except Exception as e:
+        st.info(f"Scatter could not be drawn: {e}")
+# ==============================================================================================================
+
+
+# ============================== FEATURE Q — CM ARCHETYPE SCATTER ==============================
+from scipy.stats import rankdata
+from io import BytesIO
+import uuid
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+from matplotlib.ticker import MultipleLocator
+from matplotlib import patheffects as pe
+
+st.markdown("---")
+st.header("🧭 Feature Q — CM Archetype Map")
+
+# ------------------------------------------------------------------
+# SETTINGS PANEL
+# ------------------------------------------------------------------
+with st.expander("Scatter settings", expanded=False):
+
+    leagues_available_sc = sorted(df["League"].dropna().unique().tolist())
+    player_league = player_row.iloc[0]["League"] if not player_row.empty else None
+    # Selected player name for default labelling
+    selected_player_name = player_row.iloc[0]["Player"] if not player_row.empty else None
+
+    preset_sc = st.selectbox(
+        "League preset",
+        ["Player's league", "Top 5 Europe", "Top 20 Europe", "EFL (England 2–4)", "Custom"],
+        index=0,
+        key="fq_preset",
+    )
+
+    preset_map_sc = {
+        "Player's league": {player_league} if player_league else set(),
+        "Top 5 Europe": set(PRESET_LEAGUES.get("Top 5 Europe", [])),
+        "Top 20 Europe": set(PRESET_LEAGUES.get("Top 20 Europe", [])),
+        "EFL (England 2–4)": set(PRESET_LEAGUES.get("EFL (England 2–4)", [])),
+        "Custom": set(),
+    }
+
+    add_leagues_sc = st.multiselect("Add leagues", leagues_available_sc, default=[], key="fq_add")
+    leagues_scatter = sorted(preset_map_sc[preset_sc] | set(add_leagues_sc))
+    if not leagues_scatter and player_league:
+        leagues_scatter = [player_league]
+
+    # Filters
+    df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
+    df["Age"] = pd.to_numeric(df["Age"], errors="coerce")
+    min_minutes_s, max_minutes_s = st.slider("Minutes", 0, 5000, (500, 5000), key="fq_min")
+    min_age_s, max_age_s = st.slider("Age", 14, 45, (16, 40), key="fq_age")
+    min_strength_s, max_strength_s = st.slider("League Strength", 0, 101, (0, 101), key="fq_ls")
+
+    # Labels
+    show_labels = st.toggle("Show labels", value=True, key="fq_lab")
+    label_mode = st.selectbox(
+        "Label mode",
+        ["Selected player only", "All players", "U23 only", "U21 only", "U18 only"],
+        index=0,
+        key="fq_label_mode",
+    )
+    label_size = st.slider("Label size", 8, 20, 12, 1, key="fq_lblsize")
+
+    # Points
+    point_size = st.slider("Point size", 24, 300, 225, 2, key="fq_pts")
+    point_alpha = st.slider("Point opacity", 0.2, 1.0, 0.92, 0.02, key="fq_alpha")
+
+    # TEAM HIGHLIGHT – USED ONLY FOR LABEL FILTER
+    teams_available_hl = sorted(df[df["League"].isin(leagues_scatter)]["Team"].dropna().unique())
+    team_highlight = st.selectbox(
+        "Highlight team (labels only shown for this team)",
+        ["(None)"] + teams_available_hl,
+        index=0,
+        key="fq_team",
+    )
+
+    # Theme toggle (kept for future but background fixed dark)
+    theme = st.radio("Theme", ["Dark", "Light"], index=0, horizontal=True, key="fq_theme")
+
+    # === FIXED DARK BACKGROUND FOR PAGE & PLOT ===
+    PAGE_BG = "#0a0f1c"
+    PLOT_BG = "#0a0f1c"
+    GRID_MAJ = "#3a4050"
+    txt_col = "#f1f5f9"
+
+    # Canvas
+    canvas_preset = st.selectbox(
+        "Canvas size",
+        ["1280×720", "1600×900", "1920×820", "1920×1080"],
+        index=1,
+        key="fq_canvas",
+    )
+    w_px, h_px = map(int, canvas_preset.replace("×", "x").split("x"))
+
+    top_gap_px = st.slider("Top gap (px)", 0, 240, 80, 5, key="fq_gap")
+    render_exact = st.checkbox("Render exact pixels (PNG)", value=True, key="fq_exact")
+
+# ------------------------------------------------------------------
+# CM FILTER + SCORE CALCULATION
+# ------------------------------------------------------------------
+pool_sc = df[df["League"].isin(leagues_scatter)].copy()
+pool_sc["Primary Position"] = pool_sc["Position"].astype(str).str.split(",").str[0].str.strip()
+pool_sc = pool_sc[pool_sc["Primary Position"].isin(["LCMF", "RCMF", "DMF", "RDMF", "LDMF"])]
+
+pool_sc["Minutes played"] = pd.to_numeric(pool_sc["Minutes played"], errors="coerce")
+pool_sc["Age"] = pd.to_numeric(pool_sc["Age"], errors="coerce")
+pool_sc["League Strength"] = pool_sc["League"].map(LEAGUE_STRENGTHS).fillna(0)
+
+pool_sc = pool_sc[
+    pool_sc["Minutes played"].between(min_minutes_s, max_minutes_s)
+    & pool_sc["Age"].between(min_age_s, max_age_s)
+    & pool_sc["League Strength"].between(min_strength_s, max_strength_s)
+]
+
+if pool_sc.empty:
+    st.info("No CMs after filtering.")
+    st.stop()
+
+metric_groups = {
+    'def_score': {
+        'Defensive duels per 90': 0.4,
+        'Defensive duels won, %': 0.3,
+        'PAdj Interceptions': 0.2,
+        'Shots blocked per 90': 0.1
+    },
+    'poss_score': {
+        'Passes per 90': 0.2,
+        'Accurate passes, %': 0.1,
+        'Forward passes per 90': 0.2,
+        'Progressive passes per 90': 0.2,
+        'xA per 90': 0.1,
+        'Key passes per 90': 0.1,
+        'Passes to penalty area per 90': 0.1
+    },
+    'carry_score': {
+        'Dribbles per 90': 0.4,
+        'Successful dribbles, %': 0.1,
+        'Progressive runs per 90': 0.3,
+        'Accelerations per 90': 0.2
+    },
+    'boxing_score': {
+        'xG per 90': 0.3,
+        'Non-penalty goals per 90': 0.4,
+        'Touches in box per 90': 0.3
+    }
 }
 
-// ── TOAST ──
-async function syncAll() {
-  if (!serverOnline) {
-    serverOnline = await checkServer();
-    if (!serverOnline) { showToast('❌ Server offline'); return; }
-  }
+def weighted_percentile(df_sub, row, mgrp):
+    total = 0
+    for m, w in mgrp.items():
+        vals = df_sub[m].fillna(0)
+        pct = rankdata(vals) / len(vals)
+        total += pct[df_sub.index.get_loc(row.name)] * w
+    return total * 100
 
-  // Get all players with TM links across current board
-  const list = players().filter(p => p.tm && p.tm.trim());
-  if (list.length === 0) { showToast('No players with TM links on this board'); return; }
+for sn, grp in metric_groups.items():
+    pool_sc[sn] = pool_sc.apply(lambda r: weighted_percentile(pool_sc, r, grp), axis=1)
 
-  if (!confirm(`Sync ${list.length} players from Transfermarkt?\n\nThis will take ~${Math.ceil(list.length * 3 / 60)} minutes. Don't close the tab.`)) return;
+def classify(r):
+    if r["def_score"] >= 50 and r["poss_score"] >= 50:
+        return "All Action"
+    if r["def_score"] >= 50:
+        return "Destroyer"
+    if r["poss_score"] >= 50:
+        return "Playmaker"
+    return "Limited"
 
-  // Show progress overlay
-  const overlay = document.createElement('div');
-  overlay.id = 'sync-overlay';
-  overlay.style.cssText = `position:fixed;inset:0;background:rgba(7,9,15,0.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;font-family:'DM Sans',sans-serif`;
-  overlay.innerHTML = `
-    <div style="font-size:18px;font-weight:700;color:#fff;letter-spacing:1px">🔄 SYNCING FROM TRANSFERMARKT</div>
-    <div id="sync-player-name" style="font-size:13px;color:var(--muted);min-height:20px"></div>
-    <div style="width:360px;height:6px;background:#1a2235;border-radius:3px;overflow:hidden">
-      <div id="sync-bar" style="height:100%;width:0%;background:var(--accent);border-radius:3px;transition:width 0.3s ease"></div>
+pool_sc["Archetype"] = pool_sc.apply(classify, axis=1)
+
+# FLAGS
+pool_sc["Ball Carrier"] = pool_sc["carry_score"] >= 70      # square
+pool_sc["Box Threat"] = pool_sc["boxing_score"] >= 80       # diamond
+
+# ------------------------------------------------------------------
+# SCATTER GRAPH
+# ------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(w_px / 100, h_px / 100), dpi=100)
+fig.patch.set_facecolor(PAGE_BG)
+ax.set_facecolor(PLOT_BG)
+
+# Axes & labels
+ax.set_xlim(0, 100)
+ax.set_ylim(0, 100)
+ax.set_xlabel("Possession Score", fontsize=16, fontweight="semibold", color=txt_col)
+ax.xaxis.labelpad = 14
+ax.set_ylabel("Defensive Score", fontsize=16, fontweight="semibold", color=txt_col)
+
+ax.xaxis.set_major_locator(MultipleLocator(10))
+ax.yaxis.set_major_locator(MultipleLocator(10))
+for tick in ax.get_xticklabels() + ax.get_yticklabels():
+    tick.set_fontweight("semibold")
+    tick.set_color(txt_col)
+    tick.set_fontsize(14)
+
+# Grid & spines
+ax.grid(True, color=GRID_MAJ, linewidth=0.6)
+for s in ax.spines.values():
+    s.set_color("#e5e7eb")
+    s.set_linewidth(1.1)
+
+# 50/50 quadrant lines (RESTORED)
+line_col = "#FFFFFF"
+ax.axvline(50, color=line_col, linestyle=(0, (4, 4)), lw=1.5)
+ax.axhline(50, color=line_col, linestyle=(0, (4, 4)), lw=1.5)
+
+# Quadrant labels
+quad_fs = 16
+bbox_style = dict(boxstyle="round,pad=0.35", facecolor="#d1d5db", edgecolor="none", alpha=0.9)
+ax.text(6, 94, "DESTROYER", fontsize=quad_fs, weight="bold", bbox=bbox_style)
+ax.text(94, 94, "ALL ACTION", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
+ax.text(6, 6, "LIMITED", fontsize=quad_fs, weight="bold", bbox=bbox_style)
+ax.text(96, 6, "PLAYMAKER", fontsize=quad_fs, weight="bold", ha="right", bbox=bbox_style)
+
+# Archetype colours
+arch_colors = {
+    "Playmaker": "#76B7B2",
+    "Destroyer": "#F28E2B",
+    "All Action": "#4E79A7",
+    "Limited": "#E15759",
+}
+
+# ------------------------------------------------------------------
+# MARKER PRIORITY (DIAMOND > SQUARE > CIRCLE)
+# ------------------------------------------------------------------
+def choose_marker(row):
+    if row["Box Threat"]:
+        return "D"       # diamond
+    if row["Ball Carrier"]:
+        return "s"       # square
+    return "o"           # circle
+
+pool_sc["marker"] = pool_sc.apply(choose_marker, axis=1)
+
+# Points
+effective_point_size = point_size * 1.5
+
+for _, r in pool_sc.iterrows():
+    ax.scatter(
+        r["poss_score"],
+        r["def_score"],
+        s=effective_point_size,
+        c=arch_colors[r["Archetype"]],
+        alpha=point_alpha,
+        marker=r["marker"],
+        edgecolors="none",
+        linewidth=0,
+        zorder=2,
+    )
+
+
+# ------------------------------------------------------------------
+# LABEL HANDLING
+# ------------------------------------------------------------------
+highlight_grp = pool_sc[pool_sc["Team"] == team_highlight] if team_highlight != "(None)" else None
+if show_labels:
+    if highlight_grp is not None and not highlight_grp.empty:
+        label_df = highlight_grp
+    else:
+        if label_mode == "Selected player only" and selected_player_name:
+            label_df = pool_sc[pool_sc["Player"] == selected_player_name]
+        elif label_mode == "All players":
+            label_df = pool_sc
+        elif label_mode == "U23 only":
+            label_df = pool_sc[pool_sc["Age"] < 23]
+        elif label_mode == "U21 only":
+            label_df = pool_sc[pool_sc["Age"] < 21]
+        elif label_mode == "U18 only":
+            label_df = pool_sc[pool_sc["Age"] < 18]
+        else:
+            label_df = pool_sc
+
+    for _, r in label_df.iterrows():
+        t = ax.annotate(
+            r["Player"],
+            (r["poss_score"], r["def_score"]),
+            xytext=(10, 12),
+            textcoords="offset points",
+            fontsize=label_size + 2,
+            color=txt_col,
+            weight="semibold",
+            ha="left",
+            va="bottom",
+            zorder=6,
+        )
+        t.set_path_effects([pe.withStroke(linewidth=2, foreground="#020617", alpha=0.9)])
+
+# ------------------------------------------------------------------
+# SINGLE, PERFECTLY ALIGNED LEGEND BLOCK
+# ------------------------------------------------------------------
+legend_kwargs = dict(
+    loc="upper left",
+    frameon=False,
+    handlelength=1.1,
+    handletextpad=0.4,
+    borderpad=0.25,
+    labelspacing=0.55,
+    borderaxespad=0.0,
+)
+
+handles = [
+    # Archetypes
+    Line2D([0], [0], marker="s", linestyle="None", color="none",
+           markerfacecolor=arch_colors["Playmaker"], markersize=16, label="Playmaker"),
+    Line2D([0], [0], marker="s", linestyle="None", color="none",
+           markerfacecolor=arch_colors["Destroyer"], markersize=16, label="Destroyer"),
+    Line2D([0], [0], marker="s", linestyle="None", color="none",
+           markerfacecolor=arch_colors["All Action"], markersize=16, label="All Action"),
+    Line2D([0], [0], marker="s", linestyle="None", color="none",
+           markerfacecolor=arch_colors["Limited"], markersize=16, label="Limited"),
+
+    # Ball Carrier header row (no marker)
+    Line2D([], [], linestyle="None", color="none", label="Ball Carrier"),
+    # Ball Carrier Yes (square)
+    Line2D(
+        [0], [0],
+        marker="s",
+        linestyle="None",
+        color="none",
+        markeredgecolor=txt_col,
+        markerfacecolor="#f1f5f9",
+        markeredgewidth=1.4,
+        markersize=16,
+        label="Yes",
+    ),
+
+    # Pen-Box Threat header row (no marker)
+    Line2D([], [], linestyle="None", color="none", label="Pen-Box Threat"),
+    # Pen-Box Threat Yes (diamond)
+    Line2D(
+        [0], [0],
+        marker="D",
+        linestyle="None",
+        color="none",
+        markeredgecolor=txt_col,
+        markerfacecolor="#f1f5f9",
+        markeredgewidth=1.4,
+        markersize=16,
+        label="Yes",
+    ),
+]
+
+labels = [
+    "Playmaker",
+    "Destroyer",
+    "All Action",
+    "Limited",
+    "Ball Carrier",
+    "Yes",
+    "Pen-Box Threat",
+    "Yes",
+]
+
+legend = ax.legend(
+    handles=handles,
+    labels=labels,
+    title="Archetype",
+    title_fontsize=15,
+    fontsize=14,
+    bbox_to_anchor=(1.01, 1.00),
+    **legend_kwargs,
+)
+legend.get_title().set_color(txt_col)
+legend.get_title().set_fontweight("semibold")
+
+for i, txt in enumerate(legend.get_texts()):
+    txt.set_color(txt_col)
+    txt.set_fontweight("semibold")
+    if labels[i] in ["Ball Carrier", "Pen-Box Threat"]:
+        txt.set_fontstyle("italic")
+
+# ------------------------------------------------------------------
+# LAYOUT
+# ------------------------------------------------------------------
+fig.subplots_adjust(
+    left=0.06,
+    right=0.865,
+    bottom=0.11,
+    top=1.02 - top_gap_px / float(h_px),
+)
+
+# ------------------------------------------------------------------
+# RENDER
+# ------------------------------------------------------------------
+if render_exact:
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=100, facecolor=PAGE_BG)
+    buf.seek(0)
+    st.image(buf, width=w_px)
+    st.download_button(
+        "⬇️ Download Feature Q (PNG)",
+        data=buf.getvalue(),
+        file_name=f"feature_q_cm_{uuid.uuid4().hex[:6]}.png",
+        mime="image/png",
+    )
+else:
+    st.pyplot(fig)
+
+plt.close(fig)
+# ============================== END FEATURE Q ============================================================
+
+
+
+
+
+
+# ----------------- (B) COMPARISON RADAR — decile tick values (1dp) + light/dark theme + exact edge + centered/upright outside labels -----------------
+import re
+
+st.markdown("---")
+st.header("📊 Player Comparison Radar")
+
+DEFAULT_RADAR_METRICS = [
+    "Defensive duels per 90","Defensive duels won, %","PAdj Interceptions",
+    "Passes per 90","Accurate passes, %","Progressive passes per 90", "Passes to penalty area per 90",
+    "Progressive runs per 90","Dribbles per 90", "Non-penalty goals per 90",
+    "xA per 90",
+]
+
+def _clean_radar_label(s: str) -> str:
+    s = s.replace("Non-penalty goals per 90", "Non-Pen Goals")
+    s = s.replace("xA per 90", "xA")
+    s = s.replace("Defensive duels won, %", "Defensive Duel %")
+    s = s.replace("Defensive duels per 90", "Defensive duels").replace("Passes per 90", "Passes")
+    s = s.replace("Progressive runs per 90", "Progressive Runs").replace("Progressive passes per 90", "Progressive Passes")
+    s = s.replace("Passes to penalty area per 90", "Passes to Pen Area").replace("Accurate passes, %", "Passing %")
+    return re.sub(r"\s*per\s*90", "", s, flags=re.I)
+
+# Theme selector
+with st.expander("Radar settings", expanded=False):
+    radar_theme = st.radio("Theme", ["Light", "Dark"], index=0, horizontal=True, key="radar_theme")
+
+# Colors per theme
+if radar_theme == "Dark":
+    PAGE_BG = "#0a0f1c"
+    AX_BG   = "#0a0f1c"
+    GRID_BAND_OUTER = "#162235"
+    GRID_BAND_INNER = "#0d1524"
+    RING_COLOR_INNER = "#3a4050"
+    RING_COLOR_OUTER = "#cbd5e1"
+    LABEL_COLOR = "#f5f5f5"
+    TICK_COLOR  = "#e5e7eb"
+    MINUTES_CLR = "#f5f5f5"
+else:
+    PAGE_BG = "#ffffff"
+    AX_BG   = "#ebebeb"
+    GRID_BAND_OUTER = "#e5e7eb"
+    GRID_BAND_INNER = "#ffffff"
+    RING_COLOR_INNER = RING_COLOR_OUTER = "#d1d5db"
+    LABEL_COLOR = "#0f172a"
+    TICK_COLOR  = "#6b7280"
+    MINUTES_CLR = "#374151"
+
+if player_row.empty:
+    st.info("Pick a player above to draw the radar.")
+else:
+    # Player A is the selected player
+    pA = player_name
+    rowA_all = df[df["Player"] == pA]
+    if rowA_all.empty:
+        st.info("Selected player not found in dataset.")
+    else:
+        rowA = rowA_all.iloc[0]
+
+        # Player B options using the universal position_filter
+        pool_pos = df[df["Position"].astype(str).apply(position_filter)].copy()
+        players_b = sorted(pool_pos["Player"].dropna().unique().tolist())
+        players_b = [p for p in players_b if p != pA]
+
+        if not players_b:
+            st.info("No comparison players available for the current universal position filter.")
+        else:
+            pB = st.selectbox("Player B (blue)", players_b, index=0, key="radar_pb")
+
+            rowB_all = df[df["Player"] == pB]
+            if rowB_all.empty:
+                st.info("Comparison player not found in dataset.")
+            else:
+                rowB = rowB_all.iloc[0]
+
+                # Numeric radar metrics
+                numeric_cols = set(df.select_dtypes(include="number").columns.tolist())
+                radar_metrics = [m for m in DEFAULT_RADAR_METRICS if m in df.columns and m in numeric_cols]
+                if not radar_metrics:
+                    st.info("No numeric radar metrics available in dataset.")
+                else:
+                    # Pool = A∪B leagues, same universal position filter
+                    union_leagues = {rowA["League"], rowB["League"]}
+                    pool = df[
+                        (df["League"].isin(union_leagues)) &
+                        (df["Position"].astype(str).apply(position_filter))
+                    ].copy()
+
+                    for m in radar_metrics:
+                        pool[m] = pd.to_numeric(pool[m], errors="coerce")
+                    pool = pool.dropna(subset=radar_metrics + ["Player"])
+
+                    if pool.empty:
+                        st.info("No players in the combined A∪B league pool after applying the universal position filter.")
+                    else:
+                        # Percentiles for A & B vs pool (0–100 scale)
+                        pool_pct = pool[radar_metrics].rank(pct=True) * 100.0
+
+                        def pct_for(name: str) -> np.ndarray:
+                            idx = pool[pool["Player"] == name].index
+                            if len(idx) == 0:
+                                return np.full(len(radar_metrics), np.nan)
+                            return pool_pct.loc[idx, :].mean(axis=0).values
+
+                        A_r = pct_for(pA)
+                        B_r = pct_for(pB)
+
+                        # Labels
+                        labels = [_clean_radar_label(m) for m in radar_metrics]
+
+                        # TRUE deciles (0..100) for each metric — displayed at 1dp
+                        qs = np.linspace(0, 100, 11)
+                        axis_ticks = [np.nanpercentile(pool[m].values, qs) for m in radar_metrics]
+
+                        # ---- draw radar ----
+                        COL_A = "#C81E1E"; COL_B = "#1D4ED8"
+                        FILL_A = (200/255, 30/255, 30/255, 0.60)
+                        FILL_B = (29/255, 78/255, 216/255, 0.60)
+                        RING_LW = 1.0
+                        TITLE_FS = 26; SUB_FS = 12; AXIS_FS = 10
+                        TICK_FS = 7; INNER_HOLE = 10
+
+                        from matplotlib.patches import Wedge, Circle
+                        import matplotlib.pyplot as plt
+                        import numpy as np
+                        import pandas as pd
+
+                        def _tangent_rotation(ax, theta):
+                            """Tangential rotation in display space, respecting theta offset/direction."""
+                            return np.degrees(ax.get_theta_direction() * theta + ax.get_theta_offset()) - 90.0
+
+                        def draw_radar(labels, A_r, B_r, ticks, headerA, subA, headerB, subB):
+                            N = len(labels)
+                            theta = np.linspace(0, 2*np.pi, N, endpoint=False)
+                            theta_c = np.concatenate([theta, theta[:1]])
+                            Ar = np.concatenate([A_r, A_r[:1]])
+                            Br = np.concatenate([B_r, B_r[:1]])
+
+                            fig = plt.figure(figsize=(13.2, 8.0), dpi=260)
+                            fig.patch.set_facecolor(PAGE_BG)
+                            ax = plt.subplot(111, polar=True); ax.set_facecolor(AX_BG)
+
+                            # Orientation like your original
+                            ax.set_theta_offset(np.pi/2)
+                            ax.set_theta_direction(-1)
+
+                            ax.set_xticks(theta)
+                            ax.set_xticklabels([])  # custom labels below
+                            ax.set_yticks([])
+                            ax.grid(False)
+                            [s.set_visible(False) for s in ax.spines.values()]
+
+                            # radial bands (10 bands from INNER_HOLE to 100)
+                            ring_edges = np.linspace(INNER_HOLE, 100, 11)
+                            for i in range(10):
+                                r0, r1 = ring_edges[i], ring_edges[i+1]
+                                band = GRID_BAND_OUTER if ((9 - i) % 2 == 0) else GRID_BAND_INNER
+                                ax.add_artist(Wedge(
+                                    (0,0), r1, 0, 360, width=(r1-r0),
+                                    transform=ax.transData._b, facecolor=band,
+                                    edgecolor="none", zorder=0.8
+                                ))
+
+                            # ring outlines — ONLY the outermost ring brighter in dark theme
+                            ring_t = np.linspace(0, 2*np.pi, 361)
+                            for j, r in enumerate(ring_edges):
+                                col = RING_COLOR_OUTER if j == len(ring_edges)-1 else RING_COLOR_INNER
+                                ax.plot(ring_t, np.full_like(ring_t, r), color=col, lw=RING_LW, zorder=0.9)
+
+                            # numeric tick labels at each ring = TRUE dataset quantiles (rounded to 1dp)
+                            start_idx = 2  # show from 20th to reduce clutter
+                            for i, ang in enumerate(theta):
+                                vals = ticks[i]
+                                for rr, v in zip(ring_edges[start_idx:], vals[start_idx:]):
+                                    ax.text(ang, rr-1.8, f"{float(v):.1f}",
+                                            ha="center", va="center",
+                                            fontsize=TICK_FS, color=TICK_COLOR, zorder=1.1)
+
+                            # --- Outside metric labels: centered, flipped only if upside-down, pushed further out ---
+                            OUTER_LABEL_R = 105.6  # distance from outer ring; try 105.0–107.0
+                            for ang, lab in zip(theta, labels):
+                                rot = _tangent_rotation(ax, ang)  # tangential angle in display space
+                                # Keep text upright: flip if rotation would be upside-down
+                                rot_norm = ((rot + 180.0) % 360.0) - 180.0
+                                if rot_norm > 90 or rot_norm < -90:
+                                    rot += 180.0
+                                ax.text(
+                                    ang, OUTER_LABEL_R, lab,
+                                    rotation=rot, rotation_mode="anchor",
+                                    ha="center", va="center",
+                                    fontsize=AXIS_FS, color=LABEL_COLOR, fontweight=600,
+                                    clip_on=False, zorder=2.2
+                                )
+
+                            # center hole
+                            ax.add_artist(Circle((0,0), radius=INNER_HOLE-0.6, transform=ax.transData._b,
+                                                 color=PAGE_BG, zorder=1.2, ec="none"))
+
+                            # A & B polygons (percentile radii)
+                            ax.plot(theta_c, Ar, color=COL_A, lw=2.2, zorder=3)
+                            ax.fill(theta_c, Ar, color=FILL_A, zorder=2.5)
+                            ax.plot(theta_c, Br, color=COL_B, lw=2.2, zorder=3)
+                            ax.fill(theta_c, Br, color=FILL_B, zorder=2.5)
+
+                            # keep edge exactly at 100; labels allowed outside via clip_on=False
+                            ax.set_rlim(0, 100)
+
+                            # headers (teams / leagues / minutes)
+                            minsA = f"{int(pd.to_numeric(rowA.get('Minutes played',0))):,} mins" if pd.notna(rowA.get('Minutes played')) else "Minutes: N/A"
+                            minsB = f"{int(pd.to_numeric(rowB.get('Minutes played',0))):,} mins" if pd.notna(rowB.get('Minutes played')) else "Minutes: N/A"
+
+                            fig.text(0.12, 0.96,  headerA, color=COL_A, fontsize=TITLE_FS, fontweight="bold", ha="left")
+                            fig.text(0.12, 0.935, subA, color=COL_A, fontsize=SUB_FS, ha="left")
+                            fig.text(0.12, 0.915, minsA, color=MINUTES_CLR, fontsize=10, ha="left")
+
+                            fig.text(0.88, 0.96,  headerB, color=COL_B, fontsize=TITLE_FS, fontweight="bold", ha="right")
+                            fig.text(0.88, 0.935, subB, color=COL_B, fontsize=SUB_FS, ha="right")
+                            fig.text(0.88, 0.915, minsB, color=MINUTES_CLR, fontsize=10, ha="right")
+
+                            return fig
+
+                        fig_r = draw_radar(
+                            labels, A_r, B_r, axis_ticks,
+                            headerA=pA, subA=f"{rowA['Team']} — {rowA['League']}",
+                            headerB=pB, subB=f"{rowB['Team']} — {rowB['League']}",
+                        )
+                        st.caption(
+                            "Ring labels show the **actual dataset values** at each decile (0–100th), rounded to **1 decimal place**. "
+                            "Axis labels are centered on their metric angle, auto-flipped upright, and placed outside the 100 ring."
+                        )
+                        st.pyplot(fig_r, use_container_width=True)
+# ----------------- END Radar -----------------
+
+
+
+
+
+
+
+# ----------------- (C) SIMILAR PLAYERS (adjustable pool — FIXED PRESET UI) -----------------
+st.markdown("---")
+st.header("🧭 Similar players (within adjustable pool)")
+
+# --- Feature basket declared FIRST so UI can use it ---
+SIM_FEATURES = [
+    'Defensive duels per 90','Defensive duels won, %','Aerial duels per 90',
+    'Aerial duels won, %','Shots blocked per 90','PAdj Interceptions','Non-penalty goals per 90','xG per 90',
+    'Shots per 90','Shots on target, %','Dribbles per 90','Successful dribbles, %','Offensive duels per 90',
+    'Offensive duels won, %','Touches in box per 90','Progressive runs per 90','Accelerations per 90','Passes per 90',
+    'Accurate passes, %','Forward passes per 90','Accurate forward passes, %','Long passes per 90',
+    'Accurate long passes, %','xA per 90','Smart passes per 90','Key passes per 90','Passes to final third per 90',
+    'Accurate passes to final third, %','Passes to penalty area per 90','Accurate passes to penalty area, %',
+    'Deep completions per 90','Progressive passes per 90',
+]
+
+# league strength map (supports either variable name)
+LS_MAP = globals().get('LEAGUE_STRENGTHS', globals().get('league_strengths', {}))
+
+# defaults for advanced weights (others default to 1)
+DEFAULT_SIM_WEIGHTS = {f: 1 for f in SIM_FEATURES}
+DEFAULT_SIM_WEIGHTS.update({
+        'Passes per 90': 2,'Progressive runs per 90': 2,'Progressive passes per 90': 2,'Dribbles per 90': 2,
+        'xA per 90': 2,'Touches in box per 90': 2,'Accurate passes, %': 2,'Aerial duels won, %': 2,
+        'Passes to penalty area per 90': 2,'Defensive duels per 90': 2,
+})
+
+# --- Build local presets safely (no reliance on _PRESETS_CF existing) ---
+_leagues_from_df = df['League'].dropna().unique().tolist() if 'League' in df.columns else []
+_included_from_global = list(globals().get('INCLUDED_LEAGUES', []))
+_included_leagues_cf = sorted(set(_included_from_global) | set(_leagues_from_df))
+
+_PRESET_LEAGUES_SAFE = globals().get('PRESET_LEAGUES', {})  # may be missing; that's ok
+_PRESETS_SIM = {
+    "All listed leagues": _included_leagues_cf,
+    "T5":  sorted(list(_PRESET_LEAGUES_SAFE.get("Top 5 Europe", []))),
+    "T20": sorted(list(_PRESET_LEAGUES_SAFE.get("Top 20 Europe", []))),
+    "EFL": sorted(list(_PRESET_LEAGUES_SAFE.get("EFL (England 2–4)", []))),
+    "Custom": None,
+}
+
+# ====================== UI (fixed preset behavior; multiselect always editable) ======================
+with st.expander("Similarity settings", expanded=False):
+    # options
+    candidate_league_options = sorted(_included_leagues_cf or _leagues_from_df)
+    default_sel = leagues_sel if 'leagues_sel' in globals() else candidate_league_options
+
+    sim_preset_choices = list(_PRESETS_SIM.keys())
+    sim_preset = st.selectbox(
+        "Candidate league preset",
+        sim_preset_choices,
+        index=sim_preset_choices.index("All listed leagues"),
+        key="sim_preset"
+    )
+
+    # compute preset values; keep only leagues that exist in options
+    preset_vals_raw = _PRESETS_SIM.get(sim_preset) or []
+    preset_vals = sorted([lg for lg in preset_vals_raw if lg in candidate_league_options])
+
+    # if preset changed, seed the selection once
+    _last_key = "_last_sim_preset"
+    if st.session_state.get(_last_key) != sim_preset:
+        st.session_state["sim_leagues"] = preset_vals if preset_vals else default_sel
+        st.session_state[_last_key] = sim_preset
+
+    # ALWAYS editable multiselect (no disabled=…)
+    sim_leagues = st.multiselect(
+        "Candidate leagues",
+        candidate_league_options,
+        default=st.session_state.get("sim_leagues", preset_vals if preset_vals else default_sel),
+        key="sim_leagues",
+    )
+
+    if preset_vals_raw and not preset_vals:
+        st.warning("Preset has leagues, but none match your allowed list/dataset.")
+    elif preset_vals_raw:
+        st.caption(f"Preset: {sim_preset} — {len(preset_vals)} league(s). You can add/prune below.")
+
+    # Base filters
+    sim_min_minutes, sim_max_minutes = st.slider("Minutes played (candidates)", 0, 5000, (500, 5000), key="sim_min")
+    sim_min_age, sim_max_age = st.slider("Age (candidates)", 14, 45, (16, 40), key="sim_age")
+
+    # Optional league quality filter (0–101)
+    use_strength_filter = st.toggle("Filter by league quality (0–101)", value=False, key="sim_use_strength")
+    if use_strength_filter:
+        sim_min_strength, sim_max_strength = st.slider("League quality (strength)", 0, 101, (0, 101), key="sim_strength")
+
+    # Blending
+    percentile_weight = st.slider("Percentile weight", 0.0, 1.0, 0.7, 0.05, key="sim_pw")
+
+    # League difficulty adjustment
+    apply_league_adjust = st.toggle("Apply league difficulty adjustment", value=True, key="sim_apply_ladj")
+    league_weight_sim = st.slider(
+        "League weight (difficulty adj.)", 0.0, 1.0, 0.2, 0.05, key="sim_lw",
+        disabled=not apply_league_adjust
+    )
+
+    # Advanced weights
+    with st.expander("Advanced feature weights (1–5)", expanded=False):
+        adv_weights = {}
+        for f in SIM_FEATURES:
+            key = "simw_" + f.replace(" ", "_").replace("%", "pct").replace(",", "").replace(".", "_")
+            adv_weights[f] = st.slider(f"Weight — {f}", 1, 5, int(st.session_state.get(key, DEFAULT_SIM_WEIGHTS.get(f, 1))), key=key)
+
+    top_n_sim = st.number_input("Show top N", min_value=5, max_value=200, value=50, step=5, key="sim_top")
+
+# ====================== Similarity computation ======================
+if not player_row.empty:
+    from sklearn.preprocessing import StandardScaler
+    target_row_full = df[df['Player'] == player_name].head(1).iloc[0]
+    target_league = target_row_full['League']
+
+    df_candidates = df[df['League'].isin(sim_leagues)].copy()
+
+    # optional league quality filter
+    if use_strength_filter and LS_MAP:
+        df_candidates['League strength'] = df_candidates['League'].map(LS_MAP).fillna(0.0)
+        df_candidates = df_candidates[
+            (df_candidates['League strength'] >= float(sim_min_strength)) &
+            (df_candidates['League strength'] <= float(sim_max_strength))
+        ]
+
+    # position filter (reuse your global position_filter)
+    if 'Position' in df_candidates.columns:
+        df_candidates = df_candidates[df_candidates['Position'].astype(str).apply(position_filter)]
+    else:
+        st.warning("No 'Position' column found; cannot apply position filter.")
+
+    # base filters
+    df_candidates['Minutes played'] = pd.to_numeric(df_candidates['Minutes played'], errors='coerce')
+    df_candidates['Age'] = pd.to_numeric(df_candidates['Age'], errors='coerce')
+    df_candidates = df_candidates[
+        df_candidates['Minutes played'].between(sim_min_minutes, sim_max_minutes) &
+        df_candidates['Age'].between(sim_min_age, sim_max_age)
+    ]
+
+    # one row per player (keep most minutes, then stronger league)
+    df_candidates['League strength'] = df_candidates['League'].map(LS_MAP).fillna(0.0) if LS_MAP else 0.0
+    df_candidates = (
+        df_candidates.sort_values(['Player','Minutes played','League strength'], ascending=[True, False, False])
+                   .drop_duplicates(subset=['Player'], keep='first')
+    )
+    df_candidates = df_candidates[df_candidates['Player'] != player_name]
+
+    # ensure features numeric
+    df_candidates = df_candidates.dropna(subset=SIM_FEATURES)
+    for f in SIM_FEATURES:
+        df_candidates[f] = pd.to_numeric(df_candidates[f], errors='coerce')
+    df_candidates = df_candidates.dropna(subset=SIM_FEATURES)
+
+    # target percentiles vs target league
+    league_mask = (df['League'] == target_league)
+    league_block = df.loc[league_mask, SIM_FEATURES].apply(pd.to_numeric, errors='coerce')
+    league_ranks = league_block.rank(pct=True)
+    target_mask_in_league = league_mask & (df['Player'] == player_name)
+    if not target_mask_in_league.any():
+        st.info("Target player not found in league block for percentile calc.")
+        target_percentiles_vec = np.full(len(SIM_FEATURES), 0.5)
+    else:
+        target_percentiles_vec = league_ranks.loc[target_mask_in_league].iloc[0].values
+
+    if not df_candidates.empty:
+        # percentile ranks for candidates (per-league)
+        percl = df_candidates.groupby('League')[SIM_FEATURES].rank(pct=True).values
+
+        # standardize on candidate pool (actual values)
+        scaler = StandardScaler()
+        standardized_features = scaler.fit_transform(df_candidates[SIM_FEATURES])
+        target_features_standardized = scaler.transform([target_row_full[SIM_FEATURES].astype(float).values])
+
+        # weights
+        weights_vec = np.array([float(adv_weights.get(f, 1)) for f in SIM_FEATURES], dtype=float)
+
+        # distances + blend
+        percentile_distances = np.linalg.norm((percl - target_percentiles_vec) * weights_vec, axis=1)
+        actual_value_distances = np.linalg.norm((standardized_features - target_features_standardized) * weights_vec, axis=1)
+        combined = percentile_distances * percentile_weight + actual_value_distances * (1.0 - percentile_weight)
+
+        # normalize -> similarity 0..100
+        arr = np.asarray(combined, dtype=float).ravel()
+        rng = np.ptp(arr)
+        norm = (arr - arr.min()) / (rng if rng != 0 else 1.0)
+        similarities = ((1.0 - norm) * 100.0).round(2)
+
+        out = df_candidates[['Player','Team','League','Position','Age','Minutes played','Market value']].copy()
+        out['League strength'] = out['League'].map(LS_MAP).fillna(0.0) if LS_MAP else 0.0
+        tgt_ls = float(LS_MAP.get(target_league, 1.0)) if LS_MAP else 1.0
+
+        # symmetric league ratio (≤1)
+        eps = 1e-6
+        cand_ls = np.maximum(out['League strength'].astype(float), eps)
+        tgt_ls_safe = max(tgt_ls, eps)
+        league_ratio = np.minimum(cand_ls / tgt_ls_safe, tgt_ls_safe / cand_ls)
+
+        out['Similarity'] = similarities
+        out['Adjusted Similarity'] = (
+            out['Similarity'] * ((1 - league_weight_sim) + league_weight_sim * league_ratio)
+        ) if apply_league_adjust else out['Similarity']
+
+        out = out.sort_values('Adjusted Similarity', ascending=False).reset_index(drop=True)
+        out.insert(0, 'Rank', np.arange(1, len(out) + 1))
+        st.caption(f"Candidates after filters: {len(out):,}")
+        st.dataframe(out.head(int(top_n_sim)), use_container_width=True)
+    else:
+        st.info("No candidates after similarity filters.")
+else:
+    st.caption("Pick a player to see similar players.")
+
+
+
+# ---------------------------- (D) CLUB FIT — FIXED & SYNCED TO SELECTED PLAYER ----------------------------
+st.markdown("---")
+st.header("🏟️ Club Fit Finder")
+
+# ---------- SAFE FALLBACKS ----------
+if 'INCLUDED_LEAGUES' in globals():
+    _included_leagues_cf = list(INCLUDED_LEAGUES)
+else:
+    _included_leagues_cf = sorted(pd.Series(df.get('League', pd.Series([]))).dropna().unique().tolist())
+
+if 'PRESET_LEAGUES' in globals():
+    _PRESETS_CF = {
+        "All listed leagues": _included_leagues_cf,
+        "Top 5 Europe": sorted(list(PRESET_LEAGUES.get("Top 5 Europe", []))),
+        "Top 20 Europe": sorted(list(PRESET_LEAGUES.get("Top 20 Europe", []))),
+        "EFL (England 2–4)": sorted(list(PRESET_LEAGUES.get("EFL (England 2–4)", []))),
+        "Custom": None,
+    }
+else:
+    _PRESETS_CF = {
+        "All listed leagues": _included_leagues_cf,
+        "Top 5 Europe": [], "Top 20 Europe": [], "EFL (England 2–4)": [], "Custom": None,
+    }
+
+_DEFAULT_W_CF = {
+        'Passes per 90': 2,'Progressive runs per 90': 2,'Progressive passes per 90': 2,'Dribbles per 90': 2,
+        'xA per 90': 2,'Touches in box per 90': 2,'Accurate passes, %': 2,'Aerial duels won, %': 2,
+        'Passes to penalty area per 90': 2,'Defensive duels per 90': 2,
+}
+
+_LS_CF = dict(LEAGUE_STRENGTHS) if 'LEAGUE_STRENGTHS' in globals() else {lg: 50.0 for lg in _included_leagues_cf}
+DEFAULT_LEAGUE_WEIGHT = 0.5
+DEFAULT_MARKET_WEIGHT = 0.2
+
+CF_FEATURES = [
+    'Defensive duels per 90','Defensive duels won, %','Aerial duels per 90',
+    'Aerial duels won, %','Shots blocked per 90','PAdj Interceptions','Non-penalty goals per 90','xG per 90',
+    'Shots per 90','Shots on target, %','Dribbles per 90','Successful dribbles, %','Offensive duels per 90',
+    'Offensive duels won, %','Touches in box per 90','Progressive runs per 90','Accelerations per 90','Passes per 90',
+    'Accurate passes, %','Forward passes per 90','Accurate forward passes, %','Long passes per 90',
+    'Accurate long passes, %','xA per 90','Smart passes per 90','Key passes per 90','Passes to final third per 90',
+    'Accurate passes to final third, %','Passes to penalty area per 90','Accurate passes to penalty area, %',
+    'Deep completions per 90','Progressive passes per 90',
+]
+
+required_cols_cf = {'Player','Team','League','Age','Position','Minutes played','Market value', *CF_FEATURES}
+missing_cf = [c for c in required_cols_cf if c not in df.columns]
+if missing_cf:
+    st.error(f"Club Fit: dataset missing required columns: {missing_cf}")
+else:
+    # -------------------- Controls --------------------
+    with st.expander("Club-fit settings", expanded=False):
+        leagues_available_cf = sorted(set(_included_leagues_cf) | set(df.get('League', pd.Series([])).dropna().unique()))
+
+        target_leagues_cf = st.multiselect(
+            "Target leagues (choose target from here)",
+            leagues_available_cf,
+            default=leagues_available_cf,
+            key="cf_target_leagues"
+        )
+
+        if 'candidate_leagues_cf' not in st.session_state:
+            st.session_state.candidate_leagues_cf = list(_included_leagues_cf)
+
+        preset_name_cf = st.selectbox("Candidate pool preset", list(_PRESETS_CF.keys()), index=0, key="cf_preset_name")
+        c1a, c1b = st.columns([1,2])
+        if c1a.button("Apply preset", key="cf_apply_preset"):
+            if _PRESETS_CF.get(preset_name_cf) is not None:
+                st.session_state.candidate_leagues_cf = list(_PRESETS_CF[preset_name_cf])
+
+        extra_candidate_leagues_cf = c1b.multiselect(
+            "Extra leagues to add", leagues_available_cf, default=[], key="cf_extra_leagues"
+        )
+        leagues_selected_cf = sorted(set(st.session_state.candidate_leagues_cf) | set(extra_candidate_leagues_cf))
+        st.caption(f"Candidate pool leagues: **{len(leagues_selected_cf)}** selected.")
+
+        # Target pool: universal position_filter (not exact position string)
+        target_pool_cf = df[df['League'].isin(target_leagues_cf)].copy()
+        target_pool_cf = target_pool_cf[target_pool_cf['Position'].astype(str).apply(position_filter)]
+        target_options_cf = sorted(target_pool_cf['Player'].dropna().unique().tolist())
+
+        # -------- SYNC THE SELECTED PLAYER INTO THIS WIDGET --------
+        # Keep a canonical "selected_player" around
+        st.session_state["selected_player"] = player_name
+        sp = st.session_state["selected_player"]
+
+        # Make sure the selected player is present in options (even if filtered out)
+        if sp and sp not in target_options_cf and sp in df['Player'].values:
+            target_options_cf = [sp] + target_options_cf
+            seen = set(); target_options_cf = [x for x in target_options_cf if not (x in seen or seen.add(x))]
+
+        # If widget holds a stale value or a different profile is selected, force it to the new one
+        if (
+            "cf_target_player" not in st.session_state
+            or st.session_state["cf_target_player"] not in target_options_cf
+            or st.session_state.get("cf_bound_to") != sp
+        ):
+            st.session_state["cf_target_player"] = sp if sp in target_options_cf else (target_options_cf[0] if target_options_cf else None)
+            st.session_state["cf_bound_to"] = sp  # remember which profile we synced from
+
+        # Now render the selectbox (it will show the synced value)
+        target_player_cf = st.selectbox(
+            "Target player",
+            target_options_cf,
+            index=target_options_cf.index(st.session_state["cf_target_player"]) if target_options_cf and st.session_state["cf_target_player"] in target_options_cf else 0,
+            key="cf_target_player"
+        )
+
+        # Filters
+        df["Minutes played"] = pd.to_numeric(df.get("Minutes played"), errors="coerce")
+        df["Age"] = pd.to_numeric(df.get("Age"), errors="coerce")
+        max_minutes_in_data_cf = int(df["Minutes played"].fillna(0).max())
+        slider_max_minutes_cf = int(max(1000, max_minutes_in_data_cf))
+
+        min_minutes_cf, max_minutes_cf = st.slider(
+            "Minutes filter (candidates)", 0, slider_max_minutes_cf,
+            (500, slider_max_minutes_cf), key="cf_minutes_slider"
+        )
+
+        age_series_cf = df["Age"]
+        age_min_data_cf = int(np.nanmin(age_series_cf)) if age_series_cf.notna().any() else 14
+        age_max_data_cf = int(np.nanmax(age_series_cf)) if age_series_cf.notna().any() else 45
+        min_age_cf, max_age_cf = st.slider(
+            "Age filter (candidates)", age_min_data_cf, age_max_data_cf, (16, 40), key="cf_age_slider"
+        )
+
+        min_strength_cf, max_strength_cf = st.slider("League quality (strength)", 0, 101, (0, 101), key="cf_strength")
+
+        league_weight_cf = st.slider("League weight", 0.0, 1.0, DEFAULT_LEAGUE_WEIGHT, 0.05, key="cf_league_w")
+        market_value_weight_cf = st.slider("Market value weight", 0.0, 1.0, DEFAULT_MARKET_WEIGHT, 0.05, key="cf_market_w")
+        manual_override_cf = st.number_input("Target market value override (€)", min_value=0, value=0, step=100_000, key="cf_mv_override")
+
+        st.subheader("Advanced feature weights")
+        st.caption("Unlisted features default to weight = 1.")
+        weights_ui_cf = {f: st.slider(f"• {f}", 0, 5, int(_DEFAULT_W_CF.get(f, 1)), key=f"cf_w_{f}") for f in CF_FEATURES}
+
+        top_n_cf = st.number_input("Show top N teams", 5, 100, 20, 5, key="cf_topn")
+
+    # -------------------- Compute --------------------
+    target_player_val = st.session_state.get("cf_target_player")
+    if target_player_val and (target_player_val in df['Player'].values):
+        # Candidate player pool (universal position_filter)
+        df_candidates_cf = df[df['League'].isin(leagues_selected_cf)].copy()
+        df_candidates_cf = df_candidates_cf[df_candidates_cf['Position'].astype(str).apply(position_filter)]
+
+        # Numerics + filters
+        df_candidates_cf['Minutes played'] = pd.to_numeric(df_candidates_cf['Minutes played'], errors='coerce')
+        df_candidates_cf['Age'] = pd.to_numeric(df_candidates_cf['Age'], errors='coerce')
+        df_candidates_cf['Market value'] = pd.to_numeric(df_candidates_cf['Market value'], errors='coerce')
+
+        df_candidates_cf = df_candidates_cf[
+            df_candidates_cf['Minutes played'].between(min_minutes_cf, max_minutes_cf, inclusive='both')
+        ]
+        df_candidates_cf = df_candidates_cf[
+            df_candidates_cf['Age'].between(min_age_cf, max_age_cf, inclusive='both')
+        ]
+        df_candidates_cf = df_candidates_cf.dropna(subset=CF_FEATURES)
+
+        if df_candidates_cf.empty:
+            st.info("No candidate players after filters. Widen candidate leagues or relax filters.")
+        else:
+            # Target row from full df (never disappears)
+            target_all_rows = df[df['Player'] == target_player_val].copy()
+            if target_all_rows.empty:
+                st.info("Target player not found in dataset.")
+            else:
+                target_row_cf = target_all_rows.sort_values('Minutes played', ascending=False).iloc[0]
+                target_vector_cf = target_row_cf[CF_FEATURES].astype(float).values
+                target_ls_cf = float(_LS_CF.get(target_row_cf['League'], 50.0))
+
+                tv = pd.to_numeric(target_row_cf.get('Market value'), errors='coerce')
+                target_market_value_cf = float(manual_override_cf) if manual_override_cf and manual_override_cf > 0 \
+                    else (float(tv) if pd.notna(tv) and tv > 0 else 2_000_000.0)
+
+                club_profiles_cf = df_candidates_cf.groupby('Team')[CF_FEATURES].mean().reset_index()
+
+                team_league_cf = df_candidates_cf.groupby('Team')['League'].agg(
+                    lambda x: x.mode().iloc[0] if not x.mode().empty else x.iloc[0]
+                )
+                team_market_cf = df_candidates_cf.groupby('Team')['Market value'].mean()
+                club_profiles_cf['League'] = club_profiles_cf['Team'].map(team_league_cf)
+                club_profiles_cf['Avg Team Market Value'] = club_profiles_cf['Team'].map(team_market_cf)
+                club_profiles_cf = club_profiles_cf.dropna(subset=['Avg Team Market Value'])
+
+                from sklearn.preprocessing import StandardScaler
+                scaler_cf = StandardScaler()
+                X_team = scaler_cf.fit_transform(club_profiles_cf[CF_FEATURES])
+                x_tgt = scaler_cf.transform([target_vector_cf])[0]
+                weights_vec_cf = np.array([weights_ui_cf.get(f, 1) for f in CF_FEATURES], dtype=float)
+
+                dist_cf = np.linalg.norm((X_team - x_tgt) * weights_vec_cf, axis=1)
+                rng = float(dist_cf.max() - dist_cf.min())
+                club_fit_base = (1 - (dist_cf - float(dist_cf.min())) / (rng if rng > 0 else 1.0)) * 100.0
+                club_profiles_cf['Club Fit %'] = club_fit_base.round(2)
+
+                club_profiles_cf['League strength'] = club_profiles_cf['League'].map(_LS_CF).fillna(50.0)
+                club_profiles_cf = club_profiles_cf[
+                    (club_profiles_cf['League strength'] >= float(min_strength_cf)) &
+                    (club_profiles_cf['League strength'] <= float(max_strength_cf))
+                ]
+
+                if club_profiles_cf.empty:
+                    st.info("No teams remain after league-strength filter.")
+                else:
+                    ratio_cf = (club_profiles_cf['League strength'] / target_ls_cf).clip(0.5, 1.2)
+                    club_profiles_cf['Adjusted Fit %'] = (
+                        club_profiles_cf['Club Fit %'] * (1 - league_weight_cf) +
+                        club_profiles_cf['Club Fit %'] * ratio_cf * league_weight_cf
+                    )
+                    league_gap_cf = (club_profiles_cf['League strength'] - target_ls_cf).clip(lower=0)
+                    penalty_cf = (1 - (league_gap_cf / 100)).clip(lower=0.7)
+                    club_profiles_cf['Adjusted Fit %'] *= penalty_cf
+
+                    value_fit_ratio_cf = (club_profiles_cf['Avg Team Market Value'] / target_market_value_cf).clip(0.5, 1.5)
+                    value_fit_score_cf = (1 - abs(1 - value_fit_ratio_cf)) * 100.0
+
+                    club_profiles_cf['Final Fit %'] = (
+                        club_profiles_cf['Adjusted Fit %'] * (1 - market_value_weight_cf) +
+                        value_fit_score_cf * market_value_weight_cf
+                    )
+
+                    results_cf = club_profiles_cf[
+                        ['Team','League','League strength','Club Fit %','Adjusted Fit %','Final Fit %']
+                    ].copy().sort_values('Final Fit %', ascending=False).reset_index(drop=True)
+                    results_cf.insert(0, 'Rank', np.arange(1, len(results_cf) + 1))
+
+                    st.caption(
+                        f"Target: {target_player_val} — {target_row_cf.get('Team','Unknown')} ({target_row_cf['League']}) • "
+                        f"Target MV used: €{target_market_value_cf:,.0f} • Target LS {target_ls_cf:.2f} • "
+                        f"Candidates: {len(leagues_selected_cf)} leagues (preset: {preset_name_cf})"
+                    )
+                    st.dataframe(results_cf.head(int(top_n_cf)), use_container_width=True)
+
+                    csv_cf = results_cf.to_csv(index=False).encode('utf-8')
+                    st.download_button("⬇️ Download all results (CSV)", data=csv_cf, file_name="club_fit_results.csv", mime="text/csv")
+
+    else:
+        st.info("Pick a player to run Club Fit.")
+# ---------------------------- END Club Fit ----------------------------
+
+
+
+# ----------------- GBE CALCULATOR (FA 2025/26) -----------------
+# Relies on df_f, player_name, player_row, extract_country already defined above
+
+st.subheader("🧮 GBE Calculator (FA 2025/26 snapshot)")
+
+if player_row.empty:
+    st.info("Select a player in the Single Player Role Profile above to see their GBE snapshot.")
+else:
+    # ========= Helper: league → FA Band (1–6) =========
+    LEAGUE_TO_GBE_BAND = {
+        # Band 1 – Big 5
+        "England 1.": 1,
+        "Germany 1.": 1,
+        "Spain 1.": 1,
+        "Italy 1.": 1,
+        "France 1.": 1,
+
+        # Band 2
+        "Portugal 1.": 2,
+        "Netherlands 1.": 2,
+        "Belgium 1.": 2,
+        "Turkey 1.": 2,
+        "England 2.": 2,
+
+        # Band 3
+        "USA 1.": 3,
+        "Brazil 1.": 3,
+        "Argentina 1.": 3,
+        "Mexico 1.": 3,
+        "Scotland 1.": 3,
+
+        # Band 4
+        "Czech 1.": 4,
+        "Croatia 1.": 4,
+        "Switzerland 1.": 4,
+        "Spain 2.": 4,
+        "Germany 2.": 4,
+        "Ukraine 1.": 4,
+        "Greece 1.": 4,
+        "Colombia 1.": 4,
+        "Austria 1.": 4,
+        "Denmark 1.": 4,
+        "France 2.": 4,
+        "Russia 1.": 4,
+
+        # Band 5
+        "Serbia 1.": 5,
+        "Poland 1.": 5,
+        "Slovenia 1.": 5,
+        "Chile 1.": 5,
+        "Uruguay 1.": 5,
+        "Sweden 1.": 5,
+        "Norway 1.": 5,
+        "Italy 2.": 5,
+        "Hungary 1.": 5,
+        "Japan 1.": 5,
+        "Korea 1.": 5,
+        "Australia 1.": 5,
+        "England 3.": 5,
+        # all others => Band 6
+    }
+
+    def gbe_band_for_league(league_name: str) -> int:
+        return int(LEAGUE_TO_GBE_BAND.get(str(league_name).strip(), 6))
+
+    # ========= Helper: International appearances (Table 1) =========
+    def intl_points_and_auto(fifa_rank: int, pct: int) -> tuple[int, bool]:
+        """
+        Returns (points, auto_pass) according to Table 1
+        (FIFA ranking band × % of competitive senior internationals).
+        """
+        if fifa_rank <= 10:
+            band = "1-10"
+        elif fifa_rank <= 20:
+            band = "11-20"
+        elif fifa_rank <= 30:
+            band = "21-30"
+        elif fifa_rank <= 50:
+            band = "31-50"
+        else:
+            band = "51+"
+
+        auto = False
+        pts = 0
+        p = int(pct)
+
+        if band in ("1-10", "11-20", "21-30", "31-50"):
+            if p >= 90:
+                auto = True
+            elif p >= 80:
+                auto = True
+            elif p >= 70:
+                auto = True
+            elif p >= 60:
+                if band in ("1-10", "11-20", "21-30"):
+                    auto = True
+                else:  # 31–50
+                    pts = 10
+            elif p >= 50:
+                if band in ("1-10", "11-20"):
+                    auto = True
+                elif band == "21-30":
+                    pts = 10
+                elif band == "31-50":
+                    pts = 8
+            elif p >= 40:
+                if band in ("1-10", "11-20"):
+                    auto = True
+                elif band == "21-30":
+                    pts = 9
+                elif band == "31-50":
+                    pts = 7
+            elif p >= 30:
+                if band == "1-10":
+                    auto = True
+                elif band == "11-20":
+                    pts = 10
+                elif band == "21-30":
+                    pts = 8
+                elif band == "31-50":
+                    pts = 6
+            elif p >= 20:
+                if band == "1-10":
+                    pts = 10
+                elif band == "11-20":
+                    pts = 9
+                elif band == "21-30":
+                    pts = 7
+            elif p >= 10:
+                if band == "1-10":
+                    pts = 9
+                elif band == "11-20":
+                    pts = 8
+            elif p >= 1:
+                if band == "1-10":
+                    pts = 8
+                elif band == "11-20":
+                    pts = 7
+        else:
+            # 51+ column
+            if p >= 90:
+                pts = 2
+            elif p >= 80:
+                pts = 1
+
+        return int(pts), bool(auto)
+
+    # ========= Helper: Domestic league minutes (Table 2) =========
+    def table2_minutes_points(band: int, pct: int, youth_debut: bool) -> int:
+        """
+        Domestic league minutes points, including Youth Player debut override
+        per para 35 (final row of Table 2). :contentReference[oaicite:1]{index=1}
+        """
+        band = int(band)
+        p = int(pct)
+        # rows: 90–100, 80–89, 70–79, 60–69, 50–59, 40–49, 30–39
+        row_90 = [12, 10, 8, 6, 4, 2]
+        row_80 = [11,  9, 7, 5, 3, 1]
+        row_70 = [10,  8, 6, 4, 2, 0]
+        row_60 = [ 9,  7, 5, 3, 1, 0]
+        row_50 = [ 8,  6, 4, 2, 0, 0]
+        row_40 = [ 7,  5, 3, 1, 0, 0]
+        row_30 = [ 6,  4, 2, 0, 0, 0]
+        debut  = [ 6,  5, 4, 3, 2, 1]
+
+        idx = max(0, min(5, band - 1))
+
+        base = 0
+        if p >= 90:
+            base = row_90[idx]
+        elif p >= 80:
+            base = row_80[idx]
+        elif p >= 70:
+            base = row_70[idx]
+        elif p >= 60:
+            base = row_60[idx]
+        elif p >= 50:
+            base = row_50[idx]
+        elif p >= 40:
+            base = row_40[idx]
+        elif p >= 30:
+            base = row_30[idx]
+
+        debut_pts = debut[idx] if youth_debut else 0
+        # Para 36: if eligible in multiple columns, grant the higher value. :contentReference[oaicite:2]{index=2}
+        return int(max(base, debut_pts))
+
+    # ========= Helper: Continental minutes (Table 3) =========
+    def table3_continental_points(comp_band: int, pct: int) -> int:
+        comp_band = int(comp_band)
+        p = int(pct)
+        band1 = [10, 9, 8, 7, 6, 5, 4]
+        band2 = [ 5, 4, 3, 2, 1, 0, 0]
+        band3 = [ 2, 1, 0, 0, 0, 0, 0]
+
+        if comp_band == 1:
+            row = band1
+        elif comp_band == 2:
+            row = band2
+        else:
+            row = band3
+
+        if p >= 90:
+            val = row[0]
+        elif p >= 80:
+            val = row[1]
+        elif p >= 70:
+            val = row[2]
+        elif p >= 60:
+            val = row[3]
+        elif p >= 50:
+            val = row[4]
+        elif p >= 40:
+            val = row[5]
+        elif p >= 30:
+            val = row[6]
+        else:
+            val = 0
+        return int(val)
+
+    # ========= Helper: Final league position (Table 4) =========
+    FINAL_POS_ROWS = {
+        "Title winner":                [6, 5, 4, 3, 2, 1],
+        "Band1 group / conf winner":   [5, 4, 3, 2, 1, 0],
+        "Band1 qualifiers":            [4, 3, 2, 1, 0, 0],
+        "Band2 group":                 [3, 2, 1, 0, 0, 0],
+        "Band2 qualifiers":            [2, 1, 0, 0, 0, 0],
+        "Mid-table":                   [1, 0, 0, 0, 0, 0],
+        "Relegation":                  [0, 0, 0, 0, 0, 0],
+        "Promotion":                   [0, 1, 1, 1, 1, 1],  # Band1 => 0
+    }
+
+    def final_position_points(band: int, category: str) -> int:
+        band = int(band)
+        idx = max(0, min(5, band - 1))
+        row = FINAL_POS_ROWS.get(category, [0, 0, 0, 0, 0, 0])
+        return int(row[idx])
+
+    # ========= Helper: Continental progression (Table 5) =========
+    CONT_PROG_ROWS = {
+        "Final":                     [10, 7, 2],
+        "Semi-final":                [ 9, 6, 1],
+        "Quarter-final":             [ 8, 5, 0],
+        "Round of 16":               [ 7, 4, 0],
+        "Round of 32 / KO PO":       [ 6, 3, 0],
+        "Group / league phase":      [ 5, 2, 0],
+        "Other":                     [ 0, 0, 0],
+    }
+
+    def continental_progression_points(comp_band: int, stage: str) -> int:
+        comp_band = max(1, min(3, int(comp_band)))
+        idx = comp_band - 1
+        row = CONT_PROG_ROWS.get(stage, [0, 0, 0])
+        return int(row[idx])
+
+    # ========= Helper: League band points (Table 6) =========
+    LEAGUE_BAND_POINTS = [12, 10, 8, 6, 4, 2]
+
+    def league_quality_points(band: int) -> int:
+        idx = max(0, min(5, int(band) - 1))
+        return int(LEAGUE_BAND_POINTS[idx])
+
+    # ========= Quick reference (helpers back in) =========
+    with st.expander("📚 GBE helper – what gives points? (short version)", expanded=False):
+        st.markdown(
+            """
+- **Senior international (Table 1)** – up to **Auto Pass** depending on:
+  - FIFA World Ranking band of the nation (1–10, 11–20, 21–30, 31–50, 51+); and  
+  - % of **available senior competitive internationals** played.
+- **Domestic league minutes (Table 2)** – up to **12 pts** from:
+  - **League band (1–6)** × % of **available league minutes** played.  
+- **Continental minutes (Table 3)** – up to **10 pts**:
+  - **Band 1**: Major top-tier cups (e.g. UEFA Champions League, Copa Libertadores).  
+  - **Band 2**: Second-tier cups (e.g. UEFA Europa League, UEFA Conference League, Copa Sudamericana, major confederation CLs, Club World Cup).  
+  - **Band 3**: All other recognised senior continental club competitions.
+- **Final league position (Table 4)** – up to **6 pts** for title / continental places / promotions.
+- **Continental progression (Table 5)** – up to **10 pts** for stage reached (Final → Group).  
+- **League quality – current club (Table 6)** – up to **12 pts** from league band.  
+- **Youth internationals** – used for ESC / Youth routes, **no points** in the standard 15-point total.
+            """
+        )
+
+    # ========= Pull player info =========
+    pr = player_row.iloc[0]
+    player_team   = str(pr.get("Team", ""))
+    player_league = str(pr.get("League", ""))
+    player_minutes = float(pr.get("Minutes played", 0) or 0)
+
+    birth_country = str(pr.get("Birth country", "") or "").strip()
+    home_nation_names = {
+        "england",
+        "scotland",
+        "wales",
+        "northern ireland",
+        "ireland",
+        "republic of ireland",
+    }
+    birth_norm = birth_country.lower()
+    is_home_nation_player = birth_norm in home_nation_names
+
+    # League country via extract_country helper
+    try:
+        league_country = extract_country(player_league)
+    except Exception:
+        league_country = str(player_league).split(" ")[0]
+    league_country_norm = league_country.strip().lower()
+    is_home_nation_league = league_country_norm in home_nation_names
+
+    # ========= 1) Auto domestic minutes % from dataset =========
+    same_league = df_f[df_f["League"] == player_league]
+    max_minutes_league = float(same_league["Minutes played"].max() or 0)
+
+    if max_minutes_league > 0:
+        raw_pct = 100.0 * player_minutes / max_minutes_league
+        domestic_minutes_pct = int(math.floor(raw_pct + 0.5))
+        domestic_minutes_pct = max(0, min(100, domestic_minutes_pct))
+    else:
+        domestic_minutes_pct = 0
+
+    player_band = gbe_band_for_league(player_league)
+
+    st.markdown(
+        f"**League / Band:** {player_league}  →  **Band {player_band}**  "
+        f"&nbsp;&nbsp;|&nbsp;&nbsp; **Minutes:** {int(player_minutes)} "
+        f"({domestic_minutes_pct}% of max minutes in this league sample)"
+    )
+
+    # ========= 2) Inputs =========
+    st.markdown("### Inputs")
+
+    col_intl, col_dom, col_other = st.columns([1.2, 1.0, 1.2])
+
+    # ---- Senior international (Table 1) ----
+    with col_intl:
+        st.markdown("**Senior International (Table 1)**")
+        use_intl = st.checkbox(
+            "Include senior international appearances",
+            value=False,
+            key="gbe_use_intl",
+        )
+        intl_points = 0
+        intl_auto = False
+
+        if use_intl:
+            fifa_rank = st.number_input(
+                "Aggregated FIFA ranking of national team (1–200)",
+                min_value=1, max_value=200, value=50, step=1,
+                key="gbe_fifa_rank",
+            )
+            intl_pct = st.slider(
+                "Player's appearances (% of available senior competitive internationals)",
+                0, 100, 0, step=5, key="gbe_intl_pct",
+            )
+            intl_points, intl_auto = intl_points_and_auto(int(fifa_rank), int(intl_pct))
+
+        st.write(f"International points (Table 1): **{intl_points}** · Auto pass: **{intl_auto}**")
+
+    # ---- Domestic minutes (Table 2) ----
+    with col_dom:
+        st.markdown("**Domestic League Minutes (Table 2)**")
+
+        # NEW: explicit Youth Player toggle (U21) and debut override (para 35). :contentReference[oaicite:3]{index=3}
+        is_youth_player = st.checkbox(
+            "Player is a Youth Player (U21 – born on or after 1 Jan 2004)",
+            value=False,
+            key="gbe_is_youth_player",
+            help="Only Youth Players (U21) can receive the special debut points in the final row of Table 2.",
+        )
+
+        youth_debut = False
+        if is_youth_player:
+            youth_debut = st.checkbox(
+                "Made first senior league appearance during the Reference Period (apply Youth debut points)",
+                value=False,
+                key="gbe_youth_debut",
+                help="If ticked, the Table 2 'Debut for Youth Player' row is applied and can override minutes-based points.",
+            )
+
+        domestic_points = table2_minutes_points(player_band, domestic_minutes_pct, youth_debut)
+
+        st.write(f"Domestic minutes % (auto): **{domestic_minutes_pct}%**")
+        st.write(f"Domestic minutes points (Table 2): **{domestic_points}**")
+
+    # ---- Other criteria (Tables 3–6) ----
+    with col_other:
+        st.markdown("**Other criteria (Tables 3–6)**")
+
+        use_cont = st.checkbox("Add continental minutes (Table 3)", value=False, key="gbe_use_cont")
+        cont_points = 0
+        if use_cont:
+            cont_band = st.selectbox(
+                "Continental competition band",
+                options=[1, 2, 3],
+                format_func=lambda x: f"Band {x}",
+                key="gbe_cont_band",
+            )
+            cont_pct = st.slider(
+                "Player's continental minutes (% of available)",
+                0, 100, 0, step=5, key="gbe_cont_pct",
+            )
+            cont_points = table3_continental_points(cont_band, cont_pct)
+
+        use_finish = st.checkbox("Add final league position (Table 4)", value=False, key="gbe_use_finish")
+        finish_points = 0
+        if use_finish:
+            finish_cat = st.selectbox(
+                "Final league position category",
+                options=[
+                    "Title winner",
+                    "Band1 group / conf winner",
+                    "Band1 qualifiers",
+                    "Band2 group",
+                    "Band2 qualifiers",
+                    "Mid-table",
+                    "Relegation",
+                    "Promotion",
+                ],
+                key="gbe_finish_cat",
+            )
+            finish_points = final_position_points(player_band, finish_cat)
+
+        use_cprog = st.checkbox("Add continental progression (Table 5)", value=False, key="gbe_use_cprog")
+        cprog_points = 0
+        if use_cprog:
+            cprog_band = st.selectbox(
+                "Continental competition band (for progression)",
+                options=[1, 2, 3],
+                format_func=lambda x: f"Band {x}",
+                key="gbe_cprog_band",
+            )
+            cprog_stage = st.selectbox(
+                "Stage reached",
+                options=[
+                    "Final",
+                    "Semi-final",
+                    "Quarter-final",
+                    "Round of 16",
+                    "Round of 32 / KO PO",
+                    "Group / league phase",
+                    "Other",
+                ],
+                key="gbe_cprog_stage",
+            )
+            cprog_points = continental_progression_points(cprog_band, cprog_stage)
+
+        # --- League band override (Table 6 points only) ---
+        band_override_label = st.selectbox(
+            "League band override (Table 6 only)",
+            options=["Use mapped league band", "Band 1", "Band 2", "Band 3", "Band 4", "Band 5", "Band 6"],
+            key="gbe_band_override",
+            help="Use this if you want to credit points using a parent club's league band. "
+                 "Domestic minutes still use the original band shown above.",
+        )
+
+        if band_override_label == "Use mapped league band":
+            band_for_league_points = player_band
+        else:
+            band_for_league_points = int(band_override_label.split()[-1])
+
+        use_lq = st.checkbox(
+            "Add league band points – current club (Table 6)",
+            value=True,
+            key="gbe_use_lq",
+        )
+        lq_points = league_quality_points(band_for_league_points) if use_lq else 0
+
+    # ==== Youth / extra notes – info only ====
+    st.markdown("**Youth competitive internationals / extra notes (info only)**")
+    st.caption("Used for ESC / Youth Player routes – **no points** in the standard 15-point total.")
+    youth_int_caps = st.number_input(
+        "Number of youth competitive international matches in reference period",
+        min_value=0, max_value=100, value=0, step=1,
+        key="gbe_youth_caps",
+    )
+    youth_caption = st.text_input(
+        "Additional notes (optional)",
+        value="",
+        key="gbe_youth_caption",
+    )
+
+    # ========= Total & classification =========
+    base_total_points = int(
+        intl_points
+        + domestic_points
+        + cont_points
+        + finish_points
+        + cprog_points
+        + lq_points
+    )
+
+    # ---- ESC eligibility (checkboxes, Band 6 focus) ----
+    esc_eligible = False
+    esc_reasons = []
+
+    if player_band == 6:
+        st.markdown("### ESC eligibility checks (Band 6 league)")
+        st.caption(
+            "Band 6 leagues do not count as Domestic Senior Competition Matches under the FA definitions. "
+            "Players here usually proceed via an ESC slot if they are exceptional. "
+            "Tick any ESC criteria this player actually meets in the reference period."
+        )
+
+        esc_youth_top50 = st.checkbox(
+            "≥1 youth competitive international (Top-50 nation)",
+            key="esc_youth_top50",
+        )
+        esc_youth_outside = st.checkbox(
+            "≥5 youth competitive internationals (outside Top-50)",
+            key="esc_youth_outside",
+        )
+        esc_youth_cont = st.checkbox(
+            "≥1 youth continental club match",
+            key="esc_youth_cont",
+        )
+        esc_youth_dom = st.checkbox(
+            "≥5 domestic youth competition matches (played)",
+            key="esc_youth_dom",
+        )
+        esc_senior_top50 = st.checkbox(
+            "≥1 senior competitive international (Top-50 nation)",
+            key="esc_senior_top50",
+        )
+        esc_senior_outside = st.checkbox(
+            "≥5 senior competitive internationals (outside Top-50)",
+            key="esc_senior_outside",
+        )
+        esc_senior_cont = st.checkbox(
+            "≥1 senior continental club match",
+            key="esc_senior_cont",
+        )
+        esc_senior_dom = st.checkbox(
+            "≥5 domestic senior league matches in Band 1–5 (played, any club in reference period)",
+            key="esc_senior_dom",
+        )
+
+        if esc_youth_top50:
+            esc_eligible = True
+            esc_reasons.append("Youth intl (Top-50)")
+        if esc_youth_outside:
+            esc_eligible = True
+            esc_reasons.append("Youth intl (outside Top-50)")
+        if esc_youth_cont:
+            esc_eligible = True
+            esc_reasons.append("Youth continental")
+        if esc_youth_dom:
+            esc_eligible = True
+            esc_reasons.append("Domestic youth matches")
+        if esc_senior_top50:
+            esc_eligible = True
+            esc_reasons.append("Senior intl (Top-50)")
+        if esc_senior_outside:
+            esc_eligible = True
+            esc_reasons.append("Senior intl (outside Top-50)")
+        if esc_senior_cont:
+            esc_eligible = True
+            esc_reasons.append("Senior continental")
+        if esc_senior_dom:
+            esc_eligible = True
+            esc_reasons.append("Domestic senior (Band 1–5)")
+
+    # Home-nation / Ireland auto-pass
+    auto_reason = ""
+    auto_source = None  # "home" or "intl"
+
+    if is_home_nation_player or is_home_nation_league:
+        auto_source = "home"
+        bits = []
+        if is_home_nation_player and birth_country:
+            bits.append(f"{birth_country} national")
+        if is_home_nation_league and league_country:
+            bits.append(f"plays in {league_country} league")
+        auto_reason = " · ".join(bits)
+    elif intl_auto and use_intl:
+        auto_source = "intl"
+        auto_reason = "Meets automatic pass threshold via senior international appearances."
+
+    display_points = base_total_points
+    if auto_source is not None and display_points < 15:
+        display_points = 15
+
+    # ========= Status label logic (Band 1–5 vs Band 6; ESC) =========
+    if auto_source == "home":
+        status = "Automatic Pass – UK / Irish route"
+        status_color = "#16a34a"
+    elif auto_source == "intl":
+        status = "Automatic Pass – Senior international"
+        status_color = "#16a34a"
+    else:
+        if player_band == 6:
+            # Band 6: ESC vs straight Fail
+            if esc_eligible:
+                status = "Fail / ESC"
+                status_color = "#ea580c"
+            else:
+                status = "Fail"
+                status_color = "#b91c1c"
+        else:
+            # Normal band 1–5 logic
+            if display_points >= 15:
+                status = "Pass"
+                status_color = "#16a34a"
+            elif display_points >= 10:
+                status = "Exceptions Panel"
+                status_color = "#fbbf24"  # yellow background for Exceptions Panel
+            else:
+                status = "Fail"
+                status_color = "#b91c1c"
+
+    bg_color = "#0b1220"
+    breakdown_str = (
+        f"Domestic minutes: {domestic_points} pts; "
+        f"International: {intl_points} pts; "
+        f"Continental minutes: {cont_points} pts; "
+        f"League position: {finish_points} pts; "
+        f"Continental progression: {cprog_points} pts; "
+        f"League band: {lq_points} pts."
+    )
+    points_band_str = "0–9 = Fail/ESC, 10–14 = Exceptions Panel, 15+ = Pass."
+
+    auto_reason_html = ""
+    if auto_reason:
+        auto_reason_html = (
+            f"<div style='margin-top:0.35rem; font-size:0.8rem; color:#e5e7eb;'>"
+            f"<strong>Auto-pass reason:</strong> {auto_reason}"
+            f"</div>"
+        )
+
+    youth_html = ""
+    if youth_caption.strip():
+        youth_html = (
+            f"<div style='margin-top:0.3rem; font-size:0.8rem; color:#cbd5f5;'>"
+            f"{youth_caption.strip()}"
+            f"</div>"
+        )
+
+    # ESC label at bottom
+    esc_reason_html = ""
+    if auto_source is None:
+        # Band 6 players
+        if player_band == 6:
+            if esc_eligible and esc_reasons:
+                esc_reason_html = (
+                    f"<div style='margin-top:0.3rem; font-size:0.8rem; color:#fbbf24;'>"
+                    f"<strong>ESC criteria met</strong> {', '.join(esc_reasons)}"
+                    f"</div>"
+                )
+            else:
+                esc_reason_html = (
+                    f"<div style='margin-top:0.3rem; font-size:0.8rem; color:#f97373;'>"
+                    f"<strong>ESC criteria not met</strong>"
+                    f"</div>"
+                )
+        # Band 1–5 players who are in Exceptions Panel range (10–14 pts)
+        elif 10 <= display_points < 15:
+            esc_reason_html = (
+                f"<div style='margin-top:0.3rem; font-size:0.8rem; color:#fbbf24;'>"
+                f"<strong>ESC criteria met:</strong> Domestic senior (Band 1–5)"
+                f"</div>"
+            )
+
+    # ========= Flag helper – Twemoji SVG for ALL flags (aligned) =========
+    import unicodedata
+
+    LOCAL_TWEMOJI_SPECIAL = {
+        "eng": "1f3f4-e0067-e0062-e0065-e006e-e0067-e007f",  # England
+        "sct": "1f3f4-e0067-e0062-e0073-e0063-e0074-e007f",  # Scotland
+        "wls": "1f3f4-e0067-e0062-e006c-e0073-e007f",        # Wales
+        "nir": "1f3f4-e0067-e0062-e006e-e0069-e0072-e007f",  # Northern Ireland
+    }
+
+    LOCAL_COUNTRY_TO_CC = {
+        # Home nations + Ireland
+        "england": "eng",
+        "scotland": "sct",
+        "wales": "wls",
+        "northern ireland": "nir",
+        "ireland": "ie",
+        "republic of ireland": "ie",
+
+        # Europe
+        "spain": "es",
+        "germany": "de",
+        "italy": "it",
+        "france": "fr",
+        "belgium": "be",
+        "denmark": "dk",
+        "poland": "pl",
+        "turkey": "tr",
+        "netherlands": "nl",
+        "croatia": "hr",
+        "switzerland": "ch",
+        "norway": "no",
+        "sweden": "se",
+        "cyprus": "cy",
+        "czech": "cz",
+        "czech republic": "cz",
+        "greece": "gr",
+        "austria": "at",
+        "romania": "ro",
+        "albania": "al",
+        "bosnia": "ba",
+        "bosnia and herzegovina": "ba",
+        "kosovo": "xk",
+        "slovenia": "si",
+        "slovakia": "sk",
+        "bulgaria": "bg",
+        "finland": "fi",
+        "armenia": "am",
+        "georgia": "ge",
+        "iceland": "is",
+        "north macedonia": "mk",
+        "lithuania": "lt",
+        "malta": "mt",
+        "moldova": "md",
+        "latvia": "lv",
+        "montenegro": "me",
+        "estonia": "ee",
+        "russia": "ru",
+        "portugal": "pt",
+                   "hungary": "hu",
+                   "ukraine": "ua",
+                   "serbia": "rs",
+                   "azerbaijan": "az",
+
+        # Middle East & Asia
+        "saudi": "sa",
+        "saudi arabia": "sa",
+        "uae": "ae",
+        "united arab emirates": "ae",
+        "qatar": "qa",
+        "uzbekistan": "uz",
+        "kazakhstan": "kz",
+        "israel": "il",
+        "japan": "jp",
+        "korea": "kr",
+        "south korea": "kr",
+        "china": "cn",
+
+        # Africa
+        "morocco": "ma",
+        "algeria": "dz",
+        "egypt": "eg",
+        "south africa": "za",
+        "nigeria": "ng",
+        "tunisia": "tn",
+
+        # North & South America
+        "brazil": "br",
+        "argentina": "ar",
+        "mexico": "mx",
+        "colombia": "co",
+        "ecuador": "ec",
+        "paraguay": "py",
+        "uruguay": "uy",
+        "chile": "cl",
+        "bolivia": "bo",
+        "peru": "pe",
+        "venezuela": "ve",
+        "costa rica": "cr",
+        "canada": "ca",
+        "usa": "us",
+        "united states": "us",
+
+        # Oceania
+        "australia": "au",
+    }
+
+    def _norm_local(s: str) -> str:
+        if not s:
+            return ""
+        return unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode("ascii").strip().lower()
+
+    def _iso_to_twemoji_hex(cc: str) -> str:
+        # Turn "cz" → "1f1e8-1f1ff" style hex for Twemoji flag SVGs
+        base = 0x1F1E6
+        c1 = base + (ord(cc[0].upper()) - ord("A"))
+        c2 = base + (ord(cc[1].upper()) - ord("A"))
+        return f"{c1:x}-{c2:x}"
+
+    def league_flag_html(league_name: str) -> str:
+        country = extract_country(league_name)
+        n = _norm_local(country)
+        cc = LOCAL_COUNTRY_TO_CC.get(n, "")
+        if not cc:
+            return ""
+
+        # Home nations with special TAG-sequence flags
+        if cc in LOCAL_TWEMOJI_SPECIAL:
+            code = LOCAL_TWEMOJI_SPECIAL[cc]
+        else:
+            # All normal ISO country codes use flag regional indicators → Twemoji
+            if len(cc) != 2:
+                return ""
+            code = _iso_to_twemoji_hex(cc)
+
+        src = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/{code}.svg"
+        return (
+            f"<span style='display:inline-block;vertical-align:middle;margin-left:0.35rem;'>"
+            f"<img src='{src}' style='height:1.05rem;display:block;' alt='{country}'>"
+            f"</span>"
+        )
+
+    league_flag_snippet = league_flag_html(player_league)
+
+    # ========= Card layout (tweaked for mobile) =========
+    st.markdown(
+        f"""
+<div style="
+    border-radius: 0.9rem;
+    padding: 1.0rem 1.25rem 0.95rem 1.25rem;
+    margin-top: 0.9rem;
+    background: {bg_color};
+    border: 1px solid rgba(148, 163, 184, 0.5);
+    color: #e5e7eb;
+    font-size: 0.94rem;
+">
+  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:0.75rem; margin-bottom:0.45rem;">
+    <div style="font-size:1.05rem; color:#cbd5f5;">
+      <div style="font-weight:600;">GBE / Visa points</div>
+      <div style="white-space:nowrap;">
+        <span style="font-weight:800; color:#f9fafb; font-size:1.05rem;">
+          {player_name}
+        </span>
+        <span style="opacity:0.85; font-size:1.05rem; margin-left:0.15rem;">
+          ({player_team})
+        </span>
+        {league_flag_snippet}
+      </div>
     </div>
-    <div id="sync-status" style="font-size:12px;color:var(--muted2)">0 / ${list.length}</div>
-    <div id="sync-results" style="font-size:11px;color:#4ade80;margin-top:4px"></div>
-    <button onclick="document.getElementById('sync-overlay').remove()" style="margin-top:8px;padding:6px 16px;background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:6px;cursor:pointer;font-size:11px">Cancel (data saved so far)</button>
-  `;
-  document.body.appendChild(overlay);
+    <div style="
+        font-size:0.82rem;
+        color:#9ca3af;
+        text-align:right;
+        max-width:40%;
+        line-height:1.3;
+        word-wrap:break-word;
+    ">
+      {player_league}<br>
+      Band {player_band}
+    </div>
+  </div>
 
-  let updated = 0, failed = 0, cancelled = false;
-  const btn = document.getElementById('sync-all-btn');
-  if (btn) btn.disabled = true;
+  <div style="display:flex; align-items:center; gap:1.0rem; margin:0.2rem 0 0.6rem 0;">
+    <div>
+      <div style="font-size:2.35rem; font-weight:800; line-height:1; letter-spacing:0.02em;">
+        {display_points}
+      </div>
+      <div style="font-size:0.8rem; color:#9ca3af; margin-top:0.18rem; white-space:nowrap;">
+        Est. points
+      </div>
+    </div>
+    <div style="
+        padding:0.45rem 0.95rem;
+        border-radius:999px;
+        background:{status_color};
+        color:#ffffff;
+        font-weight:700;
+        font-size:0.9rem;
+        white-space:nowrap;
+    ">
+      {status}
+    </div>
+  </div>
 
-  for (let i = 0; i < list.length; i++) {
-    // Check if cancelled
-    if (!document.getElementById('sync-overlay')) { cancelled = true; break; }
+  <div style="font-size:0.82rem; margin-bottom:0.45rem; color:#cbd5f5;">
+    {points_band_str}
+  </div>
 
-    const p = list[i];
-    const pct = Math.round((i / list.length) * 100);
-    document.getElementById('sync-bar').style.width = pct + '%';
-    document.getElementById('sync-status').textContent = `${i + 1} / ${list.length}`;
-    document.getElementById('sync-player-name').textContent = `${p.name} — ${p.team}`;
+  <!-- subtle divider line above Breakdown -->
+  <div style="height:1px; background:rgba(148,163,184,0.35); margin:0.4rem 0 0.35rem 0;"></div>
 
-    try {
-      const r = await fetch(`${SERVER}/api/player/tm_update?url=${encodeURIComponent(p.tm)}`);
-      const data = await r.json();
+  <div style="margin-top:0.05rem; font-size:0.82rem; color:#cbd5f5;">
+    <span style="font-weight:700; color:#f9fafb;">Breakdown</span> – {breakdown_str}
+  </div>
 
-      if (!data.error) {
-        const idx = allPlayers[currentBoard].findIndex(x => x.id === p.id);
-        if (idx !== -1) {
-          const player = allPlayers[currentBoard][idx];
-          if (data.team)       player.team       = data.team;
-          if (data.age)        player.age        = data.age;
-          if (data.value)      player.marketValue = data.value;
-          if (data.contract)   player.contract   = data.contract;
-          if (data.recentmove) player.recentmove = data.recentmove;
-          if (data.league)     player.league     = data.league;
-          if (data.games)      player.games      = data.games;
-          if (data.goals)      player.goals      = data.goals;
-          if (data.assists)    player.assists    = data.assists;
-          if (data.minutes)    player.minutes    = data.minutes;
-          player.updatedAt = new Date().toISOString();
-          updated++;
-        }
-      } else {
-        failed++;
-      }
-    } catch(e) {
-      failed++;
-    }
+  {auto_reason_html}
+  {youth_html}
+  {esc_reason_html}
+</div>
+""",
+        unsafe_allow_html=True,
+    )
 
-    // Update results counter
-    document.getElementById('sync-results').textContent =
-      `✅ ${updated} updated  ${failed > 0 ? `❌ ${failed} failed` : ''}`;
+    # ========= Download snapshot AS IMAGE (PNG) =========
+    import io
 
-    // Save every 10 players
-    if (i % 10 === 0) await save();
+    fig, ax = plt.subplots(figsize=(6.5, 3.4), dpi=150)
+    fig.patch.set_facecolor("#0b1220")
+    ax.set_facecolor("#0b1220")
+    ax.axis("off")
 
-    // Delay to avoid rate limiting
-    await new Promise(r => setTimeout(r, 2500));
-  }
+    # Left: big score
+    ax.text(
+        0.05, 0.7, str(display_points),
+        transform=ax.transAxes,
+        fontsize=36,
+        fontweight="bold",
+        color="white",
+        va="center",
+    )
+    ax.text(
+        0.05, 0.5, "Est. points",
+        transform=ax.transAxes,
+        fontsize=10,
+        color="#9ca3af",
+        va="center",
+    )
 
-  await save();
-  renderAll();
-  if (btn) btn.disabled = false;
+    # Title & player
+    ax.text(
+        0.25, 0.85, "GBE / Visa points",
+        transform=ax.transAxes,
+        fontsize=13,
+        fontweight="semibold",
+        color="#cbd5f5",
+        va="center",
+    )
+    ax.text(
+        0.25, 0.7, f"{player_name} ({player_team})",
+        transform=ax.transAxes,
+        fontsize=11,
+        fontweight="bold",
+        color="white",
+        va="center",
+    )
+    ax.text(
+        0.25, 0.55, f"{player_league} • Band {player_band}",
+        transform=ax.transAxes,
+        fontsize=9,
+        color="#9ca3af",
+        va="center",
+    )
 
-  const syncOv = document.getElementById('sync-overlay');
-  if (syncOv) {
-    document.getElementById('sync-bar').style.width = '100%';
-    document.getElementById('sync-player-name').textContent = cancelled ? 'Cancelled' : 'Complete!';
-    document.getElementById('sync-status').textContent = `${list.length} / ${list.length}`;
-    setTimeout(() => syncOv.remove(), 3000);
-  }
+    # Status bar
+    ax.text(
+        0.25, 0.35, status,
+        transform=ax.transAxes,
+        fontsize=10,
+        fontweight="bold",
+        color="white",
+        va="center",
+        bbox=dict(
+            boxstyle="round,pad=0.35",
+            facecolor=status_color,
+            edgecolor="none",
+        ),
+    )
 
-  showToast(`✅ Sync complete: ${updated} updated, ${failed} failed`);
-}
+    # Points band line
+    ax.text(
+        0.05, 0.25, points_band_str,
+        transform=ax.transAxes,
+        fontsize=9,
+        color="#cbd5f5",
+        va="center",
+    )
 
-function showToast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2500);
-}
+    # Breakdown (single wrapped line)
+    ax.text(
+        0.05, 0.11, f"Breakdown – {breakdown_str}",
+        transform=ax.transAxes,
+        fontsize=8.5,
+        color="#cbd5f5",
+        va="center",
+        wrap=True,
+    )
 
-// ── CLOSE ON OVERLAY CLICK ──
-document.getElementById('add-overlay').addEventListener('click', e => { if (e.target === document.getElementById('add-overlay')) closeAdd(); });
-document.getElementById('detail-overlay').addEventListener('click', e => { if (e.target === document.getElementById('detail-overlay')) closeDetail(); });
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight")
+    plt.close(fig)
+    img_bytes = buf.getvalue()
 
-// ── INIT ──
-async function init() {
-  // Reset filters
-  document.getElementById('windowFilter').value = '';
-  document.getElementById('targetFilter').value = '';
-  document.getElementById('statusFilter').value = '';
-  document.getElementById('agencyFilter').value = '';
-  document.getElementById('footFilter').value = '';
-  document.getElementById('styleFilter').value = '';
-  document.getElementById('valueFilter').value = '';
-  document.getElementById('contractFilter').value = '';
-
-  // Render tabs immediately with correct boards
-  renderTabs();
-  renderAll();
-
-  // Then load data from server in background
-  const fromServer = await loadFromServer();
-  if (!fromServer) {
-    const saved = localStorage.getItem(DATA_KEY);
-    if (saved) {
-      try {
-        const data = JSON.parse(saved);
-        CORRECT_BOARDS.forEach(b => { allPlayers[b] = data[b] || []; });
-      } catch(e) {}
-    }
-  }
-  renderTabs();
-  renderAll();
-}
-init();
-</script>
-</body>
-</html>
+    st.download_button(
+        "⬇️ Download GBE / Visa snapshot (.png)",
+        data=img_bytes,
+        file_name=f"gbe_snapshot_{player_name.replace(' ', '_')}.png",
+        mime="image/png",
+        key="gbe_download_image_btn",
+    )
 
 
 
