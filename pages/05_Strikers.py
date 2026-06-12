@@ -201,32 +201,67 @@ ROLES = {
 }
 
 LEAGUE_STRENGTHS = {
-'England 1.':100.00,'Spain 1.':87.84,'Germany 1.':87.45,'Italy 1.':85.88,'France 1.':83.14,
-'England 2.':75.10,'Belgium 1.':74.51,'Brazil 1.':74.31,'Portugal 1.':72.94,'Argentina 1.':71.37,
-'USA 1.':70,'Denmark 1.':70.78,'Poland 1.':69.61,'Turkey 1.':69.02,'Netherlands 1.':69.02,
-'Croatia 1.':68.43,'Germany 2.':68.04,'Japan 1.':67.84,'Switzerland 1.':67.45,'Spain 2.':67.06,
-'Norway 1.':66.67,'Mexico 1.':66.47,'Sweden 1.':66.27,'Colombia 1.':65.88,'Cyprus 1.':60,
-'Czech 1.':65.29,'Ecuador 1.':65.29,'Greece 1.':64.12,'Saudi 1.':64.12,'Italy 2.':63.53,
-'Hungary 1.':63.53,'Austria 1.':63.33,'Morocco 1.':63.14,'Korea 1.':62.75,'Paraguay 1.':62.55,
-'France 2.':64,'England 3.':61.96,'Romania 1.':61.76,'Scotland 1.':61.76,'Algeria 1.':61.57,
-'Uruguay 1.':60.39,'Chile 1.':59.80,'Egypt 1.':59.22,'Israel 1.':58.43,'Brazil 2.':58.04,
-'Slovenia 1.':57.45,'Bolivia 1.':57.25,'Slovakia 1.':56.47,'Azerbaijan 1.':56.47,'South Africa 1.':56.27,
-'UAE 1.':55.49,'Costa Rica 1.':54.90,'Peru 1.':54.90,'Germany 3.':54.51,'Ukraine 1.':54.31,
-'Spain 3.':54.31,'Portugal 2.':53.14,'Bulgaria 1.':53.14,'Australia 1.':52.75,'Serbia 1.':52.16,
-'Albania 1.':51.96,'Bosnia 1.':51.76,'Kosovo 1.':51.37,'Japan 2.':50.98,'England 4.':50.78,
-'Ireland 1.':50.59,'Russia 1.':62.41,'Kazakhstan 1.':50.39,'Nigeria 1.':50.00,'France 3.':49.61,
-'Tunisia 1.':49.22,'Venezuela 1.':48.63,'Belgium 2.':48.43,'Finland 1.':48.43,'Armenia 1.':47.84,
-'Georgia 1.':47.65,'Switzerland 2.':46.47,'Qatar 1.':46.27,'Uzbekistan 1.':46.27,'Poland 2.':46.27,
-'Iceland 1.':46.08,'Norway 2.':45.88,'Sweden 2.':45.69,'North Macedonia 1.':44.71,'China 1.':44.7, 'Turkey 2.':44.51,
-'Korea 2.':43.53,'Czech 2.':43.33,'Brazil 3.':43.14,'Lithuania 1.':42.35,'Netherlands 2.':42.16,
-'Malta 1.':41.96,'Italy 3.':45,'Denmark 2.':40.39,'Moldova 1.':40.39,'USA 2.':40.00,
-'Latvia 1.':40.00,'Montenegro 1.':39.80,'Scotland 2.':38.63,'Canada 1.':38.24,'Austria 2.':38.24,
-'Israel 2.':38.04,'England 7.':37.25,'Germany 4.':35.29,'Portugal 3.':35.29,'England 5.':33.33,
-'Estonia 1.':40,'England 9.':31.37,'Northern Ireland 1.':30.98,'Serbia 2.':30.39,'Denmark 3.':29.41,
-'Sweden 3.':29.41,'Slovenia 2.':28.82,'Slovakia 2.':28.24,'Greece 2.':27.06,'Wales 1.':26.67,
-'USA 3.':22.55,'Scotland 3.':20.00,'England 6.':16.08,'England 8.':15.69,'England 10.':3.92,
-'Estonia 2.':3, 'Ireland 2.':10, 'Faroe Islands 1.':35.02, 'Panama 1.':44.1, 'Portugal 4.':40,
+'England 1.':100.00,'Spain 1.':88,'Germany 1.':88,'Italy 1.':87,'Portugal 1.':80,
+'France 1.':86,'Brazil 1.':79,'England 2.':76,'Belgium 1.':76,'Spain 2.':72,
+'Ukraine 1.':65,'Argentina 1.':72,'Denmark 1.':70.78,'USA 1.':70.00,'Poland 1.':68,
+'Turkey 1.':71,'Netherlands 1.':70,'Croatia 1.':68.43,'Germany 2.':68.04,'Japan 1.':68,
+'Switzerland 1.':67.45,'Norway 1.':66.67,'Mexico 1.':66.47,'Sweden 1.':68,'Colombia 1.':67,
+'Czech 1.':67,'Ecuador 1.':65.29,'Saudi 1.':65.00,'Greece 1.':66,'Argentina 2.':64.12,
+'France 2.':65,'Italy 2.':64,'Hungary 1.':65,'Austria 1.':66,'Morocco 1.':63.14,
+'Korea 1.':62.75,'Paraguay 1.':62.55,'Russia 1.':66,'England 3.':59,'Romania 1.':61.76,
+'Scotland 1.':64,'Algeria 1.':61.57,'Uruguay 1.':60.39,'Cyprus 1.':60.00,'Chile 1.':59.80,
+'Egypt 1.':59.22,'Israel 1.':60,'Brazil 2.':59,'Slovenia 1.':59,'Bolivia 1.':57.25,
+'Slovakia 1.':58,'Azerbaijan 1.':55,'South Africa 1.':56.27,'UAE 1.':55.49,'Costa Rica 1.':54.90,
+'Peru 1.':54.90,'Germany 3.':56,'Spain 3.':56,'Portugal 2.':56,'Bulgaria 1.':57,
+'Australia 1.':55,'Serbia 1.':58,'Poland 2.':52.00,'Norway 2.':52.00,'Sweden 2.':52.00,
+'Albania 1.':54,'Bosnia 1.':54,'Kosovo 1.':54,'Japan 2.':54,'England 4.':51,
+'Ireland 1.':51,'Kazakhstan 1.':50.39,'Nigeria 1.':50.00,'Denmark 2.':50.00,'Scotland 2.':53,
+'France 3.':54,'Ecuador 2.':49.61,'Romania 2.':49.61,'Tunisia 1.':53,'Venezuela 1.':48.63,
+'Belgium 2.':48.43,'Finland 1.':48.43,'Colombia 2.':48.43,'Czech 2.':50,'Northern Ireland 1.':48.00,
+'Armenia 1.':47.84,'Montenegro 1.':47.84,'Georgia 1.':47.65,'Switzerland 2.':50,'Zambia 1.':46.47,
+'Uzbekistan 1.':46.27,'Cyprus 2.':46.27,'Iceland 1.':46.08,'Italy 3.':52,'North Macedonia 1.':44.71,
+'China 1.':44.70,'Turkey 2.':50,'Panama 1.':44.10,'Korea 2.':43.53,'Brazil 3.':43.14,
+'Lithuania 1.':42.35,'Netherlands 2.':46,'Malta 1.':41.96,'Moldova 1.':40.39,'Estonia 1.':40.00,
+'USA 2.':40.00,'Latvia 1.':40.00,'Wales 1.':40.00,'Hungary 2.':40.00,'Norway 3.':40.00,
+'Montenegro 2.':39.80,'Canada 1.':38.24,'Austria 2.':38.24,'Israel 2.':40,'England 7.':37.25,
+'Germany 4.':40,'Portugal 3.':40,'Faroe Islands 1.':35.02,'Saudi 2.':35.02,'Qatar 1.':45.00,
+'England 5.':33.33,'Andorra 1.':33.33,'England 9.':31.37,'Serbia 2.':35,'Brazil 4.':30.00,
+'Denmark 3.':29.41,'Sweden 3.':29.41,'Slovenia 2.':30,'Slovakia 2.':30,'Italy 4.':30,
+'Ukraine 2.':30,'Greece 2.':30,'Netherlands 3.':27.06,'Germany 5.':25.00,'Italy 5.':25.00,
+'Portugal 4.':25.00,'USA 3.':22.55,'Scotland 3.':20.00,'Sweden 4.':20.00,'Switzerland 3.':20.00,
+'Czech 3.':20.00,'Denmark 4.':20.00,'Germany 6.':20.00,'England 6.':16.08,'Kazakhstan 2.':16.08,
+'Kyrgyzstan 1.':16.08,'Malta 2.':16.08,'England 8.':15.69,'Ukraine 3.':15.00,'Serbia 3.':15.00,
+'Ireland 2.':10.00,'England 10.':3.92,'Estonia 2.':3.00,
 
+'AFCON Qualifiers.':50.0,'AFCON U17.':50.0,'AFCON U20.':50.0,'AFCON.':50.0,
+'Africa Champions League.':50.0,'Africa Europa League.':50.0,'Asia Champions League.':50.0,
+'Asia WC Qualifiers.':50.0,'Champions League Qualifiers.':50.0,'Champions League.':50.0,
+'Club World Cup.':50.0,'Conference League Qualifiers.':50.0,'Conference League.':50.0,
+'Copa Libertadores.':50.0,'Europa League Qualifiers.':50.0,'Europa League.':50.0,
+'S.America Qualifiers.':50.0,'U17 World Cup.':50.0,'U20 Copa.':50.0,'U20 World Cup.':50.0,
+'UEFA U19 Euros.':50.0,'UEFA U21 Euros.':50.0,'UEFA WC Qualifiers.':50.0,
+}
+
+HIDDEN_LEAGUES = {
+    'Bolivia 1.', 'UAE 1.', 'Costa Rica 1.', 'Nigeria 1.',
+    'Qatar 1.', 'Uzbekistan 1.', 'Poland 2.', 'Panama 1.',
+    'Lithuania 1.', 'USA 2.', 'Faroe Islands 1.', 'Germany 4.',
+    'Portugal 3.', 'Slovenia 2.', 'Slovakia 2.', 'USA 3.',
+    'Scotland 3.', 'England 6.', 'Ireland 2.', 'Estonia 2.',
+    'Andorra 1.', 'Argentina 2.', 'Colombia 2.', 'Cyprus 2.',
+    'Ecuador 2.', 'Hungary 2.', 'Kazakhstan 2.', 'Kyrgyzstan 1.',
+    'Malta 2.', 'Montenegro 2.', 'Netherlands 3.', 'Norway 3.',
+    'Romania 2.', 'Saudi 2.', 'Ukraine 2.', 'Zambia 1.', 'Italy 4.',
+}
+
+CUP_COMPETITIONS = {
+    'AFCON Qualifiers.', 'AFCON U17.', 'AFCON U20.', 'AFCON.',
+    'Africa Champions League.', 'Africa Europa League.', 'Asia Champions League.',
+    'Asia WC Qualifiers.', 'Champions League Qualifiers.', 'Champions League.',
+    'Club World Cup.', 'Conference League Qualifiers.', 'Conference League.',
+    'Copa Libertadores.', 'Europa League Qualifiers.', 'Europa League.',
+    'S.America Qualifiers.', 'U17 World Cup.', 'U20 Copa.', 'U20 World Cup.',
+    'UEFA U19 Euros.', 'UEFA U21 Euros.', 'UEFA WC Qualifiers.',
 }
 
 # ---- GBE league bands (custom: all UK & Ireland leagues in Band 1) ----
@@ -276,18 +311,14 @@ import re
 
 # --- Youth leagues: excluded by default, optional toggle to include ---
 YOUTH_LEAGUES = {
-    "Brazil 3.",
-    "England 7.",
-    "England 8.",
-    "England 9.",
-    "England 10.",
-    "Portugal 3.",
-    "Denmark 3.",
-    "Germany 4.",
-    "USA 2.",
-    "Ireland 2.",
-    "Estonia 2.",
-    "Portugal 4.",
+    "Brazil 3.", "Brazil 4.",
+    "England 7.", "England 8.", "England 9.", "England 10.",
+    "Portugal 3.", "Portugal 4.",
+    "Denmark 3.", "Denmark 4.",
+    "Germany 4.", "Germany 5.", "Germany 6.",
+    "USA 2.", "Ireland 2.", "Estonia 2.",
+    "Sweden 4.", "Switzerland 3.", "Ukraine 3.",
+    "Czech 3.", "Italy 5.", "Serbia 3.",
 }
 
 # --- Country → Region mapping for league-level region filter ---
@@ -386,7 +417,25 @@ with st.sidebar:
         "Include youth leagues",
         value=False,
         key=include_youth_key,
-        help="Brazil 3., England 7–10, Portugal 3., Denmark 3., Germany 4. etc.",
+        help="Brazil 3./4., England 7–10, Portugal 3./4., Denmark 3./4., Germany 4–6, etc.",
+    )
+
+    # --------- CUP / INTERNATIONAL COMPETITIONS TOGGLE (excluded by default) ---------
+    include_cups_key = f"cf_include_cups_{selected_file}"
+    include_cups = st.checkbox(
+        "Include cup / international competitions",
+        value=False,
+        key=include_cups_key,
+        help="Champions League, Europa League, AFCON, World Cup qualifiers, U17-U21 tournaments, etc.",
+    )
+
+    # --------- HIDDEN LEAGUES TOGGLE (excluded by default) ---------
+    include_hidden_key = f"cf_include_hidden_{selected_file}"
+    include_hidden = st.checkbox(
+        "Include hidden leagues",
+        value=False,
+        key=include_hidden_key,
+        help="Lower-tier / obscure leagues hidden by default (Bolivia 1., UAE 1., Argentina 2., Italy 4., etc.).",
     )
 
     st.markdown("---")
@@ -442,6 +491,14 @@ with st.sidebar:
     else:
         leagues_avail = [lg for lg in leagues_in_df if lg not in YOUTH_LEAGUES]
 
+    # Apply cup/international competition filter
+    if not include_cups:
+        leagues_avail = [lg for lg in leagues_avail if lg not in CUP_COMPETITIONS]
+
+    # Apply hidden leagues filter
+    if not include_hidden:
+        leagues_avail = [lg for lg in leagues_avail if lg not in HIDDEN_LEAGUES]
+
     # Build seed from presets and clamp to what's available
     seed = set()
     if use_top5:
@@ -460,6 +517,8 @@ with st.sidebar:
     preset_sig = (
         tuple(sorted(regions_sel)),
         include_youth,
+        include_cups,
+        include_hidden,
         use_top5,
         use_top20,
         use_efl,
