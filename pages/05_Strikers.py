@@ -3477,14 +3477,22 @@ else:
 
     def _text_width_frac(fig, s, *, fontsize=8, weight="normal"):
         t = fig.text(0, 0, s, fontsize=fontsize, fontweight=weight, transform=fig.transFigure, alpha=0)
-        fig.canvas.draw(); r = fig.canvas.get_renderer()
-        w_px = t.get_window_extent(renderer=r).width; t.remove()
+        try:
+            fig.canvas.draw(); r = fig.canvas.get_renderer()
+            w_px = t.get_window_extent(renderer=r).width
+        except AttributeError:
+            w_px = len(str(s)) * fontsize * 0.6
+        t.remove()
         return w_px / fig.bbox.width
 
     def _text_height_frac(fig, s, *, fontsize=8, weight="normal"):
         t = fig.text(0, 0, s, fontsize=fontsize, fontweight=weight, transform=fig.transFigure, alpha=0)
-        fig.canvas.draw(); r = fig.canvas.get_renderer()
-        h_px = t.get_window_extent(renderer=r).height; t.remove()
+        try:
+            fig.canvas.draw(); r = fig.canvas.get_renderer()
+            h_px = t.get_window_extent(renderer=r).height
+        except AttributeError:
+            h_px = fontsize * 1.2
+        t.remove()
         return h_px / fig.bbox.height
 
     # chips — max_per_row + slightly tighter spacing
