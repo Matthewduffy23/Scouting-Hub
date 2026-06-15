@@ -54,10 +54,10 @@ def _candidate_dirs() -> List[Path]:
             uniq.append(rp)
     return uniq
 
-def _find_world_csvs() -> List[Path]:
+def _find_all_csvs() -> List[Path]:
     files: List[Path] = []
     for base in _candidate_dirs():
-        files.extend(sorted(base.glob("WORLD*.csv")))
+        files.extend(sorted(base.glob("*.csv"), key=lambda f: f.stat().st_mtime, reverse=True))
     seen, uniq = set(), []
     for p in files:
         rp = p.resolve()
@@ -66,31 +66,18 @@ def _find_world_csvs() -> List[Path]:
             uniq.append(rp)
     return uniq
 
-def _label_for(p: Path) -> str:
-    parent_hint = p.parent.name or str(p.parent)
-    return f"{p.name} — {parent_hint}/"
-
 def pick_or_upload_world_csv() -> Tuple[pd.DataFrame, str]:
     st.markdown("### 📁 Data Source")
-    found = _find_world_csvs()
-    labels_found = [_label_for(p) for p in found]
-    labels = ["Upload a CSV…"] + labels_found
-    default_index = 1 if found else 0
+    found = _find_all_csvs()
+    labels = [p.name for p in found]
+    if not labels:
+        st.error("No CSV files found in the project folder.")
+        st.stop()
 
-    sel = st.selectbox("Select a WORLD*.csv file", labels, index=default_index, key="world_csv_picker")
-
-    if sel == "Upload a CSV…":
-        up = st.file_uploader("Upload a WORLD*.csv", type=["csv"], key="world_csv_uploader")
-        if up is None:
-            st.info("Pick a file from the list above or upload one.")
-            st.stop()
-        df_up = _read_csv_from_bytes(up.getvalue())
-        return df_up, up.name
-
-    idx = labels.index(sel) - 1
-    chosen_path = found[idx]
+    sel = st.selectbox("Select dataset to load:", labels, index=0, key="world_csv_picker")
+    chosen_path = found[labels.index(sel)]
     df_disk = _read_csv_from_path(str(chosen_path))
-    return df_disk, chosen_path.resolve().name
+    return df_disk, chosen_path.name
 
 df, DATASET_NAME = pick_or_upload_world_csv()
 
