@@ -1,6 +1,7 @@
 {
   "current": "2025-26WORLDFULL.csv",
   "previous": "2024-25WORLDFULL.csv",
-  "current_teams": "WORLDTEAMS2026-27.csv",
-  "previous_teams": "WORLDTEAMS2025-26.csv"
+  "current_teams": null,
+  "previous_teams": null,
+  "supplementary": "2026-27WORLDFULL.csv"
 }
