@@ -57,7 +57,11 @@ def _candidate_dirs() -> List[Path]:
 def _find_all_csvs() -> List[Path]:
     files: List[Path] = []
     for base in _candidate_dirs():
-        files.extend(sorted(base.glob("*.csv"), key=lambda f: f.stat().st_mtime, reverse=True))
+        # *WORLDFULL.csv only — this feeds pick_or_upload_world_csv(), which loads a
+        # single PLAYER dataset (the page's INCLUDED_LEAGUES use player-side names).
+        # The helper's "_find_all_csvs" name is a misnomer; a bare *.csv glob would
+        # let a WORLDTEAMS* team file become the newest match and load as the default.
+        files.extend(sorted(base.glob("*WORLDFULL.csv"), key=lambda f: f.stat().st_mtime, reverse=True))
     seen, uniq = set(), []
     for p in files:
         rp = p.resolve()

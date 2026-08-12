@@ -59,8 +59,12 @@ def load_df(csv_name: str) -> pd.DataFrame:
         st.stop()
     return _read_csv_from_bytes(up.getvalue())
 
-# 🔍 Detect all CSVs starting with WORLD*
-csv_files = sorted(Path.cwd().glob("*.csv"), key=lambda f: f.stat().st_mtime, reverse=True)
+# 🔍 Player season files ONLY. The glob is deliberately *WORLDFULL.csv, not *.csv:
+# this page defaults to the NEWEST match, so a bare glob lets any other CSV sitting
+# in the repo root (e.g. a WORLDTEAMS* team file) become the default and load
+# team-shaped data into a player page. Same fix already proven on Depth-Chart and
+# Team HQ. The old comment claimed "starting with WORLD*" but the code never did it.
+csv_files = sorted(Path.cwd().glob("*WORLDFULL.csv"), key=lambda f: f.stat().st_mtime, reverse=True)
 csv_files = [f.name for f in csv_files]
 if not csv_files:
     st.error("No CSV files found in the project folder.")

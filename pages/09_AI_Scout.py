@@ -1793,8 +1793,12 @@ with st.sidebar:
     st.markdown("---")
 
     csv_candidates = sorted(
-        glob.glob(str(Path.cwd() / "*.csv")) +
-        glob.glob(str(Path.cwd().parent / "*.csv")),
+        # *WORLDFULL.csv only, in BOTH locations. This is the PLAYER selector — the
+        # team selector below has its own *team*.csv globs and is left alone. The
+        # parent-dir glob made a bare *.csv especially wide here, reaching outside
+        # the repo entirely.
+        glob.glob(str(Path.cwd() / "*WORLDFULL.csv")) +
+        glob.glob(str(Path.cwd().parent / "*WORLDFULL.csv")),
         key=lambda p: Path(p).stat().st_mtime,
         reverse=True
     )

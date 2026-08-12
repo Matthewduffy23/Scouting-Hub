@@ -57,7 +57,10 @@ def _candidate_dirs() -> List[Path]:
 def _find_world_csvs() -> List[Path]:
     files: List[Path] = []
     for base in _candidate_dirs():
-        files.extend(base.glob("*.csv"))
+        # *WORLDFULL.csv only — _find_world_csvs() feeds a player search, and this
+        # scans MULTIPLE candidate dirs, so a bare *.csv glob widens the blast radius
+        # beyond the repo root to anything CSV-shaped in a sibling/parent folder.
+        files.extend(base.glob("*WORLDFULL.csv"))
     seen, uniq = set(), []
     for p in sorted(files, key=lambda f: f.stat().st_mtime, reverse=True):
         rp = p.resolve()
