@@ -47,6 +47,15 @@ def _read_csv_from_bytes(data: bytes) -> pd.DataFrame:
     return pd.read_csv(io.BytesIO(data))
 
 def load_df(csv_name: str) -> pd.DataFrame:
+    # Uploader moved ABOVE the disk lookup so it is always visible. It used to sit
+    # after the candidates loop, which made it unreachable in practice: csv_name
+    # comes from a dropdown built by globbing files that exist, so the loop always
+    # returned first. An uploaded file now takes precedence, which is the only way
+    # to load an ad-hoc CSV without dropping it into the repo root. Same widget,
+    # same _read_csv_from_bytes path — only the order changed.
+    up = st.file_uploader(f"Or upload a CSV to use instead of {csv_name}", type=["csv"])
+    if up is not None:
+        return _read_csv_from_bytes(up.getvalue())
     candidates = [
         Path.cwd() / csv_name,
         Path(__file__).resolve().parent.parent / csv_name,
@@ -55,10 +64,7 @@ def load_df(csv_name: str) -> pd.DataFrame:
     for p in candidates:
         if p.exists():
             return _read_csv_from_path(str(p))
-    up = st.file_uploader(f"Upload {csv_name}", type=["csv"])
-    if up is None:
-        st.stop()
-    return _read_csv_from_bytes(up.getvalue())
+    st.stop()
 
 # 🔍 Player season files ONLY. The glob is deliberately *WORLDFULL.csv, not *.csv:
 # this page defaults to the NEWEST match, so a bare glob lets any other CSV sitting

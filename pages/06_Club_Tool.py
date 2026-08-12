@@ -74,8 +74,20 @@ def pick_or_upload_world_csv() -> Tuple[pd.DataFrame, str]:
     st.markdown("### 📁 Data Source")
     found = _find_all_csvs()
     labels = [p.name for p in found]
+
+    # Upload widget added 2026-08-12, matching the position pages. Despite this
+    # function's name, this page previously had NO uploader anywhere in its 2,443
+    # lines — _read_csv_from_bytes() was defined at the top but never called, so a
+    # missing or unsuitable file was a dead end (st.error then st.stop). Shown
+    # unconditionally and taking precedence, so an ad-hoc CSV can be loaded without
+    # dropping it into the repo root.
+    up = st.file_uploader("Or upload a CSV to use instead", type=["csv"],
+                          key="world_csv_upload")
+    if up is not None:
+        return _read_csv_from_bytes(up.getvalue()), up.name
+
     if not labels:
-        st.error("No CSV files found in the project folder.")
+        st.error("No CSV files found in the project folder, and nothing uploaded.")
         st.stop()
 
     sel = st.selectbox("Select dataset to load:", labels, index=0, key="world_csv_picker")
