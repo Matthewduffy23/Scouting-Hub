@@ -1,3 +1,5 @@
 photos/
 photo_id_cache.json
 download_photos.py
+photo_missing_ids.json
+__pycache__/
