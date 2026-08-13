@@ -11,7 +11,7 @@ For each player in WORLDplayers_updated.csv:
 5. Save to photos/{player}__{team}.png
 """
 
-import re, io, csv, sys, time, json, unicodedata
+import argparse, re, io, csv, sys, time, json, unicodedata
 from pathlib import Path
 from difflib import SequenceMatcher
 
@@ -30,8 +30,32 @@ except Exception:
 SCRIPT_DIR = Path(__file__).resolve().parent
 PHOTOS_DIR = Path(r"C:\Users\matth\OneDrive\Documents\GitHub\scouting-photos\photos")
 CACHE_FILE = SCRIPT_DIR / "photo_id_cache.json"
-CSV_FILE = SCRIPT_DIR / "WORLDplayers_updatedddALLAPR26.csv"
+# Separate from CACHE_FILE so the existing player|team -> id cache keeps its
+# shape and needs no migration. See load_missing().
+MISSING_FILE = SCRIPT_DIR / "photo_missing_ids.json"
 PHOTOS_DIR.mkdir(exist_ok=True)
+
+# ── Source data ───────────────────────────────────────────────────────────────
+# CHANGED 2026-08-12. This used to be a single hardcoded
+# CSV_FILE = SCRIPT_DIR / "WORLDplayers_updatedddALLAPR26.csv" — a file that has
+# since been deleted from this repo, so the script could not run at all. It now
+# reads season_manifest.json, the same file Railway's server.py uses to decide
+# which season is current, so it follows season transitions automatically.
+MANIFEST_FILE = SCRIPT_DIR / "season_manifest.json"
+
+# Which manifest keys to read, in order.
+#
+# "supplementary" IS included: it holds calendar-league players (Brazil,
+# Argentina, Japan, USA, Norway...) at their CURRENT clubs, which "current" does
+# not — 9,426 player+team combos that would otherwise have no photo under the
+# right team name.
+#
+# "previous" is deliberately EXCLUDED: those rows are players at clubs they have
+# since left, so every photo it adds is keyed to a stale team — 37,897 extra
+# combos, roughly 7.4 hours of FotMob calls, for images of old clubs. server.py's
+# find_photo_match() already falls back to a name-first match when a stored team
+# is stale, so old-team photos are not needed to cover that case either.
+SOURCE_KEYS = ("current", "supplementary")
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -71,6 +95,30 @@ def load_cache():
 
 def save_cache(cache):
     CACHE_FILE.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def load_missing():
+    """IDs confirmed to have NO image on FotMob's CDN.
+
+    Keyed by FotMob ID, not player|team: the absence is a property of the ID, and
+    the same ID can be reached from several player+team keys after a transfer.
+
+    Added 2026-08-12 after a scoped run logged 138 'errors' that were all the
+    same thing — HTTP 403 with an S3 <Code>AccessDenied</Code> body on the exact
+    image key. For a public bucket serving by exact key that means the object
+    does not exist (S3 masks missing-key as denied when the caller lacks
+    ListBucket). Those are permanent, so re-requesting them every run is pure
+    waste: ~1.1s each, and at full scale roughly 6,000 players."""
+    if MISSING_FILE.exists():
+        try:
+            return json.loads(MISSING_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {}
+
+
+def save_missing(missing):
+    MISSING_FILE.write_text(json.dumps(missing, ensure_ascii=False, indent=2), encoding="utf-8")
 
 # ── name parsing ──────────────────────────────────────────────────────────────
 
@@ -196,13 +244,28 @@ def search_fotmob(player_name: str, team_name: str) -> str:
 # ── photo download ────────────────────────────────────────────────────────────
 
 def download_photo(player, team, fotmob_id):
+    """Returns a status string rather than a bool, so the caller can tell a
+    permanent absence from a transient failure:
+
+      "ok"       saved
+      "no_image" the CDN has no object at this key — 403/404. Permanent, and
+                 recorded in the negative cache so it is never re-requested.
+      "error"    anything else (network, timeout, undecodable body). Worth
+                 retrying on a later run, so NOT cached.
+    """
     fname = PHOTOS_DIR / f"{safe_filename(player, team)}.png"
     if fname.exists():
-        return True
+        return "ok"
     try:
         r = requests.get(PHOTO_URL.format(fotmob_id), headers=HEADERS, timeout=10)
+
+        # 403 here is S3 masking a missing key as AccessDenied (the bucket is
+        # public per-key but denies ListBucket); 404 is the same outcome stated
+        # plainly. Either way the image does not exist and never will for this id.
+        if r.status_code in (403, 404):
+            return "no_image"
         if r.status_code != 200 or "image" not in r.headers.get("content-type", ""):
-            return False
+            return "error"
 
         img_bytes = r.content
         if REMBG_OK:
@@ -210,15 +273,41 @@ def download_photo(player, team, fotmob_id):
             except: pass
 
         Image.open(io.BytesIO(img_bytes)).convert("RGBA").save(fname, "PNG")
-        return True
+        return "ok"
     except Exception:
-        return False
+        return "error"
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    players = read_players()
+    ap = argparse.ArgumentParser(
+        description="Download player photos from FotMob for the current season's players.")
+    ap.add_argument("--league", type=str, default=None,
+                    help='Comma-separated league names to scope to, e.g. '
+                         '"Brazil 1.,Argentina 1." — trailing periods optional. '
+                         'Omit to process every league in the source files.')
+    ap.add_argument("--dry-run", action="store_true",
+                    help="Build the player list and report what WOULD be fetched, "
+                         "then exit without any FotMob calls or downloads.")
+    args = ap.parse_args()
+
+    players = read_players(args.league)
     cache   = load_cache()
+
+    if args.dry_run:
+        have = sum(1 for p, t in players
+                   if (PHOTOS_DIR / f"{safe_filename(p,t)}.png").exists())
+        cached = sum(1 for p, t in players if cache.get(f"{_norm(p)}|{_norm(t)}"))
+        print(f"\n🧪  DRY RUN — no FotMob calls made, nothing written.")
+        print(f"   players in scope    : {len(players):,}")
+        print(f"   photos already on disk: {have:,}")
+        print(f"   would be fetched    : {len(players) - have:,}")
+        print(f"   of those, ID cached : {cached:,}")
+        print(f"\n   sample of the list:")
+        for p, t in players[:8]:
+            mark = "have" if (PHOTOS_DIR / f"{safe_filename(p,t)}.png").exists() else "FETCH"
+            print(f"     [{mark:5}] {p}  —  {t}   ->  {safe_filename(p,t)}.png")
+        return
 
     already_cached = sum(
         1 for p, t in players
@@ -226,10 +315,12 @@ def main():
     )
     print(f"   {already_cached:,} photos already exist — will skip these\n")
 
-    downloaded = skipped = not_found = errors = 0
+    missing = load_missing()
+    downloaded = skipped = no_match = no_image = errors = cache_hits = 0
 
     print(f"📸  Processing {len(players):,} players…")
-    print(f"📁  Saving to: {PHOTOS_DIR}\n")
+    print(f"📁  Saving to: {PHOTOS_DIR}")
+    print(f"🚫  {len(missing):,} ids already known to have no image — will skip instantly\n")
 
     for i, (player, team) in enumerate(tqdm(players, desc="Players", unit="player")):
 
@@ -250,43 +341,108 @@ def main():
                 save_cache(cache)
 
         if not fotmob_id:
-            not_found += 1
+            no_match += 1
             continue
 
-        ok = download_photo(player, team, fotmob_id)
+        # Negative cache: this id was already confirmed to have no image. Skip
+        # before the request, which is the whole point — no HTTP, no sleep.
+        if fotmob_id in missing:
+            no_image += 1
+            cache_hits += 1
+            continue
+
+        result = download_photo(player, team, fotmob_id)
         time.sleep(DELAY_PHOTO)
 
-        if ok:
+        if result == "ok":
             downloaded += 1
+        elif result == "no_image":
+            no_image += 1
+            missing[fotmob_id] = f"403/404 {time.strftime('%Y-%m-%d')}"
+            if len(missing) % 25 == 0:
+                save_missing(missing)
         else:
             errors += 1
 
     save_cache(cache)
+    save_missing(missing)
 
     print(f"\n✅  Done!")
-    print(f"   Downloaded : {downloaded:,}")
-    print(f"   Skipped    : {skipped:,} (already existed)")
-    print(f"   Not found  : {not_found:,} (no FotMob match)")
-    print(f"   Errors     : {errors:,} (found but couldn't download)")
+    print(f"   Downloaded         : {downloaded:,}")
+    print(f"   Skipped            : {skipped:,} (photo already on disk)")
+    print(f"   No photo available : {no_image + no_match:,} "
+          f"({no_match:,} no FotMob match, {no_image:,} no image on FotMob)")
+    if cache_hits:
+        print(f"                        of which {cache_hits:,} skipped instantly "
+              f"via the negative cache")
+    print(f"   Errors             : {errors:,} (unexpected — network/decode, worth retrying)")
     print(f"\n👉  git add photos/ && git commit -m 'Add player photos' && git push")
 
 
-def read_players():
-    if not CSV_FILE.exists():
-        print(f"❌  {CSV_FILE.name} not found in {SCRIPT_DIR}")
+def _norm_league(s):
+    """Trailing-period-insensitive league key. The player CSVs use 'Brazil 1.'
+    while a --league argument may reasonably be typed either way."""
+    return _norm(s).rstrip(".").strip()
+
+
+def resolve_source_files():
+    """Season CSVs to read, resolved via season_manifest.json.
+
+    Fails loudly rather than guessing a filename — the previous hardcoded
+    CSV_FILE silently pointed at a file that had been deleted from this repo,
+    which is exactly the failure this replaces."""
+    if not MANIFEST_FILE.exists():
+        print(f"❌  {MANIFEST_FILE.name} not found in {SCRIPT_DIR}")
+        print("    It is generated by refresh_cycle.py's fast path and pushed here.")
         sys.exit(1)
-    print(f"📂  Reading {CSV_FILE.name}…")
-    rows = []
-    seen = set()
-    with open(CSV_FILE, newline="", encoding="utf-8-sig") as f:
-        for row in csv.DictReader(f):
-            player = (row.get("Player") or "").strip()
-            team   = (row.get("Team")   or "").strip()
-            if player and team:
-                key = f"{_norm(player)}|{_norm(team)}"
-                if key not in seen:
-                    seen.add(key)
-                    rows.append((player, team))
+
+    manifest = json.loads(MANIFEST_FILE.read_text(encoding="utf-8"))
+    files = []
+    for key in SOURCE_KEYS:
+        name = manifest.get(key)
+        if not name:
+            print(f"⚠️   manifest has no '{key}' entry — skipping")
+            continue
+        path = SCRIPT_DIR / name
+        if not path.exists():
+            print(f"⚠️   {name} ('{key}') is in the manifest but not on disk — skipping")
+            continue
+        files.append((key, path))
+
+    if not files:
+        print("❌  No usable season files resolved from the manifest. Nothing to do.")
+        sys.exit(1)
+    return files
+
+
+def read_players(league_filter=None):
+    wanted = None
+    if league_filter:
+        wanted = {_norm_league(x) for x in league_filter.split(",") if x.strip()}
+        print(f"🔎  Scoped to {len(wanted)} league(s): {', '.join(sorted(wanted))}")
+
+    rows, seen = [], set()
+    for key, path in resolve_source_files():
+        before = len(rows)
+        print(f"📂  Reading {path.name} ({key})…")
+        with open(path, newline="", encoding="utf-8-sig") as f:
+            for row in csv.DictReader(f):
+                player = (row.get("Player") or "").strip()
+                team   = (row.get("Team")   or "").strip()
+                if not player or not team:
+                    continue
+                if wanted is not None and _norm_league(row.get("League") or "") not in wanted:
+                    continue
+                key_pt = f"{_norm(player)}|{_norm(team)}"
+                if key_pt in seen:
+                    continue
+                seen.add(key_pt)
+                rows.append((player, team))
+        print(f"   +{len(rows) - before:,} new (running total {len(rows):,})")
+
+    if not rows:
+        print("❌  No player+team combos matched. Check the --league spelling.")
+        sys.exit(1)
     print(f"   {len(rows):,} unique player+team combos")
     return rows
 
