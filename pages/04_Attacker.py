@@ -575,7 +575,25 @@ with st.sidebar:
         st.session_state["att_preset_sig"] = preset_sig
         st.session_state[ms_key] = default_leagues
 
-    leagues_sel = st.multiselect(
+    # Drop any stored selection that isn't in the CURRENT options, before the
+    # widget renders. st.multiselect raises StreamlitAPIException if its default
+    # contains a value outside `options`.
+    #
+    # This became reachable when the upload widget landed: ms_key and preset_sig
+    # are both derived from `selected_file`, which used to identify the data
+    # completely — switching dataset via the dropdown produced a new key, so a
+    # stale selection could never survive. An uploaded file swaps the DATA while
+    # selected_file stays put, so the old selection persists into a dataset that
+    # may not contain those leagues (e.g. "Argentina 1." from a world file, then
+    # uploading a Brazil-only one).
+    _kept = [x for x in st.session_state.get(ms_key, default_leagues) if x in leagues_avail]
+    st.session_state[ms_key] = _kept if _kept else default_leagues
+
+    # multiselect_safe, not st.multiselect — this page defined the safe wrapper at
+    # :446 like every other position page, but was the only one not using it here.
+    # The wrapper clamps `default`; the session_state sanitise above covers the
+    # case where the stored value itself is stale, which `default` never sees.
+    leagues_sel = multiselect_safe(
         "Leagues (add or prune the presets)",
         options=leagues_avail,
         default=st.session_state[ms_key],
