@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from numpy.linalg import norm
+from season_utils import sort_by_season
 from numpy import exp
 import requests
 from difflib import SequenceMatcher
@@ -62,7 +63,9 @@ def _find_world_csvs() -> List[Path]:
         # beyond the repo root to anything CSV-shaped in a sibling/parent folder.
         files.extend(base.glob("*WORLDFULL.csv"))
     seen, uniq = set(), []
-    for p in sorted(files, key=lambda f: f.stat().st_mtime, reverse=True):
+    # Season parsed from the filename, not st_mtime — mtime is inverted here
+    # (see season_utils), which had this defaulting to the oldest season.
+    for p in sort_by_season(files):
         rp = p.resolve()
         if rp not in seen:
             seen.add(rp)

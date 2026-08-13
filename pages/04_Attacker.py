@@ -420,7 +420,12 @@ def load_df(csv_name: str) -> pd.DataFrame:
 # in the repo root (e.g. a WORLDTEAMS* team file) become the default and load
 # team-shaped data into a player page. Same fix already proven on Depth-Chart and
 # Team HQ. The old comment claimed "starting with WORLD*" but the code never did it.
-csv_files = sorted(Path.cwd().glob("*WORLDFULL.csv"), key=lambda f: f.stat().st_mtime, reverse=True)
+from season_utils import sort_by_season
+# Ordered by the season parsed from the FILENAME, not st_mtime. mtime was not just
+# unreliable here, it was inverted: split_seasons.py writes seasons newest-first and
+# copy2 preserves those timestamps, so 2026-27 had the OLDEST mtime and this page
+# defaulted to 2018-19.
+csv_files = sort_by_season(Path.cwd().glob("*WORLDFULL.csv"))
 csv_files = [f.name for f in csv_files]
 if not csv_files:
     st.error("No CSV files found in the project folder.")

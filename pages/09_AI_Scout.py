@@ -22,6 +22,7 @@ import pandas as pd
 import streamlit as st
 
 from pathlib import Path
+from season_utils import season_key
 from difflib import SequenceMatcher
 
 try:
@@ -1799,7 +1800,9 @@ with st.sidebar:
         # the repo entirely.
         glob.glob(str(Path.cwd() / "*WORLDFULL.csv")) +
         glob.glob(str(Path.cwd().parent / "*WORLDFULL.csv")),
-        key=lambda p: Path(p).stat().st_mtime,
+        # Season from the filename, not st_mtime — mtime is inverted here (see
+        # season_utils), which made the newest season sort last.
+        key=lambda p: season_key(Path(p).name),
         reverse=True
     )
     # deduplicate
@@ -1823,10 +1826,15 @@ with st.sidebar:
                                        accept_multiple_files=True)
     st.markdown("---")
 
+    # Was a bare alphabetical sort — the only selector on any page not using
+    # mtime, and equally wrong for the team naming pattern. season_key() reads
+    # the year out of WORLDTEAMS2026-27.csv as well as 2026-27WORLDFULL.csv.
     team_stat_candidates = sorted(
         glob.glob(str(Path.cwd() / "*team*stats*.csv")) +
         glob.glob(str(Path.cwd() / "*team*.csv")) +
-        glob.glob(str(Path.cwd().parent / "*team*stats*.csv"))
+        glob.glob(str(Path.cwd().parent / "*team*stats*.csv")),
+        key=lambda p: season_key(Path(p).name),
+        reverse=True
     )
     team_stat_labels = [Path(p).name for p in team_stat_candidates]
 

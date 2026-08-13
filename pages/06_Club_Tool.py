@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from numpy.linalg import norm
+from season_utils import sort_by_season
 from numpy import exp
 import requests
 from difflib import SequenceMatcher
@@ -61,7 +62,9 @@ def _find_all_csvs() -> List[Path]:
         # single PLAYER dataset (the page's INCLUDED_LEAGUES use player-side names).
         # The helper's "_find_all_csvs" name is a misnomer; a bare *.csv glob would
         # let a WORLDTEAMS* team file become the newest match and load as the default.
-        files.extend(sorted(base.glob("*WORLDFULL.csv"), key=lambda f: f.stat().st_mtime, reverse=True))
+        # Season parsed from the filename, not st_mtime — mtime is inverted here
+        # (see season_utils), which had this defaulting to the oldest season.
+        files.extend(sort_by_season(base.glob("*WORLDFULL.csv")))
     seen, uniq = set(), []
     for p in files:
         rp = p.resolve()
