@@ -2983,7 +2983,7 @@ plot_df = plot_df.sort_values(val_col, ascending=False).head(int(top_n)).reset_i
 # Option: highlight a single player (from current Top N)
 highlight_player = st.selectbox(
     "Highlight single player (from Top N)", ["(None)"] + plot_df["Player"].astype(str).tolist(),
-    index=0, key="lb_highlight_player"
+    index=0, key="cm_lb_highlight_player"
 )
 
 # --- Label helpers
@@ -3125,7 +3125,7 @@ st.subheader("🎯 Single Player Role Profile")
 
 # 1) Player picker (from df_f) + persist to session state
 player_name = st.selectbox("Choose player", sorted(df_f["Player"].dropna().unique()))
-st.session_state["selected_player"] = player_name  # <-- critical for downstream defaults
+st.session_state["cm_selected_player"] = player_name  # <-- critical for downstream defaults
 
 # 2) Pull the player's row and safe defaults used by other blocks
 player_row = df_f[df_f["Player"] == player_name].head(1)
@@ -3141,7 +3141,7 @@ else:
 
 # (Optional) small helper to fetch the current selected name downstream
 def _selected_name() -> str:
-    return st.session_state.get("selected_player", player_name)
+    return st.session_state.get("cm_selected_player", player_name)
 # ================= END TOP OF INDIVIDUAL PLAYER PROFILE =============
 
 
@@ -4656,13 +4656,13 @@ with st.expander("Scatter settings", expanded=False):
         "X-axis",
         [c for c in FEATURES if c in numeric_cols],
         index=(FEATURES.index(x_default) if x_default in FEATURES else 0),
-        key="sc_x",
+        key="cm_sc_x",
     )
     y_metric = st.selectbox(
         "Y-axis",
         [c for c in FEATURES if c in numeric_cols],
         index=(FEATURES.index(y_default) if y_default in FEATURES else 1),
-        key="sc_y",
+        key="cm_sc_y",
     )
 
     # Pool controls
@@ -4672,7 +4672,7 @@ with st.expander("Scatter settings", expanded=False):
         "League preset",
         ["Player's league", "Top 5 Europe", "Top 20 Europe", "EFL (England 2–4)", "Custom"],
         index=0,
-        key="sc_preset",
+        key="cm_sc_preset",
     )
     preset_map_sc = {
         "Player's league": {player_league} if player_league else set(),
@@ -4686,7 +4686,7 @@ with st.expander("Scatter settings", expanded=False):
     if not leagues_scatter and player_league:
         leagues_scatter = [player_league]
 
-    same_pos_scatter = st.checkbox("Limit pool to current position prefix", value=True, key="sc_pos")
+    same_pos_scatter = st.checkbox("Limit pool to current position prefix", value=True, key="cm_sc_pos")
 
     # Filters
     df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
@@ -4749,7 +4749,7 @@ with st.expander("Scatter settings", expanded=False):
         "Colour dots by metric (scaled within pool)",
         [c for c in FEATURES if c in numeric_cols],
         index=(FEATURES.index(x_default) if x_default in FEATURES else 0),
-        key="sc_colour_metric",
+        key="cm_sc_colour_metric",
     )
     palette_choice = st.selectbox("Palette", palette_options, index=default_palette_index, key="sc_palette")
     reverse_scale = st.checkbox("Reverse colours", value=False, key="sc_reverse")
@@ -5221,7 +5221,7 @@ with st.expander("Scatter settings", expanded=False):
         "League preset",
         ["Player's league", "Top 5 Europe", "Top 20 Europe", "EFL (England 2–4)", "Custom"],
         index=0,
-        key="fq_preset",
+        key="cm_fq_preset",
     )
 
     preset_map_sc = {
@@ -5702,7 +5702,7 @@ else:
         if not players_b:
             st.info("No comparison players available for the current universal position filter.")
         else:
-            pB_label = st.selectbox("Player B (blue)", players_b, index=0, key="radar_pb")
+            pB_label = st.selectbox("Player B (blue)", players_b, index=0, key="cm_radar_pb")
             _b_idx = _b_options.get(pB_label)
 
             if _b_idx is None:
@@ -5926,7 +5926,7 @@ with st.expander("Similarity settings", expanded=False):
         "Candidate league preset",
         sim_preset_choices,
         index=sim_preset_choices.index("All listed leagues"),
-        key="sim_preset"
+        key="cm_sim_preset"
     )
 
     # compute preset values; keep only leagues that exist in options
@@ -5936,15 +5936,15 @@ with st.expander("Similarity settings", expanded=False):
     # if preset changed, seed the selection once
     _last_key = "_last_sim_preset"
     if st.session_state.get(_last_key) != sim_preset:
-        st.session_state["sim_leagues"] = preset_vals if preset_vals else default_sel
+        st.session_state["cm_sim_leagues"] = preset_vals if preset_vals else default_sel
         st.session_state[_last_key] = sim_preset
 
     # ALWAYS editable multiselect (no disabled=…)
     sim_leagues = st.multiselect(
         "Candidate leagues",
         candidate_league_options,
-        default=st.session_state.get("sim_leagues", preset_vals if preset_vals else default_sel),
-        key="sim_leagues",
+        default=st.session_state.get("cm_sim_leagues", preset_vals if preset_vals else default_sel),
+        key="cm_sim_leagues",
     )
 
     if preset_vals_raw and not preset_vals:
@@ -6252,9 +6252,9 @@ else:
         target_options_cf = sorted(target_pool_cf['Player'].dropna().unique().tolist())
 
         # -------- SYNC THE SELECTED PLAYER INTO THIS WIDGET --------
-        # Keep a canonical "selected_player" around
-        st.session_state["selected_player"] = player_name
-        sp = st.session_state["selected_player"]
+        # Keep a canonical "cm_selected_player" around
+        st.session_state["cm_selected_player"] = player_name
+        sp = st.session_state["cm_selected_player"]
 
         # Make sure the selected player is present in options (even if filtered out)
         if sp and sp not in target_options_cf and sp in df['Player'].values:
@@ -6263,19 +6263,19 @@ else:
 
         # If widget holds a stale value or a different profile is selected, force it to the new one
         if (
-            "cf_target_player" not in st.session_state
-            or st.session_state["cf_target_player"] not in target_options_cf
-            or st.session_state.get("cf_bound_to") != sp
+            "cm_cf_target_player" not in st.session_state
+            or st.session_state["cm_cf_target_player"] not in target_options_cf
+            or st.session_state.get("cm_cf_bound_to") != sp
         ):
-            st.session_state["cf_target_player"] = sp if sp in target_options_cf else (target_options_cf[0] if target_options_cf else None)
-            st.session_state["cf_bound_to"] = sp  # remember which profile we synced from
+            st.session_state["cm_cf_target_player"] = sp if sp in target_options_cf else (target_options_cf[0] if target_options_cf else None)
+            st.session_state["cm_cf_bound_to"] = sp  # remember which profile we synced from
 
         # Now render the selectbox (it will show the synced value)
         target_player_cf = st.selectbox(
             "Target player",
             target_options_cf,
-            index=target_options_cf.index(st.session_state["cf_target_player"]) if target_options_cf and st.session_state["cf_target_player"] in target_options_cf else 0,
-            key="cf_target_player"
+            index=target_options_cf.index(st.session_state["cm_cf_target_player"]) if target_options_cf and st.session_state["cm_cf_target_player"] in target_options_cf else 0,
+            key="cm_cf_target_player"
         )
 
         # Filters
@@ -6309,7 +6309,7 @@ else:
         top_n_cf = st.number_input("Show top N teams", 5, 100, 20, 5, key="cf_topn")
 
     # -------------------- Compute --------------------
-    target_player_val = st.session_state.get("cf_target_player")
+    target_player_val = st.session_state.get("cm_cf_target_player")
     if target_player_val and (target_player_val in df['Player'].values):
         # Candidate player pool (universal position_filter)
         df_candidates_cf = df[df['League'].isin(leagues_selected_cf)].copy()

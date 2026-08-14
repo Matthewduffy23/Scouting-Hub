@@ -2445,7 +2445,7 @@ highlight_player = st.selectbox(
     "Highlight single player (from Top N)",
     ["(None)"] + plot_df["Player"].astype(str).tolist(),
     index=0,
-    key="lb_highlight_player",
+    key="gk_lb_highlight_player",
 )
 
 # --- Label helpers
@@ -2594,7 +2594,7 @@ player_name = st.selectbox(
     "Choose player",
     sorted(df_f["Player"].dropna().unique()),
 )
-st.session_state["selected_player"] = player_name  # <-- critical for downstream defaults
+st.session_state["gk_selected_player"] = player_name  # <-- critical for downstream defaults
 
 # 2) Pull the player's row and safe defaults used by other blocks
 player_row = df_f[df_f["Player"] == player_name].head(1)
@@ -2609,7 +2609,7 @@ else:
     default_league_for_pool = []
 
 def _selected_name() -> str:
-    return st.session_state.get("selected_player", player_name)
+    return st.session_state.get("gk_selected_player", player_name)
 
 # derive defaults from selected player (to propagate)
 default_pos_prefix = str(player_row["Position"].iloc[0])[:2] if not player_row.empty else "GK"
@@ -4360,13 +4360,13 @@ with st.expander("Scatter settings", expanded=False):
         "X-axis",
         [c for c in FEATURES if c in numeric_cols],
         index=(FEATURES.index(x_default) if x_default in FEATURES else 0),
-        key="sc_x",
+        key="gk_sc_x",
     )
     y_metric = st.selectbox(
         "Y-axis",
         [c for c in FEATURES if c in numeric_cols],
         index=(FEATURES.index(y_default) if y_default in FEATURES else 1),
-        key="sc_y",
+        key="gk_sc_y",
     )
 
     # Pool controls
@@ -4376,7 +4376,7 @@ with st.expander("Scatter settings", expanded=False):
         "League preset",
         ["Player's league", "Top 5 Europe", "Top 20 Europe", "EFL (England 2–4)", "Custom"],
         index=0,
-        key="sc_preset",
+        key="gk_sc_preset",
     )
     preset_map_sc = {
         "Player's league": {player_league} if player_league else set(),
@@ -4390,7 +4390,7 @@ with st.expander("Scatter settings", expanded=False):
     if not leagues_scatter and player_league:
         leagues_scatter = [player_league]
 
-    same_pos_scatter = st.checkbox("Limit pool to current position prefix", value=True, key="sc_pos")
+    same_pos_scatter = st.checkbox("Limit pool to current position prefix", value=True, key="gk_sc_pos")
 
     # Filters
     df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
@@ -4453,7 +4453,7 @@ with st.expander("Scatter settings", expanded=False):
         "Colour dots by metric (scaled within pool)",
         [c for c in FEATURES if c in numeric_cols],
         index=(FEATURES.index(x_default) if x_default in FEATURES else 0),
-        key="sc_colour_metric",
+        key="gk_sc_colour_metric",
     )
     palette_choice = st.selectbox("Palette", palette_options, index=default_palette_index, key="sc_palette")
     reverse_scale = st.checkbox("Reverse colours", value=False, key="sc_reverse")
@@ -5005,7 +5005,7 @@ else:
         if not players_b:
             st.info("No comparison players available for the current universal position filter.")
         else:
-            pB_label = st.selectbox("Player B (blue)", players_b, index=0, key="radar_pb")
+            pB_label = st.selectbox("Player B (blue)", players_b, index=0, key="gk_radar_pb")
             _b_idx = _b_options.get(pB_label)
 
             if _b_idx is None:

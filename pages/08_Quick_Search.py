@@ -683,7 +683,7 @@ POS_GROUPS = {
     "Attackers (W/AM)": ["RW", "RWF", "LW", "LWF", "AMF", "RAMF", "LAMF"],
 }
 
-def _pos_token(p: str) -> str:
+def _pos_token_raw(p: str) -> str:
     s = str(p or "").strip().upper()
     toks = [t for t in re.split(r"[,/;]\s*|\s+", s) if t]
     return toks[0] if toks else ""
@@ -863,7 +863,7 @@ min_mins_onepager = st.slider("Min minutes (one-pager)", 0, 6000, 600, 50)
 
 df_view = df.copy()
 if "Position" in df_view.columns:
-    df_view["_pos_tok"] = df_view["Position"].apply(_pos_token)
+    df_view["_pos_tok"] = df_view["Position"].apply(_pos_token_raw)
     df_view = df_view[df_view["_pos_tok"].isin(pos_prefixes)].copy()
 
 # ✅ NEW: apply minutes filter to the dropdown pool
@@ -893,7 +893,7 @@ player_name = str(ply.get("Player", "—"))
 team = str(ply.get("Team", "?"))
 league = str(ply.get("League", "?"))
 pos = str(ply.get("Position", "?"))
-pos_tok = _pos_token(pos)
+pos_tok = _pos_token_raw(pos)
 
 # -------------------- Normalise position token for TOP label --------------------
 POS_LABEL_MAP = {
@@ -928,7 +928,7 @@ if "League" in ref_df.columns:
     ref_df = ref_df[ref_df["League"].astype(str) == str(league)].copy()
 
 if "Position" in ref_df.columns:
-    ref_df["_pos_tok"] = ref_df["Position"].apply(_pos_token)
+    ref_df["_pos_tok"] = ref_df["Position"].apply(_pos_token_raw)
     if role_key == "CF":
         allowed = {"CF"}
     elif role_key == "CB":
@@ -1586,7 +1586,7 @@ def _is_http_url(u: str) -> bool:
     u = (u or "").strip()
     return u.startswith("http://") or u.startswith("https://")
 
-def _pos_token(position_str: str) -> str:
+def _pos_token_html(position_str: str) -> str:
     s = _strip_tags(position_str)
     if not s:
         return ""
@@ -2337,7 +2337,7 @@ else:
     df_base["_birth_country"] = ""
 
 if "Position" in df_base.columns:
-    df_base["_pos_tok"] = df_base["Position"].apply(_pos_token)
+    df_base["_pos_tok"] = df_base["Position"].apply(_pos_token_html)
 else:
     df_base["_pos_tok"] = ""
 
