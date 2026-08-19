@@ -4750,6 +4750,561 @@ else:
 
 
 
+# ============================== SCATTERPLOT — FIXED layout + smart non-overlap labels ==============================
+st.markdown("---")
+st.header("📈 Scatterplot")
+
+from matplotlib.ticker import MultipleLocator, FormatStrFormatter
+
+with st.expander("Scatter settings", expanded=False):
+    numeric_cols = df.select_dtypes(include="number").columns.tolist()
+
+    x_default, y_default = "xA per 90", "Defensive duels won, %"
+    x_metric = st.selectbox(
+        "X-axis",
+        [c for c in FEATURES if c in numeric_cols],
+        index=(FEATURES.index(x_default) if x_default in FEATURES else 0),
+        key="fb_sc_x",
+    )
+    y_metric = st.selectbox(
+        "Y-axis",
+        [c for c in FEATURES if c in numeric_cols],
+        index=(FEATURES.index(y_default) if y_default in FEATURES else 1),
+        key="fb_sc_y",
+    )
+
+    # Pool controls
+    leagues_available_sc = sorted(df["League"].dropna().unique().tolist())
+    player_league = player_row.iloc[0]["League"] if not player_row.empty else None
+    preset_sc = st.selectbox(
+        "League preset",
+        ["Player's league", "Top 5 Europe", "Top 20 Europe", "EFL (England 2–4)", "Custom"],
+        index=0,
+        key="fb_sc_preset",
+    )
+    preset_map_sc = {
+        "Player's league": {player_league} if player_league else set(),
+        "Top 5 Europe": set(PRESET_LEAGUES.get("Top 5 Europe", [])),
+        "Top 20 Europe": set(PRESET_LEAGUES.get("Top 20 Europe", [])),
+        "EFL (England 2–4)": set(PRESET_LEAGUES.get("EFL (England 2–4)", [])),
+        "Custom": set(),
+    }
+    add_leagues_sc = st.multiselect("Add leagues", leagues_available_sc, default=[], key="sc_add_leagues")
+    leagues_scatter = sorted(preset_map_sc.get(preset_sc, set()) | set(add_leagues_sc))
+    if not leagues_scatter and player_league:
+        leagues_scatter = [player_league]
+
+    same_pos_scatter = st.checkbox("Limit pool to current position prefix", value=True, key="fb_sc_pos")
+
+    # Filters
+    df["Minutes played"] = pd.to_numeric(df["Minutes played"], errors="coerce")
+    df["Age"] = pd.to_numeric(df["Age"], errors="coerce")
+
+    min_minutes_s, max_minutes_s = st.slider("Minutes filter", 0, 5000, (500, 5000), key="sc_min")
+    age_min_bound = int(np.nanmin(df["Age"])) if df["Age"].notna().any() else 14
+    age_max_bound = int(np.nanmax(df["Age"])) if df["Age"].notna().any() else 45
+    min_age_s, max_age_s = st.slider("Age filter", age_min_bound, age_max_bound, (16, 40), key="sc_age")
+    min_strength_s, max_strength_s = st.slider("League quality (strength)", 0, 101, (0, 101), key="sc_ls")
+
+    # Selected player & labels
+    include_selected = st.toggle("Include selected player", value=True, key="sc_include")
+    show_labels = st.toggle("Show player labels", value=True, key="sc_labels_all")
+    show_sel_label = st.toggle("Always label selected player", value=True, key="sc_sel_label")
+    label_only_u23 = st.checkbox("Label only U23 players", value=False, key="sc_lbl_u23")
+    allow_overlap = st.toggle("Allow overlapping labels (not recommended)", value=False, key="sc_overlap")
+    label_size = st.slider("Label size", 8, 20, 13, 1, key="sc_lbl_sz")
+
+    # Visual aids
+    show_medians = st.checkbox("Show median reference lines", value=True, key="sc_medians")
+    shade_iqr = st.checkbox("Shade interquartile range (25–75%)", value=True, key="sc_iqr")
+
+    # Points
+    point_alpha = st.slider("Point opacity", 0.2, 1.0, 0.92, 0.02, key="sc_alpha")
+    point_size = st.slider("Point size", 24, 300, 250, 2, key="sc_pts")
+    marker = st.selectbox("Marker", ["o", "s", "^", "D"], index=0, key="sc_marker")
+
+    # Team highlight
+    teams_available_hl = sorted(df[df["League"].isin(leagues_scatter)]["Team"].dropna().unique().tolist())
+    team_highlight = st.selectbox(
+        "Highlight team (within selected leagues)", ["(None)"] + teams_available_hl, index=0, key="sc_team_hl"
+    )
+
+    # Ticks
+    tick_mode = st.selectbox(
+        "Tick spacing", ["Auto (recommended)", "0.05", "0.1", "0.2", "0.5", "1.0"], index=0, key="sc_tick_mode"
+    )
+
+    # Theme
+    theme = st.radio("Theme", ["Light", "Dark"], index=0, horizontal=True, key="sc_theme")
+    PAGE_BG = "#ebebeb" if theme == "Light" else "#0a0f1c"
+    PLOT_BG = "#f3f3f3" if theme == "Light" else "#0f151f"
+    GRID_MAJ = "#d7d7d7" if theme == "Light" else "#3a4050"
+    txt_col = "#111111" if theme == "Light" else "#f5f5f5"
+
+    # Colour mapping
+    palette_options = [
+        "Red–Gold–Green (diverging)",
+        "Light-grey → Black",
+        "Light-Red → Dark-Red",
+        "Light-Blue → Dark-Blue",
+        "Light-Green → Dark-Green",
+        "Purple ↔ Gold (diverging)",
+        "All White",
+        "All Black",
+    ]
+    default_palette_index = palette_options.index("All Black")
+    colour_metric = st.selectbox(
+        "Colour dots by metric (scaled within pool)",
+        [c for c in FEATURES if c in numeric_cols],
+        index=(FEATURES.index(x_default) if x_default in FEATURES else 0),
+        key="fb_sc_colour_metric",
+    )
+    palette_choice = st.selectbox("Palette", palette_options, index=default_palette_index, key="sc_palette")
+    reverse_scale = st.checkbox("Reverse colours", value=False, key="sc_reverse")
+
+    # Canvas & top gap & title
+    canvas_preset = st.selectbox("Canvas size (px)", ["1280×720", "1600×900", "1920×820", "1920×1080"], index=1)
+    w_px, h_px = map(int, canvas_preset.replace("×", "x").replace(" ", "").split("x"))
+
+    show_title = st.checkbox("Show custom title", value=False, key="sc_show_title")
+    custom_title = st.text_input("Custom title", "xA per 90 vs Defensive duels won, %", key="sc_title")
+
+    top_gap_px = st.slider("Top blank gap (px)", 0, 240, 100, 5, key="sc_topgap_slider")
+    if show_title:
+        top_gap_px = 75  # keep your behaviour
+
+    render_exact = st.checkbox("Render exact pixels (PNG)", value=True)
+
+    # ---- Build pool ----
+    try:
+        pool_sc = df[df["League"].isin(leagues_scatter)].copy()
+        if same_pos_scatter and not player_row.empty:
+            pool_sc = pool_sc[pool_sc["Position"].astype(str).apply(position_filter)]
+
+        pool_sc["Minutes played"] = pd.to_numeric(pool_sc["Minutes played"], errors="coerce")
+        pool_sc["Age"] = pd.to_numeric(pool_sc["Age"], errors="coerce")
+        pool_sc = pool_sc[pool_sc["Minutes played"].between(min_minutes_s, max_minutes_s)]
+        pool_sc = pool_sc[pool_sc["Age"].between(min_age_s, max_age_s)]
+        pool_sc["League Strength"] = pool_sc["League"].map(LEAGUE_STRENGTHS).fillna(0.0)
+        pool_sc = pool_sc[
+            (pool_sc["League Strength"] >= float(min_strength_s)) & (pool_sc["League Strength"] <= float(max_strength_s))
+        ]
+
+        if x_metric not in pool_sc.columns or y_metric not in pool_sc.columns or colour_metric not in pool_sc.columns:
+            st.info("Selected axis/colour metrics are missing from the dataset.")
+        else:
+            for m in [x_metric, y_metric, colour_metric]:
+                pool_sc[m] = pd.to_numeric(pool_sc[m], errors="coerce")
+            pool_sc = pool_sc.dropna(subset=[x_metric, y_metric, colour_metric, "Player", "Team", "League"])
+
+            selected_player_name = player_row.iloc[0]["Player"] if not player_row.empty else None
+            if not include_selected and selected_player_name is not None:
+                pool_sc = pool_sc[pool_sc["Player"] != selected_player_name]
+            elif include_selected and selected_player_name is not None and not (pool_sc["Player"] == selected_player_name).any():
+                ins = df[df["Player"] == selected_player_name].head(1).copy()
+                for m in [x_metric, y_metric, colour_metric]:
+                    ins[m] = pd.to_numeric(ins[m], errors="coerce")
+                ins["League Strength"] = ins["League"].map(LEAGUE_STRENGTHS).fillna(0.0)
+                pool_sc = pd.concat([pool_sc, ins], ignore_index=True, sort=False)
+
+            import matplotlib as mpl, numpy as np, pandas as pd
+            import matplotlib.pyplot as plt
+            from matplotlib import patheffects as pe
+
+            if pool_sc.empty:
+                st.info("No players in scatter pool after filters.")
+            else:
+                mpl.rcParams.update({
+                    "figure.dpi": 100,
+                    "savefig.dpi": 100,  # IMPORTANT: keep exact pixel export stable
+                    "font.size": 12,
+                    "axes.labelsize": 12,
+                    "xtick.labelsize": 11,
+                    "ytick.labelsize": 11,
+                    "axes.spines.right": False,
+                    "axes.spines.top": False,
+                    "text.antialiased": True,
+                })
+
+                # =================== helpers (FIX) ===================
+                import math
+
+                def nice_step(vmin, vmax, target_ticks=6):
+                    span = abs(vmax - vmin)
+                    if span <= 0 or not math.isfinite(span):
+                        return 1.0
+                    raw = span / max(target_ticks, 2)
+                    power = 10 ** math.floor(math.log10(raw))
+                    mult = raw / power
+                    if mult <= 1:
+                        k = 1
+                    elif mult <= 2:
+                        k = 2
+                    elif mult <= 2.5:
+                        k = 2.5
+                    elif mult <= 5:
+                        k = 5
+                    else:
+                        k = 10
+                    return k * power
+
+                def padded_limits(arr, pad_frac=0.06, headroom=0.03):
+                    a_min, a_max = float(np.nanmin(arr)), float(np.nanmax(arr))
+                    if a_min == a_max:
+                        a_min -= 1e-6
+                        a_max += 1e-6
+                    span = (a_max - a_min)
+                    pad = span * pad_frac
+                    return a_min - pad, a_max + pad + span * headroom
+
+                def interp(a, b, u):
+                    a = np.array(a, dtype=float); b = np.array(b, dtype=float)
+                    return (a + (b - a) * np.clip(u, 0, 1)) / 255.0
+
+                def map_colour_values(cvals, palette_choice, reverse_scale):
+                    cmin, cmax = float(np.nanmin(cvals)), float(np.nanmax(cvals))
+                    if cmin == cmax:
+                        cmax = cmin + 1e-6
+                    t = (cvals - cmin) / (cmax - cmin)
+                    if reverse_scale:
+                        t = 1.0 - t
+
+                    if palette_choice == "Red–Gold–Green (diverging)":
+                        def map_col(v):
+                            red, gold, green = [199, 54, 60], [240, 197, 106], [61, 166, 91]
+                            return interp(red, gold, v/0.5) if v <= 0.5 else interp(gold, green, (v-0.5)/0.5)
+                    elif palette_choice == "Light-grey → Black":
+                        def map_col(v): return interp([210, 214, 220], [20, 23, 31], v)
+                    elif palette_choice == "Light-Red → Dark-Red":
+                        def map_col(v): return interp([252, 190, 190], [139, 0, 0], v)
+                    elif palette_choice == "Light-Blue → Dark-Blue":
+                        def map_col(v): return interp([191, 210, 255], [10, 42, 102], v)
+                    elif palette_choice == "Light-Green → Dark-Green":
+                        def map_col(v): return interp([196, 235, 203], [12, 92, 48], v)
+                    elif palette_choice == "Purple ↔ Gold (diverging)":
+                        def map_col(v):
+                            purple, mid, gold = [96, 55, 140], [180, 150, 210], [240, 197, 106]
+                            return interp(purple, mid, v/0.5) if v <= 0.5 else interp(mid, gold, (v-0.5)/0.5)
+                    elif palette_choice == "All White":
+                        def map_col(v): return np.array([255, 255, 255]) / 255.0
+                    else:  # All Black
+                        def map_col(v): return np.array([0, 0, 0]) / 255.0
+
+                    cols = np.vstack([map_col(v) for v in t])
+                    return [tuple(c) for c in cols]
+
+                # Smart non-overlap labeler in DISPLAY coords (prevents layout/format changes)
+                def place_labels_nonoverlap(
+                    fig, ax, df_points, xcol, ycol,
+                    txt_color, label_size,
+                    stroke_color, allow_overlap=False,
+                    max_labels=60,
+                    always_label_names=None,
+                ):
+                    """
+                    Places as many labels as possible without overlap using pixel-space bbox checks.
+                    Does NOT change axis limits or figure bbox, so formatting stays stable.
+                    """
+                    if df_points.empty:
+                        return
+
+                    always_label_names = set(always_label_names or [])
+
+                    # Candidate priority: extremes + outliers tend to be most informative.
+                    x = df_points[xcol].to_numpy(float)
+                    y = df_points[ycol].to_numpy(float)
+                    xz = (x - np.nanmean(x)) / (np.nanstd(x) + 1e-9)
+                    yz = (y - np.nanmean(y)) / (np.nanstd(y) + 1e-9)
+                    prio = (np.abs(xz) + np.abs(yz))  # simple, stable
+
+                    cand = df_points.copy()
+                    cand["_prio"] = prio
+                    # force always-labels to top
+                    cand["_force"] = cand["Player"].astype(str).isin(always_label_names).astype(int)
+                    cand = cand.sort_values(["_force", "_prio"], ascending=[False, False])
+
+                    # Offsets to try (in points)
+                    offsets = [(10, 12), (10, -14), (-10, 12), (-10, -14), (14, 0), (-14, 0), (0, 14), (0, -14)]
+
+                    placed_bboxes = []
+                    placed = 0
+
+                    # Need a renderer for accurate bboxes
+                    fig.canvas.draw()
+                    renderer = fig.canvas.get_renderer()
+                    ax_bbox = ax.get_window_extent(renderer=renderer)
+
+                    for _, r in cand.iterrows():
+                        if not allow_overlap and placed >= max_labels and r["_force"] == 0:
+                            continue  # hard cap but still allow forced labels
+
+                        px, py = float(r[xcol]), float(r[ycol])
+                        name = str(r["Player"])
+
+                        # Try multiple offsets; pick first that fits
+                        best_artist = None
+                        for dx, dy in offsets:
+                            artist = ax.annotate(
+                                name,
+                                (px, py),
+                                xytext=(dx, dy),
+                                textcoords="offset points",
+                                fontsize=label_size,
+                                fontweight="semibold",
+                                color=txt_color,
+                                ha="left" if dx >= 0 else "right",
+                                va="bottom" if dy >= 0 else "top",
+                                zorder=6,
+                            )
+                            artist.set_path_effects([
+                                pe.withStroke(linewidth=2.0, foreground=stroke_color, alpha=0.9)
+                            ])
+
+                            fig.canvas.draw()
+                            bb = artist.get_window_extent(renderer=renderer).expanded(1.02, 1.10)
+
+                            # Keep labels inside axes area (or mostly inside)
+                            if not ax_bbox.contains(bb.x0, bb.y0) or not ax_bbox.contains(bb.x1, bb.y1):
+                                artist.remove()
+                                continue
+
+                            # Overlap check
+                            if (not allow_overlap) and any(bb.overlaps(pbb) for pbb in placed_bboxes):
+                                artist.remove()
+                                continue
+
+                            best_artist = artist
+                            placed_bboxes.append(bb)
+                            placed += 1
+                            break
+
+                        # If we couldn't place it and it's forced, allow overlap as last resort
+                        if best_artist is None and r["_force"] == 1:
+                            dx, dy = offsets[0]
+                            artist = ax.annotate(
+                                name, (px, py),
+                                xytext=(dx, dy), textcoords="offset points",
+                                fontsize=label_size, fontweight="semibold",
+                                color=txt_color, ha="left", va="bottom", zorder=6
+                            )
+                            artist.set_path_effects([
+                                pe.withStroke(linewidth=2.0, foreground=stroke_color, alpha=0.9)
+                            ])
+                            fig.canvas.draw()
+                            bb = artist.get_window_extent(renderer=renderer).expanded(1.02, 1.10)
+                            placed_bboxes.append(bb)
+                            placed += 1
+
+                # =================== Figure ===================
+                fig, ax = plt.subplots(figsize=(w_px / 100, h_px / 100), dpi=100)
+                fig.patch.set_facecolor(PAGE_BG)
+                ax.set_facecolor(PLOT_BG)
+
+                x_vals = pool_sc[x_metric].to_numpy(float)
+                y_vals = pool_sc[y_metric].to_numpy(float)
+
+                xlim = padded_limits(x_vals)
+                ylim = padded_limits(y_vals)
+                ax.set_xlim(*xlim)
+                ax.set_ylim(*ylim)
+
+                # ---- Colour mapping ----
+                cvals = pool_sc[colour_metric].to_numpy(float)
+                cols = map_colour_values(cvals, palette_choice, reverse_scale)
+                color_series = pd.Series(cols, index=pool_sc.index)
+
+                # Split selected
+                sel_name = player_row.iloc[0]["Player"] if (include_selected and not player_row.empty) else None
+                if sel_name:
+                    others = pool_sc[pool_sc["Player"] != sel_name]
+                    sel = pool_sc[pool_sc["Player"] == sel_name]
+                else:
+                    others = pool_sc
+                    sel = pool_sc.iloc[0:0]
+
+                # ---------- Points ----------
+                ax.scatter(
+                    others[x_metric], others[y_metric],
+                    s=point_size,
+                    c=list(color_series.loc[others.index]),
+                    alpha=float(point_alpha),
+                    edgecolors="none",
+                    linewidths=0.0,
+                    marker=marker,
+                    zorder=2
+                )
+
+                if not sel.empty:
+                    ax.scatter(
+                        sel[x_metric], sel[y_metric],
+                        s=point_size,
+                        c="#C81E1E",
+                        edgecolors="white",
+                        linewidths=1.8,
+                        marker=marker,
+                        zorder=4
+                    )
+
+                # Highlight team overlay
+                if team_highlight != "(None)":
+                    hl = pool_sc[pool_sc["Team"] == team_highlight]
+                    if not hl.empty:
+                        ax.scatter(
+                            hl[x_metric], hl[y_metric],
+                            s=point_size,
+                            c="#f59e0b",
+                            alpha=1.0,
+                            edgecolors="white",
+                            linewidths=1.6,
+                            marker=marker,
+                            zorder=5
+                        )
+
+                # IQR & medians
+                if shade_iqr:
+                    x_q1, x_q3 = np.nanpercentile(x_vals, [25, 75])
+                    y_q1, y_q3 = np.nanpercentile(y_vals, [25, 75])
+                    ax.axvspan(x_q1, x_q3, color="#cfd3da" if theme == "Light" else "#9aa4b1", alpha=0.25, zorder=1)
+                    ax.axhspan(y_q1, y_q3, color="#cfd3da" if theme == "Light" else "#9aa4b1", alpha=0.25, zorder=1)
+
+                if show_medians:
+                    med_x = float(np.nanmedian(x_vals))
+                    med_y = float(np.nanmedian(y_vals))
+                    med_col = "#000000" if theme == "Light" else "#ffffff"
+                    ax.axvline(med_x, color=med_col, ls=(0, (4, 4)), lw=2.2, zorder=3)
+                    ax.axhline(med_y, color=med_col, ls=(0, (4, 4)), lw=2.2, zorder=3)
+
+                # ---------- Axes & grid ----------
+                ax.set_xlabel(x_metric, fontsize=14, fontweight="semibold", color=txt_col)
+                ax.set_ylabel(y_metric, fontsize=14, fontweight="semibold", color=txt_col)
+
+                # Denser auto ticks (≈2×)
+                if tick_mode.startswith("Auto"):
+                    step_x = nice_step(*xlim, target_ticks=12)
+                    step_y = nice_step(*ylim, target_ticks=12)
+                else:
+                    step_x = step_y = float(tick_mode)
+
+                ax.xaxis.set_major_locator(MultipleLocator(base=step_x))
+                ax.yaxis.set_major_locator(MultipleLocator(base=step_y))
+
+                def decimals(step):
+                    if step >= 1: return 0
+                    if step >= 0.1: return 1
+                    if step >= 0.01: return 2
+                    return 3
+
+                ax.xaxis.set_major_formatter(FormatStrFormatter(f"%.{decimals(step_x)}f"))
+                ax.yaxis.set_major_formatter(FormatStrFormatter(f"%.{decimals(step_y)}f"))
+                ax.minorticks_off()
+
+                for tick in ax.get_xticklabels() + ax.get_yticklabels():
+                    tick.set_fontweight("semibold")
+                    tick.set_color(txt_col)
+
+                ax.grid(True, which="major", linewidth=0.9, color=GRID_MAJ)
+                for s in ax.spines.values():
+                    s.set_linewidth(0.9)
+                    s.set_color("#9ca3af" if theme == "Light" else "#6b7280")
+
+                # ===== fixed top gap (layout stays identical regardless of labels) =====
+                top_frac = 1.0 - (top_gap_px / float(h_px))
+                fig.subplots_adjust(left=0.075, right=0.985, bottom=0.105, top=top_frac)
+
+                # Optional title in the gap (doesn't affect bbox/export size)
+                if show_title and custom_title.strip():
+                    title_col = "#111111" if theme == "Light" else "#f5f5f5"
+                    y_gap_pos = top_frac + (1 - top_frac) * 0.44
+                    fig.text(
+                        0.5, y_gap_pos, custom_title.strip(),
+                        ha="center", va="center",
+                        color=title_col, fontsize=26, fontweight="semibold"
+                    )
+
+                # ---------- Labels ----------
+                stroke = "#ffffff" if theme == "Light" else "#1e293b"
+
+                # (A) Selected player label (even when show_labels is OFF)
+                if show_sel_label and (not sel.empty) and sel_name:
+                    sx = float(sel.iloc[0][x_metric])
+                    sy = float(sel.iloc[0][y_metric])
+
+                    tsel = ax.annotate(
+                        str(sel_name),
+                        (sx, sy),
+                        xytext=(10, 12),
+                        textcoords="offset points",
+                        fontsize=label_size,
+                        fontweight="semibold",
+                        color=txt_col,
+                        ha="left",
+                        va="bottom",
+                        zorder=7,
+                    )
+                    tsel.set_path_effects([pe.withStroke(linewidth=2.0, foreground=stroke, alpha=0.9)])
+
+                # (B) Pool labels only when show_labels is ON
+                if show_labels:
+                    candidates = others.copy()
+                    if label_only_u23:
+                        candidates = candidates[pd.to_numeric(candidates["Age"], errors="coerce") < 23]
+
+                    # Dynamic cap based on canvas size
+                    approx_cap = int((w_px * h_px) / 45000)
+                    approx_cap = max(18, min(90, approx_cap))
+
+                    force_names = []
+                    # If you want selected player to be forced when pool labels are on too:
+                    if (not sel.empty) and sel_name:
+                        force_names.append(str(sel_name))
+
+                    # Force-highlighted team (optional)
+                    if team_highlight != "(None)":
+                        force_names += candidates[candidates["Team"] == team_highlight]["Player"].astype(str).tolist()
+
+                    # IMPORTANT: exclude selected from candidates to avoid double-label
+                    cand_all = candidates.copy()
+
+                    place_labels_nonoverlap(
+                        fig, ax,
+                        cand_all,
+                        x_metric, y_metric,
+                        txt_color=txt_col,
+                        label_size=label_size,
+                        stroke_color=stroke,
+                        allow_overlap=allow_overlap,
+                        max_labels=approx_cap,
+                        always_label_names=force_names,
+                    )
+
+
+                # ---------- Render ----------
+                if render_exact:
+                    # CRITICAL FIX: DO NOT use bbox_inches="tight" (it changes formatting when many labels exist)
+                    from io import BytesIO
+                    buf = BytesIO()
+                    fig.savefig(
+                        buf,
+                        format="png",
+                        dpi=100,
+                        facecolor=fig.get_facecolor(),
+                        bbox_inches=None,
+                        pad_inches=0
+                    )
+                    buf.seek(0)
+                    st.image(buf, width=w_px)
+                else:
+                    st.pyplot(fig, width="content")
+                png_download_button(fig, "scatterplot_fullbacks.png", key="dl_scatter_fullbacks")
+
+    except Exception as e:
+        st.info(f"Scatter could not be drawn: {e}")
+# ==============================================================================================================
+
+
+
+
+
 
 # ============================== FEATURE Q — CB ARCHETYPE SCATTER ==============================
 from scipy.stats import rankdata
@@ -5127,8 +5682,7 @@ if render_exact:
 else:
     st.pyplot(fig)
 
-# This page has no standalone Scatterplot section — the archetype map is its scatter.
-png_download_button(fig, "scatterplot_fullbacks.png", key="dl_scatter_fullbacks")
+png_download_button(fig, "fb_archetype_map.png", key="dl_featureq_fullbacks")
 
 plt.close(fig)
 # ============================== END FEATURE Q ============================================================
