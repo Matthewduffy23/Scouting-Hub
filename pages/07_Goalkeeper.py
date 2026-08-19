@@ -14,6 +14,7 @@ import matplotlib  # 👈 added
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Circle, Wedge
 from photo_utils import get_player_photo_url, load_player_photo_cached, get_player_photo_pil
+from chart_export import png_download_button
 
 # 👇 use a font that actually exists in Matplotlib's default install
 matplotlib.rcParams["font.family"] = "DejaVu Sans"
@@ -2583,6 +2584,7 @@ for rect, v in zip(bars, vals):
     )
 
 st.pyplot(fig, width="stretch")
+png_download_button(fig, "leaderboard_goalkeepers.png", key="dl_leaderboard_goalkeepers")
 # ----------------- END LEADERBOARD -----------------
 
 
@@ -4891,6 +4893,7 @@ with st.expander("Scatter settings", expanded=False):
                     st.image(buf, width=w_px)
                 else:
                     st.pyplot(fig, width="content")
+                png_download_button(fig, "scatterplot_goalkeepers.png", key="dl_scatter_goalkeepers")
 
     except Exception as e:
         st.info(f"Scatter could not be drawn: {e}")
@@ -5175,6 +5178,7 @@ else:
                             "Any metric in `INVERSE_METRICS` (e.g. `Conceded goals per 90`) has its percentile inverted so lower raw values = higher radar score."
                         )
                         st.pyplot(fig_r, width="stretch")
+                        png_download_button(fig_r, "comparison_radar_goalkeepers.png", key="dl_radar_goalkeepers")
 # ----------------- END Radar -----------------
 
 

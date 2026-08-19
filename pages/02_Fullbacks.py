@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Circle, Wedge
 from photo_utils import get_player_photo_url, load_player_photo_cached, get_player_photo_pil
+from chart_export import png_download_button
 
 
 # ---- Optional sklearn (fallback provided) ----
@@ -3224,6 +3225,7 @@ for rect, v in zip(bars, vals):
             va="center", ha="left", fontsize=8.5, color=TXT)
 
 st.pyplot(fig, width="stretch")
+png_download_button(fig, "leaderboard_fullbacks.png", key="dl_leaderboard_fullbacks")
 # ----------------- END -----------------
 
 
@@ -5122,14 +5124,11 @@ if render_exact:
     fig.savefig(buf, format="png", dpi=100, facecolor=PAGE_BG)
     buf.seek(0)
     st.image(buf, width=w_px)
-    st.download_button(
-        "⬇️ Download Feature Q (PNG)",
-        data=buf.getvalue(),
-        file_name=f"feature_q_cb_{uuid.uuid4().hex[:6]}.png",
-        mime="image/png",
-    )
 else:
     st.pyplot(fig)
+
+# This page has no standalone Scatterplot section — the archetype map is its scatter.
+png_download_button(fig, "scatterplot_fullbacks.png", key="dl_scatter_fullbacks")
 
 plt.close(fig)
 # ============================== END FEATURE Q ============================================================
@@ -5410,6 +5409,7 @@ else:
                             "Axis labels are centered on their metric angle, auto-flipped upright, and placed outside the 100 ring."
                         )
                         st.pyplot(fig_r, width="stretch")
+                        png_download_button(fig_r, "comparison_radar_fullbacks.png", key="dl_radar_fullbacks")
 # ----------------- END Radar -----------------
 
 

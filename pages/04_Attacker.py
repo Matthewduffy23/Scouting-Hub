@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Circle, Wedge
 from photo_utils import get_player_photo_url, load_player_photo_cached, get_player_photo_pil
+from chart_export import png_download_button
 
 # ---- Optional sklearn (fallback provided) ----
 try:
@@ -3050,6 +3051,7 @@ for rect, v in zip(bars, vals):
             va="center", ha="left", fontsize=8.5, color=TXT)
 
 st.pyplot(fig, width="stretch")
+png_download_button(fig, "leaderboard_attackers.png", key="dl_leaderboard_attackers")
 # ----------------- END -----------------
 
 
@@ -5097,6 +5099,7 @@ with st.expander("Scatter settings", expanded=False):
                     st.image(buf, width=w_px)
                 else:
                     st.pyplot(fig, width="content")
+                png_download_button(fig, "scatterplot_attackers.png", key="dl_scatter_attackers")
 
     except Exception as e:
         st.info(f"Scatter could not be drawn: {e}")
@@ -5758,6 +5761,7 @@ else:
                             "Axis labels are centered on their metric angle, auto-flipped upright, and placed outside the 100 ring."
                         )
                         st.pyplot(fig_r, width="stretch")
+                        png_download_button(fig_r, "comparison_radar_attackers.png", key="dl_radar_attackers")
 # ----------------- END Radar -----------------
 
 
