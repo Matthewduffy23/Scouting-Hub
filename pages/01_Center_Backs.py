@@ -287,7 +287,7 @@ GBE_LEAGUE_BANDS = {
     "Austria 1.": 4, "Denmark 1.": 4, "France 2.": 4, "Russia 1.": 4,
 
     # Band 5
-    "Serbia 1.": 5, "Poland 1.": 5, "Slovenia 1.": 5, "Chile 1.": 5, "Uruguay 1.": 5,
+    "Serbia 1.": 5, "Poland 1.": 5, "Slovenia 1.": 6, "Chile 1.": 5, "Uruguay 1.": 5,
     "Sweden 1.": 5, "Norway 1.": 5, "Italy 2.": 5, "Hungary 1.": 5, "Japan 1.": 5,
     "Korea 1.": 5, "Australia 1.": 5, 
 
@@ -375,7 +375,7 @@ COUNTRY_TO_REGION = {
     # Asia (incl. some UEFA/dual countries – choose what fits your model best)
     "Japan": "Asia", "Korea": "Asia", "Saudi": "Asia",
     "UAE": "Asia", "Qatar": "Asia", "Uzbekistan": "Asia", 
-    "Turkey": "Asia", "Azerbaijan": "Asia", "China": "Asia",
+    "Turkey": "Europe", "Azerbaijan": "Asia", "China": "Asia",
 
     # Oceania / other (you can change this to "Other" if you prefer)
     "Australia": "Asia",

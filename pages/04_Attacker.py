@@ -233,7 +233,7 @@ LEAGUE_STRENGTHS = {
 'England 5.':33.33,'Andorra 1.':33.33,'England 9.':31.37,'Serbia 2.':35,'Brazil 4.':30.00,
 'Denmark 3.':29.41,'Sweden 3.':29.41,'Slovenia 2.':30,'Slovakia 2.':30,'Italy 4.':30,
 'Ukraine 2.':30,'Greece 2.':30,'Netherlands 3.':27.06,'Germany 5.':25.00,'Italy 5.':25.00,
-'Portugal 4.':25.00,'USA 3.':22.55,'Scotland 3.':20.00,'Sweden 4.':20.00,'Switzerland 3.':20.00,
+'Portugal 4.':25.00,'USA 3.':22.55,'Scotland 3.':20.00,'Sweden 4.':20.00,'Switzerland 4.':20.00,'Switzerland 3.':35.00,
 'Czech 3.':20.00,'Denmark 4.':20.00,'Germany 6.':20.00,'England 6.':16.08,'Kazakhstan 2.':16.08,
 'Kyrgyzstan 1.':16.08,'Malta 2.':16.08,'England 8.':15.69,'Ukraine 3.':15.00,'Serbia 3.':15.00,
 'Ireland 2.':10.00,'England 10.':3.92,'Estonia 2.':3.00,
@@ -295,7 +295,7 @@ GBE_LEAGUE_BANDS = {
     "Austria 1.": 4, "Denmark 1.": 4, "France 2.": 4, "Russia 1.": 4,
 
     # Band 5
-    "Serbia 1.": 5, "Poland 1.": 5, "Slovenia 1.": 5, "Chile 1.": 5, "Uruguay 1.": 5,
+    "Serbia 1.": 5, "Poland 1.": 5, "Slovenia 1.": 6, "Chile 1.": 5, "Uruguay 1.": 5,
     "Sweden 1.": 5, "Norway 1.": 5, "Italy 2.": 5, "Hungary 1.": 5, "Japan 1.": 5,
     "Korea 1.": 5, "Australia 1.": 5,
 
@@ -321,7 +321,7 @@ YOUTH_LEAGUES = {
     "Denmark 3.", "Denmark 4.",
     "Germany 4.", "Germany 5.", "Germany 6.",
     "USA 2.", "Ireland 2.", "Estonia 2.",
-    "Sweden 4.", "Switzerland 3.", "Ukraine 3.",
+    "Sweden 4.", "Switzerland 4.", "Ukraine 3.",
     "Czech 3.", "Italy 5.", "Serbia 3.",
 }
 
@@ -358,7 +358,7 @@ COUNTRY_TO_REGION = {
     # Asia (incl. some UEFA/dual countries – choose what fits your model best)
     "Japan": "Asia", "Korea": "Asia", "Saudi": "Asia",
     "UAE": "Asia", "Qatar": "Asia", "Uzbekistan": "Asia", "China": "Asia",
-    "Turkey": "Asia", "Azerbaijan": "Asia",
+    "Turkey": "Europe", "Azerbaijan": "Asia",
 
     # Oceania / other (you can change this to "Other" if you prefer)
     "Australia": "Asia",
