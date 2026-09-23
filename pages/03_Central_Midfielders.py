@@ -4207,12 +4207,18 @@ with st.expander("Feature Z options", expanded=False):
     name_override_on = st.checkbox("Edit player display name", value=False)
     name_override    = st.text_input("Display name", "", disabled=not name_override_on)
 
+    def _fmt_whole(v):
+        """'6.0' -> '6', '181.0' -> '181'; genuine decimals ('0.23') and text are left as-is."""
+        try: f = float(v)
+        except (TypeError, ValueError): return v
+        return str(int(f)) if f.is_integer() else v
+
     default_height = ""
     try:
         if not player_row.empty:
             for col in ["Height","Height (ft)","Height ft","Height (cm)"]:
                 if col in player_row.columns and str(player_row.iloc[0][col]).strip():
-                    default_height = str(player_row.iloc[0][col]).strip(); break
+                    default_height = _fmt_whole(str(player_row.iloc[0][col]).strip()); break
     except Exception: pass
     height_text = st.text_input("Height value (e.g., 6'2\")", default_height)
 
@@ -4410,10 +4416,10 @@ else:
     age_raw = _safe_get(player_row, "Age", "31.0")
     try: age = f"{float(age_raw):.0f}"
     except Exception: age = age_raw
-    games   = _safe_get(player_row, "Matches played", _safe_get(player_row, "Games", _safe_get(player_row, "Apps", "—")))
-    minutes = _safe_get(player_row, "Minutes", _safe_get(player_row, "Minutes played", "—"))
-    goals   = _safe_get(player_row, "Goals", "—")
-    assists = _safe_get(player_row, "Assists", "—")
+    games   = _fmt_whole(_safe_get(player_row, "Matches played", _safe_get(player_row, "Games", _safe_get(player_row, "Apps", "—"))))
+    minutes = _fmt_whole(_safe_get(player_row, "Minutes", _safe_get(player_row, "Minutes played", "—")))
+    goals   = _fmt_whole(_safe_get(player_row, "Goals", "—"))
+    assists = _fmt_whole(_safe_get(player_row, "Assists", "—"))
     foot    = _safe_get(player_row, "Foot", _safe_get(player_row, "Preferred Foot", "—"))
 
     foot_display = (foot_override_text.strip() if (foot_override_on and foot_override_text and foot_override_text.strip()) else foot)
