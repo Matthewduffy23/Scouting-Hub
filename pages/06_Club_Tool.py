@@ -218,7 +218,7 @@ COUNTRY_TO_REGION = {
     "Finland": "Europe", "Armenia": "Europe", "Georgia": "Europe", "Poland": "Europe",
     "Iceland": "Europe", "North Macedonia": "Europe", "Latvia": "Europe",
     "Montenegro": "Europe", "Denmark": "Europe", "Estonia": "Europe",
-    "Northern Ireland": "Europe", "Wales": "Europe",
+    "Northern Ireland": "Europe", "Wales": "Europe", "Luxembourg": "Europe",
     "Brazil": "South America", "Argentina": "South America", "Colombia": "South America",
     "Ecuador": "South America", "Paraguay": "South America", "Uruguay": "South America",
     "Chile": "South America", "Bolivia": "South America", "Peru": "South America",

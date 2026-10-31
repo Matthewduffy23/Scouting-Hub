@@ -356,6 +356,7 @@ COUNTRY_TO_REGION = {
     "Iceland": "Europe", "North Macedonia": "Europe", "Latvia": "Europe",
     "Montenegro": "Europe", "Denmark": "Europe", "Estonia": "Europe",
     "Northern Ireland": "Europe", "Wales": "Europe", "Russia": "Europe", "Kazakhstan": "Europe",
+    "Luxembourg": "Europe",
     "Lithuania": "Europe", "Malta": "Europe", "Moldova": "Europe", "Israel": "Europe",
 
     # South America
@@ -620,8 +621,14 @@ if missing_feats:
 df_f = df.copy()
 
 # leagues (from sidebar presets / selection)
-if st.session_state.get("cb_leagues_sel"):
-    df_f = df_f[df_f["League"].isin(st.session_state["cb_leagues_sel"])]
+# NOTE: an empty list here means the user deliberately cleared every league chip,
+# not "no filter" - must not silently fall back to showing every league's players.
+_cb_leagues_sel = st.session_state.get("cb_leagues_sel")
+if _cb_leagues_sel:
+    df_f = df_f[df_f["League"].isin(_cb_leagues_sel)]
+elif _cb_leagues_sel is not None:
+    st.warning("Select at least one league in the sidebar to see results.")
+    df_f = df_f.iloc[0:0]
 
 # --- GBE band filter (NO auto-pass) ---
 df_f["GBE Band"] = df_f["League"].apply(gbe_league_band).astype(int)

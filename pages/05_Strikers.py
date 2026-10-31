@@ -348,6 +348,7 @@ COUNTRY_TO_REGION = {
     "Montenegro": "Europe", "Denmark": "Europe", "Estonia": "Europe",
     "Northern Ireland": "Europe", "Wales": "Europe", "Russia": "Europe", "Kazakhstan": "Europe",
     "Lithuania": "Europe", "Malta": "Europe", "Moldova": "Europe", "Israel": "Europe",
+    "Luxembourg": "Europe",
 
     # South America
     "Brazil": "South America", "Argentina": "South America", "Colombia": "South America",
@@ -655,13 +656,16 @@ if missing_feats:
 df_f = df.copy()
 
 # leagues
-active_leagues = st.session_state.get(
-    f"cf_leagues_sel_{selected_file}",
-    sorted(pd.Series(df.get("League", pd.Series(dtype=object))).dropna().unique().tolist())
-)
-if not active_leagues:  # safety fallback
-    active_leagues = sorted(pd.Series(df.get("League", pd.Series(dtype=object))).dropna().unique().tolist())
-df_f = df_f[df_f["League"].isin(active_leagues)]
+# NOTE: an empty list here means the user deliberately cleared every league chip,
+# not "no filter" - must not silently fall back to showing every league's players.
+# Only a never-rendered widget (key truly absent) should default to "all".
+_all_leagues = sorted(pd.Series(df.get("League", pd.Series(dtype=object))).dropna().unique().tolist())
+active_leagues = st.session_state.get(f"cf_leagues_sel_{selected_file}", _all_leagues)
+if active_leagues:
+    df_f = df_f[df_f["League"].isin(active_leagues)]
+else:
+    st.warning("Select at least one league in the sidebar to see results.")
+    df_f = df_f.iloc[0:0]
 
 # positions (CF only)
 df_f = df_f[df_f["Position"].astype(str).apply(position_filter)]
