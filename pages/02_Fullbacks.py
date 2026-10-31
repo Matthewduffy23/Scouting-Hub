@@ -258,7 +258,7 @@ LEAGUE_STRENGTHS = {
 'Lithuania 1.':42.35,'Netherlands 2.':46,'Malta 1.':41.96,'Moldova 1.':40.39,'Estonia 1.':40.00,
 'USA 2.':40.00,'Latvia 1.':40.00,'Wales 1.':40.00,'Hungary 2.':40.00,'Norway 3.':40.00,
 'Montenegro 2.':39.80,'Canada 1.':38.24,'Austria 2.':38.24,'Israel 2.':40,'England 7.':37.25,
-'Germany 4.':40,'Portugal 3.':40,'Faroe Islands 1.':35.02,'Saudi 2.':35.02,'Qatar 1.':45.00,
+'Germany 4.':40,'Portugal 3.':40,'Faroe Islands 1.':35.02,'Saudi 2.':35.02,'Qatar 1.':45.00,'Luxembourg 1.':42.61,
 'England 5.':33.33,'Andorra 1.':33.33,'England 9.':31.37,'Serbia 2.':35,'Brazil 4.':30.00,
 'Denmark 3.':29.41,'Sweden 3.':29.41,'Slovenia 2.':30,'Slovakia 2.':30,'Italy 4.':30,
 'Ukraine 2.':30,'Greece 2.':30,'Netherlands 3.':27.06,'Germany 5.':25.00,'Italy 5.':25.00,
