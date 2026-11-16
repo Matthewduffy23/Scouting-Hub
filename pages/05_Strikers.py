@@ -14,6 +14,7 @@ from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Circle, Wedge
 from photo_utils import get_player_photo_url, load_player_photo_cached, get_player_photo_pil
 from chart_export import png_download_button
+from league_filter_utils import multiselect_safe, resolve_league_selection
 
 # ---- Optional sklearn (fallback provided) ----
 try:
@@ -395,13 +396,6 @@ def league_region(league_name: str) -> str:
 
 REQUIRED_BASE = {"Player","Team","League","Age","Position","Minutes played","Market value","Contract expires","Goals"}
 
-# ----------------- WIDGET SAFETY -----------------
-def multiselect_safe(label, *, options, default=None, key=None, **kwargs):
-    """Clamp defaults to current options to avoid Streamlit crashes after dataset switches."""
-    options = list(options)
-    default = [x for x in (default or []) if x in options]
-    return st.multiselect(label, options=options, default=default, key=key, **kwargs)
-
 # ----------------- SIDEBAR FILTERS (PRESETS THAT ACTUALLY DRIVE TABLES) -----------------
 
 # --- Legacy compatibility: keep old single-threshold key available if other code still reads it
@@ -526,7 +520,6 @@ with st.sidebar:
     default_leagues = sorted(seed) if seed else leagues_avail
 
     # ONE source of truth (dataset-scoped)
-    ms_key = f"cf_leagues_sel_{selected_file}"
     preset_sig = (
         tuple(sorted(regions_sel)),
         include_youth,
@@ -538,18 +531,15 @@ with st.sidebar:
         selected_file,
     )
 
-    # Initialize and refresh defaults when presets/dataset/regions/youth change
-    if ms_key not in st.session_state:
-        st.session_state[ms_key] = default_leagues
-    if st.session_state.get("cf_preset_sig") != preset_sig:
-        st.session_state["cf_preset_sig"] = preset_sig
-        st.session_state[ms_key] = default_leagues
+    ms_key, _ms_default = resolve_league_selection(
+        "cf", selected_file, leagues_avail, default_leagues, preset_sig
+    )
 
     # Use the *safe* multiselect to clamp stale defaults
     leagues_sel = multiselect_safe(
         "Leagues (add or prune the presets)",
         options=leagues_avail,
-        default=st.session_state[ms_key],
+        default=_ms_default,
         key=ms_key,
     )
 
@@ -668,7 +658,11 @@ else:
     df_f = df_f.iloc[0:0]
 
 # positions (CF only)
-df_f = df_f[df_f["Position"].astype(str).apply(position_filter)]
+# .astype(bool) is required: .apply() on a 0-row Series (e.g. the league
+# multiselect cleared to empty) can't infer a return dtype and falls back to
+# object, and df_f[an_object_series] reads as "select these COLUMNS", not
+# "keep these rows" - silently wiping every column instead of raising.
+df_f = df_f[df_f["Position"].astype(str).apply(position_filter).astype(bool)]
 
 # --- GBE band filter (NO auto-pass) ---
 df_f["GBE Band"] = df_f["League"].apply(gbe_league_band).astype(int)
@@ -678,7 +672,7 @@ if bands_sel:
     df_f = df_f[df_f["GBE Band"].isin(bands_sel)]
 
 # positions (CF only)
-df_f = df_f[df_f["Position"].astype(str).apply(position_filter)]
+df_f = df_f[df_f["Position"].astype(str).apply(position_filter).astype(bool)]
 
 
 # numerics

@@ -17,6 +17,7 @@ from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 import requests
 from photo_utils import get_player_photo_url, load_player_photo_cached, get_player_photo_pil
 from chart_export import png_download_button
+from league_filter_utils import multiselect_safe, resolve_league_selection
 
 # ---- Optional sklearn (fallback provided) ----
 try:
@@ -404,13 +405,6 @@ def league_region(league_name: str) -> str:
 
 REQUIRED_BASE = {"Player","Team","League","Age","Position","Minutes played","Market value","Contract expires","Goals"}
 
-# ----------------- WIDGET SAFETY -----------------
-def multiselect_safe(label, *, options, default=None, key=None, **kwargs):
-    """Clamp defaults to current options to avoid Streamlit crashes after dataset switches."""
-    options = list(options)
-    default = [x for x in (default or []) if x in options]
-    return st.multiselect(label, options=options, default=default, key=key, **kwargs)
-
 # ----------------- SIDEBAR FILTERS -----------------
 with st.sidebar:
     st.header("Filters")
@@ -506,7 +500,6 @@ with st.sidebar:
     default_leagues = sorted(seed) if seed else leagues_avail
 
     # --- Multiselect with preset + region + youth sensitivity ---
-    ms_key = f"cb_leagues_sel_{selected_file}"   # <- cb_
     preset_sig = (
         tuple(sorted(regions_sel)),
         include_youth,
@@ -516,17 +509,14 @@ with st.sidebar:
         selected_file,
     )
 
-    if ms_key not in st.session_state:
-        st.session_state[ms_key] = default_leagues
-
-    if st.session_state.get("cb_preset_sig") != preset_sig:   # <- cb_
-        st.session_state["cb_preset_sig"] = preset_sig
-        st.session_state[ms_key] = default_leagues
+    ms_key, _ms_default = resolve_league_selection(
+        "cb", selected_file, leagues_avail, default_leagues, preset_sig
+    )
 
     leagues_sel = multiselect_safe(
         "Leagues (add or prune the presets)",
         options=leagues_avail,
-        default=st.session_state[ms_key],
+        default=_ms_default,
         key=ms_key,
     )
 
@@ -638,7 +628,11 @@ if bands_sel:
     df_f = df_f[df_f["GBE Band"].isin(bands_sel)]
 
 # positions (center backs)
-df_f = df_f[df_f["Position"].astype(str).apply(position_filter)]
+# .astype(bool) is required: .apply() on a 0-row Series (e.g. the league
+# multiselect cleared to empty) can't infer a return dtype and falls back to
+# object, and df_f[an_object_series] reads as "select these COLUMNS", not
+# "keep these rows" - silently wiping every column instead of raising.
+df_f = df_f[df_f["Position"].astype(str).apply(position_filter).astype(bool)]
 
 
 # numerics

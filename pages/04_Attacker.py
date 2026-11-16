@@ -14,6 +14,7 @@ from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Circle, Wedge
 from photo_utils import get_player_photo_url, load_player_photo_cached, get_player_photo_pil
 from chart_export import png_download_button
+from league_filter_utils import multiselect_safe, resolve_league_selection
 
 # ---- Optional sklearn (fallback provided) ----
 try:
@@ -445,13 +446,6 @@ if st.session_state.get("_active_dataset_att") != selected_file:
         st.session_state.pop(k, None)
     st.session_state["_active_dataset_att"] = selected_file
 
-# ----------------- WIDGET SAFETY -----------------
-def multiselect_safe(label, *, options, default=None, key=None, **kwargs):
-    """Clamp defaults to current options to avoid Streamlit crashes after dataset switches."""
-    options = list(options)
-    default = [x for x in (default or []) if x in options]
-    return st.multiselect(label, options=options, default=default, key=key, **kwargs)
-
 # ----------------- SIDEBAR FILTERS -----------------
 with st.sidebar:
     st.header("Filters")
@@ -563,7 +557,6 @@ with st.sidebar:
     default_leagues = sorted(seed) if seed else leagues_avail
 
     # --- Multiselect with preset + region + youth sensitivity ---
-    ms_key = f"att_leagues_sel_{selected_file}"
     preset_sig = (
         tuple(sorted(regions_sel)),
         include_youth,
@@ -575,35 +568,17 @@ with st.sidebar:
         selected_file,
     )
 
-    if ms_key not in st.session_state:
-        st.session_state[ms_key] = default_leagues
+    # resolve_league_selection (see league_filter_utils.py) keeps a deliberately
+    # -cleared selection empty instead of snapping back to "all leagues" — this
+    # page used to do that reset itself and got it wrong.
+    ms_key, _ms_default = resolve_league_selection(
+        "att", selected_file, leagues_avail, default_leagues, preset_sig
+    )
 
-    if st.session_state.get("att_preset_sig") != preset_sig:
-        st.session_state["att_preset_sig"] = preset_sig
-        st.session_state[ms_key] = default_leagues
-
-    # Drop any stored selection that isn't in the CURRENT options, before the
-    # widget renders. st.multiselect raises StreamlitAPIException if its default
-    # contains a value outside `options`.
-    #
-    # This became reachable when the upload widget landed: ms_key and preset_sig
-    # are both derived from `selected_file`, which used to identify the data
-    # completely — switching dataset via the dropdown produced a new key, so a
-    # stale selection could never survive. An uploaded file swaps the DATA while
-    # selected_file stays put, so the old selection persists into a dataset that
-    # may not contain those leagues (e.g. "Argentina 1." from a world file, then
-    # uploading a Brazil-only one).
-    _kept = [x for x in st.session_state.get(ms_key, default_leagues) if x in leagues_avail]
-    st.session_state[ms_key] = _kept if _kept else default_leagues
-
-    # multiselect_safe, not st.multiselect — this page defined the safe wrapper at
-    # :446 like every other position page, but was the only one not using it here.
-    # The wrapper clamps `default`; the session_state sanitise above covers the
-    # case where the stored value itself is stale, which `default` never sees.
     leagues_sel = multiselect_safe(
         "Leagues (add or prune the presets)",
         options=leagues_avail,
-        default=st.session_state[ms_key],
+        default=_ms_default,
         key=ms_key,
     )
 
@@ -726,9 +701,14 @@ bands_sel = st.session_state.get(f"att_gbe_bands_{selected_file}", [1, 2, 3, 4, 
 if bands_sel:
     df_f = df_f[df_f["GBE Band"].isin(bands_sel)]
 
-
 # position (driven by ROLE_CHOICE + position_filter)
-df_f = df_f[df_f["Position"].astype(str).apply(position_filter)]
+# .astype(bool) is required: .apply() on a 0-row Series can't infer the
+# return dtype and falls back to object, and df_f[an_object_series] is read
+# by pandas as "select these COLUMNS", not "keep these rows" - silently
+# wiping every column instead of raising. Only reachable once the league
+# multiselect can be emptied (2026-11-16 fix) - confirmed via an RSS/column
+# probe that an empty league selection reduces df_f to 0 columns here.
+df_f = df_f[df_f["Position"].astype(str).apply(position_filter).astype(bool)]
 
 # numerics
 df_f["Minutes played"] = pd.to_numeric(df_f["Minutes played"], errors="coerce")
