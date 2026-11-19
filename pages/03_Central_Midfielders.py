@@ -15,6 +15,7 @@ from matplotlib.patches import Circle, Wedge
 from photo_utils import get_player_photo_url, load_player_photo_cached, get_player_photo_pil
 from chart_export import png_download_button
 from league_filter_utils import multiselect_safe, resolve_league_selection
+from league_rank_utils import league_rank_widget, league_rank_table, apply_league_rank, LEAGUE_RANK_COL
 
 # ---- Optional sklearn (fallback provided) ----
 try:
@@ -603,6 +604,7 @@ with st.sidebar:
     min_minutes, max_minutes = st.slider(
         "Minutes played", 0, 5000, (500, 5000), key=f"cm_minmax_minutes_{selected_file}"
     )
+    league_rank_choice = league_rank_widget("cm", selected_file)
 
     age_min_data = int(np.nanmin(df["Age"])) if df["Age"].notna().any() else 14
     age_max_data = int(np.nanmax(df["Age"])) if df["Age"].notna().any() else 45
@@ -1255,6 +1257,17 @@ df_display = df_display.dropna(subset=[display_metric_col]).sort_values(display_
 
 top_n_cm = 10
 top_n_fb = 10
+# League rank (league_rank_utils.py): Impact Score vs every player in the same league +
+# position group this season who meets Min Minutes - computed on the WHOLE loaded season
+# (df), not df_f, so sidebar/display filters only hide players and never change a rank.
+_lr_ranks = league_rank_table(
+    df, position_ok=position_filter, features=FEATURES,
+    score_fn=lambda _p: ensure_cm_impact_metrics(_p, selected_file)["Impact Score"],
+    min_minutes=st.session_state[f"cm_minmax_minutes_{selected_file}"][0],
+    youth_leagues=YOUTH_LEAGUES, league_strengths=LEAGUE_STRENGTHS,
+)
+df_display = apply_league_rank(df_display, _lr_ranks, league_rank_choice)
+
 df_table = df_display.copy()
 df_table["Market value"] = pd.to_numeric(df_table["Market value"], errors="coerce").apply(fb_format_market_value)
 st.dataframe(df_table.head(top_n_fb), width="stretch")
