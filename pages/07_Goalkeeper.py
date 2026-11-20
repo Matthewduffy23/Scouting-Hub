@@ -16,6 +16,7 @@ from matplotlib.patches import Circle, Wedge
 from photo_utils import get_player_photo_url, load_player_photo_cached, get_player_photo_pil
 from chart_export import png_download_button
 from league_filter_utils import multiselect_safe, resolve_league_selection
+from league_rank_utils import league_rank_widget, league_rank_table, apply_league_rank, LEAGUE_RANK_COL
 
 # 👇 use a font that actually exists in Matplotlib's default install
 matplotlib.rcParams["font.family"] = "DejaVu Sans"
@@ -477,6 +478,7 @@ with st.sidebar:
     min_minutes, max_minutes = st.slider(
         "Minutes played", 0, 5000, (500, 5000), key=f"gk_minmax_minutes_{selected_file}"
     )
+    league_rank_choice = league_rank_widget("gk", selected_file)
 
     age_min_data = int(np.nanmin(df["Age"])) if df["Age"].notna().any() else 14
     age_max_data = int(np.nanmax(df["Age"])) if df["Age"].notna().any() else 45
@@ -1075,10 +1077,21 @@ df_display_gk = df_display_gk.dropna(subset=[display_metric_col_gk]).sort_values
     display_metric_col_gk, ascending=False
 ).copy()
 
+# League rank (league_rank_utils.py): Complete Score vs every player in the same league +
+# position group this season who meets Min Minutes - computed on the WHOLE loaded season
+# (df), not df_f, so sidebar/display filters only hide players and never change a rank.
+_lr_ranks = league_rank_table(
+    df, position_ok=position_filter, features=FEATURES,
+    score_fn=lambda _p: ensure_gk_impact_metrics(_p, selected_file)["Complete Score"],
+    min_minutes=st.session_state[f"gk_minmax_minutes_{selected_file}"][0],
+    youth_leagues=YOUTH_LEAGUES, league_strengths=LEAGUE_STRENGTHS, inverse_metrics=INVERSE_METRICS,
+)
+df_display_gk = apply_league_rank(df_display_gk, _lr_ranks, league_rank_choice)
+
 top_n_gk = 10
 
 cols_to_show_gk = [
-    "Player", "Age", "Team", "League",
+    "Player", LEAGUE_RANK_COL, "Age", "Team", "League",
     display_metric_col_gk,
     "Shot Stopping Score", "Distribution Score", "Sweeper Score", "Complete Score",
 ]

@@ -56,6 +56,11 @@ def resolve_league_selection(prefix, selected_file, leagues_avail, default_leagu
 
     if ms_key not in st.session_state:
         st.session_state[ms_key] = default_leagues
+        # Record the signature now too. Without this the FIRST rerun after page
+        # load saw sig_key missing, treated it as "presets changed" and reset the
+        # selection to the defaults - so the first league pick (e.g. England 3.
+        # alone) snapped straight back to every league. 2026-11-19.
+        st.session_state[sig_key] = preset_sig
         return ms_key, st.session_state[ms_key]
 
     if st.session_state.get(sig_key) != preset_sig:
