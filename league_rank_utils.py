@@ -101,6 +101,19 @@ def league_rank_table(df, *, position_ok, features, score_fn, min_minutes,
     return out
 
 
+def filter_league_rank(df_in, ranks, choice):
+    """Rows-only Top X% filter for every other view (Overall/U23/... tabs, Pro Layout,
+    metric leaderboard, player picker, scatter, archetype map). Same rule and the same
+    `ranks` as the main table, so every view shows the same players. Columns are left
+    alone, and scores already on `df_in` are untouched - it only hides rows.
+    """
+    cut = LEAGUE_RANK_CUTS.get(choice)
+    if cut is None:
+        return df_in
+    frac = ranks["_lr_frac"].reindex(df_in.index) if len(ranks) else pd.Series(np.nan, index=df_in.index)
+    return df_in[(frac < cut).to_numpy()]
+
+
 def apply_league_rank(df_show, ranks, choice):
     """Add the 'League rank' column (right after Player) and apply the Top X% filter.
 

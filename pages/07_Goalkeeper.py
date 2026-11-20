@@ -16,7 +16,7 @@ from matplotlib.patches import Circle, Wedge
 from photo_utils import get_player_photo_url, load_player_photo_cached, get_player_photo_pil
 from chart_export import png_download_button
 from league_filter_utils import multiselect_safe, resolve_league_selection
-from league_rank_utils import league_rank_widget, league_rank_table, apply_league_rank, LEAGUE_RANK_COL
+from league_rank_utils import league_rank_widget, league_rank_table, apply_league_rank, filter_league_rank, LEAGUE_RANK_COL
 
 # 👇 use a font that actually exists in Matplotlib's default install
 matplotlib.rcParams["font.family"] = "DejaVu Sans"
@@ -1087,6 +1087,7 @@ _lr_ranks = league_rank_table(
     youth_leagues=YOUTH_LEAGUES, league_strengths=LEAGUE_STRENGTHS, inverse_metrics=INVERSE_METRICS,
 )
 df_display_gk = apply_league_rank(df_display_gk, _lr_ranks, league_rank_choice)
+df_f = filter_league_rank(df_f, _lr_ranks, league_rank_choice)  # tabs, Pro Layout, leaderboard, player picker follow it too
 
 top_n_gk = 10
 
@@ -4496,6 +4497,7 @@ with st.expander("Scatter settings", expanded=False):
     # ---- Build pool ----
     try:
         pool_sc = df[df["League"].isin(leagues_scatter)].copy()
+        pool_sc = filter_league_rank(pool_sc, _lr_ranks, league_rank_choice)
         if same_pos_scatter and not player_row.empty:
             pool_sc = pool_sc[pool_sc["Position"].astype(str).apply(position_filter)]
 
@@ -5364,6 +5366,8 @@ def classify(r):
 
 pool_sc["Archetype"] = pool_sc.apply(classify, axis=1)
 pool_sc["Sweeper GK"] = pool_sc["sweeper_score"] >= 70  # Sweeper flag
+
+pool_sc = filter_league_rank(pool_sc, _lr_ranks, league_rank_choice)  # after scoring: hides rows, map positions unchanged
 
 # ------------------------------------------------------------------
 # SCATTER GRAPH (X = Goalkeeping, Y = Possession)

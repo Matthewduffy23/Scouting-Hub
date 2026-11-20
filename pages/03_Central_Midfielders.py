@@ -15,7 +15,7 @@ from matplotlib.patches import Circle, Wedge
 from photo_utils import get_player_photo_url, load_player_photo_cached, get_player_photo_pil
 from chart_export import png_download_button
 from league_filter_utils import multiselect_safe, resolve_league_selection
-from league_rank_utils import league_rank_widget, league_rank_table, apply_league_rank, LEAGUE_RANK_COL
+from league_rank_utils import league_rank_widget, league_rank_table, apply_league_rank, filter_league_rank, LEAGUE_RANK_COL
 
 # ---- Optional sklearn (fallback provided) ----
 try:
@@ -1267,6 +1267,7 @@ _lr_ranks = league_rank_table(
     youth_leagues=YOUTH_LEAGUES, league_strengths=LEAGUE_STRENGTHS,
 )
 df_display = apply_league_rank(df_display, _lr_ranks, league_rank_choice)
+df_f = filter_league_rank(df_f, _lr_ranks, league_rank_choice)  # tabs, Pro Layout, leaderboard, player picker follow it too
 
 df_table = df_display.copy()
 df_table["Market value"] = pd.to_numeric(df_table["Market value"], errors="coerce").apply(fb_format_market_value)
@@ -4792,6 +4793,7 @@ with st.expander("Scatter settings", expanded=False):
     # ---- Build pool ----
     try:
         pool_sc = df[df["League"].isin(leagues_scatter)].copy()
+        pool_sc = filter_league_rank(pool_sc, _lr_ranks, league_rank_choice)
         if same_pos_scatter and not player_row.empty:
             pool_sc = pool_sc[pool_sc["Position"].astype(str).apply(position_filter)]
 
@@ -5386,6 +5388,8 @@ pool_sc["Archetype"] = pool_sc.apply(classify, axis=1)
 # FLAGS
 pool_sc["Ball Carrier"] = pool_sc["carry_score"] >= 70      # square
 pool_sc["Box Threat"] = pool_sc["boxing_score"] >= 80       # diamond
+
+pool_sc = filter_league_rank(pool_sc, _lr_ranks, league_rank_choice)  # after scoring: hides rows, map positions unchanged
 
 # ------------------------------------------------------------------
 # SCATTER GRAPH
@@ -6097,6 +6101,7 @@ if not player_row.empty:
             out['Similarity'] * ((1 - league_weight_sim) + league_weight_sim * league_ratio)
         ) if apply_league_adjust else out['Similarity']
 
+        out = filter_league_rank(out, _lr_ranks, league_rank_choice)  # League rank hides rows; similarity scores unchanged
         out = out.sort_values('Adjusted Similarity', ascending=False).reset_index(drop=True)
         out.insert(0, 'Rank', np.arange(1, len(out) + 1))
         st.caption(f"Candidates after filters: {len(out):,}")
