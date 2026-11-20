@@ -7,7 +7,7 @@ Same rule as Scout Index's League rank filter:
     role toggles only hide players, they don't shrink the pool).
   - Only players who clear the page's Min Minutes slider count, as pool members
     and as qualifiers. Youth leagues use 100 minutes (0 if the slider is at 0).
-  - Ranked on the page's main index score (Impact Score), recomputed on that
+  - Ranked on the page's Complete Score (each page's own, GK included), recomputed on that
     whole pool - so sidebar/display filters (age, foot, value, contract, ...) only
     hide players, they never change anyone's rank.
   - Top X% <=> fewer than X% of the pool score strictly higher. "Top 8%" means
@@ -39,7 +39,7 @@ def league_rank_widget(prefix, selected_file):
         index=0,
         horizontal=True,
         key=f"{prefix}_league_rank_{selected_file}",
-        help="Rank on Impact Score against every player in the same league and position "
+        help="Rank on Complete Score against every player in the same league and position "
              "group this season who meets Min Minutes (youth leagues: 100). Other filters "
              "only hide players - they don't change anyone's rank.",
     )

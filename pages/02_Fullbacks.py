@@ -1230,14 +1230,14 @@ df_display = df_display.dropna(subset=[display_metric_col]).sort_values(display_
 
 top_n_fb = 10
 top_n_fb = 10
-# League rank (league_rank_utils.py): Impact Score vs every player in the same league +
+# League rank (league_rank_utils.py): Complete Score vs every player in the same league +
 # position group this season who meets Min Minutes - computed on the WHOLE loaded season
 # (df), not df_f, so sidebar/display filters only hide players and never change a rank.
 _lr_role_saved = ROLE_CHOICE
 ROLE_CHOICE = "All"  # pool = every sub-role; the role toggle only hides players
 _lr_ranks = league_rank_table(
     df, position_ok=position_filter, features=FEATURES,
-    score_fn=lambda _p: ensure_fb_impact_metrics(_p, selected_file)["Impact Score"],
+    score_fn=lambda _p: ensure_fb_impact_metrics(_p, selected_file)["Complete Score"],
     min_minutes=st.session_state[f"fb_minmax_minutes_{selected_file}"][0],
     youth_leagues=YOUTH_LEAGUES, league_strengths=LEAGUE_STRENGTHS,
 )

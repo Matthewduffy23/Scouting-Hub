@@ -1077,12 +1077,12 @@ df_display_gk = df_display_gk.dropna(subset=[display_metric_col_gk]).sort_values
     display_metric_col_gk, ascending=False
 ).copy()
 
-# League rank (league_rank_utils.py): Impact Score vs every player in the same league +
+# League rank (league_rank_utils.py): Complete Score vs every player in the same league +
 # position group this season who meets Min Minutes - computed on the WHOLE loaded season
 # (df), not df_f, so sidebar/display filters only hide players and never change a rank.
 _lr_ranks = league_rank_table(
     df, position_ok=position_filter, features=FEATURES,
-    score_fn=lambda _p: ensure_gk_impact_metrics(_p, selected_file)["Impact Score"],
+    score_fn=lambda _p: ensure_gk_impact_metrics(_p, selected_file)["Complete Score"],
     min_minutes=st.session_state[f"gk_minmax_minutes_{selected_file}"][0],
     youth_leagues=YOUTH_LEAGUES, league_strengths=LEAGUE_STRENGTHS, inverse_metrics=INVERSE_METRICS,
 )
